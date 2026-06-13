@@ -349,6 +349,82 @@ source for fees, thresholds, or timelines.
 gates, and lands in the ledger. The finder's `severity` is retained only as
 provenance.
 
+### 4.1 The eight-category report spine
+
+Severity sorts the report; **category** is the second axis a Salesforce reviewer
+reads it on. The engine groups findings into eight named assessment categories —
+the engine's own categorization, aligned to the assessment buckets a Salesforce
+reviewer reads a submission on — and the Solution Architecture Document expects
+findings grouped that way. The eight-category spine is an engine convention, not
+a requirement fact, so it carries no baseline id. Every confirmed finding
+(`confirmed`/`partially_real`) and every readiness-tracker row therefore carries
+a **reviewer category** in addition to its dimension. The two axes are not the
+same thing: a *dimension* is the engine's attack-surface unit (where the finder
+looked); a *category* is the reviewer's assessment bucket (what the defect IS).
+One dimension can emit findings in several categories — `oauth-identity` produces
+both authentication/session and authorization defects; `injection-xss` produces
+both input-validation and output-encoding defects.
+
+The eight categories (use these exact keys — they are the report spine and the
+§9 matrix's row set):
+
+| Category key | Covers |
+|---|---|
+| `authentication/session-management` | login, token issuance/validation, session lifecycle, MFA, credential verification, audience/issuer/expiry checks, session-fixation/egress |
+| `authorization` | access control: CRUD/FLS, sharing/visibility, tenant isolation, IDOR/object-level authz, permission-set/role over-grants, privileged-surface reach |
+| `input-validation` | injection (SOQL/SQL/command/LDAP), SSRF, deserialization, path traversal, untrusted-data-as-instructions, unvalidated redirect targets |
+| `output-encoding` | XSS (DOM/reflected/stored), HTML/JS/URL encoding, template/markdown rendering, content-type/CSP, agent output-egress to a rendered surface |
+| `cryptography` | algorithm/mode choice, key derivation/management, HMAC/JWT signature verification, randomness/CSPRNG, constant-time compare, encryption-at-rest |
+| `communications-security` | TLS posture, certificate validation, HTTPS-only transport, plaintext channels, SessionId/secret egress over the wire |
+| `logging/error-handling` | sensitive data in logs, verbose/stack-trace error leakage, missing audit trail on security events, debug mode in production |
+| `secrets-storage` | hardcoded secrets, secrets in metadata/source/URLs, credential storage posture, secrets in state files or client-visible config |
+
+**Tagging is mechanical, not a new agent and not a new schema field.** The
+FINDING_SCHEMA and VERDICT_SCHEMA (§2.1, §3.2) are unchanged — adding a required
+field to either would break the ledger merge and every harness call. Instead the
+engine derives `category` after verification, from a deterministic
+**dimension × finding-title → category** map the synthesis step applies (and the
+ledger merge records alongside the entry, the same way it records `dimension`).
+Each dimension declares its candidate categories; the synthesis agent picks the
+single best-fit category per confirmed finding from that dimension's allowed set,
+using the title and the verified evidence. The default dimension→category mapping:
+
+| Dimension | Default category | Secondary (title-resolved) |
+|---|---|---|
+| `oauth-identity` | `authentication/session-management` | `authorization` (privileged grants, role changes) |
+| `mcp-surface` | `authentication/session-management` | `authorization` |
+| `mcp-threat-model` | `authorization` (audience/confused-deputy) | `input-validation` (SSRF, untrusted-text-as-instructions), `output-encoding` (output-egress), `communications-security` (token transport), `secrets-storage` (allowlist exposure) |
+| `sessionid-egress` | `communications-security` | `secrets-storage` |
+| `tenant-isolation` | `authorization` | — |
+| `admin-surface` | `authorization` | `authentication/session-management` |
+| `injection-xss` | `input-validation` (injection half) | `output-encoding` (XSS half) |
+| `web-client` | `output-encoding` | `authentication/session-management` (token storage) |
+| `crypto-internals` | `cryptography` | — |
+| `secrets-credentials` | `secrets-storage` | `cryptography` (weak KDF) |
+| `background-jobs` | `authorization` | `logging/error-handling` |
+| `data-export` | `authorization` | `output-encoding` |
+| `email-outbound` | `output-encoding` | `input-validation` |
+
+Rules:
+
+- **A confirmed finding always gets exactly one category** — the reviewer's
+  buckets are mutually exclusive, so a finding that *spans* two (a SOQL string
+  built from a request param that is also echoed unescaped) is filed under the
+  category of its **root cause** (here `input-validation`), with the second named
+  in the finding's report row. Never double-count one finding across two matrix
+  cells; the per-category counts must sum to the total confirmed count.
+- **A category with no applicable dimension is `not-assessed-by-this-engine`,
+  not `pass`.** The engine reads source; it does not exercise the running system.
+  Several categories are only partly visible to static review —
+  `communications-security` (TLS posture is owner-run SSL Labs, not code) and the
+  packaged-Apex slice of `authorization` (CRUD/FLS is Code Analyzer's pass, §1.2).
+  The matrix marks these explicitly so a green cell is never read as coverage the
+  engine did not provide (§11).
+- The mapping is data the synthesis step consumes; it is **not** an LLM judgment
+  call about severity or reachability — those stay with the verifier. Mis-filing a
+  category is a cosmetic report defect; mis-merging the ledger is a lost audit
+  trail (§5.2), which is why category never enters the dedup key.
+
 ---
 
 ## 5. The ledger
@@ -498,21 +574,44 @@ contract:
 1. **Executive summary** — is this surface ready for the review? Blocking items
    (`critical`/`high`) vs hardening, stated plainly. Anything on a cross-tenant
    or privileged-surface path called out explicitly.
-2. **Prioritized findings table** — `adjusted_severity` | dimension | title |
-   file:line | one-line fix; sorted critical→low; overlapping findings across
-   dimensions deduplicated *in the table* (the ledger keeps both, §5.2).
-3. **Remediation plan** per `critical`/`high` finding — short and concrete.
-4. **Strong controls observed** — the info-level notes, written for reuse in
+2. **Prioritized findings table** — `adjusted_severity` | category | dimension |
+   title | file:line | one-line fix; sorted critical→low; overlapping findings
+   across dimensions deduplicated *in the table* (the ledger keeps both, §5.2).
+   The `category` column is the §4.1 reviewer category (one per finding); where a
+   finding spans two, the row names the secondary in its fix cell.
+3. **Per-category coverage matrix** — the eight-category spine (§4.1), rendered
+   as one row per category so the reviewer and the Solution Architecture Document
+   read the report in the "category × status × findings" shape they expect:
+
+   | Column | Contents |
+   |---|---|
+   | Category | one of the eight §4.1 keys, all eight always listed |
+   | Status | `findings-open` (any `critical`/`high` in this category), `findings-to-disposition` (only `medium`/`low`), `assessed-clean` (a dimension covered it and confirmed nothing at `low`+), `not-assessed-by-this-engine` (no applicable dimension, or the category is owner-run/Code-Analyzer territory — never silently blank) |
+   | Findings | count by `adjusted_severity` (e.g. `1 high, 2 medium`) or `—` |
+   | Covered by | the dimension(s) that assessed this category, or the explicit reason it was not (`owner-run SSL Labs`, `Code Analyzer CRUD/FLS pass`, `N/A — no MCP server`) |
+
+   Hard honesty rule (§11): `assessed-clean` means "this engine's static review
+   confirmed nothing at `low`+ in this category," never "this category passes."
+   `not-assessed-by-this-engine` is the **default** for `communications-security`
+   (TLS is owner-run) and the packaged-Apex slice of `authorization` (Code
+   Analyzer's pass) — the matrix must not render those as clean. The per-category
+   finding counts must sum to the total confirmed-finding count (§4.1's
+   one-category-per-finding rule guarantees this).
+4. **Remediation plan** per `critical`/`high` finding — short and concrete.
+5. **Strong controls observed** — the info-level notes, written for reuse in
    the reviewer-facing artifacts (this section is what
    `/sf-security-review-toolkit:generate-artifacts` mines for the controls
    narrative).
-5. **Coverage and residual risk** — which dimensions ran, which were N/A and
+6. **Coverage and residual risk** — which dimensions ran, which were N/A and
    why, which were unresolved, what this method cannot see (§11). A report
-   without this section is dishonest by omission.
-6. **Readiness-tracker mapping** — each finding tagged to the tracker
-   categories consumed by
+   without this section is dishonest by omission. The category matrix's
+   `not-assessed-by-this-engine` rows are restated here as residual risk the
+   owner-run scans and Salesforce's own pen test still own.
+7. **Readiness-tracker mapping** — each finding tagged to BOTH its §4.1 reviewer
+   category and the tracker categories consumed by
    `${CLAUDE_PLUGIN_ROOT}/templates/readiness-tracker.md.tmpl` and
-   `/sf-security-review-toolkit:compile-submission`.
+   `/sf-security-review-toolkit:compile-submission`, so each tracker row carries
+   its reviewer category through to the readiness verdict's per-category matrix.
 
 After synthesis, the engine (code, not the agent): merges verdicts into the
 ledger by dedup key, appends the pass summary to
