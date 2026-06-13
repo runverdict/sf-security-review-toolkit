@@ -1,0 +1,331 @@
+---
+name: run-scans
+description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST plan generation, TLS grading, and dependency audits — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. Use after artifacts exist; the scan evidence is what the submission attaches.
+allowed-tools: Read Grep Glob Write Edit Bash AskUserQuestion
+---
+
+# Run Scans
+
+Produce the scan evidence the review requires, with the honesty line drawn
+per family: what an agent ran (from what inputs, with the report file on
+disk) versus what only the owner can run (and is therefore PENDING until the
+owner's report file exists). Evidence lands in
+`<target>/.security-review/evidence/`; dispositions land in the FP dossier
+(`${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` →
+`<target>/docs/security-review/fp-dossier.md`). The failure class this phase
+exists to kill: a submission whose scan reports are missing, stale,
+unauthenticated, scoped narrower than the architecture doc, or carrying
+undispositioned findings — each of those bounces at the materials check
+(baseline: `process-prequeue-validation`, `scan-no-clean-scan-required`).
+
+## When to use
+
+- Artifacts drafted and the scope manifest's endpoint inventory exists — the
+  DAST scope is generated from it
+- Re-scanning after fixes: the submitted report must be the post-fix run
+- Refreshing evidence before submission (baseline: `scan-report-freshness`)
+- NOT a replacement for the white-box audit
+  (`/sf-security-review-toolkit:audit-codebase` is static code review — a
+  different evidence class, never presentable as DAST)
+- NOT for executing the DAST scan itself — that is owner-run by nature, and
+  this skill never claims otherwise (CONVENTIONS §2)
+- NOT the reviewer's pen test — Salesforce's Product Security team tests the
+  surface regardless of anything submitted (baseline:
+  `dast-salesforce-runs-own-pentest`)
+
+## Prerequisites
+
+- `<target>/.security-review/scope-manifest.json` (from
+  `/sf-security-review-toolkit:scope-submission`). Missing? Offer to route
+  there first; degraded mode runs only the track the repo itself proves
+  (package tree → Code Analyzer; lockfiles → dependency audit) and records
+  that the endpoint families were skipped for lack of an inventory.
+- `${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml` readable.
+- Per family: the Code Analyzer CLI + JDK 11+ (PMD engine) for the package
+  track; a ZAP install (or the container) wherever the owner will run DAST;
+  network access for the TLS check; ecosystem package managers for the
+  dependency audit.
+- Credentials only ever via environment variables — this skill refuses to
+  write a secret into a plan, an evidence file, or the run log
+  (CONVENTIONS §6).
+
+## The five families
+
+| Family | Applies when (manifest) | Scan runner | Evidence file(s) under `.security-review/evidence/` | Gate |
+|---|---|---|---|---|
+| 1. Code Analyzer | managed-package element | agent | `code-analyzer-<date>.html` + `.json` | `scan-code-analyzer-v5-required` (blocker) |
+| 2. Partner Security Portal scanner (Checkmarx) | managed-package element | owner (portal); agent parses the report | `portal-scan-<date>.*` | `scan-checkmarx-partner-portal` (blocker — required IN ADDITION to Code Analyzer) |
+| 3. Authenticated DAST | external-endpoint / mcp-server | owner executes; agent generates the plan | `dast/dast-report.{html,json}`, `dast/dast-url-proof.png`, `dast/run-notes.md` | `dast-self-run-required`, `dast-authenticated-scans` (blockers) |
+| 4. TLS grade | external-endpoint / mcp-server | agent (API) or owner (web UI) | `ssllabs-<host>.json` + capture | `endpoint-ssl-labs-a-grade` (blocker — qualitative codified bar; A grade is the recommended target) |
+| 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
+
+## Steps
+
+1. **Read the scope manifest and the baseline; surface the conflicts before
+   running anything.** Select families from the manifest's elements (table
+   above). Warn when any `scan-*`/`dast-*`/`endpoint-*` entry this run uses
+   has `last_verified` older than 90 days (CONVENTIONS §4). Surface every
+   `conflicting` entry with its `conflicts` text — never silently pick a
+   side. As of the 2026-06 baseline sweep the scan-relevant remainder is
+   narrow: `endpoint-ssl-labs-a-grade` (only whether reviewers enforce the
+   letter grade in practice — the codified bar is qualitative) and
+   `process-review-fee` (the dollar amount). Formerly contested entries are
+   now verified — read them from the baseline, not from memory of old
+   prose: `scan-checkmarx-partner-portal` (the portal scanner is
+   operational and required for package-bearing submissions),
+   `dast-severity-bar` (the fix-vs-document bar is published),
+   `scan-code-analyzer-v5-required` (v5 tooling is prescribed verbatim,
+   though never assert a GA date), and `mcp-listing-managed-package` (an
+   AgentExchange MCP listing carries BOTH the package-scanning track and
+   the external-endpoint track).
+
+2. **Family 1 — Code Analyzer (package track).**
+   *Requires:* the current Code Analyzer's HTML report, submitted with the
+   review; the prior major version is retired (baseline:
+   `scan-code-analyzer-v5-required`).
+   *Install check:* verify the CLI is present and reports the currently
+   required major version — read that from the baseline entry at run time,
+   don't trust this prose. PMD needs JDK 11+; check `java -version` before
+   blaming the scanner.
+   *Invocation:* the canonical form recorded in
+   `scan-code-analyzer-invocation` is
+
+   ```bash
+   sf code-analyzer run --rule-selector AppExchange \
+     --rule-selector Recommended:Security \
+     --output-file CodeAnalyzerReport.html
+   ```
+
+   Verify the flag syntax against YOUR installed CLI (`--help`) before
+   running — the last major-version transition changed the command shape
+   once already. The **AppExchange selector is load-bearing**: it activates
+   the review-specific PMD rule set (session-ID retrieval, hardcoded
+   credentials, install/uninstall-handler rules — baseline:
+   `scan-pmd-appexchange-rules`); a scan without it looks diligent and
+   misses the rules the reviewer cares about. Emit HTML (the submission
+   format) and JSON (machine triage) in the same pass. Run the Graph Engine
+   too — its data-flow CRUD/FLS findings target the #1 review-failure cause;
+   it is slow and has per-entry-point timeouts, so budget for it and triage
+   its output first (baseline: `scan-sfge-crud-fls-dataflow`,
+   `fail-crud-fls`).
+   *Agent runs:* install check, scan, JSON parsing, diffing findings against
+   the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
+   confirmation of every FP justification.
+   *Evidence:* `evidence/code-analyzer-<date>.html` + `.json`.
+   *Disposition:* every violation becomes **fixed** (then re-scan — the
+   submitted report must come from the submitted code, not three fixes ago)
+   or a **dossier row**. Critical/High are must-fix; Code Analyzer has no
+   numeric pass threshold (the published bar is effort-based: fix what you
+   can, re-scan, document the rest) and CLI exit codes are not a readiness
+   signal (baseline: `scan-severity-threshold-unpublished`). The posture is
+   `scan-no-clean-scan-required`: **false positives are expected — justify
+   them.** Do not tune selectors down to manufacture a clean report; the
+   reviewer runs their own tooling, and a suspiciously empty report reads
+   worse than a documented one.
+
+3. **Family 2 — Partner Security Portal scanner (Checkmarx): required IN
+   ADDITION to Code Analyzer for any submission that includes a package or
+   component.** The baseline entry (`scan-checkmarx-partner-portal`) is
+   verified current: the portal's Source Code Scanner scans Apex,
+   Visualforce, and Lightning code; it is not an alternative to Code
+   Analyzer, and it is not required for API-only or mobile-client
+   submissions. Two mechanics with budget teeth:
+   - **Three portal runs per solution version are included in the review
+     fee.** Develop against free PMD (unlimited runs — but PMD results are
+     NOT accepted with the submission) and spend the portal runs only on
+     submission-grade reports: an early sanity run, the post-fix run, one
+     spare. A paid Checkmarx license lifts the limit (and the linking
+     prerequisite below, and allows scanning unpackaged code).
+   - **The package version must be linked to an AppExchange listing before
+     the portal will scan it** — schedule the listing-link step ahead of
+     the scan, not the day of submission. Portal access needs a
+     Partner-Console-connected DevHub/packaging org plus the 'Author Apex'
+     permission.
+   *Owner runs:* the portal login, listing link, scan initiation, and
+   report download to `evidence/portal-scan-<date>.*`. *Agent runs:*
+   parsing the report and folding findings into the same dossier — one
+   disposition discipline across all scanners. The published Checkmarx
+   bar: every finding requires attention — fix or documented false
+   positive — EXCEPT those labeled "Code Quality" (baseline:
+   `scan-severity-threshold-unpublished`; the DAST companion bar lives in
+   `dast-severity-bar`).
+
+4. **Family 3 — Authenticated DAST: the agent generates the plan; the owner
+   executes the scan.** *Requires:* partner-run DAST of every external
+   endpoint with an industry tool — there is no hosted alternative (baseline:
+   `dast-self-run-required`); the scan must be **authenticated** (baseline:
+   `dast-authenticated-scans` — an anonymous scan covers only the public
+   shell and misses the authorization-flaw classes the review cares most
+   about); for MCP submissions the **identity/OAuth endpoints are in scope
+   as first-class targets** (baseline: `dast-scope-includes-identity-endpoints`
+   — driving the scanner *through* the login flow is not the same as
+   scanning the identity surface itself); the target must be
+   production-equivalent (baseline: `dast-endpoints-production-mode`); the
+   exported report must include the scan date, the targeted endpoints, and
+   all findings — that is what proves the stated endpoints were actually
+   scanned (baseline: `dast-screenshot-proof-of-scanned-url`).
+   *Agent runs:* generate the ZAP Automation Framework plan from
+   `${CLAUDE_PLUGIN_ROOT}/harness/zap/zap-plan-template.yaml` per
+   `${CLAUDE_PLUGIN_ROOT}/harness/zap/README.md` — the README carries the
+   binding rules. Fill the slots from the scope manifest's endpoint
+   inventory plus the same OpenAPI/endpoint spec submitted as the
+   api-endpoints artifact (one source of truth: the report scope provably
+   matches the docs, and the active scan reaches documented POST endpoints a
+   spider never finds). Seed the authorize/token/register/revoke paths and
+   `/.well-known/*` discovery docs explicitly. Pick the auth pattern (bearer
+   token via `${DAST_BEARER_TOKEN}`, or browser-login with poll
+   re-verification); secrets arrive via environment variables at run time,
+   never in the plan file. Validate the plan loads against the installed ZAP
+   — a half-loaded plan scans half the scope and tells you in a log line,
+   not an error. Confirm the environment label on every target URL from the
+   manifest; never point a scan at a URL whose staging-vs-production status
+   is unconfirmed.
+   *Owner runs:* authorization to scan, token minting (lifetime exceeding
+   the scan window — an expired token silently degrades the rest of the run
+   to an anonymous scan that still prints a green-looking report), CDN/WAF
+   edge handling per the README, the scan itself, and the post-fix re-scan.
+   This skill **never marks the scan executed** — it verifies the report
+   files exist in `evidence/dast/` and parses them when they do.
+   *Evidence:* `evidence/dast/dast-report.html` + `.json`,
+   `dast-url-proof.png` (must visibly show the target URL and scan date),
+   `run-notes.md` (ZAP version, plan file, token scope, edge allowlist
+   made/reverted).
+   *Disposition:* every finding **above informational** gets one — fixed
+   (the owner re-scans; the submission report is the post-fix run, and the
+   fixed finding leaves the dossier, replaced by the re-scan-clean evidence)
+   or a dossier row with code evidence. The README's FP-class catalog
+   pre-classifies the predictable noise from hardened endpoints
+   (anti-enumeration always-200s, 405-on-GET MCP paths, by-design 429s); a
+   class match is a hypothesis, not a disposition. The fix-vs-document
+   severity bar is published (baseline: `dast-severity-bar`): critical and
+   high findings require attention — fix or justified false-positive
+   documentation — while action on low/medium findings is not required,
+   only investigation encouraged. The toolkit's posture stays stricter
+   than that bar (a disposition for every finding, fix don't document
+   anything High/Critical) because undocumented low/medium noise still
+   invites reviewer questions.
+
+5. **Family 4 — TLS grade, every external hostname.** *Requires:* the
+   codified transport bar per `endpoint-ssl-labs-a-grade` is qualitative —
+   HTTPS-only, secure TLS versions, weak ciphers disabled, HTTP-to-HTTPS
+   redirect, HSTS — with the SSL Labs A grade as official *recommended*
+   practice ("aim for an A"), not a codified pass/fail gate; the entry's
+   one remaining conflict is whether reviewers enforce the letter grade in
+   practice. Plus full trusted chain and expiry headroom (baseline:
+   `endpoint-trusted-ca-certificates`).
+   *Agent runs:* query SSL Labs for **every** external hostname in the
+   manifest's endpoint inventory — app, API, MCP host, identity host if
+   separate, webhook receivers. Use the API (poll the analyze call until the
+   assessment is READY; request a **fresh** assessment, not a cached one —
+   a result from before your last config change is not evidence) or walk the
+   owner through the web UI. Save the JSON per host to
+   `evidence/ssllabs-<host>.json` plus a capture showing hostname, grade,
+   and date. Cheap header probes ride along into the same evidence: HSTS,
+   HTTPS-only/redirect behavior (baseline: `endpoint-hsts`,
+   `endpoint-https-only`).
+   *The gotcha that costs a cycle:* the grade measures **whatever terminates
+   TLS for the public hostname** — when a CDN/proxy edge fronts the origin,
+   the edge's configuration (minimum TLS version, cipher policy at the edge)
+   is what grades, not your origin. A field-tested pattern: an origin with a
+   flawless TLS config still grades down because the edge's minimum-TLS
+   setting admitted legacy protocols; the fix was one edge setting, no
+   origin change. Before raising the edge's floor beyond the bar, check what
+   your legitimate callers negotiate (Salesforce callouts included) so the
+   fix doesn't break the integration it protects.
+   *Disposition:* a hostname failing the qualitative bar (plain HTTP, weak
+   ciphers, no HSTS) is a **fix-now blocker, never a dossier entry**. A
+   hostname below A technically passes the codified gate but cedes
+   reviewer discretion — fix it anyway; exceeding the gate is cheap.
+   Record the failing protocol/cipher detail from the JSON as the
+   remediation pointer.
+
+6. **Family 5 — Dependency audit, every detected stack.** *Requires:*
+   bundled third-party components free of known CVEs (baseline:
+   `scan-dependency-vulnerabilities`) — outdated JS libraries with known
+   CVEs are a recurring failure cause, and **packaged static resources are
+   the classic miss** (an old framework copy vendored into the package's
+   static resources, invisible to the app repo's lockfile audit).
+   *Agent runs:* the ecosystem-native scanner per detected stack —
+   `npm audit` against the lockfile (record prod-vs-dev scope), `pip-audit`
+   for Python, RetireJS (bundled with Code Analyzer) over packaged JS and
+   static resources, the native equivalent for anything else the repo
+   contains. Evidence: `evidence/deps-<ecosystem>-<date>.json`.
+   *Disposition:* a known CVE **with a patched version available is
+   upgraded, not documented around** — flag breaking-change risk, but the
+   reviewer expects the upgrade. A finding with no fix available yet goes in
+   the **tracked-vulnerability register**
+   (`<target>/docs/security-review/vulnerability-register.md`): CVE,
+   component, exploitability-in-context, compensating control, remediation
+   path with a named owner and target date. The register backs the
+   readiness tracker's CI-evidence rows, and the dossier cross-references it
+   whenever another scanner flags the same library.
+
+7. **Fold everything into one dossier.** Instantiate
+   `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
+   `<target>/docs/security-review/fp-dossier.md` (or update it
+   incrementally). The template's per-finding structure mirrors the official
+   False Positive Documentation template's field list (login-gated; baseline
+   `artifact-fp-documentation-format` — verified): official fields first
+   (Vulnerability Name, Detected By, Detailed explanation, Evidence,
+   References, the reviewer-reserved section), toolkit value-add fields in
+   the marked Supplementary section — so the filled dossier drops into the
+   wizard's FP slot without reformatting, and a wrong FP format never costs
+   the review cycle. One dossier across all five families: register row plus a
+   per-finding block with all four required parts (flagged issue at
+   file:line, functional explanation, the concrete mitigation, technical
+   non-exploitability argument with evidence). Where the audit ledger
+   already refuted the same pattern, reuse its reasoning/evidence verbatim —
+   that is what the ledger is for. Never downgrade an exploitable finding to
+   "false positive" to dodge a fix; an Accepted-residual disposition always
+   carries an owner signature the agent cannot supply. **Exit bar: zero
+   undispositioned findings** — the undocumented finding is the bounce, not
+   the finding itself (baseline: `scan-false-positive-documentation`,
+   `scan-no-clean-scan-required`).
+
+8. **Verify evidence on disk, then report status.** List
+   `.security-review/evidence/` and confirm each selected family's files
+   exist before stating any family's status; append a dated entry to
+   `.security-review/run-log.md` (what ran, tool versions, repo commit, what
+   is PENDING owner-run). The readiness rule this enforces: a scan row goes
+   **HAVE only with the report file on disk** — a generated plan with no
+   report is PARTIAL, full stop. `/sf-security-review-toolkit:compile-submission`
+   lints for HAVE-without-evidence and demotes it, but the lie should never
+   be written in the first place (CONVENTIONS §2).
+
+## Failure modes that cost a review cycle
+
+| Failure | Why it bites | Guard |
+|---|---|---|
+| Scanning a staging target that differs from production | The reviewer attacks production-equivalent infrastructure; evidence from a softer target (debug on, different auth, no edge) proves nothing and the delta surfaces as their finding, not yours | Same build, same hardening, debug off (baseline: `dast-endpoints-production-mode`); record which deployment was scanned in `run-notes.md` |
+| DAST without authentication — or silently de-authenticated mid-scan | Covers only the public shell; an expired token mid-run degrades everything after it to anonymous while still printing a green report | Authenticated context is the requirement (baseline: `dast-authenticated-scans`); token lifetime > scan window; poll re-verification for session logins |
+| Screenshot/report that doesn't show the URL | The reviewer cross-checks scan evidence against the architecture doc's endpoint list; proof that doesn't bind report-to-endpoint reads as no proof | Capture must visibly show target URL + scan date (baseline: `dast-screenshot-proof-of-scanned-url`) |
+| Evidence older than the freshness expectation at submission | The validity window is not codified, which cuts both ways — stale-looking reports invite a bounce | Re-run the cheap scans (Code Analyzer, SSL Labs, dependency audit) at compile time; flag owner-run reports older than ~30 days for refresh (baseline: `scan-report-freshness`) |
+| Report from three fixes ago | A report that predates the fixes it claims drove neither matches the submitted commit nor the dossier | Re-scan after fixes; record the repo commit alongside each report in the run log |
+| Marking the scan row HAVE with a plan but no report | **Forbidden.** "Plan generated" is agent work; "scan executed" is owner work with a report file — conflating them is the exact dishonesty CONVENTIONS §2 exists to prevent | Step 8's on-disk check; the tracker's HAVE-requires-evidence contract |
+| Blind scan through a CDN/WAF edge | Bot rules mangle probes, rate limits throttle the crawl, the report is noise — and the scan pages whoever watches the security alerts | Edge-handling decision per `${CLAUDE_PLUGIN_ROOT}/harness/zap/README.md`: scan an edge-free production-equivalent deployment, or temporarily allowlist the scanner and revert (documented in run notes) |
+
+## Automated vs. manual recap
+
+**Automated:** family selection from the manifest, baseline currency and
+conflict surfacing, Code Analyzer install check + scan + parsing, dependency
+scans + register drafting, SSL Labs API evidence, ZAP plan generation +
+load validation, report parsing and FP-class matching, dossier drafting,
+evidence-file verification, run-log entries.
+**Owner-run:** the Partner Security Portal scan (login, listing link, the
+three budgeted runs, report download), executing the DAST scan
+(authorization, token minting, edge allowlist, the re-scan), every code
+fix, dependency upgrades, and confirming each FP justification and signing
+every accepted residual — an agent cannot certify non-exploitability.
+Salesforce pen-tests the surface regardless of all of it.
+
+## What feeds the next skill
+
+The evidence files, the dossier, and the vulnerability register feed the
+checklist rows and readiness verdict in
+`/sf-security-review-toolkit:compile-submission` (which re-runs the cheap
+scans when stale and demotes HAVE rows lacking evidence). The
+production-mode verification carries into
+`/sf-security-review-toolkit:prepare-test-environment` — the reviewer
+attacks the same endpoints the DAST did, with the credentials that phase
+stages. Findings fixed here belong in the audit ledger so the next
+`/sf-security-review-toolkit:audit-codebase` pass doesn't re-report them.

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sf-security-review-toolkit",
+  "displayName": "Salesforce Security Review Toolkit",
+  "description": "Skills that prepare an ISV partner for the AppExchange/AgentExchange security review end to end — autonomous multi-agent codebase audit, submission-artifact generation, scan orchestration, test-environment runbooks, and an honest readiness verdict.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Aiden Seeley",
+    "url": "https://github.com/redbeardenduro"
+  },
+  "repository": "https://github.com/redbeardenduro/sf-security-review-toolkit",
+  "homepage": "https://github.com/redbeardenduro/sf-security-review-toolkit#readme",
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "keywords": [
+    "salesforce",
+    "appexchange",
+    "agentexchange",
+    "security-review",
+    "mcp",
+    "security-audit",
+    "partner"
+  ]
+}

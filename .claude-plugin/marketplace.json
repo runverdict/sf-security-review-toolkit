@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "redbeardenduro-plugins",
+  "owner": {
+    "name": "Aiden Seeley",
+    "url": "https://github.com/redbeardenduro"
+  },
+  "description": "Claude Code plugins for Salesforce ISV partners",
+  "plugins": [
+    {
+      "name": "sf-security-review-toolkit",
+      "source": "./",
+      "description": "End-to-end AppExchange/AgentExchange security review preparation: autonomous codebase audit, submission artifacts, scans, runbooks, readiness verdict.",
+      "category": "salesforce",
+      "keywords": [
+        "salesforce",
+        "appexchange",
+        "agentexchange",
+        "security-review",
+        "mcp",
+        "partner"
+      ]
+    }
+  ]
+}

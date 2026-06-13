@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sf-security-review-toolkit audit ledger",
+  "description": "Schema for <target>/.security-review/audit-ledger.json — the audit engine's memory across passes (audit-methodology.md §5). The ledger is updated MECHANICALLY by engine code, never by an LLM agent: a synthesis agent paraphrasing entries corrupts the dedup keys. Entries enter the ledger only after the adversarial verify stage; unverified candidates never land here (audit-methodology.md §3.3). No field may contain a secret value — the engine redacts credential material in `evidence` snippets ('***redacted***') before writing (CONVENTIONS §6). Recommend committing this file: the ledger digest is what makes pass N+1 cheap and quiet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "findings", "passes"],
+  "properties": {
+    "schema_version": {
+      "description": "Ledger format version. Bump only with a migration note in this schema's $comment history.",
+      "type": "string",
+      "const": "1"
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "passes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pass" }
+    }
+  },
+  "$defs": {
+    "severity": {
+      "description": "Five-level taxonomy from CONVENTIONS §7 / audit-methodology.md §4.",
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "info"]
+    },
+    "pass_id": {
+      "description": "1-based ordinal of a pass; matches the <N> in docs/security-review/audit-report-<date>-pass<N>.md and the run-log entries.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "dimension",
+        "title",
+        "severity",
+        "adjusted_severity",
+        "file",
+        "status",
+        "first_seen",
+        "last_seen",
+        "verdict_reasoning"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable dedup key, computed mechanically — NEVER hand-edited and NEVER derived from the description (descriptions are model prose and differ across runs; see audit-methodology.md §5.2). Hash inputs, exactly: (1) normalized_file = repo-relative file path with any trailing ':<line>' suffix stripped (line numbers drift with unrelated edits); (2) normalized_title = title lowercased, runs of whitespace collapsed to a single space, all characters outside [a-z0-9 ] removed, trimmed. id = first 16 hex chars of SHA-256(normalized_file + '\\n' + normalized_title). Two candidates with the same id are the same finding for merge purposes; near-misses across dimensions stay separate entries and merge only in the report.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "dimension": {
+          "description": "Key of the dimension whose finder raised it — the filename stem under ${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/ (e.g. 'oauth-identity', 'tenant-isolation', 'sessionid-egress', 'mcp-threat-model'). Kebab-case by convention; not an enum so a new dimension file does not require a schema bump.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "title": {
+          "description": "Finder's title. Frozen once written — editing it changes the dedup key derivation and orphans the entry.",
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/severity",
+          "description": "The FINDER's severity hypothesis. Retained as provenance only — adjusted_severity is authoritative everywhere downstream (audit-methodology.md §2.3)."
+        },
+        "adjusted_severity": {
+          "$ref": "#/$defs/severity",
+          "description": "The VERIFIER's severity. Sorts the report, drives the readiness gates, and is the value compile-submission reads."
+        },
+        "file": {
+          "description": "path:line of the flagged code at the time of the finding. The :line part is display metadata — it is stripped before hashing into id, so refactors don't resurrect old findings.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Lifecycle state (audit-methodology.md §5.1). confirmed: verifier returned confirmed_real or partially_real — open, counts against the readiness gates, in the do-not-re-report digest. refuted: verifier returned false_positive — kept (never deleted) so the next pass's finder doesn't re-raise it, and its reasoning is reusable verbatim in the FP dossier when a scanner later flags the same pattern. fixed: remediated with a fix reference; re-reported by a later pass only as a regression (the merge flips it back to confirmed with regression: true). accepted_risk: the partner decided, with a written justification, not to fix — dispositioned for gate purposes like a dossier entry, but unlike refuted the defect is real; it must carry accepted_risk_justification and appears in the readiness tracker so the acceptance is visible, not buried.",
+          "type": "string",
+          "enum": ["confirmed", "refuted", "fixed", "accepted_risk"]
+        },
+        "first_seen": {
+          "$ref": "#/$defs/pass_id",
+          "description": "Pass id in which this finding first entered the ledger."
+        },
+        "last_seen": {
+          "$ref": "#/$defs/pass_id",
+          "description": "Most recent pass whose find or verify stage touched this entry (re-confirmed, re-refuted, or regression-matched)."
+        },
+        "verdict": {
+          "description": "The verifier's raw verdict (VERDICT_SCHEMA, audit-methodology.md §3.2), kept as provenance — 'partially_real' distinguishes a real-but-overstated defect from a fully confirmed one even though both map to status: confirmed.",
+          "type": "string",
+          "enum": ["confirmed_real", "false_positive", "partially_real"]
+        },
+        "verdict_reasoning": {
+          "description": "The verifier's reasoning: what it read in the actual code that confirms or refutes the finding. For refuted entries this text is the seed of the false-positive dossier entry.",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "description": "Exact file:line + code snippet that decided the verdict. Secret values MUST be redacted by the engine before write.",
+          "type": "string"
+        },
+        "exploit_scenario": {
+          "description": "Attacker, request, impact — carried from the finder for confirmed entries so the report and remediation plan don't lose it.",
+          "type": "string"
+        },
+        "recommendation": {
+          "description": "Finder's remediation recommendation, possibly tightened by synthesis.",
+          "type": "string"
+        },
+        "resolution_note": {
+          "description": "One line for the {{LEDGER}} digest: the fix summary, the refute reason, or the acceptance summary. Keep it short — the digest is prompt overhead multiplied by every finder agent in a pass (audit-methodology.md §5.3).",
+          "type": "string"
+        },
+        "fix_commit": {
+          "description": "Commit hash or PR reference of the remediation. Required when status is fixed. Set by the user or by a skill that verified the fix actually landed — never on the partner's word alone (CONVENTIONS §2).",
+          "type": "string",
+          "minLength": 1
+        },
+        "accepted_risk_justification": {
+          "description": "Required when status is accepted_risk: why the partner accepts this real defect (compensating control, unreachable precondition in their deployment, scheduled post-submission fix). A bare acceptance with no justification is the ledger equivalent of an undocumented N/A.",
+          "type": "string",
+          "minLength": 1
+        },
+        "accepted_by": {
+          "description": "Who signed off on the acceptance (name/role) and when — acceptance is an owner decision, never agent-made.",
+          "type": "string"
+        },
+        "regression": {
+          "description": "True when a fixed entry was re-matched by a later pass's candidate and flipped back to confirmed (audit-methodology.md §5.1). Cleared when re-fixed.",
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "fixed" } } },
+          "then": { "required": ["fix_commit"] }
+        },
+        {
+          "if": { "properties": { "status": { "const": "accepted_risk" } } },
+          "then": { "required": ["accepted_risk_justification"] }
+        }
+      ]
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "date", "tier", "dimensions", "agents"],
+      "properties": {
+        "id": { "$ref": "#/$defs/pass_id" },
+        "date": {
+          "description": "ISO 8601 date the pass completed.",
+          "type": "string",
+          "format": "date"
+        },
+        "tier": {
+          "description": "Token tier the pass ran at (audit-methodology.md §7). The readiness verdict records which tier and how many passes produced the ledger it reads — a quick-tier ledger is a triage, not an audit.",
+          "type": "string",
+          "enum": ["quick", "standard", "exhaustive"]
+        },
+        "dimensions": {
+          "description": "Dimension keys this pass actually ran (post target-map vetoes and N/A markings) — not the ones planned.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        },
+        "agents": {
+          "description": "Agent counts actually launched — the honest cost record behind the tier estimates.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["finders", "verifiers"],
+          "properties": {
+            "finders": { "type": "integer", "minimum": 0 },
+            "verifiers": { "type": "integer", "minimum": 0 },
+            "synthesis": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "candidates": {
+          "description": "Raw findings emitted by finders this pass, pre-verification.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirmed": {
+          "description": "Verifier-confirmed (confirmed_real + partially_real) this pass.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted": {
+          "description": "Verifier-refuted this pass.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "unverified": {
+          "description": "Candidates whose verifier failed twice — logged to the run log per audit-methodology.md §3.3, never reported and never ledgered as findings. Tracked here so the count isn't silently lost.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "dry": {
+          "description": "True when the pass confirmed zero NEW findings at severity low or above (new info entries don't count). Two consecutive dry passes — the second being a full-band pass — is the engine's stop rule (audit-methodology.md §6). Dry means 'this method found nothing new', never 'nothing is there'.",
+          "type": "boolean"
+        },
+        "report_path": {
+          "description": "Repo-relative path of the synthesis report, e.g. docs/security-review/audit-report-2026-06-12-pass2.md.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

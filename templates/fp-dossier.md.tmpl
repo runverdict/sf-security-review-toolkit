@@ -1,0 +1,377 @@
+<!--
+TEMPLATE: fp-dossier.md.tmpl
+Output:   <target>/docs/security-review/fp-dossier.md
+Filled by: /sf-security-review-toolkit:run-scans (pre-classifies the intentional
+           controls a scan WILL flag, and triages real scanner output into
+           per-finding write-ups after the owner runs the scan); the audit
+           engine may seed entries for findings it refuted.
+Satisfies: baseline entries scan-false-positive-documentation,
+           artifact-dast-scan-reports (the per-finding disposition half).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- The document header and the §3 per-finding block MIRROR the official False
+  Positive Documentation template's field structure (login-gated; baseline
+  artifact-fp-documentation-format — verified 2026-06-12). Official fields come
+  first, in the official order; the toolkit's value-add fields live in
+  clearly-marked "Supplementary" sections. The format is officially flexible,
+  but mirroring the official field list removes reviewer friction — a wrong FP
+  format wastes a review cycle.
+- This dossier documents findings you do NOT fix — true false positives, OR
+  accepted residual risks with a compensating control. A finding you DO fix is
+  remediated and re-scanned; fixed findings do NOT belong here (only the
+  re-scan-clean evidence does). Never downgrade an exploitable finding to
+  "false positive" to dodge the fix — CONVENTIONS §2/§7.
+- Do NOT hard-code the fix-vs-document severity threshold anywhere in this
+  document. That bar is baseline data (dast-severity-bar) — read it from
+  ${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml at fill time
+  (verified as of 2026-06: critical/high require fix-or-documented-FP;
+  action on low/medium is not required, only investigation encouraged; the
+  Checkmarx companion bar is all-severities-except-"Code Quality"). The
+  toolkit's posture stays stricter: zero undispositioned findings of any
+  severity; fix (don't document) High/Critical.
+- Scanner identity and version are also data, not prose: which scanner is
+  current (e.g. the Salesforce static analyzer, the partner-portal SAST) and
+  what its current invocation is can change between review cycles — cite the
+  relevant baseline entries (scan-code-analyzer-*, scan-checkmarx-partner-portal)
+  rather than stating a fixed tool version or GA date as fact.
+-->
+
+# {{PARTNER_NAME}} — False-Positive / Unfixed-Finding Dossier
+
+## Document header (mirrors the official FP Documentation template)
+
+| | |
+|---|---|
+| **Name of the Application** | {{LISTING_NAME}} |
+| **Package ID / Version ID / Listing ID** | {{PACKAGE_VERSION_OR_LISTING_ID}} |
+| **Partner Name** | {{PARTNER_NAME}} |
+| **Document Filing Date (YYYY-MM-DD)** | {{FILING_DATE}} |
+| **Target URL (optional)** | {{TARGET_URL_OR_NA}} |
+| **Review Date (if the solution already underwent security review)** | {{PRIOR_REVIEW_DATE_OR_NA}} |
+
+<!-- guidance: These six fields are the official template's document header —
+keep the labels as written so the reviewer's intake maps one-to-one. Package
+ID / Version ID / Listing ID: give whichever identifies the submission (the
+04t package version id for a package track; the listing id for an
+API-solution track). Target URL is where external-endpoint findings live;
+Review Date applies only when responding to a prior failed/periodic review. -->
+
+**Supplementary header (toolkit value-add — not part of the official template):**
+
+| | |
+|---|---|
+| **Document** | False-Positive / Unfixed-Finding Dossier |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Source artifacts** | {{SCAN_REPORT_FILES}} |
+
+<!-- guidance: Source-artifacts cell lists the actual scan output files in
+<target>/.security-review/evidence/ that this dossier dispositions (the
+static-analysis report, the dependency report, the DAST report, the TLS-grade
+capture). An entry with no source artifact is not a real disposition — it is a
+placeholder, and gets PENDING status. -->
+
+---
+
+## 0. What is populated vs. what is still owner-run
+
+<!-- guidance: State plainly, per surface, the audit state at this moment:
+which scans have RUN (with the dated evidence file) and which are PENDING
+owner-run. The honesty header is non-negotiable (CONVENTIONS §2): never present
+a scan as complete when it is not. A common honest split: white-box static
+analysis of package code DONE (evidence file dated), authenticated DAST of the
+external endpoint PENDING (owner-run), TLS grade PENDING. Make the split
+explicit so a reader never has to infer it. -->
+
+{{POPULATED_VS_PENDING_SUMMARY}}
+
+**Key caveat:** {{WHITEBOX_CAVEAT}}
+<!-- guidance: If any disposition rests on static / code review (the audit
+engine, a static analyzer), state plainly that white-box static + expert review
+do NOT replace the live owner-run DAST or the reviewer's own penetration test.
+White-box agent audits are described as static/code review — never as DAST or a
+pen test (CONVENTIONS §2). -->
+
+---
+
+## 1. What the review requires per unfixed finding
+
+The official False Positive Documentation template (login-gated; baseline
+`artifact-fp-documentation-format`) prescribes these fields **per
+vulnerability**, which the §3 block mirrors in order:
+
+- **Vulnerability Name**
+- **Detected By** — which scanner/source flagged it (with details when "Others")
+- **Detailed explanation for considering False Positive** — the official
+  instruction is "elaborate as much as possible"; the official minimum per
+  flagged issue is **Location + Explanation** (baseline
+  `scan-false-positive-documentation`)
+- **Evidence** — screenshots of the code, implementation, command output
+- **References**
+- a **reviewer-reserved section** (left blank for the Salesforce team)
+
+This dossier enforces a stricter discipline inside the Detailed-explanation
+field: it must contain **four parts** (the §3 template enforces all four):
+
+1. **The flagged issue** — exact **file + line** (or **endpoint**), **which
+   scanner** flagged it, and the **rule / alert id**.
+2. **Functional explanation** — what the code actually does and why it exists.
+3. **Mitigation / security measure applied** — the concrete control that
+   neutralizes the flagged class of issue.
+4. **Technical justification of non-exploitability + evidence** — a reasoned
+   argument that it cannot be exploited as written, backed by a test, a failed
+   exploit attempt, or a re-scan.
+
+An entry missing part 4 is **not submission-ready** and is marked `DRAFT`.
+
+---
+
+## 2. Dossier register (summary table)
+
+<!-- guidance: Toolkit value-add — the official template has no register; it
+survives because reviewers triage faster with one. One row per disposition'd
+finding. Finding-id convention:
+FP-<SURFACE>-<NNN> where SURFACE is PKG (package) or EXT (external endpoint).
+Keep this register in lockstep with the §3 per-finding blocks — a register row
+without a matching block (or vice versa) is the kind of inconsistency the
+consistency pass catches. The "Disposition" column uses exactly the vocabulary
+defined below the table. -->
+
+| Finding ID | Surface | Scanner + rule/alert id | File:line or endpoint | Reported severity | Disposition | Status |
+|---|---|---|---|---|---|---|
+| {{FINDING_ID}} | {{SURFACE}} | {{SCANNER_RULE}} | {{LOCATION}} | {{SEVERITY}} | {{DISPOSITION}} | {{STATUS}} |
+
+**Disposition vocabulary:**
+- **False positive** — the scanner's pattern matched but the code is provably safe (escaped / validated / sanitized / platform-mandated construct).
+- **Accepted residual (mitigated)** — a real but bounded risk accepted with a documented compensating control. Requires owner sign-off on the residual-risk line.
+- **Deferred (tracked)** — a real finding to be fixed but not before this window; cross-reference the tracking item. Use sparingly — reviewers prefer fixes over deferrals.
+
+**Status vocabulary:** `Populated` (all four parts complete + sign-off) · `DRAFT` (missing a part) · `PENDING` (awaiting the owner-run scan that produces it).
+
+---
+
+## 3. Per-finding write-up template (copy one block per finding)
+
+<!-- guidance: Copy everything between the rulers per finding into §4/§5,
+rename the heading, fill every field. The block mirrors the official FP
+Documentation template's per-vulnerability field order (baseline
+artifact-fp-documentation-format): Vulnerability Name → Detected By →
+Detailed explanation → Evidence → References → reviewer-reserved section; the
+toolkit's extra fields sit in the clearly-marked Supplementary sub-section.
+Do not delete a sub-heading — if a field is genuinely N/A write
+"N/A — <reason>". Submission-ready only when the Detailed-explanation field
+carries all four required parts AND an owner reviewer name + date appear in
+the sign-off. -->
+
+---
+
+### FP-`<SURFACE>`-`<NNN>` — Vulnerability Name: `<as the scanner/report names it>`
+
+**Detected By.** {{DETECTED_BY}}
+<!-- guidance: Mirror the official checklist semantics: the partner-portal
+SAST scanner / PMD / the Security Review itself (a failure-report finding) /
+Others — and for "Others" (Code Analyzer, ZAP, Burp, a dependency scanner),
+provide the details: tool name and version. Include the rule / query / alert
+id here so the reviewer can match it to their own scan output. -->
+
+**Detailed explanation for considering False Positive.**
+<!-- guidance: The official instruction is "elaborate as much as possible".
+Open with the exact LOCATION (file:line or endpoint) — the official minimum
+per flagged issue is Location + Explanation — then make the four-part case
+below. What the official template's worked examples demonstrate: a
+CRUD-violation finding flagged as "no CRUD/FLS check before the DML" is
+overturned by pointing at the shared gating helper CLASS and the
+permission-check CALL invoked before the flagged DML operation — the
+explanation names both, states what the check enforces (CRUD plus FLS), and
+closes by asking for the finding to be marked false positive. The argument is
+concrete code, never a policy statement. -->
+
+**(1) The flagged issue (as the scanner reported it).**
+{{FLAGGED_ISSUE}}
+<!-- guidance: Paste/paraphrase the scanner's exact message, state the rule's
+INTENT (what real vulnerability class it is designed to catch), and quote the
+offending line(s) verbatim. -->
+
+> ```
+> {{FLAGGED_CODE_SNIPPET}}
+> ```
+
+**(2) Functional explanation of the code.**
+{{FUNCTIONAL_EXPLANATION}}
+<!-- guidance: What this code does in the product, why it exists, and the
+PROVENANCE of the flagged input — where does the data come from (a bound
+identity? a validated request body? a platform-signed request? an admin-only
+path?). Provenance is half the non-exploitability argument. -->
+
+**(3) Mitigation / security measure applied.**
+{{MITIGATION}}
+<!-- guidance: Name the concrete control that makes this safe, specifically and
+with the exact mechanism: bind variables / escaping for dynamic queries;
+schema/type validation at the boundary; framework auto-escaping for output;
+constant-time comparison for MACs; scope/role gate; rate limit; least-privilege
+grant; encryption mode. Cite the file:line of the control, not just its name —
+the official worked example cites the gating helper by class and method. -->
+
+**(4) Technical justification of non-exploitability.**
+{{JUSTIFICATION}}
+<!-- guidance: Argue step by step why the finding cannot be exploited AS
+WRITTEN given the mitigation in (3). For deliberate elevated constructs, use
+the official template's second worked-example pattern: a without-sharing
+declaration flagged as a Sharing Violation is justified as an explicit,
+documented BUSINESS REQUIREMENT (an install handler that must run for every
+user, including contexts outside normal sharing) — name the requirement and
+why the construct is required to support it. "Not required to support valid
+use cases" is an officially acceptable justification category only when the
+requirement is real and written down. Never use it to dodge a fix. -->
+
+**Evidence (screenshots of the code, implementation, command output).**
+<!-- guidance: The official worked examples excerpt BOTH sides: the flagged
+call site AND the implementation of the control it relies on (the helper
+class body, the validation function) — provide both, not just the flagged
+line. Then attach proof — one of: a test name + result (file::test — PASS); a
+manual exploit attempt + the observed safe outcome (payload sent,
+response/escaped output); or a scanner re-run. An assertion without evidence
+is a DRAFT. -->
+
+> ```
+> {{EVIDENCE_BLOCK}}
+> ```
+
+**References.** {{REFERENCES_OR_NA}}
+<!-- guidance: Official documentation sanctioning the pattern, the
+office-hours conversation that pre-adjudicated the FP (role + date — citable
+evidence per baseline process-office-hours-two-tracks), CVE analyses for
+dependency FPs. "N/A — none" is acceptable. -->
+
+**Reserved for the Salesforce security team — leave blank.**
+
+| Final Comment from Salesforce Team | Date of Review (YYYY-MM-DD) | Result |
+|---|---|---|
+| | | |
+
+#### Supplementary (toolkit value-add — not part of the official template)
+
+| Field | Value |
+|---|---|
+| **Surface** | {{PACKAGE_OR_EXTERNAL}} |
+| **Scanner** | {{SCANNER}} |
+| **Rule / query / alert id** | {{RULE_ID}} |
+| **Reported severity** | {{SEVERITY}} |
+| **Review category** | {{REVIEW_CATEGORY}} |
+| **File : line(s) / endpoint** | {{LOCATION}} |
+| **Scan run id / date** | {{SCAN_DATE_AND_FILE}} |
+| **Disposition** | {{DISPOSITION}} |
+
+<!-- guidance: Review-category maps to the manual-review categories the
+reviewer organizes around (authentication/session, authorization, input
+validation, output encoding, cryptography, communication security, logging &
+error handling, secrets storage). Tag the finding so a reviewer reading by
+category finds it. -->
+
+**Residual risk (only if Disposition = Accepted residual).** {{RESIDUAL_RISK}}
+<!-- guidance: State the residual risk plainly and the compensating control;
+the owner signs this line. Omit the line entirely for a true false positive.
+Accepted-residual is a toolkit disposition, not an official template field —
+it stays in this Supplementary section. -->
+
+**Reviewer sign-off:** {{OWNER_NAME}} — {{DATE}} — Submission-ready: {{YES_OR_DRAFT}}
+
+---
+
+## 4. Pre-classified intentional controls (scanners WILL flag these)
+
+<!-- guidance: Some deliberate security controls trip scanners by design.
+Pre-classifying them turns the scan's noise into ready dossier entries before
+the scan even runs. Each MUST still be a real control in the code (cite it) —
+this section is not a place to pre-excuse genuine findings. Candidates a DAST
+commonly flags as "issues" that are actually controls: a method-not-allowed
+response on a path that intentionally serves no stream; an
+anti-enumeration endpoint that returns a uniform 200 regardless of input;
+lockout enforced out-of-band (cache/store) and thus invisible to a black-box
+scan; rate-limit 429s mid-scan; an endpoint that returns a bare status with no
+body on bad input (anti-forgery); an anonymous-by-spec registration endpoint
+(bounded by rate limit + downstream gates); missing-header reports on routes
+where the header IS set by middleware (verify case-by-case). Use a full §3
+block per entry, OR the compact table below when the control is simple and the
+code citation is unambiguous. Anything the scan reports that is NOT here is a
+candidate REAL finding → triage in §5, do not blanket-dismiss. -->
+
+| Finding ID | What the scanner reports | Disposition | Why it is intentional | Evidence (file) |
+|---|---|---|---|---|
+| {{FINDING_ID}} | {{SCANNER_REPORT}} | {{FP_OR_EXPECTED}} | {{WHY_INTENTIONAL}} | {{CODE_CITATION}} |
+
+**Genuine findings are NOT pre-classified.** Anything the scan reports that is
+not in the table above is a candidate real finding → triage it in §5 (fix or
+justify). Treat as serious regardless of the scanner's severity label: any
+reflected/stored XSS, any auth bypass (a protected call succeeding without a
+valid credential), any cross-tenant data in a response, any secret in a
+response/header/error body, any transport downgrade.
+
+---
+
+## 5. Genuine findings from the owner-run scan
+
+<!-- guidance: PENDING until the owner runs the live scan. When it runs, every
+reported finding is checked against §4 first; anything not pre-classified is
+triaged here — fixed (then absent from this dossier, replaced by re-scan-clean
+evidence) or justified with a full §3 block. Until the scan runs this section
+is intentionally a single PENDING line, not an empty heading. -->
+
+{{GENUINE_FINDINGS_OR_PENDING_LINE}}
+
+---
+
+## 6. TLS / transport grade
+
+<!-- guidance: The TLS-grade evidence (e.g. an SSL Labs capture) is a separate
+required gate; record the grade + date + evidence file once the owner runs it.
+Do NOT assert a grade from the edge config alone — a config that SUPPORTS a
+high grade is a pre-check, not a graded result. State the pre-check and mark
+the graded result PENDING owner-run if it has not been captured. Read the bar
+expectation from the baseline (endpoint-ssl-labs-a-grade); do not hard-code a
+grade requirement as a flat fact. -->
+
+{{TLS_GRADE_STATUS}}
+
+---
+
+## 7. Submission checklist for this dossier
+
+<!-- guidance: The generator ticks what it verified; the owner ticks the rest.
+Tie every "DONE" to a dated evidence file. -->
+
+- [ ] A real static-analysis report exists; filename + date recorded in each PKG entry. *({{STATIC_REPORT_FILE_OR_PENDING}})*
+- [ ] Every static-analysis finding is accounted for (count reconciles to the report). *({{STATIC_RECONCILE}})*
+- [ ] The intentional controls a scan will flag are pre-classified (§4). *({{PRECLASSIFIED_COUNT}})*
+- [ ] A real partner-portal SAST report exists and is cross-referenced (if required for the listing track — see baseline scan-checkmarx-partner-portal). *({{SAST_STATUS}})*
+- [ ] A real authenticated DAST report exists for the endpoint **with the scanned-URL proof** (baseline dast-screenshot-proof-of-scanned-url); genuine findings triaged into §5. *({{DAST_STATUS}})*
+- [ ] A real TLS-grade capture exists; grade + date recorded in §6. *({{TLS_STATUS}})*
+- [ ] Every genuine unfixed finding has either been fixed (and is absent here) or has a complete §3 block with all four parts + evidence.
+- [ ] No entry claims a scan ran that did not; no exploitable finding is mislabeled "false positive."
+- [ ] Every Accepted-residual entry carries a dated owner sign-off on its residual-risk line.
+- [ ] The §2 register matches the §3/§4/§5 entries one-to-one.
+- [ ] The fix-vs-document severity bar was read from the current baseline at fill time (dast-severity-bar — re-check `last_verified` before relying on it): *({{SEVERITY_BAR_CONFIRMED_BY}})*.
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Pre-classified controls (§4)
+and any audit-engine-refuted findings are agent-drafted from code (static
+review). The live DAST, partner-portal SAST, and TLS grade are owner-run — their
+sections stay PENDING with no "Verified by" until the owner runs them and drops
+the dated evidence file in evidence/. An Accepted-residual disposition ALWAYS
+requires an owner signature; the agent never accepts residual risk on the
+owner's behalf. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:run-scans` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Scans actually run (with dated evidence files): {{SCANS_RUN}}. Scans PENDING owner-run: {{SCANS_PENDING}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- Conflicting baseline entries surfaced (not silently resolved): {{CONFLICTING_IDS_OR_NONE}}.
+- This dossier documents dispositions; it does not certify the solution clean. Salesforce performs its own penetration testing regardless of submitted scan evidence.

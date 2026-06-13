@@ -1,0 +1,212 @@
+<!--
+TEMPLATE: data-sensitivity.md.tmpl
+Output:   <target>/docs/security-review/data-sensitivity.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (draft classification
+           from tool input/output schemas and data-access code); the OWNER
+           supplies business context and signs off — an agent cannot know what
+           a field means to the business.
+Satisfies: baseline entry artifact-data-sensitivity-classification.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- The classification scheme below is a 4-tier default (public / internal /
+  confidential / restricted). If the partner has an existing
+  data-classification POLICY, inherit its scheme verbatim and note that the
+  policy wins on the scheme; this doc only applies it to the tool surface.
+- High-water-mark rule: each data category takes the HIGHEST class any field
+  it can carry would take. A category that is "mostly business data" but can
+  hold a free-text field with personal data classifies up.
+-->
+
+# {{PARTNER_NAME}} — Data Sensitivity Classification (MCP Server)
+
+| | |
+|---|---|
+| **Document** | Data Sensitivity Classification — business context + per-category classification |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Status** | {{DOC_STATUS}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Authority** | {{CLASSIFICATION_POLICY_REF_OR_INLINE}} |
+
+<!-- guidance: Authority cell: if an existing data-classification policy
+governs the scheme, cite it and state "where this doc and that policy disagree,
+the policy wins on the scheme." If there is no policy, the scheme is defined
+inline in §2 and this doc IS the authority — say so. -->
+
+> **Why this document exists.** The review pen-tests the live endpoint and
+> requires a clear statement of **what data the exposed tools touch and how
+> sensitive it is.** This document enumerates the data categories the tools
+> access, classifies each, and states the two facts a reviewer most needs:
+> (1) the read floor returns only the authorized caller's visible scope, and
+> (2) whether any regulated data class (payment-card / health) is handled.
+
+> **Honesty convention.** {{HONESTY_CONVENTION}}
+<!-- guidance: Mark every operational statement (implemented) — built, in
+production, code-verifiable today, with a citation — or (established
+requirement) — a committed control not yet operating. Do not represent a
+planned control as operating. Items owned by another workstream
+(package-side permission model) are marked owner-of-record, not asserted. -->
+
+---
+
+## 1. Business context
+
+{{BUSINESS_CONTEXT}}
+
+<!-- guidance: 2-3 short paragraphs the OWNER writes (the agent cannot): what
+the product does, what business data the tools reason over, and the comparable
+class of data (e.g. "the same class of commercial sales data $PEERS handle").
+Then the bounding properties of the surface that limit its sensitivity —
+typically: read-only by default, scope-bounded reads (a token never returns
+more than the caller may see), and the regulated-data negatives. Each bounding
+property carries an (implemented) marker + citation. -->
+
+---
+
+## 2. Classification scheme
+
+<!-- guidance: The 4-tier default below. If inheriting a policy, replace the
+definitions with the policy's verbatim and renumber. Each category in §3 is
+assigned EXACTLY ONE class — the highest that applies to any field it can carry
+(high-water-mark; "when in doubt, classify up"). -->
+
+| Class | Definition | Default handling posture |
+|---|---|---|
+| **Public** | Deliberately published; no confidentiality expectation. | Share freely; integrity-protect only. |
+| **Internal** | Non-public operational/technical info; mild harm if disclosed. | Need-to-know within the company. |
+| **Confidential** | Sensitive business/security data; material harm if disclosed — all customer business data that is not personal data, plus secrets/credentials. | Strict need-to-know; encrypted in transit + at rest; access logged. |
+| **Restricted (Customer-PII)** | Personal data of identifiable individuals (org users + CRM contacts); the regulated subset carved out of Confidential. | Everything for Confidential **plus** minimization, redaction on export, breach-handling. |
+
+{{SCHEME_NOTES}}
+<!-- guidance: Note the high-water-mark consequence for THIS surface: which
+nominally-business categories escalate to Restricted because a field can carry
+personal data (owner/contact identity, free-text notes). Reviewers check that
+you classified UP, not down. -->
+
+---
+
+## 3. Data categories the tools touch — classification
+
+<!-- guidance: One row per data CATEGORY (group tools by what they read/write,
+do not list 60 tools here — the tool-by-category map is §5). For each: a stable
+id (C-1, C-2, …), the category name + representative fields, its single class,
+the high-water-mark rationale (one sentence on WHY this class), and the
+representative tools. The agent drafts class + tools from schemas; the owner
+confirms the rationale reflects real field semantics. End with a tally line so
+the reader sees how the surface skews — a surface that skews Restricted makes
+the read-floor control in §4 the load-bearing one. -->
+
+| # | Data category | Class | Why this class (high-water-mark rationale) | Representative tools |
+|---|---|---|---|---|
+| C-1 | {{CATEGORY}} | {{CLASS}} | {{RATIONALE}} | {{TOOLS}} |
+
+**Net category tally:** {{TALLY}}
+
+---
+
+## 4. The read floor — authorized visible scope only
+
+<!-- guidance: The single most important property for a reviewer: a tool never
+returns more than the authenticated caller is already authorized to see. State
+the layers that enforce the bound (mirror authn-authz-flow.md §5 but framed as
+"what bounds the data returned"): scope floor, role filter, and the
+tenant/per-user data boundary at the storage layer. Each layer (implemented) +
+citation. Close with the consequence for classification: even if most
+categories are Restricted, the blast radius of any single token is bounded to
+one tenant + one identity's visible scope — and every call is audited (state
+that argument VALUES are not logged, only keys, to keep PII out of an immutable
+store). -->
+
+The bound is enforced in {{N}} layers, all {{IMPLEMENTED_OR_NOT}}:
+
+1. {{LAYER_WITH_CITATION}}
+
+**Consequence for classification:** {{BLAST_RADIUS_STATEMENT}}
+
+---
+
+## 5. Tool → category map (full surface)
+
+<!-- guidance: For the reviewer's endpoint inventory, EVERY tool maps to a §3
+category and inherits its class. Generate from the live tools/list + code,
+showing the wire scope per tool. The count here must reconcile with the
+exposed-tools inventory (checklist Row 7) and the access-control matrix —
+a tool present in one and absent here is a generator bug. Where a tool spans
+two categories, show both ids and apply the high-water-mark class. -->
+
+| Tool | Scope | Category | Class |
+|---|---|---|---|
+| {{TOOL}} | {{SCOPE}} | {{CATEGORY_ID}} | {{CLASS}} |
+
+---
+
+## 6. Data NOT handled (negative assurances)
+
+<!-- guidance: Deliberate, code-true negatives a reviewer can rely on. The
+high-value ones: no payment-card data (PCI scope-out), no protected health
+information (HIPAA scope-out), no Salesforce session ID ever, no Salesforce
+passwords stored, no biometric / government-ID / children's data, token values
+never returned by any tool. Each carries (implemented — by design) or a
+citation. Only list a negative if it is actually true in the schema and tool
+outputs — a false negative assurance found during the pen test is a serious
+credibility hit. -->
+
+- {{NEGATIVE_ASSURANCE}}
+
+---
+
+## 7. Handling summary per class (pointer, not a restatement)
+
+<!-- guidance: Do not restate the full handling policy; point at it (or §2's
+posture column) and list the OPERATIVE controls for THIS surface per class that
+appears here. Keep it to the controls a reviewer would verify: transit
+encryption, at-rest encryption, access control, audit, and — for the Restricted
+rows — minimization/redaction-on-export and the tenant/per-user isolation.
+Carry the cross-border honesty line if the data-flow doc has one (do not
+soften it). -->
+
+| Class on this surface | Operative controls | Source |
+|---|---|---|
+| {{CLASS}} | {{CONTROLS}} | {{SOURCE_REF}} |
+
+{{CROSS_BORDER_HONESTY_LINE_OR_NA}}
+
+---
+
+## 8. Package-side items owned elsewhere
+
+{{PACKAGE_SIDE_ITEMS_OR_NONE}}
+
+<!-- guidance: If a managed package is part of the listing, the subscriber-side
+data posture (which package permission set grants which object/field access,
+the admin-curated tool allowlist) is owned by the package workstream — list
+those as owner-of-record, NOT asserted here. If there is no package, write
+"None — this listing is the external server only." -->
+
+---
+
+## 9. Cross-references
+
+{{CROSS_REFERENCES}}
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). The class assignments and
+tool map are agent-drafted from schemas (static review). The BUSINESS context
+(§1) and every high-water-mark rationale that depends on field semantics are
+OWNER-supplied — mark them so. An empty "Verified by" on the business-context
+or negative-assurances rows means NOT submission-ready: those are the rows the
+agent literally cannot verify. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Tool→category map reconciles with the exposed-tools inventory: {{RECONCILES_YES_NO}} ({{TOOL_COUNT}} tools).
+- Business context (§1) and negative assurances (§6) owner-confirmed by: {{OWNER_NAME_OR_UNCONFIRMED}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This classification is provided for the review and is not a warranty. Salesforce performs its own penetration testing regardless of this document.
