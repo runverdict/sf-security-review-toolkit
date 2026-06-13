@@ -4,6 +4,65 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.2.0] — 2026-06-13
+
+The autonomous release. The toolkit goes from a set of à-la-carte skills to a
+single, fully-orchestrated autonomous flow: say "run the security review" and a
+cheap preflight scan reports what it found, what it actually needs, and what
+optional power-ups apply — then it runs the whole journey to a complete,
+downloadable submission package, pausing only at genuine safety gates. Built by
+multi-agent authoring with an adversarial-review pass on every component, then
+fixed and re-verified. The honesty posture is unchanged and non-negotiable: it is
+read-only on your source and never claims you "will pass."
+
+### Added
+- **Autonomous, preflight-gated orchestrator** (`security-review-journey`,
+  rewritten from router to driver). A universal preflight detects architecture
+  (and reads the Dev Hub when `sf` is authed), emits a three-tier report
+  (✓ detected · ⚠ audit-blocking needs · ✦ optional power-ups), then drives
+  scope → audit → artifacts → scans → compile autonomously. The only hard stops
+  are an audit-blocking missing input and consent before touching anything live;
+  open critical/high findings halt-and-report by default (continue-with-flags is
+  an explicit operator election). Broadened triggers so natural phrasings
+  activate it; router/"where are we" behavior preserved.
+- **Dev Hub auto-resolution** in `scope-submission`: with an operator-consented
+  `sf` connection it auto-answers ~a dozen inputs from the Tooling API
+  (released/coverage/validation-skipped, `IsSecurityReviewed`, the
+  RemoteSiteSettings + CspTrustedSites external-endpoint inventory that becomes
+  the DAST target list, the permission matrix, Named/External-Credential
+  topology, test-org security posture) into `sf-autoresolve.json` — with a
+  `describeSObject`-first guardrail. Submission/business acts stay
+  Partner-Console-only. Adds a listing-direction (A/B) classifier that branches
+  the MCP auth rules (outbound `client_credentials`-OK vs inbound ECA+PKCE).
+- **Submission-package assembler** in `compile-submission`: assembles
+  `docs/security-review/submission-package/` with an `INDEX.md` mapping every
+  artifact to its exact Security Review Wizard step + upload slot, a
+  `PENDING-OWNER-RUN.md` handoff, and conditional slot suppression (no empty
+  Desktop/Mobile slots).
+- **Eight-category report spine** (authN/session · authZ CRUD-FLS+sharing ·
+  input-validation · output-encoding · crypto · comms-security · logging/error ·
+  secrets-storage) across the audit report, and **agent/ForcedLeak detectors**
+  in the MCP threat-model dimension (output-egress allowlist, stale/expired
+  allowlisted-domain exfil, untrusted-CRM-text-as-instructions).
+- **Optional `sf`-CLI-gated deployed-org deep audit** — five lifecycle skills
+  brought in and adapted (à-la-carte → orchestrated): `bootstrap-cli-auth`,
+  `build-managed-package`, `install-and-verify-package`,
+  `teardown-mcp-registration`, and the new `audit-deployed-package`. They stand
+  the package up in a throwaway org and audit the *deployed* artifact (the
+  reviewer's own test): least-privilege grants as a subscriber gets them
+  (including install-time UEC grant-drop verification), Graph-Engine CRUD/FLS on
+  the installed package, callout resolution, and install+uninstall integrity.
+  Self-contained (no runtime dependency on any other plugin); the four reused
+  skills were authored by this toolkit's author and contributed to
+  `mvogelgesang/sf-mcp-partner-toolkit` — attributed in the new `CREDITS.md`.
+
+### Notes
+- Validated end to end by a fresh-context run against a real production codebase
+  on 2026-06-13 (see Status in the README).
+- Honesty/genericization guardrails enforced: the public repo carries no
+  references to private design/research docs, no perishable fee literals (the
+  fee lives in the baseline), and the leakage sweep is clean.
+
 ## [0.1.1] — 2026-06-13
 
 First fine-tuning pass driven by a **fresh-context end-to-end validation run**: the

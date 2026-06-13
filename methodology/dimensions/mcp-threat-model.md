@@ -12,7 +12,14 @@ defects (PKCE, redirect URIs, DCR abuse) belong to
 algorithm mechanics to
 `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/crypto-internals.md`; the
 *landing* of injected content in outbound messages to
-`${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/email-outbound.md`.
+`${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/email-outbound.md`. The
+agent-egress split: this dimension owns whether an **agent-controlled URL**
+in a tool output can reach a non-allowlisted host and whether returned CRM
+text is acted on as instructions (the agent/ForcedLeak class — see the
+Threat-concept list and the §4 finder block);
+`email-outbound` owns the generic message-construction injection/encoding of
+the message body itself. When both apply to one path, file it under the root
+cause — agent-driven egress here, body-encoding there.
 
 ## 1. Threat concept
 
@@ -80,6 +87,42 @@ The classes, in the order a verifier should fear them:
    components (baseline: `mcpthreat-supply-chain`) is detected by the
    dependency scanners in `/sf-security-review-toolkit:run-scans` — report
    here only a *specific* exploitable usage, not a version bump.
+7. **Agent / ForcedLeak data-exfiltration (the forward-looking class).**
+   The AgentExchange-era class no traditional Salesforce SAST covers: the
+   Agentforce ForcedLeak class — indirect prompt injection driving data
+   egress to a stale/attacker-controlled allowlisted domain. Three
+   reinforcing failures, each on its own a finding, chained the way ForcedLeak
+   chained them:
+   - **Output-egress to a non-allowlisted host.** Any tool output or render
+     path that lets an *agent-controlled* value become a URL the platform
+     resolves — a Markdown image/link the client auto-renders, an `<img
+     src>`/`<a href>` in returned HTML, an email recipient/CC/link, a
+     webhook/callback target — without checking the destination host against
+     a server-side allowlist *before* emission. The agent names the host;
+     the platform fetches it; whatever the tool placed in the URL or its
+     query string leaves the tenant. The egress allowlist must gate the
+     output side, not only the inbound SSRF fetch (class 5 owns the *fetch*;
+     this owns the *emit*).
+   - **Stale / expired allowlist entry.** ForcedLeak's literal root cause: an
+     egress allowlist (`CspTrustedSites`, Trusted URLs, RemoteSiteSettings,
+     or an in-code host list) still trusting a domain the partner no longer
+     owns — parked, lapsed, or transferable. An attacker re-registers it and
+     every "allowlisted" egress lands on attacker infrastructure. Wildcard
+     and `http://` entries are the adjacent smell. (The live inventory of
+     these entries is auto-resolved by `scope-submission`'s `sf` pass from
+     `CspTrustedSites` + `RemoteSiteSettings`; this dimension reasons about
+     staleness and over-breadth, the scan owns enumeration.)
+   - **Untrusted CRM text rendered/acted-on as instructions.** Indirect
+     prompt injection: a tool returns a record field (Description, Notes,
+     Subject, case/email body — any tenant- or third-party-writable string)
+     and that text reaches the agent or a downstream prompt as *instructions*
+     rather than fenced as *data*. A low-privilege user writes a record; once
+     a tool returns it, the embedded directive redirects the agent to call
+     another tool or emit an egress URL — closing the loop with the two
+     failures above. This is the same untrusted-data-as-instructions concern
+     as tool poisoning (class 4), but sourced from **returned record data**
+     rather than tool descriptions, and aimed at **triggering egress** rather
+     than subverting tool selection.
 
 ## 2. What good looks like
 
@@ -111,6 +154,15 @@ The classes, in the order a verifier should fear them:
   private/reserved/link-local ranges including IPv6, re-validate after
   redirects — or use a vetted SSRF library / egress proxy) before any
   request. DNS-rebinding-aware where the fetch target is long-lived.
+- **One egress gate for tool OUTPUT, too.** Any host an agent-controlled
+  value could turn into a resolvable URL — in returned Markdown/HTML, an
+  email link/recipient, a webhook target — is checked against a server-side
+  destination allowlist *before* the output is emitted, and that allowlist
+  holds only domains the partner currently owns (no parked/expired entries,
+  no wildcards, HTTPS only). Returned record text is fenced as data, never
+  spliced into instructions or a prompt the agent then acts on. The
+  allowlist is maintained — entries are re-verified as still partner-owned,
+  because a lapsed allowlisted domain is the ForcedLeak exfiltration path.
 - **The artifact trail matches.** The AuthN/AuthZ flow document describes the
   audience check, the consent model, and the downstream-credential design —
   and the code does what the document says. A claim the code contradicts is
@@ -130,6 +182,17 @@ input.
 arguments, `0.0.0.0` / `169.254` / `10.` in validation code (presence is
 good — someone thought about ranges; absence near user-URL fetches is the
 lead), tool-description definition sites (`description=`, `"description":`).
+For the agent/ForcedLeak class — output-egress sinks and allowlist entries:
+`![`/`](` and Markdown/HTML assembly in tool *return* values, `<img`,
+`<a href`, `mailto:`, `send_email`/`sendmail`/`Messaging.sendEmail`,
+`to=`/`recipient`/`cc`/`bcc`, `webhook`/`notify`/`callback` near outbound
+emit, `allowlist`/`allow_list`/`allowed_hosts`/`trusted_hosts`/
+`CspTrustedSites`/`RemoteSiteSetting` (read the *contents* — which domains,
+any `*` wildcard, any `http://`, any host the partner may no longer own),
+and — for untrusted-text-as-instructions — CRM field reads (`Description`,
+`Notes__c`, `Subject`, `.body`, `comments`) whose value flows into a prompt
+string, an agent message, or a rendered output without a
+fence/escape/sanitize step between the read and the use.
 
 | Stack | Where to look |
 |---|---|
@@ -174,7 +237,35 @@ record, tenant config, or discovery document can influence — scheme
 allowlist, private/reserved/link-local IP denial including IPv6, redirect
 re-validation, DNS rebinding for long-lived targets); provisioning
 conformance (DCR endpoint present, or the documented alternative actually
-implemented and matching the AuthN/AuthZ artifact's claim). Dependency
+implemented and matching the AuthN/AuthZ artifact's claim); audience at
+tool-call time (is the `aud`/RFC 8707 resource-indicator check applied on
+EVERY tool dispatch, not just at session start — a token minted for a
+sibling service under the same issuer must be rejected with 401 at the tool
+call, not silently accepted because the session already opened). Then the
+agent/ForcedLeak class (the forward-looking moat — no traditional SF SAST
+covers it; the Agentforce ForcedLeak class — indirect prompt injection
+driving data egress to a stale/attacker-controlled allowlisted domain):
+output-egress allowlist (trace
+EVERY tool output and render path — does any agent-controlled value reach an
+egress sink as a URL the platform will resolve: a Markdown image/link the
+client renders, an `<img src>`/`<a href>` in returned HTML, an email
+recipient/CC/body link, a webhook/callback URL, a notification target — and
+is that destination host checked against a server-side allowlist BEFORE
+emission, or can the agent name an arbitrary off-platform host that then
+exfiltrates whatever the tool put in the URL/query string); allowlist
+staleness / expired-domain (read the CspTrustedSites + Trusted-URL +
+RemoteSiteSetting + any in-code egress allowlist entries — flag entries
+pointing at a domain that is parked, lapsed, or no longer owned by the
+partner, since a stale allowlisted host is ForcedLeak's literal root cause:
+an attacker re-registers the expired domain and every "allowlisted" egress
+now lands on attacker infrastructure; flag wildcard and `http://` entries
+here too); untrusted-CRM-text-as-instructions (find every tool return field
+that carries CRM record text — Description, Notes, Subject, Comments,
+email/case body, any tenant- or third-party-writable string — and check
+whether that text is handed to the agent or a downstream prompt/render as
+INSTRUCTIONS rather than fenced as DATA; indirect prompt injection is a
+record a low-privilege user can write that, once a tool returns it,
+redirects the agent to call another tool or emit an egress URL). Dependency
 versions are out of scope here (separate scanners) — report a supply-chain
 item only when a SPECIFIC exploitable usage exists in this code.
 
@@ -219,6 +310,30 @@ and what authority or data it reaches.
   hostname-allowlist (not IP-blocklist) design with no user-supplied URLs at
   all refutes; a blocklist missing redirect re-validation is
   `partially_real` at minimum if any user-influenced URL reaches it.
+- **For output-egress claims, prove the value is agent-controlled AND the
+  host is unchecked.** Trace the value that becomes the URL back to its
+  source: if it is a literal/config host or a fixed template, refute; if a
+  tool parameter, a returned record field, or LLM output can set the host (or
+  a query parameter that exfiltrates data), it is reachable. Then read the
+  emit path for a server-side destination-allowlist check *before* emission —
+  its presence refutes, its absence (or an allowlist applied only to inbound
+  fetches, not to output) confirms. A rendered surface that auto-resolves the
+  URL (Markdown image, email link the client fetches) is required for exfil;
+  a value merely logged as text is not egress.
+- **For stale-allowlist claims, do not guess domain ownership.** The code/
+  metadata evidence (an `http://` entry, a `*` wildcard, an obviously broad
+  third-party host) supports the finding; an actual expired-registration
+  claim is owner-confirmable, not code-confirmable — mark it
+  `partially_real` and route the "verify each allowlisted domain is still
+  partner-owned" step to the owner rather than asserting expiry the agent
+  cannot observe. Wildcard/`http://` entries stand on their own as findings.
+- **For untrusted-text-as-instructions claims, find the fence.** The finding
+  requires a *writable* CRM field (tenant- or third-party-controlled) flowing
+  into an agent prompt or a rendered/acted-on output with no delimiter,
+  escape, or "treat as data" framing between read and use. If the value is
+  fenced, schema-constrained to a safe type, or only ever displayed as inert
+  text the agent never acts on, refute. Operator-only or static fields are
+  `low`/`info`, not high.
 - **Reachability first, always**: a violating code path behind an
   operator-only config flag or dead feature is `low`/`info` with a note, not
   the headline severity.
@@ -235,3 +350,6 @@ and what authority or data it reaches.
 | OAuth discovery (`/.well-known/*`) fetched over HTTPS from the configured issuer at boot | Standard metadata resolution from a trusted, operator-set origin. |
 | No DCR endpoint, but pre-registered clients documented in the AuthN/AuthZ artifact | The spec-sanctioned alternative (baseline: `mcpthreat-dcr-or-documented-alternative`) — only a finding if the alternative is undocumented or unusable. |
 | MCP SDK pinned to a version with a known CVE in an unused module | Dependency-scanner territory (`/sf-security-review-toolkit:run-scans`); report here only with a reachable exploitable usage. |
+| A tool output URL built ONLY from a fixed config host or a literal template (no tool-param/record/LLM value in the host or query) | No agent-controlled egress — the destination is operator-set. Output-egress requires an attacker-influenceable host or an exfiltrating query parameter. |
+| An allowlist entry the verifier merely *suspects* is expired, with no code/metadata evidence | Domain-ownership/expiry is owner-confirmable, not code-confirmable — route it to the owner as a verification step, do not assert expiry the agent cannot observe. (A `*` wildcard or `http://` entry is a standalone finding regardless.) |
+| Returned CRM text rendered as INERT display only — escaped/fenced, never spliced into a prompt the agent acts on | Untrusted-text-as-instructions requires the text to reach the agent or a downstream prompt AS instructions; displayed-as-data with a fence is the correct control, not the vulnerability. |
