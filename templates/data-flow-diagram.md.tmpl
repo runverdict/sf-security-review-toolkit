@@ -1,0 +1,199 @@
+<!--
+TEMPLATE: data-flow-diagram.md.tmpl
+Output:   <target>/docs/security-review/data-flow-diagram.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (Mermaid + tables
+           drafted from code, deploy config, and the endpoint inventory from
+           the scope manifest); the owner confirms deployment details code
+           reading cannot see (CDN/WAF mode, firewall rules, managed-DB
+           settings, subprocessor list).
+Satisfies: baseline entry artifact-architecture-diagram (and, for a
+           managed-package track, contributes the data-flow view to
+           artifact-package-architecture-usage-docs).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- The reviewer plans the pen test from this diagram. Every box that processes
+  customer-adjacent data and every edge that crosses a trust boundary must be
+  real and labeled with its auth — a diagram that omits a hop the reviewer
+  then observes costs credibility on the whole submission.
+- Be honest about data residency and cross-border egress. An undisclosed
+  egress found during the pen test is worse than a disclosed one.
+-->
+
+# {{PARTNER_NAME}} — Solution Architecture & Data-Flow Diagram
+
+| | |
+|---|---|
+| **Document** | Solution Architecture & Data-Flow Diagram |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **Why this document exists.** Salesforce treats every off-platform component
+> as part of one composite application — all components and services, wherever
+> they live, are in scope for the pen test. This artifact shows **where
+> Salesforce-adjacent data flows out (egress), what is stored vs. transient,
+> the auth/token trust boundary at every hop, and every external endpoint
+> URL.**
+
+---
+
+## 1. One-paragraph summary
+
+{{ONE_PARAGRAPH_SUMMARY}}
+
+<!-- guidance: The whole architecture in one paragraph: the single external
+surface a Salesforce org reaches, how it authenticates there, where the
+request executes (host/region/edge), where data rests and how it is isolated,
+and the one place (if any) data leaves its home region. End with the
+session-ID sentence (never accepted/forwarded/stored — baseline
+fail-sessionid-egress) since the data-flow doc is where a reviewer checks
+whether any edge carries it. -->
+
+---
+
+## 2. Trust boundaries at a glance
+
+<!-- guidance: One row per boundary an attacker would cross. Number them TB-1,
+TB-2, … and reuse those ids on the Mermaid edges so the diagram and table read
+together. "Auth at the hop" is the credential that crosses, not a generic
+"HTTPS". Flag which boundaries the reviewer scrutinizes most — typically the
+authenticated external surface (the pen-test target) and any cross-border data
+egress. -->
+
+| # | Boundary | Crosses from → to | Auth at the hop | Transport |
+|---|---|---|---|---|
+| TB-1 | {{BOUNDARY}} | {{FROM_TO}} | {{AUTH}} | {{TRANSPORT}} |
+
+{{MOST_SCRUTINIZED_BOUNDARIES_NOTE}}
+
+---
+
+## 3. Mermaid diagram
+
+<!-- guidance: A flowchart with subgraphs per trust zone (Salesforce/assistant
+side, edge/CDN, your origin, data layer, any external inference/3rd-party
+services). Color by data residency if you have a cross-border story (e.g.
+green = home region, red = data processed elsewhere) and say so in the legend.
+Label the externally-reviewable edges (the pen-test hops) distinctly from
+internal ones (e.g. thick vs thin arrows). Every edge label states the
+boundary id + the auth + the data class crossing. Keep node names matching the
+§2 table and the §4 hop headings. Validate the Mermaid parses before
+submitting — a broken diagram in the artifact is an avoidable credibility
+hit. -->
+
+```mermaid
+flowchart TB
+    {{FLOWCHART_BODY}}
+```
+
+**Legend.** {{LEGEND}}
+
+---
+
+## 4. The hops, in detail
+
+<!-- guidance: One subsection per boundary from §2, in data-flow order. For
+each: the exact endpoint/component, the auth mechanism (with the same code
+detail as authn-authz-flow.md but framed as "what crosses here"), and a
+**Data classification crossing TB-N** line stating inbound vs outbound data
+classes. The hop a reviewer cares about most is the authenticated external
+surface — give it the most detail (transport quirks, method behavior, rate
+limits, what the response can and cannot contain). For any cross-border or
+third-party egress hop, state plainly what data leaves, to whom, under what
+terms, and whether the no-training / no-retention behavior is YOUR technical
+control or a reliance on the provider's contract (say which — do not imply you
+enforce what you only rely on). -->
+
+### TB-{{N}} — {{HOP_NAME}}
+
+{{HOP_DETAIL}}
+
+**Data classification crossing TB-{{N}}:** {{INBOUND_OUTBOUND_DATA_CLASSES}}
+
+---
+
+## 5. Egress ledger — what leaves the Salesforce org
+
+<!-- guidance: THE table the reviewer reads most carefully. One row per FIELD
+or data class that leaves the Salesforce org's control, including the ones that
+leave only transiently. Columns: the field/class, whether it is stored on your
+side (and where) or transient, where it goes, and notes. Include the explicit
+NEVER rows — Salesforce session ID, Salesforce passwords, raw tool-call
+argument values — because a reviewer scanning for those wants to see you
+already thought about them. "Stored" must reconcile with the credential-storage
+table in authn-authz-flow.md; a contradiction between the two is a finding. -->
+
+| Item | Stored on your side? | Where | Notes |
+|---|---|---|---|
+| {{ITEM}} | {{STORED_OR_TRANSIENT}} | {{LOCATION}} | {{NOTES}} |
+
+---
+
+## 6. Subprocessors
+
+<!-- guidance: Every third party that touches customer-adjacent data in the
+flow — hosting, managed database, CDN/edge, AI inference providers, email/
+messaging gateways, error/log aggregators. Columns: name, role/what they
+process, region, and the data class they receive. This is both a review
+artifact and the seed of a real subprocessor list customers will ask for. An
+inference provider that sees deal text IS a subprocessor — list it; omitting
+it because "it's just an API call" is the kind of gap the pen test surfaces by
+watching outbound connections. -->
+
+| Subprocessor | Role / what it processes | Region | Data class received |
+|---|---|---|---|
+| {{SUBPROCESSOR}} | {{ROLE}} | {{REGION}} | {{DATA_CLASS}} |
+
+---
+
+## 7. Honesty disclosures (do not soften for the listing)
+
+{{HONESTY_DISCLOSURES}}
+
+<!-- guidance: The disclosures that belong in a data-flow doc specifically:
+real data-residency splits (and whether any transfer impact assessment or
+consent flow exists — say so if it does not); no-training/no-retention as a
+provider-terms reliance rather than an enforced control; single-instance
+topology with no tested failover / no published RTO-RPO if that's the truth;
+pre-certification status (no SOC 2 / ISO / STAR, no completed third-party pen
+test) noting these are informational for the review, not pass gates. Each
+disclosure points at where the gap is tracked. CONVENTIONS §2: never represent
+a planned control as operating. -->
+
+---
+
+## 8. Mapping to review expectations
+
+| Review expectation | Where addressed |
+|---|---|
+| Data-flow diagram showing egress, store-vs-transient, trust boundaries, every external URL | §3, §4, §5 |
+| External endpoint(s) enumerated | {{ENDPOINT_REF}} |
+| Salesforce session ID never sent off-platform | {{SESSIONID_REF}} |
+| Auth (not session forwarding) at the boundary; token handling | {{AUTH_REF}} |
+| TLS posture for the external endpoint | {{TLS_REF}} |
+| Tenant isolation / no cross-tenant data | {{ISOLATION_REF}} |
+| Cross-border transfer honesty | {{CROSSBORDER_REF}} |
+| {{EXTRA_EXPECTATION}} | {{EXTRA_REF}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Note specifically which boxes
+and edges were drafted from CODE/CONFIG (the agent could see them) vs which
+deployment facts came from the OWNER (CDN mode, firewall rules, managed-DB
+encryption settings, the subprocessor contract terms) — the diagram mixes both
+and the reviewer should know which cells are owner-attested. An empty "Verified
+by" means not submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Deployment facts confirmed by owner (not derivable from code): {{OWNER_CONFIRMED_FACTS}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This diagram reflects the architecture as code-verified on the generation date; it is not a warranty. Salesforce performs its own penetration testing of the full composite application regardless of this diagram.

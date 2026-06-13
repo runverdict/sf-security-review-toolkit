@@ -1,0 +1,238 @@
+<!-- tmpl: Lines beginning "tmpl:" are authoring guidance for the instantiating
+     skill (/sf-security-review-toolkit:compile-submission, with rows also
+     updated by /sf-security-review-toolkit:run-scans and
+     /sf-security-review-toolkit:prepare-test-environment). Strip them when
+     writing the filled file to
+     <target>/docs/security-review/submission/readiness-tracker.md.
+     Seed rows from the scope manifest: delete row families that don't apply
+     to this architecture (no package → drop §1.2/§1.6 package rows; no MCP
+     server → drop the MCP rows) and record the deletion in §6 so the
+     omission is deliberate and visible. -->
+
+# {{SOLUTION_NAME}} — Security Review Readiness Tracker
+
+| | |
+|---|---|
+| **Owner** | {{SECURITY_OWNER_NAME_AND_ROLE}} |
+| **Last reviewed** | {{DATE}} |
+| **Scope** | {{THE LISTING SURFACES — every managed package and every external endpoint in this submission, named}} |
+| **Submission surface** | Partner Console → Technologies → Security Review Wizard. The artifact list is generated per architecture by the Checklist Builder (baseline: `process-checklist-builder`) — this tracker pre-stages it; the Builder's compiled checklist wins on any mismatch. |
+
+## Honesty posture (fill in plainly — this block is the tracker's contract)
+
+> {{PARTNER_NAME}} {{holds / does not hold}} **SOC 2** ({{Type I/II/none}}),
+> **ISO 27001** ({{...}}), **CSA STAR** ({{...}}), a **completed third-party
+> penetration test** ({{...}}), and a **signed customer DPA** ({{...}}).
+> <!-- tmpl: state every NOT-held item explicitly; "in progress" only when an
+>      engagement is actually under way. -->
+> None of these is a mandatory Security Review gate (baseline:
+> `process-soc2-informational`) — they are informational questionnaire items
+> and separate buyer-procurement concerns. This tracker covers **only what the
+> Security Review requires**, marks every open item TODO with a named owner,
+> and never represents a scan, pen test, or certification as complete when it
+> is not. White-box agent audits recorded here are static code review — not
+> DAST, not a pen test (CONVENTIONS §2); Salesforce performs its own
+> penetration testing regardless of anything submitted (baseline:
+> `dast-salesforce-runs-own-pentest`).
+
+## 0. Legends
+
+**Owner legend** — every row names exactly one owner:
+
+| Owner tag | Who | Means |
+|---|---|---|
+| **docs** | The security/documentation owner | Buildable now from existing posture — write/assemble/run the artifact. No external dependency. |
+| **salesforce-session** | Hands-on-keyboard in a Salesforce environment (Partner Console, scratch org, packaging org, test org) | Run Code Analyzer/Checkmarx, register packages, stand up test orgs, configure org-side settings. |
+| **business** | Commercial/contractual owner | Partner Program enrollment, distribution agreement, review fee, review contacts. |
+| **vendor** | Paid external party | Anything funding-gated: commissioned pen test, paid scan tooling, SOC 2 audit. |
+
+**Status legend** — the discipline that keeps this tracker honest:
+
+| Status | Means | Rule |
+|---|---|---|
+| **HAVE** | Exists **and** verified, **with an evidence link in the row** | A HAVE row with an empty Evidence cell is invalid — `/sf-security-review-toolkit:compile-submission` lints for this and demotes it to PARTIAL |
+| **PARTIAL** | Exists but incomplete, or not yet run against the live/submission target | Name what closes it, in the row |
+| **TODO** | Not started | Must still carry an owner |
+
+---
+
+## 1. Master submission checklist
+
+> "Required for" values: **package** (the managed-package listing) ·
+> **external-endpoint** (the partner-hosted endpoint the reviewer pen-tests as
+> part of the composite app) · **both** · **mcp-server** (only when the
+> manifest shows one — matches the baseline's `applies_to` vocabulary).
+
+### 1.1 Architecture & documentation artifacts
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Solution architecture + data-flow diagram (every field that leaves the org, stored-vs-transient on your side, trust boundaries, every external URL) | both | {{...}} | {{docs/security-review/data-flow-diagram.md — re-confirm currency at submit}} | docs | `artifact-architecture-diagram` |
+| AuthN/AuthZ flow document | both | {{...}} | {{docs/security-review/authn-authz-flow.md}} | docs | `artifact-authn-authz-flow-doc` |
+| Data-sensitivity classification | both | {{...}} | {{docs/security-review/data-sensitivity.md}} | docs | `artifact-data-sensitivity-classification` |
+| Access-control / permission-set documentation | both | {{...}} | {{docs/security-review/access-control.md}} | docs | `artifact-access-control-permsets` |
+| Honest egress / "where data goes" disclosure (listing copy matches the diagram) | both | {{...}} | {{...}} | docs | `artifact-package-architecture-usage-docs` |
+| Usage / admin / user documentation | package | {{...}} | {{install + config + security-considerations guide}} | docs | `artifact-user-documentation` |
+| API endpoints specification (external surface) | external-endpoint | {{...}} | {{...}} | docs | `artifact-api-endpoints-spec` |
+| Public subprocessor list | both (informational) | {{...}} | {{URL}} | docs | — |
+| Questionnaire pre-fill worksheet (owner-confirmed) | both | {{...}} | {{docs/security-review/submission/questionnaire.md — from `${CLAUDE_PLUGIN_ROOT}/templates/questionnaire.md.tmpl`}} | docs | `artifact-agentexchange-questionnaire-na-reasons` |
+| Primary + backup review contacts entered in the wizard | both | {{...}} | {{names/addresses on file}} | business | `process-submission-wizard` |
+
+### 1.2 Package code-scan artifacts (managed package only)
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Code Analyzer report ({{ANALYZER_VERSION — read the currently required analyzer version from the `scan-code-analyzer-v5-required` baseline entry at fill time; never assert it in fixed prose}}) — per package | package | {{...}} | {{.security-review/evidence/code-analyzer-*.html — produced by /sf-security-review-toolkit:run-scans}} | salesforce-session | `scan-code-analyzer-v5-required`, `scan-code-analyzer-invocation` |
+| Partner Security Portal source scan (Checkmarx) — required IN ADDITION to Code Analyzer for package-bearing submissions | package | {{...}} | {{report export — 3 portal runs per solution version are included in the review fee; the package version must be linked to a listing before the portal scans it}} | salesforce-session | `scan-checkmarx-partner-portal` |
+| False-positive dossier — every unfixed finding dispositioned with file:line, mitigation, justification | package + external-endpoint | {{...}} | {{docs/security-review/fp-dossier.md — from `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl`; refuted audit-ledger entries feed it}} | docs | `scan-false-positive-documentation` |
+| Apex CRUD/FLS + sharing enforcement evidence (classic top first-attempt fail) | package | {{...}} | {{Code Analyzer report section; not coverable by the agent audit — see audit-methodology §1.2}} | salesforce-session | `fail-crud-fls`, `fail-sharing-model` |
+| Apex test coverage at the platform-required threshold | package | {{...}} | {{coverage number captured against a namespaced build}} | salesforce-session | `scan-apex-test-coverage` |
+| Scan-report freshness at submission | package | {{...}} | {{re-run if code moved since the report date}} | salesforce-session | `scan-report-freshness` |
+
+### 1.3 External-endpoint artifacts
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Authenticated DAST report (self-run — hosted-scanner availability is a perishable fact: read `dast-self-run-required` at fill time, with its verification status) | external-endpoint | {{...}} | {{.security-review/evidence/dast/dast-report.{html,json} — plan generator: `${CLAUDE_PLUGIN_ROOT}/harness/zap/`}} | docs / vendor | `dast-self-run-required`, `dast-authenticated-scans` |
+| DAST severity disposition (which findings must be fixed vs documented) | external-endpoint | {{...}} | {{published bar: critical/high require fix-or-documented-FP; low/medium investigation encouraged only — read `dast-severity-bar` at fill time; the toolkit dispositions every finding regardless}} | docs | `dast-severity-bar` |
+| DAST screenshot proving the scanned URL | external-endpoint | {{...}} | {{.security-review/evidence/dast/dast-url-proof.png}} | docs | `dast-screenshot-proof-of-scanned-url` |
+| Scan target runs in production mode (debug off, prod config) | external-endpoint | {{...}} | {{...}} | docs | `dast-endpoints-production-mode` |
+| TLS evidence, every external endpoint — the codified bar is qualitative (HTTPS-only, secure TLS, no weak ciphers, HSTS); the SSL Labs A grade is the official recommended target, and the toolkit's practical bar | external-endpoint | {{...}} | {{.security-review/evidence/ssllabs-*.json + screenshot. Gotcha that costs a cycle: the grade measures your **edge** (CDN/proxy), not your origin — an origin with perfect TLS still grades poorly if the edge negotiates legacy protocols}} | docs | `endpoint-ssl-labs-a-grade` |
+| HSTS + HTTPS-only + trusted CA chain | external-endpoint | {{...}} | {{...}} | docs | `endpoint-hsts`, `endpoint-https-only`, `endpoint-trusted-ca-certificates` |
+| Framing posture for embedded surfaces (`frame-ancestors` scoped; no blanket deny on framed paths) | external-endpoint (when embedded in Salesforce) | {{...}} | {{header capture from a live framed response}} | docs | `endpoint-csp-canvas-frame-ancestors` |
+| Debug OFF in production; generic error pages | external-endpoint | {{...}} | {{4xx/5xx probes captured against prod}} | docs | `endpoint-error-hygiene-debug-off` |
+| No Salesforce Session ID off-platform (automatic fail) | external-endpoint | {{...}} | {{audit ledger: sessionid-egress dimension, zero open confirmed findings}} | docs | `fail-sessionid-egress` |
+| Enumeration resistance + brute-force controls on identity endpoints | external-endpoint | {{...}} | {{audit ledger: oauth-identity dimension}} | docs | `endpoint-enumeration-brute-force` |
+| Multi-tenant isolation evidence (when shared infrastructure) | external-endpoint | {{...}} | {{strongest form: a committed two-tenant e2e test — list-level + IDOR probes in both directions}} | docs | `endpoint-multi-tenant-isolation` |
+| White-box agent audit: ledger clean of `critical`/`high`, mediums dispositioned | both (supporting evidence — static review, not DAST) | {{...}} | {{.security-review/audit-ledger.json + docs/security-review/audit-report-*.md, tier + pass count stated}} | docs | — |
+
+### 1.4 CI security-scanning evidence (supporting, both listings)
+
+> Honesty note for every row: "wired into CI" means the scanner runs and
+> produces output — **not** that the baseline is clean. Say which scanners
+> block the build and which are report-only.
+
+| Artifact | Status | Evidence | Owner |
+|---|---|---|---|
+| SAST in CI | {{...}} | {{workflow file + latest run; blocking or report-only?}} | docs |
+| Dependency scanning (SCA), per language | {{...}} | {{...}} — baseline `scan-dependency-vulnerabilities` | docs |
+| Secret scanning | {{...}} | {{...}} | docs |
+| SBOM generation | {{...}} | {{...}} | docs |
+| Known-vulnerability register (tracked findings with remediation path) | {{...}} | {{...}} | docs |
+
+### 1.5 Test environment & reviewer access
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Test org with the package installed, end-to-end testable, realistic data | package | {{...}} | {{org id + configuration runbook — /sf-security-review-toolkit:prepare-test-environment}} | salesforce-session | `testenv-developer-edition-default-settings`, `testenv-realistic-test-data` |
+| MFA disabled for reviewer logins | both | {{...}} | {{...}} | salesforce-session | `testenv-mfa-disabled-for-reviewers` |
+| Reviewer credentials per major user persona | both | {{...}} | {{persona table documented}} | salesforce-session | `testenv-test-personas-documented`, `artifact-org-credentials` |
+| External-instance test credentials (your web app/API), valid for the whole review window | external-endpoint | {{...}} | {{staging credentials staged — never production; review-window length: `process-review-timeline` (perishable)}} | docs | `testenv-external-test-instances`, `artifact-third-party-creds-two-test-users` |
+| Test-org lifespan covers the review window | both | {{...}} | {{org type + expiry vs the timeline — lifespan facts are perishable: `testenv-trialforce-org-lifespan`}} | salesforce-session | `testenv-trialforce-org-lifespan` |
+| Agent test setup + sample utterances (agent/MCP listings) | both (agent) | {{...}} | {{...}} | salesforce-session | `testenv-agent-testing-center`, `artifact-testing-environment-agent-utterances` |
+| Environment stays live for the whole review (an untestable environment fails the review by itself) | both | {{...}} | {{liveness check scheduled}} | docs | `fail-untestable-environment`, `post-test-environment-liveness` |
+
+### 1.6 Package & listing lifecycle
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Released (promoted) package version to submit | package | {{...}} | {{version id — packaging mechanics: see the sibling MCP toolkit's build-managed-package skill if installed}} | salesforce-session | — |
+| MCP server details + exposed-tools list (MCP listings) | mcp-server | {{...}} | {{docs/security-review/...}} | docs | `artifact-mcp-server-details`, `artifact-exposed-tools-list` |
+| Namespace registered and linked | package | {{...}} | {{...}} | salesforce-session + business | — |
+| Partner Program enrollment + distribution agreement | both | {{...}} | {{...}} | business | `process-partner-program-prerequisites` |
+| Review fee budgeted — Returned and FP-only resubmissions are free; a remediated retest (new version + new review) pays again | both | {{...}} | {{amount + exemptions are perishable: confirm in the Partner Console — `process-review-fee`. Budget for one remediated retest}} | business | `process-review-fee`, `process-failure-remediation-flow` |
+
+---
+
+## 2. Open findings gate
+
+<!-- tmpl: filled mechanically from the audit ledger at compile time. -->
+
+| Ledger state | Count | Gate |
+|---|---|---|
+| `confirmed` at critical/high | {{N}} | **Any value > 0 blocks submission** (audit-methodology §4) |
+| `confirmed` at medium, undispositioned | {{N}} | Fix, or carry a justified FP-dossier / accepted_risk entry |
+| `fixed` awaiting regression pass | {{N}} | Re-audit confirms before HAVE |
+
+## 3. Submission sequence (artifact-readiness view)
+
+1. **Prove the surfaces + stand up scanning** — package compiles in a
+   namespaced environment (unblocks Code Analyzer); endpoint reachable in
+   production mode; SSL Labs + DAST runnable. Gate: every §1.2/§1.3 row is at
+   least PARTIAL with a named closer.
+2. **Review prep** — scans run + remediated/documented; FP dossier complete;
+   test environment stood up; questionnaire owner-confirmed; business items
+   (§1.6) executed. Gate: zero TODO rows without an in-flight owner.
+3. **Submit** — wizard transcription (questionnaire §K reconciliation), fee,
+   contacts. Timing expectations are perishable — read
+   `process-review-timeline` at fill time (verified: a total measured from
+   receipt of a COMPLETE submission, with a stage decomposition for
+   verification / first-time testing / resubmission); plan from the
+   baseline, not from this document.
+
+## 4. Post-approval obligations (do not lose the listing)
+
+Tracked by `/sf-security-review-toolkit:stay-listed`: periodic re-review
+(`post-periodic-rereview`), the per-release gate — listing association +
+readiness inheritance (`post-version-attestation`,
+`process-listing-readiness-inheritance`),
+the incident-reporting window (`post-incident-reporting-24h`), OAuth/connected-app
+security mandates (`post-pkce-refresh-rotation-mandate`,
+`post-oauth-legacy-flow-retirements`), and test-environment liveness
+(`post-test-environment-liveness`).
+
+## 5. Baseline currency check
+
+<!-- tmpl: at fill time, read ${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml
+     and list here every baseline id cited in this tracker whose last_verified
+     is older than 90 days or null (CONVENTIONS §4). -->
+
+| Baseline id | last_verified | Action |
+|---|---|---|
+| {{...}} | {{date / null}} | re-verify via SOURCES.md before relying on the row |
+
+## 6. Open confirmations — close via your Partner Account Manager / partner Slack, not the web
+
+> Items whose baseline entries are `conflicting` or partner-gated. Never
+> silently pick a side (CONVENTIONS §4).
+
+| Item | Baseline | Resolution |
+|---|---|---|
+| Whether/how the fee schedule applies to MCP/API-solution listings (the amount itself is verified — confirm the current figure in the Partner Console; perishable) | `process-review-fee` | {{...}} |
+| Whether reviewers enforce the SSL Labs letter grade in practice (the codified bar is qualitative; A is the recommended target) | `endpoint-ssl-labs-a-grade` | {{...}} |
+| {{any additional entries flagged `conflicting` at fill time — read the baseline; the set above is the 2026-06 sweep's remainder}} | {{...}} | {{...}} |
+| {{rows deleted from §1 as not-applicable, recorded here with the reason}} | — | {{...}} |
+
+---
+
+## Automated vs. manual recap
+
+<!-- tmpl: MANDATORY footer (CONVENTIONS §2/§5) — compile-submission fills it,
+     the owner countersigns. One row per tracker section, distinguishing rows
+     populated mechanically by an agent (and from which inputs) from rows a
+     human filled or executed. Agent-populated rows are static reads of code,
+     ledger, and evidence files — not scans, not a pen test. -->
+
+**Agent-drafted (from stated inputs):** row seeding and family deletion from
+the scope manifest (§1), the §2 open-findings counts from the audit ledger,
+the §5 baseline-currency rows from `requirements-baseline.yaml`, and
+evidence-path cells the generator verified exist on disk at fill time.
+
+**Owner-run (never agent-asserted):** every status promotion to HAVE, the
+honesty-posture block, all salesforce-session / business / vendor rows (scans
+run, orgs stood up, agreements signed, fees paid), and closing the §6
+confirmations via your Partner Account Manager / partner Slack.
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:compile-submission` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- Conflicting baseline entries surfaced to the owner, not silently resolved: {{CONFLICTING_IDS_OR_NONE}}.
+
+*This tracker is a readiness instrument, not a warranty and not a prediction of
+review outcome. It records what {{PARTNER_NAME}} HAS (with evidence), what is
+PARTIAL, and what is TODO with a named owner. Nothing is marked complete until
+it is run, dated, and evidenced — and a fully green tracker still does not
+substitute for the reviewers' own penetration testing.*

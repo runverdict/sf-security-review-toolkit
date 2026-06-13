@@ -1,0 +1,388 @@
+<!--
+TEMPLATE: submission-checklist.md.tmpl
+Output:   <target>/docs/security-review/submission-checklist.md
+Filled by: /sf-security-review-toolkit:compile-submission (rows aggregated from
+           every prior phase); /sf-security-review-toolkit:generate-artifacts
+           fills the artifact-pointer columns for the docs it drafts.
+
+How to use this template:
+- {{PLACEHOLDER}} slots are filled by the generator or the owner. A slot left
+  unfilled means the artifact is not submission-ready.
+- <!- - guidance: ... - -> comments are for the generator and the human
+  reviewer. DELETE them from the final submitted artifact.
+- Status vocabulary is exactly three values: HAVE (artifact exists AND has an
+  evidence link the generator verified exists), PARTIAL (artifact exists but a
+  named sub-item is missing), TODO (does not exist yet). Never mark HAVE
+  without a verifiable evidence path — CONVENTIONS §2.
+- Each row maps to a baseline entry in
+  ${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml. The generator MUST
+  warn if any referenced entry's last_verified is older than 90 days, and MUST
+  surface `verification: conflicting` entries to the owner instead of silently
+  picking a side.
+-->
+
+# {{PARTNER_NAME}} — Security Review Submission Checklist (required artifacts)
+
+| | |
+|---|---|
+| **Document** | Required-artifacts checklist — AppExchange / AgentExchange Security Review |
+| **Listing** | {{LISTING_NAME}} ({{LISTING_TYPE: managed package / external MCP server / both}}) |
+| **Server identity** | {{SERVER_NAME}} {{SERVER_VERSION}} · MCP endpoint `{{MCP_ENDPOINT_URL}}` |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Status** | {{DOC_STATUS}} |
+
+<!-- guidance: This document reproduces the reviewer-required artifacts table
+as a fill-per-row checklist. The row set below is the 13-artifact list for an
+MCP-server listing (baseline ids artifact-org-credentials through
+artifact-agentexchange-questionnaire-na-reasons). For a managed-package-only
+listing, also pull artifact-package-architecture-usage-docs and
+artifact-user-documentation from the baseline and add rows. The summary table
+is what you paste into the submission; the per-row blocks below it are the
+working state. Keep the two in lockstep — a reviewer who finds a HAVE row
+whose linked artifact is missing a section stops trusting every other HAVE. -->
+
+> **Honesty header.** {{HONESTY_SUMMARY}}
+<!-- guidance: One short paragraph stating plainly what is NOT done at
+submission time: which scans are not yet run, which certifications are not
+held, which items are owner-run and pending. Field-tested lesson: leading with
+the honest gaps reads as competence, not weakness — reviewers pen-test
+everything anyway (baseline: dast-salesforce-runs-own-pentest) and discovering
+an undisclosed gap costs more than disclosing it. -->
+
+## Summary table (paste into the submission)
+
+| # | Artifact | Status | Evidence / pointer | Owner |
+|---|---|---|---|---|
+| 1 | Org credentials | {{ROW1_STATUS}} | {{ROW1_EVIDENCE}} | {{ROW1_OWNER}} |
+| 2 | MCP server details | {{ROW2_STATUS}} | {{ROW2_EVIDENCE}} | {{ROW2_OWNER}} |
+| 3 | API endpoints (OpenAPI/Postman + tools/list) | {{ROW3_STATUS}} | {{ROW3_EVIDENCE}} | {{ROW3_OWNER}} |
+| 4 | AuthN/AuthZ flow | {{ROW4_STATUS}} | {{ROW4_EVIDENCE}} | {{ROW4_OWNER}} |
+| 5 | Credential storage | {{ROW5_STATUS}} | {{ROW5_EVIDENCE}} | {{ROW5_OWNER}} |
+| 6 | DAST scan reports | {{ROW6_STATUS}} | {{ROW6_EVIDENCE}} | {{ROW6_OWNER}} |
+| 7 | Exposed tools | {{ROW7_STATUS}} | {{ROW7_EVIDENCE}} | {{ROW7_OWNER}} |
+| 8 | Architecture / data-flow diagram | {{ROW8_STATUS}} | {{ROW8_EVIDENCE}} | {{ROW8_OWNER}} |
+| 9 | Access control | {{ROW9_STATUS}} | {{ROW9_EVIDENCE}} | {{ROW9_OWNER}} |
+| 10 | Third-party credentials + two test users | {{ROW10_STATUS}} | {{ROW10_EVIDENCE}} | {{ROW10_OWNER}} |
+| 11 | Data sensitivity | {{ROW11_STATUS}} | {{ROW11_EVIDENCE}} | {{ROW11_OWNER}} |
+| 12 | Testing environment | {{ROW12_STATUS}} | {{ROW12_EVIDENCE}} | {{ROW12_OWNER}} |
+| 13 | AgentExchange questionnaire | {{ROW13_STATUS}} | {{ROW13_EVIDENCE}} | {{ROW13_OWNER}} |
+
+---
+
+## Row 1 — Org credentials
+<!-- baseline: artifact-org-credentials -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW1_STATUS}} |
+| **Evidence / pointer** | {{ROW1_EVIDENCE}} |
+| **Owner** | {{ROW1_OWNER}} |
+| **What we provide** | {{ROW1_RESPONSE}} |
+
+<!-- guidance: What satisfies it: URL + username + password for the review
+org, supplied through the submission channel — NEVER committed to the repo or
+pasted into this document. The evidence cell here says "supplied separately"
+plus where the runbook lives. What reviewers look for: credentials that log in
+cleanly on first try, with MFA disabled for the review accounts (baseline:
+testenv-mfa-disabled-for-reviewers) — an MFA prompt makes the org un-testable
+and bounces the whole submission (baseline: fail-untestable-environment).
+Common mistakes: rotating the password between filling this row and
+submitting; org-wide MFA enforcement applying to the review users. Validate
+the login the day of submission. Owner-run; see
+/sf-security-review-toolkit:prepare-test-environment. -->
+
+## Row 2 — MCP server details
+<!-- baseline: artifact-mcp-server-details -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW2_STATUS}} |
+| **Evidence / pointer** | {{ROW2_EVIDENCE}} |
+| **Owner** | {{ROW2_OWNER}} |
+| **What we provide** | {{ROW2_RESPONSE}} |
+
+<!-- guidance: What satisfies it: the complete endpoint list (every path,
+method, and alias — including trailing-slash and any /jsonrpc alias), the MCP
+protocol version(s) the server advertises and negotiates, the transport
+(Streamable HTTP — baseline: mcp-transport-streamable-http-only), and URLs +
+credentials for ANY external component requiring authentication (the OAuth and
+discovery endpoints count). Common mistake: enumerating only the happy-path
+POST endpoint and letting the reviewer discover the GET/DELETE behavior and
+path aliases themselves — undisclosed surface reads as concealment. The
+generator fills this from the live-probe results; credentials are
+owner-supplied separately (same rule as Row 1). -->
+
+## Row 3 — API endpoints (OpenAPI/Postman + tools/list)
+<!-- baseline: artifact-api-endpoints-spec -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW3_STATUS}} |
+| **Evidence / pointer** | {{ROW3_EVIDENCE}} |
+| **Owner** | {{ROW3_OWNER}} |
+| **What we provide** | {{ROW3_RESPONSE}} |
+
+<!-- guidance: What satisfies it: a machine-readable OpenAPI (or Postman
+collection) covering every exposed endpoint — MCP paths, OAuth endpoints,
+discovery/.well-known paths — PLUS a captured tools/list response. Reviewers
+import the spec and diff it against live behavior; a spec that omits an
+endpoint they then find live costs credibility on every other artifact. The
+tools/list capture must parse as JSON and match the live server at submission
+time — regenerate it if the tool surface changed since capture (baseline:
+scan-report-freshness applies in spirit: stale captures get rejected).
+Generated by /sf-security-review-toolkit:generate-artifacts from code + live
+introspection. -->
+
+## Row 4 — AuthN/AuthZ flow
+<!-- baseline: artifact-authn-authz-flow-doc -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW4_STATUS}} |
+| **Evidence / pointer** | {{ROW4_EVIDENCE}} |
+| **Owner** | {{ROW4_OWNER}} |
+| **What we provide** | {{ROW4_RESPONSE}} |
+
+<!-- guidance: What satisfies it: the end-to-end document from
+${CLAUDE_PLUGIN_ROOT}/templates/authn-authz-flow.md.tmpl — every token
+issuance flow, the validation chain on the hot path, the scope/role model,
+per-user vs service identity, enforcement points, storage/rotation/revocation,
+with sequence diagrams. This is the artifact the reviewer reads BEFORE
+attacking your auth surface — every claim in it will be tested. Common
+mistakes: documenting the design instead of the as-built code (mismatches
+found during the pen test are worse than gaps); omitting the service-identity
+flow because "it's just client_credentials"; claiming the Salesforce session
+ID never leaves the platform without the code citation to back it (baseline:
+fail-sessionid-egress — the canonical auto-fail). -->
+
+## Row 5 — Credential storage
+<!-- baseline: artifact-credential-storage-attestation -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW5_STATUS}} |
+| **Evidence / pointer** | {{ROW5_EVIDENCE}} |
+| **Owner** | {{ROW5_OWNER}} |
+| **What we provide** | {{ROW5_RESPONSE}} |
+
+<!-- guidance: What satisfies it: a storage narrative — what credential lives
+where (hashed columns, encrypted columns, env injection, vault, platform
+credential stores), in what form (hash algorithm, cipher + IV discipline),
+with what TTL — plus an explicit no-hardcoded-secrets confirmation backed by a
+secret-scan evidence file (baseline: fail-hardcoded-secrets is an auto-fail
+category). The storage narrative usually lives in the AuthN/AuthZ doc
+(authn-authz-flow.md.tmpl § Credential storage); this row points there plus at
+the scan evidence in <target>/.security-review/evidence/. Common mistake:
+"no hardcoded secrets" asserted from memory — the scan cannot prove a
+negative, so the row needs BOTH the scan output AND an owner signature. -->
+
+## Row 6 — DAST scan reports
+<!-- baseline: artifact-dast-scan-reports, dast-self-run-required,
+     dast-scope-includes-identity-endpoints, dast-screenshot-proof-of-scanned-url -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW6_STATUS}} |
+| **Evidence / pointer** | {{ROW6_EVIDENCE}} |
+| **Owner** | {{ROW6_OWNER}} |
+| **What we provide** | {{ROW6_RESPONSE}} |
+
+<!-- guidance: What satisfies it: an authenticated DAST report whose scope
+includes the IDENTITY endpoints (login/OAuth/token paths), not just the API
+surface — a scan that missed the identity endpoints is a common first-try
+fail. Export the full report — scan date, targeted endpoints, all findings
+(baseline: dast-screenshot-proof-of-scanned-url) — plus a capture showing
+target URL + date, findings each carrying a disposition in the
+false-positive dossier (fp-dossier.md.tmpl). The fix-vs-document severity
+bar is published (baseline: dast-severity-bar, verified): critical/high
+findings require fix-or-documented-FP; action on low/medium is not
+required, only investigation encouraged. The toolkit's posture stays
+stricter: zero undispositioned findings, fix anything High/Critical. Status
+discipline: this row is HAVE only when a dated report file exists in
+evidence/ — a generated scan PLAN is PARTIAL at best. The scan itself is
+owner-run (/sf-security-review-toolkit:run-scans generates the plan and
+parses the results). -->
+
+## Row 7 — Exposed tools
+<!-- baseline: artifact-exposed-tools-list, mcp-tools-list-metadata-completeness -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW7_STATUS}} |
+| **Evidence / pointer** | {{ROW7_EVIDENCE}} |
+| **Owner** | {{ROW7_OWNER}} |
+| **What we provide** | {{ROW7_RESPONSE}} |
+
+<!-- guidance: What satisfies it: a named inventory of EVERY tool the server
+exposes, tiered by privilege (read / write / admin) with counts that reconcile
+exactly against the live tools/list capture from Row 3. Include the
+administrative tools — omitting a tool the reviewer then sees in tools/list
+reads as concealment. If the registry defines tools that are intentionally NOT
+exposed (internal-only entries, dead entries), say so explicitly with the
+count: "registry defines N, M exposed, the difference is X and Y because…" —
+the generator computes this reconciliation from code, and a count mismatch
+here is a generator bug to fix, not a row to fudge. -->
+
+## Row 8 — Architecture / data-flow diagram
+<!-- baseline: artifact-architecture-diagram -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW8_STATUS}} |
+| **Evidence / pointer** | {{ROW8_EVIDENCE}} |
+| **Owner** | {{ROW8_OWNER}} |
+| **What we provide** | {{ROW8_RESPONSE}} |
+
+<!-- guidance: What satisfies it: the document from
+${CLAUDE_PLUGIN_ROOT}/templates/data-flow-diagram.md.tmpl — components, trust
+boundaries, auth at every hop, the egress ledger (what leaves the Salesforce
+org, where it goes, stored vs transient), and the subprocessor table. The
+reviewer plans the pen test from this diagram; a mismatch between diagram and
+observed behavior (an undisclosed egress, a hop with different auth than
+stated) costs credibility on the whole submission. Owner must confirm the
+deployment details code reading cannot see (CDN config, firewall rules,
+managed-DB settings). -->
+
+## Row 9 — Access control
+<!-- baseline: artifact-access-control-permsets -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW9_STATUS}} |
+| **Evidence / pointer** | {{ROW9_EVIDENCE}} |
+| **Owner** | {{ROW9_OWNER}} |
+| **What we provide** | {{ROW9_RESPONSE}} |
+
+<!-- guidance: What satisfies it: the document from
+${CLAUDE_PLUGIN_ROOT}/templates/access-control.md.tmpl — BOTH sides: the
+Salesforce-side packaged permission sets/profiles with a least-privilege
+statement per grant, AND the server-side roles/scopes with the per-tool
+authorization matrix. The baseline notes this is the row with the weakest
+public documentation of what reviewers expect — when in doubt, over-document.
+Common mistake: documenting only the Salesforce side and leaving the server's
+role/scope model implicit ("the API checks permissions") — the reviewer will
+probe exactly the tool × role × scope combinations you didn't enumerate. -->
+
+## Row 10 — Third-party credentials + two test users
+<!-- baseline: artifact-third-party-creds-two-test-users, mcp-per-user-authz-mechanics -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW10_STATUS}} |
+| **Evidence / pointer** | {{ROW10_EVIDENCE}} |
+| **Owner** | {{ROW10_OWNER}} |
+| **What we provide** | {{ROW10_RESPONSE}} |
+
+<!-- guidance: What satisfies it: credentials for any third-party
+resource server the solution integrates with, PLUS two test users with
+DIFFERENT permission levels and a documented expected-results matrix: the same
+tool call under each user must return only that user's authorized data. The
+credentials are supplied separately (Row 1 rule); what this row documents is
+WHAT the two users demonstrate — which tool calls, which expected
+differences, and where the automated authorization-boundary proof lives
+(test file or script path). Fully settled (baseline:
+mcp-per-user-authz-mechanics, verified — settled negatively): per-user auth
+is not supported by the Agentforce MCP client and NO end-user identity is
+forwarded to the server at tool-call time, so write the expected-results
+matrix in honest terms — through Agentforce the two users demonstrate
+Salesforce-side gating (permission sets / agent + tool access per user) on
+top of the partner's TENANT-level scoping; per-user data scoping is proven
+at the partner's own API layer. Never promise per-end-user enforcement at
+the MCP layer. -->
+
+## Row 11 — Data sensitivity
+<!-- baseline: artifact-data-sensitivity-classification -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW11_STATUS}} |
+| **Evidence / pointer** | {{ROW11_EVIDENCE}} |
+| **Owner** | {{ROW11_OWNER}} |
+| **What we provide** | {{ROW11_RESPONSE}} |
+
+<!-- guidance: What satisfies it: the document from
+${CLAUDE_PLUGIN_ROOT}/templates/data-sensitivity.md.tmpl — business context
+plus a tiered classification of every data category the tools touch, with the
+two facts a reviewer most needs stated up front: (1) what bounds any single
+token's blast radius (tenant + per-user scoping), and (2) whether regulated
+data classes (payment-card, health) are handled at all. The agent drafts the
+classification from tool schemas and data-access code; the BUSINESS context
+(what a field means commercially) is owner-supplied — an agent cannot know
+that, and a classification without business context reads as generated
+filler. -->
+
+## Row 12 — Testing environment
+<!-- baseline: artifact-testing-environment-agent-utterances,
+     testenv-trialforce-org-lifespan, testenv-agent-testing-center -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW12_STATUS}} |
+| **Evidence / pointer** | {{ROW12_EVIDENCE}} |
+| **Owner** | {{ROW12_OWNER}} |
+| **What we provide** | {{ROW12_RESPONSE}} |
+
+<!-- guidance: What satisfies it: an isolated review org with the MCP server
+registered, an agent configured with Topics that route to the MCP tools, the
+correct reasoning engine selected (a default-engine agent silently fails to
+route — this exact silence has burned review cycles), and a list of example
+utterances the reviewer can replay verbatim for successful tool calls. Test
+every utterance yourself before submitting — an utterance that fails for the
+reviewer is an un-testable-environment bounce (baseline:
+fail-untestable-environment). Mind org lifespan: baseline entry
+testenv-trialforce-org-lifespan tracks how long review orgs live — check it
+and re-validate the org if the review queue outlasts the org. The most
+operationally expensive row; owner-run via
+/sf-security-review-toolkit:prepare-test-environment. -->
+
+## Row 13 — AgentExchange questionnaire
+<!-- baseline: artifact-agentexchange-questionnaire-na-reasons, fail-incomplete-questionnaire -->
+
+| Field | Value |
+|---|---|
+| **Status** | {{ROW13_STATUS}} |
+| **Evidence / pointer** | {{ROW13_EVIDENCE}} |
+| **Owner** | {{ROW13_OWNER}} |
+| **What we provide** | {{ROW13_RESPONSE}} |
+
+<!-- guidance: What satisfies it: every questionnaire item answered, and every
+not-applicable answer stating N/A AND the reason why — a bare "N/A" is an
+incomplete answer and incomplete questionnaires bounce (baseline:
+fail-incomplete-questionnaire). The questionnaire's full field list is
+login-gated; pull it from your Partner Console. The toolkit pre-fills from
+audit results (${CLAUDE_PLUGIN_ROOT}/templates/questionnaire.md.tmpl, via
+/sf-security-review-toolkit:compile-submission) and lints every N/A for a
+written justification. Final answers are owner-approved — the questionnaire is
+a representation YOU make, not the agent. -->
+
+---
+
+## What is still owner-action before submission
+
+{{OWNER_ACTION_LIST}}
+
+<!-- guidance: A short bullet list aggregating every TODO/PARTIAL row above
+with its owner and the concrete next step. This is the list the human works
+through; keep it brutally specific ("run the authenticated DAST against
+<staging URL> using the plan at <path>", not "complete security testing"). -->
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2) — the generator fills this,
+the owner countersigns. One row per section of this document. "Drafted by:
+agent" means an agent produced the content from the named inputs (code files,
+live probes, scan outputs) — that is static/code review, not a scan or pen
+test. "Verified by" names the human who checked the section against reality;
+an empty Verified cell means the section is NOT submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:compile-submission` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- Conflicting baseline entries surfaced to the owner, not silently resolved: {{CONFLICTING_IDS_OR_NONE}}.
+- This checklist records readiness; it does not predict the review outcome. Salesforce performs its own penetration testing regardless of submitted evidence.

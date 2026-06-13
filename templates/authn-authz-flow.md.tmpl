@@ -1,0 +1,335 @@
+<!--
+TEMPLATE: authn-authz-flow.md.tmpl
+Output:   <target>/docs/security-review/authn-authz-flow.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (drafted from code
+           reading: auth middleware, token service, role/scope definitions);
+           a human MUST verify every flow against the running system before
+           the provenance footer is signed.
+Satisfies: baseline entries artifact-authn-authz-flow-doc and
+           artifact-credential-storage-attestation (the § Credential storage
+           section doubles as that row's narrative).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- EVERY operational claim carries a code citation (path:line) or is marked
+  OWNER-VERIFY. The reviewer reads this document and then attacks exactly what
+  it describes — a claim that doesn't survive contact with the live system
+  costs more than an honestly documented gap.
+- Repeatable blocks are marked "repeat per …". Delete unused flow blocks
+  entirely rather than leaving empty headings — an empty "SAML" heading
+  invites questions about a flow you don't have.
+-->
+
+# {{PARTNER_NAME}} — Authentication / Authorization Flow & Credential Storage
+
+| | |
+|---|---|
+| **Document** | AuthN/AuthZ Flow + Credential Storage |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+<!-- guidance: Scope statement names exactly which surface this document
+covers (e.g. "the external partner-hosted MCP server at {{SERVER_BASE_URL}}")
+and which it does NOT (e.g. Salesforce-package-side identity artifacts owned
+by a different workstream — mark those owner-of-record explicitly). Reviewers
+treat the whole solution as a composite application; an unscoped doc reads as
+if you didn't know your own boundary. -->
+
+> **What this document answers.** (1) How does an identity prove who it is and
+> what it is allowed to do, end to end — issuance, validation, and the
+> access-control decision on every request? (2) Where do credentials live at
+> rest, and are any hardcoded? Both answered against the **as-built code**,
+> with file citations.
+
+> **Honesty posture.** {{HONESTY_POSTURE}}
+<!-- guidance: State what is NOT claimed here: scans/pen tests/certifications
+not yet complete, controls that are reliances on another party (e.g. the
+Salesforce platform's own session handling), and where those gates are
+tracked. Never soften. -->
+
+---
+
+## 1. One-paragraph summary
+
+{{ONE_PARAGRAPH_SUMMARY}}
+
+<!-- guidance: One paragraph a reviewer can hold in their head: the single
+external surface(s), the token types and how each is obtained, what validates
+the token on every call, the independent authorization layers, and the audit
+posture. End with the sentence that matters most for this review, with
+evidence: whether a Salesforce session ID is ever accepted, forwarded, or
+stored (baseline: fail-sessionid-egress — forwarding it off-platform is the
+canonical auto-fail; if your answer is anything but "never", stop and fix the
+architecture before drafting artifacts). -->
+
+**The Salesforce session ID is {{SESSIONID_POSTURE}}.** *Evidence: {{SESSIONID_EVIDENCE}}*
+
+---
+
+## 2. Identity model — the actors
+
+<!-- guidance: One row per distinct identity class that can reach the server:
+per-user assistant clients, org-level service identities, first-party app
+sessions, CI/test identities if they can reach production. The reviewer uses
+this table to pick attack personas. "Scope ceiling" is the maximum privilege
+that actor class can EVER hold — if a service identity is clamped to
+read-only, say where in code the clamp lives. -->
+
+| Actor | How it authenticates | Grant / flow | Scope ceiling | Token shape |
+|---|---|---|---|---|
+| {{ACTOR_NAME}} | {{AUTH_METHOD}} | {{GRANT}} | {{SCOPE_CEILING}} | {{TOKEN_SHAPE}} |
+
+{{ACTOR_ROUTING_NOTE}}
+<!-- guidance: If one endpoint serves multiple token types, document how the
+code routes between validation paths (prefix sniffing, issuer claim, header)
+with the file citation — the reviewer will probe the routing logic for
+confusion attacks (a token of type A accepted down path B). -->
+
+---
+
+## 3. Token issuance — every flow
+
+<!-- guidance: Repeat the block below once per issuance flow (e.g.
+authorization-code + PKCE, client_credentials, refresh, first-party session
+login, signed-request SSO). EVERY flow that mints a credential gets a block —
+the flow you skip documenting is the one the reviewer finds via the discovery
+metadata. Encode the validations in order; order matters for things like
+"redirect_uri validated before the deny-path redirect fires" (an unvalidated
+deny path is an open redirect). -->
+
+### 3.{{N}} — {{FLOW_NAME}}
+
+| Property | Value |
+|---|---|
+| **Endpoint(s)** | {{FLOW_ENDPOINTS}} |
+| **Who uses it** | {{FLOW_CLIENTS}} |
+| **Pre-conditions** | {{FLOW_PRECONDITIONS}} |
+| **Anti-abuse** | {{FLOW_RATE_LIMITS_AND_LOCKOUTS}} |
+
+**Steps and validations (in execution order):**
+
+1. {{STEP_WITH_VALIDATION_AND_CITATION}}
+
+<!-- guidance: For an OAuth authorization-code flow, the validations reviewers
+check: code is single-use (replay returns an error AND ideally revokes issued
+tokens), code TTL is short (minutes), client_id and redirect_uri must match
+the values bound at authorize time, PKCE verifier check is the S256 transform
+compared constant-time (state which comparison function), `plain` is rejected
+or unrepresentable, requested scope cannot exceed what the consenting user's
+own role permits (the user's privilege is the ceiling — without this, a
+low-privilege user grants a client more than they have). For
+client_credentials: which clients may use the grant at all (a public
+DCR-registered client must NOT be able to — state the gate), what scope it is
+clamped to, whether a refresh token is issued (per RFC 6749 §4.4.3 it should
+not be). For refresh: rotation on every use, reuse-detection behavior
+(family/chain revocation), scope downgrade-only. Cite code for each. -->
+
+**On success:** {{TOKENS_MINTED_TTLS_STORAGE_FORM}}
+**Audited as:** {{ISSUANCE_AUDIT_EVENT}}
+
+---
+
+## 4. Token validation at call time (the hot path)
+
+<!-- guidance: This is the section the reviewer maps directly to their
+attack requests. Document the exact ordered checks a request passes between
+"bearer token arrives" and "first business query executes": lookup form
+(hash compare? signature verify? introspection?), expiry check, revocation
+check, bound-principal liveness check (user still exists/active/not deleted),
+and — critically for multi-tenant systems — WHERE the tenant/user context gets
+bound for the request (e.g. session variables, connection GUCs, request
+context). A field-tested pattern worth imitating: tokens stored only as
+SHA-256 hashes so the lookup is hash-equality against a unique-constrained
+column and no plaintext exists at rest; note WHY a fast hash rather than a
+password KDF is correct for high-entropy random tokens (no brute-force
+surface; per-call KDF cost would degrade the hot path) — reviewers ask. -->
+
+Every request to `{{PROTECTED_ENDPOINT}}` passes, in order:
+
+1. {{VALIDATION_STEP_WITH_CITATION}}
+
+**Failure behavior:** {{FAILURE_BEHAVIOR}}
+<!-- guidance: What a failed validation returns (status, WWW-Authenticate
+header, body) and what it deliberately does NOT leak (whether the token was
+expired vs revoked vs unknown — uniform errors resist token-state probing).
+If a 401 advertises discovery metadata per RFC 9728, say so; scanners flag it
+and the fp-dossier needs the by-design entry. -->
+
+---
+
+## 5. Access control at call time — the enforcement layers
+
+<!-- guidance: One subsection per INDEPENDENT layer, in the order they
+execute. Independence is the claim reviewers test: bypassing layer 1 must not
+defeat layer 2. Typical layering for an MCP server: (a) per-tool OAuth scope
+gate — applied at BOTH tools/list and tools/call, because a client can call a
+tool by name it never saw listed; (b) application role filter (RBAC); (c)
+tenant isolation at the data layer (e.g. Postgres row-level security keyed on
+a per-request binding — state whether the runtime DB role can bypass it);
+(d) per-user visibility within a tenant (own-records / subtree filters).
+For each layer: what enforces it, where in code, what happens on failure, and
+the negative test that proves it (test file::test name). A layer without a
+test is a claim, not a control. -->
+
+### 5.{{N}} — {{LAYER_NAME}}
+
+- **Enforces:** {{WHAT_IT_ENFORCES}}
+- **Mechanism + citation:** {{MECHANISM_AND_CITATION}}
+- **On failure:** {{FAILURE_RESULT}}
+- **Proof:** {{TEST_EVIDENCE}}
+
+### 5.{{LAST}} — Audit of every call
+
+{{AUDIT_POSTURE}}
+
+<!-- guidance: State what is recorded per call (success AND failure — failed
+authorization probes are exactly what you want in the log), what is
+deliberately NOT recorded (e.g. argument values, to keep PII out of an
+immutable store — log argument KEYS instead), and what makes the log
+tamper-resistant (append-only enforcement at the DB layer beats application
+convention). -->
+
+---
+
+## 6. Scope and role model
+
+<!-- guidance: Two tables: the scope tiers (what each OAuth scope unlocks,
+which is the default floor, which identities can never obtain which scope) and
+the application roles (the cascade, single- vs multi-role posture). Keep this
+section authoritative and let access-control.md reference it — duplicate the
+MODEL here, the per-tool MATRIX there. State explicitly where the scope→tool
+and role→tool maps live in code; hand-maintained maps drift, so name the
+regression test that locks them. -->
+
+### 6.1 OAuth scopes
+
+| Scope | Unlocks | Default? | Denied to |
+|---|---|---|---|
+| {{SCOPE}} | {{WHAT_IT_UNLOCKS}} | {{YES_NO}} | {{DENIED_IDENTITIES}} |
+
+### 6.2 Application roles
+
+| Role | Sees / may do | Notes |
+|---|---|---|
+| {{ROLE}} | {{VISIBILITY_AND_RIGHTS}} | {{NOTES}} |
+
+**Per-user vs service identity:** {{PER_USER_VS_SERVICE_NARRATIVE}}
+<!-- guidance: Fully settled (baseline: mcp-per-user-authz-mechanics, verified
+— settled negatively): per-user auth is NOT supported by the Agentforce MCP
+client; the platform connection is org-level (client_credentials, or the
+service-account-only Authorization Code option via External Credential — note
+its redirect-allowlist requirement, baseline
+auth-code-service-account-redirect-allowlist); NO end-user identity is
+forwarded to the server at tool-call time. State that identity model plainly:
+per-user visibility through Agentforce is Salesforce-side gating (permission
+sets / agent + tool access) layered on the partner's TENANT-level scoping —
+never claim per-end-user enforcement at the MCP layer. Document honestly which
+identity granularity each path carries, which mechanism binds requests to the
+tenant, and what bounds the service identity (org scoping, read-only clamp,
+dedicated low-privilege bound user). This narrative pairs with the
+two-test-user proof in the checklist Row 10. -->
+
+---
+
+## 7. End-to-end sequence diagram
+
+<!-- guidance: One Mermaid sequenceDiagram covering: discovery (if any) →
+issuance (each flow as an alt/part) → validation on a request → the
+authorization layers → the audited result. Keep participant names matching §2
+actor names exactly; reviewers cross-read. Add a second diagram only if a flow
+genuinely cannot share the first (e.g. an embedded-app SSO handshake). -->
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as {{CLIENT_PARTICIPANT}}
+    participant A as {{AUTH_SERVER_PARTICIPANT}}
+    participant S as {{RESOURCE_SERVER_PARTICIPANT}}
+    participant D as {{DATA_LAYER_PARTICIPANT}}
+
+    {{SEQUENCE_BODY}}
+```
+
+---
+
+## 8. Credential storage
+
+<!-- guidance: One row per credential CLASS the system holds. The reviewer
+wants exactly three answers per row: storage form (hash — which algorithm and
+why; ciphertext — which cipher/mode/IV discipline; env/vault; platform store),
+where it physically lives, and the code citation. Include the negative rows —
+credentials you deliberately never store (Salesforce session ID, Salesforce
+passwords, raw tool-call arguments) are as load-bearing as the positive rows.
+Close with TTL/rotation/revocation: what rotates automatically, what is
+manual, and say plainly if there is no automated rotation schedule — an honest
+"manual, event-driven" beats a vague "regularly rotated". -->
+
+| Credential | Storage form | Where | TTL / rotation | Evidence |
+|---|---|---|---|---|
+| {{CREDENTIAL}} | {{FORM}} | {{LOCATION}} | {{TTL_ROTATION}} | {{CITATION}} |
+
+**Revocation:** {{REVOCATION_NARRATIVE}}
+<!-- guidance: Every path that kills a live credential: user-initiated
+disconnect, admin revocation, rotation-triggered family revocation, and the
+anti-enumeration behavior of the revoke endpoint (RFC 7009 returns 200 even
+for unknown tokens — pre-classify that in the fp-dossier, scanners flag it). -->
+
+---
+
+## 9. No hardcoded secrets — confirmation
+
+{{NO_HARDCODED_SECRETS_STATEMENT}}
+
+<!-- guidance: Three mechanisms make this confirmable rather than asserted:
+(1) env/vault-only loading with fail-closed behavior on placeholder values in
+production (cite the check); (2) VCS ignore rules blocking env files with only
+non-secret templates tracked; (3) a secret scanner in CI — name the tool,
+state honestly whether it blocks the build or is report-only, and point at the
+scan evidence file in <target>/.security-review/evidence/. The scan cannot
+prove a negative, so this section carries an owner signature in the provenance
+footer. Baseline: fail-hardcoded-secrets. -->
+
+---
+
+## 10. Out-of-scope identity surfaces (owned elsewhere)
+
+{{OUT_OF_SCOPE_TABLE_OR_NONE}}
+
+<!-- guidance: Anything identity-adjacent this document does NOT own —
+packaged permission sets, in-org registration artifacts the platform creates,
+customer-admin configuration (e.g. Trusted URL allowlisting) — listed with the
+owner of record and where it IS documented (usually access-control.md). An
+explicit out-of-scope list prevents the reviewer reading silence as omission. -->
+
+---
+
+## 11. Mapping to review expectations
+
+<!-- guidance: One row per question the reviewer brings to an auth document,
+pointing at the section that answers it. Generate the left column from the
+baseline entries this artifact satisfies; do not invent requirements. -->
+
+| Review expectation | Where addressed |
+|---|---|
+| {{EXPECTATION}} | {{SECTION_REF}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). The generator fills it; the
+owner countersigns. Agent-drafted sections are code reading — static review,
+not a scan or penetration test. An empty "Verified by" cell anywhere means
+this artifact is NOT submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- Owner signature on §9 (no hardcoded secrets): {{OWNER_SIGNATURE_DATE_OR_UNSIGNED}}.
+- This document describes the as-built design with code evidence. It claims no scan, penetration test, or certification; Salesforce performs its own penetration testing regardless of submitted evidence.

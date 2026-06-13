@@ -1,0 +1,198 @@
+<!--
+TEMPLATE: access-control.md.tmpl
+Output:   <target>/docs/security-review/access-control.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (permission-set /
+           profile inventory from package metadata + server-side role/scope
+           extraction from code); the owner reviews the least-privilege
+           mapping narrative.
+Satisfies: baseline entry artifact-access-control-permsets — the baseline notes
+           this is the artifact with the WEAKEST public documentation of what
+           reviewers expect: when in doubt, over-document.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- This artifact has BOTH sides: the Salesforce-side packaged grants AND the
+  server-side roles/scopes. A submission that documents only one side leaves
+  the reviewer to probe the undocumented half — fill both, or state plainly
+  (with owner-of-record) which side another workstream owns.
+- Every grant gets a least-privilege statement: not just "what it grants" but
+  "why that is the minimum the feature needs." A grant without a justification
+  reads as over-provisioning until proven otherwise.
+-->
+
+# {{PARTNER_NAME}} — Access Control (Salesforce-side + server-side)
+
+| | |
+|---|---|
+| **Document** | Access Control — packaged permissions + server-side authorization |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **What this document is.** The submission-artifact counterpart of runtime
+> access control: an inventory of every access grant the solution ships or
+> enforces — Salesforce permission sets/profiles on the package side, roles and
+> scopes on the server side — what each grants, the least-privilege
+> justification, and which test user holds which.
+
+---
+
+## Part A — Salesforce-side access control (packaged permission sets / profiles)
+
+<!-- guidance: If the listing has NO managed package (external endpoint only),
+replace this whole part with: "Not applicable — this listing is the external
+{{SERVER_NAME}} server; it ships no Salesforce package metadata. Server-side
+authorization is Part B." Do not delete the heading silently; an absent Part A
+makes the reviewer wonder if you forgot the package. -->
+
+### A.1 Packaged permission sets
+
+<!-- guidance: One row per packaged permission set / profile. Columns: name,
+exactly what it grants (object CRUD, field-level security, system perms, tab/
+page visibility, External Credential principal access), and the least-privilege
+justification — the MINIMUM the feature needs and why. The reviewer's
+highest-signal check here: any dangerous system permission (modify-all,
+view-all, author-apex, manage-users) is a red flag unless airtight-justified;
+state explicitly that none are present if that is the truth. Source from
+package metadata; do not paraphrase — read the actual permissionset-meta.xml. -->
+
+| Permission set / profile | Grants | Least-privilege justification |
+|---|---|---|
+| {{PERMSET}} | {{GRANTS}} | {{JUSTIFICATION}} |
+
+**Dangerous-permission statement:** {{DANGEROUS_PERMS_STATEMENT}}
+<!-- guidance: An explicit line: "No permission set in this package grants
+modify-all-data, view-all-data, author-apex, manage-users, or [other dangerous
+system perms]" — or, if one IS granted, the airtight justification and the
+compensating control. This is the line reviewers look for. -->
+
+### A.2 Assignment mechanism
+
+{{ASSIGNMENT_MECHANISM}}
+
+<!-- guidance: How the permission set reaches a user — manual admin assignment,
+or an install-time/post-install handler. If a post-install handler assigns it,
+state what it assigns, to whom (installer? a platform integration user?),
+whether it is idempotent on upgrade, and that it grants no more than A.1
+documents. Cite the handler class. Field-tested gotcha worth noting if it
+applies: some platforms silently drop a packaged grant during install,
+requiring the handler to detect-and-repair — if your handler does that,
+document it as a control, not a workaround. -->
+
+### A.3 Subscriber-side configuration (owned by the customer admin)
+
+{{SUBSCRIBER_CONFIG_NOTES}}
+
+<!-- guidance: What the customer admin controls that affects access — the
+tool/action allowlist curated in the agent platform, Trusted URL allowlisting,
+which users get the permission set. Least-privilege at this layer is a
+subscriber responsibility; document the secure-default guidance you ship, and
+mark the items owner-of-record = customer admin. -->
+
+---
+
+## Part B — Server-side access control (roles + scopes)
+
+<!-- guidance: This is the half partners most often under-document. The
+reviewer will probe exactly the tool × role × scope combinations you leave
+implicit. Enumerate the model fully and then give the MATRIX. -->
+
+### B.1 Authorization layers (summary)
+
+{{LAYERS_SUMMARY}}
+
+<!-- guidance: Brief — the independent layers, pointing at authn-authz-flow.md
+§5 for the mechanism detail rather than duplicating it. State the order and the
+independence claim (bypassing one does not defeat the next). Typical: OAuth
+scope gate → application role filter → tenant isolation at the data layer →
+per-user visibility within a tenant. -->
+
+### B.2 Scopes
+
+| Scope | Unlocks | Default floor? | Denied to |
+|---|---|---|---|
+| {{SCOPE}} | {{WHAT}} | {{YES_NO}} | {{DENIED}} |
+
+### B.3 Roles
+
+| Role | Visibility / rights | Cascade position |
+|---|---|---|
+| {{ROLE}} | {{RIGHTS}} | {{CASCADE}} |
+
+{{ROLE_MODEL_NOTE}}
+<!-- guidance: State single-role vs multi-role posture and the cascade
+(who is a superset of whom). If single-role, say so and why — it makes the
+matrix below tractable and the reviewer's reasoning simpler. -->
+
+### B.4 Per-tool authorization matrix (tool × scope tier × role)
+
+<!-- guidance: THE table that makes the access-control story legible. One row
+per tool: its required scope tier, its minimum role, and the data category it
+touches (cross-reference data-sensitivity.md category ids). Generate from code
+(the scope→tool and role→tool maps) + the live tools/list; the count must
+reconcile with the exposed-tools inventory (checklist Row 7) and the
+data-sensitivity tool map (§5 there). A reviewer will spot-check: pick the
+highest-privilege tool and confirm a low-scope/low-role token is refused
+(name the negative test in B.5). For a large surface, group by scope tier with
+a subtotal so the read/write/admin split is obvious at a glance. -->
+
+| Tool | Required scope | Minimum role | Data category | Notes |
+|---|---|---|---|---|
+| {{TOOL}} | {{SCOPE}} | {{ROLE}} | {{CATEGORY_ID}} | {{NOTES}} |
+
+**Scope-tier subtotals:** {{SUBTOTALS}}
+<!-- guidance: e.g. "read N · write M · admin K = T tools exposed; registry
+defines D, the D−T difference is [named tools] because [reason]." The
+reconciliation against the live surface is the point — a count that doesn't
+match the inventory is a bug to fix before submission, not a number to round. -->
+
+### B.5 Enforcement proof (negative tests)
+
+<!-- guidance: One row per layer/claim, naming the automated test that proves a
+refusal: a low-scope token denied a write tool, a rep role denied a
+manager-gated tool, tenant A's token denied tenant B's data (the IDOR proof —
+this also feeds checklist Row 10's two-test-user evidence), a tool called by
+name without appearing in tools/list still refused. A claim without a test is
+not a control. -->
+
+| Claim under test | Test (file::name) | Result |
+|---|---|---|
+| {{CLAIM}} | {{TEST_REF}} | {{RESULT}} |
+
+---
+
+## Part C — Test users for the review
+
+<!-- guidance: Which test user holds which grant, mapping to the two-test-user
+authorization-boundary proof (checklist Row 10). Document WHAT each user
+demonstrates (their role/scope and the expected difference in tool results),
+not the credentials — those are supplied separately, never committed. The
+reviewer replays the same tool call as each user and confirms each sees only
+their authorized data. -->
+
+| Test user | Salesforce grant (Part A) | Server role/scope (Part B) | Demonstrates |
+|---|---|---|---|
+| {{TEST_USER}} | {{SF_GRANT}} | {{SERVER_GRANT}} | {{DEMONSTRATES}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Part A is drafted from
+package metadata; Part B from server code + live tools/list — both static
+review. The least-privilege JUSTIFICATIONS and the dangerous-permission
+statement are owner-attested (the agent can read the grant but the "this is the
+minimum the feature needs" claim is the owner's). Test-user credentials are
+owner-run. Empty "Verified by" = not submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Matrix (B.4) reconciles with the exposed-tools inventory and data-sensitivity tool map: {{RECONCILES_YES_NO}}.
+- Least-privilege justifications (A.1) and dangerous-permission statement owner-confirmed by: {{OWNER_NAME_OR_UNCONFIRMED}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This document inventories access controls; it is not a warranty. Salesforce performs its own penetration testing regardless of submitted evidence.

@@ -1,0 +1,206 @@
+# ============================================================================
+# zap-plan-template.yaml — OWASP ZAP Automation Framework plan template for
+# the security review's partner-run authenticated DAST requirement.
+#
+# Generated/filled by /sf-security-review-toolkit:run-scans; usage, slot
+# table, auth patterns, edge/WAF caveat, and the false-positive class catalog
+# live in README.md next to this file. Requirement facts live in
+# ${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml (dast-* entries) —
+# never in this file.
+#
+# Conventions:
+#   {{SLOT}}      — filled at generation time from the scope manifest /
+#                   endpoint inventory. No {{...}} may survive into the plan
+#                   you run.
+#   ${ENV_VAR}    — substituted BY ZAP from the environment at load time.
+#                   Secrets (tokens, passwords) use this form ONLY — the plan
+#                   file is committed as evidence and must never contain a
+#                   credential (CONVENTIONS §6).
+#
+# Run:    zap.sh -cmd -autorun /abs/path/to/this-plan.yaml
+# Verify the plan loads cleanly on YOUR ZAP version before trusting a run —
+# Automation Framework job parameters evolve between releases, and a job that
+# fails to load is reported in the log, not as a fatal error, unless
+# failOnError catches it.
+# ============================================================================
+
+env:
+  contexts:
+    - name: "{{CONTEXT_NAME}}"
+      urls:
+        - "{{TARGET_BASE_URL}}"
+      includePaths:
+        # Scope = ALL external endpoints from the architecture doc, INCLUDING
+        # the identity surface (baseline: dast-scope-includes-identity-endpoints).
+        # Narrowing this below what the architecture doc declares produces an
+        # incomplete-scope report — a bounce class.
+        - "{{TARGET_BASE_URL}}/.*"
+      excludePaths:
+        # Exclude ONLY what you can justify in the submission (e.g. a logout
+        # URL that kills the scanner's session, a third-party-hosted asset
+        # path). An excluded endpoint is an UNSCANNED endpoint — document
+        # every exclusion in the run notes.
+        []
+
+      # --- Authentication pattern B: browser-login web app -----------------
+      # Uncomment for a session-cookie UI (standalone login page). For pure
+      # bearer-token APIs (pattern A), leave this commented and rely on the
+      # replacer job below. Details + the silent-logout gotcha: README.md.
+      #
+      # authentication:
+      #   method: "browser"
+      #   parameters:
+      #     loginPageUrl: "{{TARGET_BASE_URL}}/login"
+      #     browserId: "firefox-headless"
+      #   verification:
+      #     # Re-verification is what catches mid-scan logout — a scanner that
+      #     # loses its session and keeps crawling produces a silently-
+      #     # anonymous report that still looks green.
+      #     method: "poll"
+      #     pollFrequency: 60
+      #     pollUnits: "requests"
+      #     pollUrl: "{{TARGET_BASE_URL}}/{{AUTH_CHECK_PATH}}"
+      #     loggedInRegex: "\\Q 200 OK\\E"
+      #     loggedOutRegex: "\\Q 401\\E"
+      # sessionManagement:
+      #   method: "cookie"
+      # users:
+      #   - name: "review-user"
+      #     credentials:
+      #       username: "${DAST_USERNAME}"
+      #       password: "${DAST_PASSWORD}"
+
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  # --- Authentication pattern A: bearer-token API (OAuth client_credentials)
+  # Injects the Authorization header into every scanner request. Mint the
+  # token out-of-band against {{TOKEN_PATH}} with the LEAST-privileged scope a
+  # real client would hold, export it as DAST_BEARER_TOKEN, and record the
+  # scope used in the run notes. Token lifetime must exceed the scan window —
+  # everything after expiry degrades to an unauthenticated scan (README.md).
+  - type: replacer
+    rules:
+      - description: "bearer token for authenticated scan"
+        url: "{{TARGET_BASE_URL}}/.*"
+        matchType: "req_header"
+        matchString: "Authorization"
+        matchRegex: false
+        replacementString: "Bearer ${DAST_BEARER_TOKEN}"
+        tokenProcessing: false
+
+  # --- Import the documented API surface --------------------------------
+  # Use the SAME OpenAPI/endpoint description submitted as the api-endpoints
+  # artifact (baseline: artifact-api-endpoints-spec) so the report scope
+  # provably matches the architecture doc, and so the active scan exercises
+  # documented POST endpoints a spider never finds. Delete this job only if
+  # no machine-readable spec exists — and then say so in the run notes.
+  - type: openapi
+    parameters:
+      apiFile: "{{OPENAPI_FILE}}"
+      targetUrl: "{{TARGET_BASE_URL}}"
+      context: "{{CONTEXT_NAME}}"
+
+  # --- Seed the identity + MCP surface explicitly ------------------------
+  # The identity endpoints are FIRST-CLASS scan targets, not crawl
+  # discoveries (baseline: dast-scope-includes-identity-endpoints). The
+  # requestor puts them (and the discovery docs) in the site tree so passive
+  # + active scanning cover them even when no page links to them. Expected
+  # responses here are mostly 4xx — that is fine; presence in the tree is
+  # the point. Adjust paths to YOUR discovery metadata; delete the MCP
+  # request if the solution has no MCP server.
+  - type: requestor
+    parameters:
+      user: ""
+    requests:
+      - url: "{{TARGET_BASE_URL}}/.well-known/oauth-authorization-server"
+        method: "GET"
+      - url: "{{TARGET_BASE_URL}}/.well-known/openid-configuration"
+        method: "GET"
+      - url: "{{TARGET_BASE_URL}}/.well-known/oauth-protected-resource"
+        method: "GET"
+      - url: "{{TARGET_BASE_URL}}{{AUTHORIZE_PATH}}"
+        method: "GET"
+      - url: "{{TARGET_BASE_URL}}{{TOKEN_PATH}}"
+        method: "POST"
+        data: "grant_type=authorization_code&code=invalid"
+        headers:
+          - "Content-Type: application/x-www-form-urlencoded"
+      - url: "{{TARGET_BASE_URL}}{{REGISTER_PATH}}"
+        method: "POST"
+        data: '{"client_name":"dast-probe","redirect_uris":["https://example.invalid/cb"]}'
+        headers:
+          - "Content-Type: application/json"
+      - url: "{{TARGET_BASE_URL}}{{REVOKE_PATH}}"
+        method: "POST"
+        data: "token=invalid"
+        headers:
+          - "Content-Type: application/x-www-form-urlencoded"
+      # MCP endpoint — streamable HTTP JSON-RPC. A GET here returning 405 on
+      # an SSE-less server is FP class B (README.md), not a defect.
+      # protocolVersion is the NEWEST version in the baseline's
+      # mcp-protocol-versions-supported entry. If the server under test
+      # negotiates an older supported version, set it to that one before
+      # running; if the baseline entry has moved past this template, the
+      # template is stale — update it, don't trust it.
+      - url: "{{TARGET_BASE_URL}}{{MCP_PATH}}"
+        method: "POST"
+        data: '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"dast-probe","version":"0.0.0"}}}'
+        headers:
+          - "Content-Type: application/json"
+          - "Accept: application/json, text/event-stream"
+
+  # --- Crawl ---------------------------------------------------------------
+  - type: spider
+    parameters:
+      context: "{{CONTEXT_NAME}}"
+      maxDuration: 10        # minutes; bound it — the openapi import already
+                             # covers the documented surface
+
+  # Uncomment for a JavaScript-rendered UI (the classic spider sees none of
+  # it). Not needed for pure APIs.
+  # - type: spiderAjax
+  #   parameters:
+  #     context: "{{CONTEXT_NAME}}"
+  #     maxDuration: 10
+  #     browserId: "firefox-headless"
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+
+  # --- Active scan -----------------------------------------------------------
+  # The endpoint must be production-equivalent while this runs (baseline:
+  # dast-endpoints-production-mode): debug off, generic errors, REAL auth and
+  # rate limiting in place. Expect FP classes A–F (README.md) in the results;
+  # expect 429s mid-scan if you did not arrange a scan-window allowlist.
+  - type: activeScan
+    parameters:
+      context: "{{CONTEXT_NAME}}"
+      maxScanDurationInMins: 120
+      maxRuleDurationInMins: 10
+
+  # --- Reports — both submission (HTML) and triage (JSON) forms -------------
+  # The HTML report's site section showing the scanned URL + date is the
+  # proof-of-scanned-URL evidence (baseline:
+  # dast-screenshot-proof-of-scanned-url); capture it alongside the report
+  # files. Write into the evidence dir:
+  # <target>/.security-review/evidence/dast/
+  - type: report
+    parameters:
+      template: "traditional-html"
+      reportDir: "{{REPORT_DIR}}"
+      reportFile: "dast-report.html"
+      reportTitle: "DAST — {{CONTEXT_NAME}}"
+      reportDescription: >
+        Authenticated OWASP ZAP scan of {{TARGET_BASE_URL}} for the
+        AppExchange/AgentExchange security review submission. Scope includes
+        the API surface, the MCP endpoint, and the identity (OAuth) endpoints.
+  - type: report
+    parameters:
+      template: "traditional-json"
+      reportDir: "{{REPORT_DIR}}"
+      reportFile: "dast-report.json"

@@ -1,0 +1,398 @@
+<!-- tmpl: Lines that begin with "tmpl:" are authoring guidance for the skill
+     instantiating this template (/sf-security-review-toolkit:compile-submission).
+     Strip every tmpl: comment when writing the filled file to
+     <target>/docs/security-review/submission/questionnaire.md.
+     Placeholders use {{DOUBLE_BRACES}}. Pre-fill them from the scope manifest
+     (.security-review/scope-manifest.json), the audit ledger
+     (.security-review/audit-ledger.json), and generated artifacts — then mark
+     every pre-filled answer's Provenance line accordingly. -->
+
+# {{SOLUTION_NAME}} — Security Review Questionnaire Pre-Fill Worksheet
+
+> **⚠️ READ FIRST — this worksheet is NOT the questionnaire.** The canonical
+> field list lives in the **Partner Console Security Review Wizard** and is
+> **login-gated**: it is generated per solution by the Checklist Builder from
+> the architecture elements you select, and there is **no fixed public question
+> set** (baseline: `process-checklist-builder`,
+> `artifact-agentexchange-questionnaire-na-reasons` — the exact field list is a
+> known verification gap in `${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml`).
+> This worksheet pre-drafts answers for the **known question categories** so the
+> wizard session is transcription, not composition. At submission, open the live
+> wizard side-by-side, reconcile every field against this worksheet, and log
+> every mismatch in the Reconciliation Log (§K). A wizard field this worksheet
+> did not anticipate gets a fresh owner-written answer — never a forced fit.
+
+| | |
+|---|---|
+| **Document** | Pre-drafted Security Review questionnaire answers (paste-ready candidates for the Wizard) |
+| **Owner** | {{SECURITY_OWNER_NAME_AND_ROLE}} |
+| **Last reviewed** | {{DATE}} |
+| **Status** | DRAFT until every answer's Provenance line reads `owner-confirmed` |
+| **Scope** | {{LISTING_SURFACES — e.g. "one managed 2GP package + one partner-hosted external endpoint/MCP server at {{PRIMARY_DOMAIN}}"}} |
+| **Submission surface** | Partner Console → Technologies → Solutions → Security Review Wizard |
+| **Honesty posture** | {{ONE_PARAGRAPH: certifications you do NOT hold, stated plainly (SOC 2? ISO 27001? third-party pen test? signed DPA?); none of these is a mandatory review gate (baseline: process-soc2-informational) — they are informational items, and overclaiming any of them is worse than lacking them}} |
+
+## How to use this worksheet
+
+- **Answer key:** `Yes` / `Partial` / `No` / `N/A — because {{REASON}}`.
+- **The N/A rule (hard):** a bare "N/A" is an incomplete answer and causes
+  reviewer back-and-forth (baseline:
+  `artifact-agentexchange-questionnaire-na-reasons`,
+  `fail-incomplete-questionnaire`). Every N/A in this worksheet MUST use the
+  compound form `N/A — because {{REASON}}` inline, AND carry a row in the §J
+  N/A Register. `/sf-security-review-toolkit:compile-submission` lints for any
+  `N/A` not followed by `— because` and for any inline N/A missing its
+  register row, and refuses to mark the questionnaire compiled until both pass.
+- **Provenance discipline (CONVENTIONS §2):** every answer ends with a
+  Provenance line — either `agent-prefilled from {{SOURCE}}` (what an agent
+  drafted, from which inputs) or `owner-confirmed {{DATE}}` (a human read it and
+  stands behind it). **No agent-prefilled answer goes into the wizard.**
+- **Evidence or it didn't happen:** never answer that a scan, test, or
+  certification is complete unless the evidence file exists under
+  `.security-review/evidence/` and is linked in the answer's Basis line.
+- **`Partial` beats an inflated `Yes`.** Reviewers run their own penetration
+  test regardless of what you submit (baseline:
+  `dast-salesforce-runs-own-pentest`); an answer the pen test contradicts costs
+  a review cycle (fee and timeline figures: see `process-review-fee`,
+  `process-review-timeline` in the baseline — perishable, confirm in the
+  Partner Console).
+- **Basis lines are internal.** They trace each answer to code or docs for your
+  own audit trail; you do not paste them into the wizard.
+
+---
+
+## A. Solution description & architecture
+
+**Q-A1 — Describe your solution and its architecture.**
+
+**Answer:**
+{{2–4 PARAGRAPHS. A strong answer names: (1) every surface in the submission —
+each managed package and what it ships (Apex? declarative-only? LWC?), and
+every off-platform component (web app, API, MCP server) with its hosting
+provider and region; (2) the stack, plainly ("a FastAPI backend with Postgres
+row-level security", "a Node API on Heroku"); (3) the trust boundaries — how a
+Salesforce org reaches the external surface, which identities cross the
+boundary, and what auth protocol carries them; (4) where tenant isolation and
+audit logging are enforced. Do NOT claim "data stays in Salesforce" if it
+egresses — see Q-D1.}}
+
+**Basis:** {{LINKS: docs/security-review/data-flow-diagram.md, docs/security-review/authn-authz-flow.md, scope manifest}}
+**Provenance:** {{agent-prefilled from scope-manifest.json + generated artifacts | owner-confirmed {{DATE}}}}
+
+**Q-A2 — Is the solution composite (components outside Salesforce)?**
+
+**Answer:** {{Yes/No}}. {{If Yes: name every off-platform component and state
+plainly that the review treats them as part of the composite application —
+reviewers test the external endpoints too. If No: the package is self-contained
+with zero callouts — and §B must agree.}}
+
+**Basis:** {{...}}
+**Provenance:** {{...}}
+
+---
+
+## B. Callouts & external services
+
+**Q-B1 — Does your application make callouts to, or rely on, external services?**
+
+**Answer:** {{Yes/No}}. {{If Yes, enumerate EVERY class of external dependency —
+the callout inventory in the data-flow artifact is the source of truth: (1)
+package → your cloud (which credential mechanism: Named/External Credential per
+baseline endpoint-named-credentials-callouts); (2) AI/LLM inference providers,
+named, with region and fallback order; (3) email/notification providers; (4)
+anything else (analytics, error tracking). An undisclosed callout the reviewer
+finds in code or traffic is a credibility hit on every other answer.}}
+
+**Basis:** {{callout inventory in data-flow-diagram.md}}
+**Provenance:** {{...}}
+
+**Q-B2 — Do you forward, store, or transmit the Salesforce Session ID to any external system?**
+
+<!-- tmpl: auto-fail class. Pre-fill from the sessionid-egress dimension of the
+     audit ledger; if ANY confirmed finding in that dimension is open, this
+     worksheet must say so and the journey halts — do not draft a "No" over an
+     open finding. -->
+
+**Answer:** {{No, with the mechanism: name what crosses the boundary INSTEAD
+(OAuth flow, signed-request verification, dedicated integration identity).
+Sending the Session ID off-platform is an automatic failure (baseline:
+`fail-sessionid-egress`). If the audit ledger has an open sessionid-egress
+finding, the honest answer is "currently being remediated" and you do not
+submit.}}
+
+**Basis:** {{audit ledger: sessionid-egress dimension result + file:line of the boundary code}}
+**Provenance:** {{...}}
+
+---
+
+## C. Token & credential storage
+
+**Q-C1 — How do you store and handle access tokens?**
+
+**Answer:**
+{{BULLETS, each verifiable in code: at-rest form of your issued tokens (hashed?
+which algorithm? plaintext anywhere?); token lifetimes; refresh-token rotation
+and theft detection if any; PKCE posture; where any consumer/client secrets
+live (server-side env? vault? — never package metadata or browser). Cite the
+baseline `artifact-credential-storage-attestation` row in the checklist when
+you attach this as an attestation.}}
+
+**Q-C2 — Do you store Salesforce passwords, or Salesforce access/session tokens, off-platform?**
+
+**Answer:** {{No for passwords — anything else is a failure. For Salesforce-
+issued OAuth tokens held for an authorized sync integration: state exactly how
+they are stored (encrypted? hashed where verification-only?), under whose
+authorization, and that data movement matches the disclosed flow in §D.}}
+
+**Basis:** {{file:line of token models + storage code}}
+**Provenance:** {{...}}
+
+---
+
+## D. Data transmitted outside Salesforce
+
+**Q-D1 — Does customer / Salesforce data move outside Salesforce? Where does it go?**
+
+**Answer:** {{Yes/No — and if your product computes off-platform, the honest
+answer is Yes. Fill the egress table; every row must agree with the data-flow
+diagram and the data-sensitivity classification
+(${CLAUDE_PLUGIN_ROOT}/templates/data-sensitivity.md.tmpl).}}
+
+| Data | Where it goes | Stored or transient? |
+|---|---|---|
+| {{CRM-derived records}} | {{datastore, provider, region}} | {{Stored — encryption posture}} |
+| {{prompt text for AI inference}} | {{provider, region}} | {{Transient — see Q-D3}} |
+| {{tokens}} | {{...}} | {{hash-only / plaintext / ...}} |
+| Salesforce Session ID | — | **Never** received, transmitted, or stored (must match Q-B2) |
+
+**Q-D2 — Name the hosting regions and subprocessors.**
+
+**Answer:** {{Regions for application + primary data, and for every egress
+destination (AI inference, email). Then the subprocessor list — ideally a
+public, dated page on your domain; tier it (at-rest / in-transit / optional
+integrations). Cross-border movement (e.g., data resident in one country,
+inference in another) is disclosed HERE, not discovered by the reviewer.}}
+
+**Q-D3 — Is customer data used to train AI models?**
+
+**Answer:** {{Honest pattern if you rely on provider terms: "We operate under
+provider terms that prohibit training on customer content, and we will share
+the specific terms we rely on. No-training is a provider-terms reliance, not a
+technical control we enforce, and we do not warrant third-party behavior." Only
+claim contractual zero-data-retention if you have executed that agreement and
+can produce it.}}
+
+**Basis:** {{subprocessor page, provider terms relied on}}
+**Provenance:** {{...}}
+
+---
+
+## E. Control categories the manual review consistently probes
+
+<!-- tmpl: Answer each category TWICE when the submission has both surfaces:
+     once for the package (in-org code) and once for the external endpoint.
+     Pre-fill the endpoint side from the audit ledger's confirmed/strong-control
+     entries; pre-fill the package side from Code Analyzer results under
+     .security-review/evidence/. A category whose package code does not exist
+     yet (e.g. an LWC still to be written) is marked Partial with the open item
+     named — never answered as if the code existed. -->
+
+**Q-E1 — Authentication & session management.**
+- **External endpoint:** {{auth protocol + PKCE posture; password hashing
+  algorithm; token lifetimes; cookie flags; MFA availability (and for WHOM —
+  admin-only MFA is a Partial, say so); lockout/rate limiting on login}}
+- **Package:** {{how per-user identity reaches your endpoint (signed request?
+  OAuth?); confirm no Session ID involvement (Q-B2)}}
+
+**Q-E2 — Authorization (CRUD/FLS + sharing on package; tenant isolation + RBAC on endpoint).**
+- **External endpoint:** {{tenant-isolation mechanism and WHERE enforced (DB
+  policy vs app filter); per-user visibility model; how the API layer checks
+  object-level access (IDOR posture — cite the audit ledger's tenant-isolation
+  result)}}
+- **Package:** {{Apex user-mode enforcement posture (`WITH USER_MODE` /
+  `Security.stripInaccessible` / sharing declarations) — CRUD/FLS is the
+  classic top first-attempt failure (baseline: `fail-crud-fls`,
+  `fail-sharing-model`); evidence is the Code Analyzer report, not assertion}}
+
+**Q-E3 — Input validation (SOQL/SQL injection, request validation).**
+- **External endpoint:** {{request-schema validation framework; size caps; CORS
+  posture; for AI surfaces: prompt-injection containment approach}}
+- **Package:** {{dynamic SOQL posture — parameterized/escaped, with the FP
+  dossier entry where a scanner flags escaped dynamic SOQL (baseline:
+  `fail-soql-injection`)}}
+
+**Q-E4 — Output encoding (XSS).**
+- **External endpoint:** {{framework auto-escaping + any enforced rules for
+  rendering API/AI-derived values; CSP}}
+- **Package:** {{LWC/Aura/Visualforce escaping posture; no manual-DOM/innerHTML
+  injection paths (baseline: `fail-xss`, `fail-lightning-component-hygiene`)}}
+
+**Q-E5 — Cryptography.**
+- **External endpoint:** {{algorithms in use by purpose: at-rest encryption,
+  password hashing, token hashing, signature verification (constant-time
+  compare where applicable); state plainly that no MD5/SHA-1 exists in any
+  security context — and verify before stating}}
+- **Package:** {{platform Crypto class only, or "the package performs no
+  cryptography" if true}}
+
+**Q-E6 — Communication security (TLS / HSTS / framing).**
+- **External endpoint:** {{TLS versions accepted; HSTS; certificate chain
+  (baseline: `endpoint-trusted-ca-certificates`); TLS grade evidence path —
+  the codified bar is qualitative TLS hygiene with the SSL Labs A grade as
+  the official recommended target (baseline: `endpoint-ssl-labs-a-grade`);
+  if the app is framed inside Salesforce: `frame-ancestors` scoping
+  (baseline: `endpoint-csp-canvas-frame-ancestors`)}}
+- **Package:** {{HTTPS-only callouts; any packaged CSP Trusted Sites}}
+
+**Q-E7 — Logging & error handling.**
+- **External endpoint:** {{audit-log immutability mechanism if claimed; PII
+  posture in logs; debug OFF in production + generic error pages (baseline:
+  `endpoint-error-hygiene-debug-off`, `fail-info-disclosure`)}}
+- **Package:** {{no PII in debug logs; generic Apex error handling}}
+
+**Q-E8 — Secrets storage.**
+- **External endpoint:** {{env/vault posture; what blocks secrets from the
+  repo (gitignore + secret scanning); rotation posture — "no automated
+  rotation yet" is an honest Partial}}
+- **Package:** {{Named Credentials / Protected Custom Metadata for any package
+  secret; assert the package itself ships zero secrets only after a scan of
+  the package source confirms it (baseline: `fail-hardcoded-secrets`)}}
+
+**Basis:** {{audit report pass N + Code Analyzer report + control docs}}
+**Provenance:** {{...}}
+
+---
+
+## F. Certifications & attestations (informational)
+
+**Q-F1 — Do you hold SOC 2, ISO 27001, or other certifications? Have you had a third-party penetration test?**
+
+**Answer:** {{The honesty-posture paragraph from the header, expanded: for each
+of SOC 2 / ISO 27001 / CSA STAR / third-party pen test / signed DPA — held (with
+date + report available on request), in progress (ONLY if an engagement is
+actually under way), or not held. These are informational, not gates (baseline:
+`process-soc2-informational`). A white-box self-audit — including this
+toolkit's agent audit — is described as static code review, never as a pen
+test (CONVENTIONS §2).}}
+
+**Provenance:** {{owner-confirmed {{DATE}} — certification claims are never agent-prefilled}}
+
+---
+
+## G. Scan-artifact status
+
+<!-- tmpl: This section is a cross-check, not a claim surface. Pre-fill each
+     row mechanically from .security-review/evidence/; a row with no evidence
+     file is TODO regardless of what anyone remembers running. -->
+
+| Artifact | Status | Evidence file (required for anything but TODO) | Baseline entry |
+|---|---|---|---|
+| Code Analyzer report (per package; {{ANALYZER_VERSION — read the currently required version from `scan-code-analyzer-v5-required` at fill time, not from this prose}}) | {{HAVE/TODO}} | {{.security-review/evidence/...}} | `scan-code-analyzer-v5-required` |
+| Partner Security Portal source scan (Checkmarx) | {{HAVE/TODO}} | {{...}} | `scan-checkmarx-partner-portal` — required in addition to Code Analyzer for package-bearing submissions; 3 runs per solution version included in the fee; listing-link prerequisite |
+| Authenticated DAST report (self-run — hosted-scanner availability status: read `dast-self-run-required` at fill time) | {{HAVE/TODO}} | {{...}} | `dast-self-run-required`, `dast-authenticated-scans` |
+| DAST screenshot proving the scanned URL | {{HAVE/TODO}} | {{...}} | `dast-screenshot-proof-of-scanned-url` |
+| SSL Labs grade evidence per external endpoint (A = the recommended target; the codified bar is qualitative) | {{HAVE/TODO}} | {{...}} | `endpoint-ssl-labs-a-grade` |
+| False-positive dossier (every unfixed scanner finding dispositioned) | {{HAVE/PARTIAL/TODO}} | {{docs/security-review/fp-dossier.md}} | `scan-false-positive-documentation` |
+
+---
+
+## H. Common security-FAQ items
+
+<!-- tmpl: These recur across partner questionnaires regardless of architecture.
+     Single-cell answers; the compound N/A form applies here too. -->
+
+| # | Item | Answer | Basis |
+|---|---|---|---|
+| H1 | Multi-tenant isolation — how is cross-tenant access prevented? | {{...}} | {{audit ledger: tenant-isolation; baseline `endpoint-multi-tenant-isolation`}} |
+| H2 | Audit logging | {{...}} | {{...}} |
+| H3 | Encryption in transit and at rest | {{...}} | {{...}} |
+| H4 | Enterprise SSO (SAML/OIDC) for customer users | {{Yes / No — roadmap honesty}} | {{...}} |
+| H5 | Enforceable MFA for customer users | {{Yes / Partial — for whom}} | {{...}} |
+| H6 | Incident response / breach notification | {{...; note the partner-program incident-reporting obligation — baseline `post-incident-reporting-24h`}} | {{...}} |
+| H7 | Data retention / deletion on customer termination | {{honest: is there an executed code path + runbook, or only feasibility?}} | {{...}} |
+| H8 | Availability / DR / failover | {{single-instance honesty if true: no tested restore, no published RTO/RPO}} | {{...}} |
+| H9 | Cross-border transfer mechanism | {{SCCs/consent flow, or "disclosed gap"}} | {{...}} |
+| H10 | Secrets management & rotation | {{...}} | {{...}} |
+| H11 | Use of internal Salesforce Platform APIs | {{N/A — because {{REASON}}, or disclosed usage + no token storage}} | {{...}} |
+| H12 | Debug off in prod / generic error pages | {{...}} | {{...}} |
+| H13 | Public subprocessor list + vulnerability-disclosure path | {{URLs}} | {{...}} |
+| H14 | SAST / SCA / secret scanning in CI | {{honest: wired-in ≠ clean baseline; say which block the build and which are report-only}} | {{...}} |
+
+---
+
+## I. MCP / agent-specific disclosures
+
+<!-- tmpl: Include this section only when the scope manifest shows an MCP
+     server; otherwise delete it and add ONE §J register row covering the
+     whole section. -->
+
+**Q-I1 — Transport, auth, and protocol versions.**
+{{State the transport and auth grant your server actually implements and where
+that is enforced in code. Do NOT hard-code the accepted protocol-version list
+or auth-type list here — read them from the baseline at fill time
+(`mcp-transport-streamable-http-only`, `mcp-auth-no-auth-or-client-credentials`,
+`mcp-protocol-versions-supported`) and confirm your server matches.}}
+
+**Q-I2 — Exposed tools and scopes.**
+{{Tool count by scope tier (read / write-proposal / admin); how the catalog is
+filtered per caller; the artifact is the exposed-tools list (baseline:
+`artifact-exposed-tools-list`). If any write-capable tool is reachable under
+your read scope, that is an open finding, not a disclosure.}}
+
+**Q-I3 — Per-user authorization model.**
+{{State the settled platform identity model honestly (baseline:
+`mcp-per-user-authz-mechanics`, verified): the Agentforce connection is an
+org-level service identity and no end-user identity reaches the server at
+tool-call time — so describe the Salesforce-side gating (permission sets /
+agent + tool access) plus your tenant-level scoping, the service identity's
+scope floor and what it can never do, and never claim per-end-user MCP
+enforcement.}}
+
+**Q-I4 — AI data-handling disclosure.**
+{{What data types tools access; which AI/LLM services process data (named,
+with the third-party disclaimer pattern your listing carries); retention; the
+training answer must match Q-D3.}}
+
+---
+
+## J. N/A Register (structural enforcement)
+
+> Every `N/A` answered anywhere in this worksheet appears here as **two cells:
+> the N/A and its reason**. An N/A above with no row here — or a row whose
+> reason cell is empty — fails the compile lint. A bare N/A in the wizard is an
+> incomplete answer that costs a review cycle (baseline:
+> `artifact-agentexchange-questionnaire-na-reasons`).
+
+| Question | N/A | Because… (the stated reason, owner-approved) |
+|---|---|---|
+| {{Q-#}} | N/A | {{e.g. "the package contains no Apex — declarative metadata only, verified by the scope manifest"}} |
+| {{Q-#}} | N/A | {{...}} |
+
+---
+
+## K. Reconciliation Log — live wizard vs. this worksheet
+
+> Filled DURING submission, with the wizard open. This is the controlled moment
+> where the login-gated canonical field list meets the pre-draft.
+
+| Wizard field (verbatim label) | Worksheet item used | Adjusted? (what changed) | Net-new field? (owner-written answer) |
+|---|---|---|---|
+| {{...}} | {{Q-#}} | {{none / reworded / restructured}} | {{—}} |
+
+<!-- tmpl: After submission, feed net-new wizard fields back as an issue against
+     this template so the known-categories set improves — that is the only
+     channel by which the gated field list can lawfully inform a public
+     template (paraphrased categories, never verbatim gated text — CONVENTIONS §3). -->
+
+---
+
+## Automated vs. manual recap
+
+**Agent-drafted (from stated inputs):** answer skeletons pre-filled from the
+scope manifest, audit ledger, generated artifacts, and evidence directory —
+each marked `agent-prefilled` with its source.
+
+**Owner-run (required before submission):** confirming every answer
+(`owner-confirmed` + date), all certification claims (§F — never pre-filled),
+every N/A reason in §J, the live-wizard reconciliation in §K, and the
+submission itself. This worksheet never submits anything.
