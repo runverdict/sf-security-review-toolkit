@@ -189,7 +189,7 @@ elements, get the requirement list those elements imply.
        { "type": "mcp-server", "evidence": "JSON-RPC dispatch in src/mcp/router.*; live probe 2026-06-12" }
      ],
      "endpoints": [
-       { "url": "https://staging.example.com", "environment": "staging", "role": "mcp | identity | web-app | api", "probeConsent": true }
+       { "url": "https://staging.example.com", "environment": "staging", "role": "mcp | identity | web-app | api | canvas", "probeConsent": true }
      ],
      "mcp": {
        "url": "https://staging.example.com/mcp",
@@ -198,7 +198,9 @@ elements, get the requirement list those elements imply.
        "toolCount": 24,
        "authType": "oauth2-client-credentials | no-auth"
      },
-     "package": { "type": "2GP", "namespace": "examplens", "promoted": true },
+     "packages": [
+       { "name": "Example", "dir": "force-app/", "type": "2GP", "namespace": "examplens", "promoted": true }
+     ],
      "securityModelClaims": { "tenancy": "multi-tenant", "isolation": "<operator's claim, verbatim, unverified>" },
      "applicableBaselineIds": ["scan-code-analyzer-v5-required", "endpoint-ssl-labs-a-grade", "..."],
      "conflictingBaselineIds": ["endpoint-ssl-labs-a-grade"],
@@ -213,10 +215,14 @@ elements, get the requirement list those elements imply.
    }
    ```
 
-   Omit `mcp` and `package` blocks for elements that don't exist. No
-   credentials in this file, ever (CONVENTIONS §6) — if the operator pasted a
-   URL with an embedded token, strip it and say where the secret belongs
-   (env var, vault).
+   Omit `mcp` and `packages` blocks for elements that don't exist. `packages`
+   is an array: an AgentExchange MCP listing commonly carries **two** packages
+   — a thin MCP-registration package (ESR + External/Named Credential +
+   permission set) **and** a separate Canvas/UI-embed package — so record each
+   detected `sfdx-project.json` / package as its own entry, never collapse them
+   into one. No credentials in this file, ever (CONVENTIONS §6) — if the
+   operator pasted a URL with an embedded token, strip it and say where the
+   secret belongs (env var, vault).
 
 8. **Show the manifest summary and get an explicit confirm/correct from the
    operator** before recommending the next phase. This is the cheap moment to
