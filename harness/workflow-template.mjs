@@ -38,12 +38,21 @@
  *   4. Compile the do-not-re-report digest from
  *      `<target>/.security-review/audit-ledger.json` — one line per entry:
  *      `[state] title — file (one-line resolution or refute reason)`.
- *   5. Build the run-args object (shape below) and inject it: replace the
- *      placeholder expression `/* {{ARGS_OBJECT}} *\/ null` on the marked line
- *      with the JSON-serialized object — JSON is valid JS, paste it raw. (If
- *      this Workflow runtime binds an `args` global instead, that wins and the
- *      placeholder can stay.)
- *   6. Pass the assembled script to the Workflow tool. On return: merge
+ *   5. Build the run-args object (shape below) and inject it. ALWAYS do this:
+ *      copy this file to `<target>/.security-review/audit-engine.mjs` and
+ *      replace the marked `const INJECTED = /* {{ARGS_OBJECT}} *\/ null` line so
+ *      INJECTED is the JSON-serialized object (JSON is valid JS — paste it raw).
+ *      Do NOT pass run-args via the Workflow tool's `args` parameter: in
+ *      practice they arrive as a JSON STRING, `args.repoRoot` is undefined, this
+ *      script falls through to the null placeholder, and the run fails fast with
+ *      "run args missing or incomplete". The `args`-binding branch below is only
+ *      a safety net; INJECTED is the load-bearing path.
+ *      NOTE: `node --check` on the assembled file reports the top-level
+ *      `return {…}` as "Illegal return statement" — that is EXPECTED (the
+ *      Workflow runtime wraps the body in an async scope; top-level return is
+ *      legal there). Do NOT remove/wrap/export the return. To pre-check, JSON
+ *      .parse only the injected INJECTED object, not the whole module.
+ *   6. Invoke the Workflow tool with `scriptPath` = the injected copy. On return: merge
  *      `ledger_updates` into the ledger by dedup key (normalized file path +
  *      normalized title — never description, never line numbers; §5.2), map
  *      verdict values to ledger states (confirmed_real/partially_real →

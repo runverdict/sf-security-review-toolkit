@@ -113,11 +113,37 @@ regardless of anything this engine produces.
    `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`. The invocation, per
    its header: extract each selected dimension's threat-focus paragraph from
    the §4 finder prompt block of its dimension file, build the run-args
-   object, JSON-serialize it, and replace the template's marked
-   `/* {{ARGS_OBJECT}} */ null` line with it (JSON is valid JS — paste raw; if
-   the Workflow runtime binds an `args` global instead, that wins and the
-   placeholder stays). Then pass the assembled script to the Workflow tool.
-   The shape:
+   object, and JSON-serialize it.
+
+   **Then — unconditionally — inject it and run a project-local copy:**
+
+   1. Copy the template into the target repo:
+      `cp ${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs <target>/.security-review/audit-engine.mjs`.
+      (A copy, never the installed plugin file: the plugin is read-only/shared,
+      and a project-local copy keeps the exact run reproducible and committable.)
+   2. In that copy, **replace** the marked `const INJECTED = /* {{ARGS_OBJECT}} */ null`
+      line so `INJECTED` is your JSON run-args object (JSON is valid JS — paste
+      it raw as the value).
+   3. Invoke the Workflow tool with `scriptPath` pointing at the copy.
+
+   **Do NOT pass the run-args through the Workflow tool's `args` parameter.** In
+   practice they arrive as a JSON *string*, so `args.repoRoot` is undefined, the
+   template falls through to its `null` placeholder, and the run fails fast with
+   *"run args missing or incomplete"* (0 agents, ~20ms). The `args`-binding
+   branch in the template (`args && args.repoRoot ? args : INJECTED`) is only a
+   safety net — injecting `INJECTED` is the load-bearing path, every time.
+
+   **`node --check` caveat:** if you sanity-check the assembled script, know that
+   `node --check` reports the template's top-level `return {…}` as
+   `SyntaxError: Illegal return statement`. That is **expected** — the Workflow
+   runtime wraps the script body in an async function scope where top-level
+   `return` is legal. **Do not "fix" it** by removing, wrapping, or `export`-ing
+   the `return`; that breaks how the script hands results back. If you want a
+   pre-launch check, validate only that the injected `INJECTED` object parses as
+   JSON (`JSON.parse` the slice between `const INJECTED = ` and the next `const`),
+   not that the whole module passes `node --check`.
+
+   The run-args shape:
 
    ```jsonc
    {

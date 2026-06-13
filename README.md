@@ -65,6 +65,40 @@ Salesforce pen-tests regardless,"* never *"you will pass."*
 /plugin install sf-security-review-toolkit
 ```
 
+## Running it hands-off (permissions)
+
+The journey is **read-only on your source** — finders and verifiers only read
+code; the only writes are the toolkit's own state (`.security-review/`) and
+generated artifacts (`docs/security-review/`). Two ways to cut the per-step
+permission prompts for an autonomous run:
+
+- **Recommended read-only allowlist.** Drop this into the target repo's
+  `.claude/settings.json`. It pre-approves only non-destructive sensing —
+  never writes, never anything that touches a live system:
+
+  ```json
+  {
+    "permissions": {
+      "allow": [
+        "Bash(git status:*)", "Bash(git log:*)", "Bash(git rev-parse:*)", "Bash(git diff:*)", "Bash(git ls-files:*)",
+        "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)", "Bash(sort:*)", "Bash(awk:*)", "Bash(date:*)",
+        "Bash(sf org list:*)", "Bash(sf org display:*)", "Bash(sf data query:*)", "Bash(sf project retrieve:*)",
+        "Bash(sf sobject:*)", "Bash(sf package version list:*)", "Bash(sf package version report:*)", "Bash(sf code-analyzer run:*)"
+      ]
+    }
+  }
+  ```
+
+- **Auto-accept for the multi-agent audit.** The audit fans out many subagents
+  whose read commands vary, and some (`find … -exec grep`, scratch-org steps)
+  can't be covered by a prefix allowlist. Workflow runs go smoothest with
+  auto-accept **on for the duration of the run** — then turn it back off, and
+  don't use it casually on a repo you don't trust.
+
+Either way, the optional `sf`-CLI deployed-org deep audit and any live-endpoint
+probe **always pause for explicit consent** — those touch live systems, and no
+allowlist or auto-accept silences them.
+
 ## Skill catalog
 
 | Skill | What it does | Automation level |

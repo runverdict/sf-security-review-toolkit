@@ -4,6 +4,45 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.2.1] — 2026-06-13
+
+Fixes from the first **fresh-window end-to-end run** of the autonomous flow against
+a from-scratch test fixture (a generic ISV repo the toolkit had never seen). The
+run drove correctly through preflight → scope → audit-launch and the engine
+self-recovered from the issue below, but these are the seams worth closing so the
+next partner doesn't hit them.
+
+### Fixed
+- **`audit-codebase` engine launch is now robust, not just recoverable** (the #1
+  fix). The launch step was ambiguous ("inject the placeholder *or* the runtime
+  binds `args`"), which led to passing run-args via the Workflow `args` parameter
+  — where they arrive as a JSON *string*, `args.repoRoot` is undefined, and the
+  run fails fast with "run args missing or incomplete" (0 agents). The step is now
+  unconditional: **always** copy the template to
+  `<target>/.security-review/audit-engine.mjs`, replace the `INJECTED` placeholder
+  with the JSON run-args, and run that copy via `scriptPath` — never the `args`
+  param (which remains only a safety net). Mirrored in the template header.
+- **`node --check` caveat documented.** The template's top-level `return {…}` is
+  legal in the Workflow runtime's async scope but `node --check` reports it as an
+  "Illegal return statement." Both `audit-codebase` and the template header now
+  state this is expected and must not be "fixed" — to pre-check, `JSON.parse` only
+  the injected object, not the whole module.
+- **Deterministic applicable-count** (`scope-submission`): report the count as the
+  exact length of the compiled `applicableBaselineIds` list, never an estimate; an
+  "applicable" count exceeding the baseline total is a counting bug.
+- **Baseline-currency ranking** (`security-review-journey` preflight): rank by the
+  newest **non-null** `last_verified` (a `null` must never sort ahead of a real
+  date — a naive `sort | tail` misreports a fresh baseline as stale), and report
+  the verified-count + newest date separately from the unverified (null) count.
+
+### Added
+- **README "Running it hands-off (permissions)"** — a recommended read-only
+  allowlist for `.claude/settings.json` (only non-destructive sensing; no writes,
+  nothing live) and a note that the multi-agent audit runs smoothest with
+  auto-accept on for the run's duration (some finder commands like
+  `find … -exec grep` can't be covered by a prefix allowlist). The optional
+  deployed-org deep audit and any live probe always pause for consent regardless.
+
 ## [0.2.0] — 2026-06-13
 
 The autonomous release. The toolkit goes from a set of à-la-carte skills to a

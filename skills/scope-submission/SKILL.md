@@ -256,7 +256,11 @@ elements, get the requirement list those elements imply.
 
 7. **Compile "which requirements apply to you."** Filter every baseline entry's
    `applies_to` against the detected elements (`all` always matches). This is
-   the toolkit's mirror of the checklist-builder step. Two special cases:
+   the toolkit's mirror of the checklist-builder step. Report the applicable
+   count as the **exact length of the compiled `applicableBaselineIds` list** —
+   count the filtered list, never narrate an estimate. The baseline has a fixed
+   total number of entries, so an "applicable" count that exceeds it is a
+   counting bug, not a result. Two special cases:
    mobile elements have **no baseline coverage** — record the element, state
    the gap, and point the operator at Salesforce's mobile-app review guidance
    rather than pretending the toolkit audits it. And surface every matching
