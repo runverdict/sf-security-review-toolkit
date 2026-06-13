@@ -38,7 +38,19 @@ classes the review and a competent attacker both probe:
   failure and a single shared secret across the entire customer base.
 - **Git history** — a secret committed once and "removed" is still in every
   clone's history. History scrubbing without rotation is theater; rotation is
-  the fix, scrubbing is hygiene.
+  the fix, scrubbing is hygiene. Severity is always critical (key compromise)
+  and rotation is non-negotiable — but be precise in the report about
+  *review-gating* vs *security*: a secret in the partner's PRIVATE source repo
+  history is a real rotate-now breach item that the Salesforce reviewer does
+  **not** scan for (the review reads the submitted package, the live
+  endpoints, and the docs — not the partner's source repository), whereas a
+  secret in the SUBMITTED PACKAGE or any code the reviewer can reach is *also*
+  a guaranteed flagged finding. Report both as critical and rotate either way;
+  only frame a finding as "submission-blocking because the reviewer will catch
+  it" when the secret is in the submitted surface. Over-claiming the repo-only
+  case as a literal review gate erodes the report's precision — the honest line
+  is "critical security debt, rotate before you ship; not a surface the review
+  itself scans."
 
 ## 2. What good looks like
 
