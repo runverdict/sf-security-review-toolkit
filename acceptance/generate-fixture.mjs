@@ -105,6 +105,7 @@ F['server/package.json'] = JSON.stringify(
 F['server/index.js'] = `// Helios companion webhook receiver.
 const express = require('express')
 const crypto = require('crypto')
+const { exec } = require('child_process')
 const app = express()
 app.use(express.json())
 
@@ -125,7 +126,66 @@ app.post('/webhook', (req, res) => {
   res.json({ ok: true })
 })
 
+// Diagnostics: check connectivity to a host. (Unauthenticated, shells out with
+// the caller-supplied host — OS command injection.)
+app.get('/diagnostics/ping', (req, res) => {
+  exec('ping -c 1 ' + req.query.host, (err, stdout) => {
+    res.send(stdout || String(err))
+  })
+})
+
 app.listen(process.env.PORT || 8080)
+`
+
+// CVE-bearing lockfile (OSV-Scanner / Family 8 SCA reads package-lock.json).
+F['server/package-lock.json'] = JSON.stringify(
+  {
+    name: 'helios-webhook',
+    version: '0.1.0',
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      '': { name: 'helios-webhook', version: '0.1.0', dependencies: { express: '4.18.2', lodash: '4.17.4', minimist: '1.2.0' } },
+      'node_modules/lodash': { version: '4.17.4', resolved: 'https://registry.npmjs.org/lodash/-/lodash-4.17.4.tgz' },
+      'node_modules/minimist': { version: '1.2.0', resolved: 'https://registry.npmjs.org/minimist/-/minimist-1.2.0.tgz' },
+      'node_modules/express': { version: '4.18.2', resolved: 'https://registry.npmjs.org/express/-/express-4.18.2.tgz' },
+    },
+  },
+  null,
+  2
+)
+
+// Dockerfile with planted misconfigs (Trivy/Checkov, Family 8 IaC): hardcoded
+// ENV secret, runs as root, latest tag, exposed port.
+F['Dockerfile'] = `FROM node:latest
+ENV HELIOS_WEBHOOK_SIGNING_SECRET=prod_signing_secret_do_not_ship
+WORKDIR /app
+COPY server/ ./
+RUN npm install --omit=dev
+EXPOSE 8080
+CMD ["node", "index.js"]
+`
+
+// Terraform with classic misconfigs (Checkov, Family 8 IaC): a security group
+// open to 0.0.0.0/0 and a public-read S3 bucket.
+F['infra/main.tf'] = `provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_security_group" "helios_web" {
+  name = "helios-web"
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_s3_bucket" "helios_assets" {
+  bucket = "helios-assets"
+  acl    = "public-read"
+}
 `
 
 // === docs (intentionally NO agent-action classification table — feeds AP5) =

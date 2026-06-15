@@ -144,7 +144,12 @@ const conflicting = applicable.filter((id) => baseline[id]?.verification === 'co
 // 5. Band
 // ---------------------------------------------------------------------------
 let band, gateReason
-if (blocked) {
+if (!applicable.length) {
+  // Fail CLOSED: no scope manifest / no applicable requirements is never "ready".
+  band = 'NOT READY'
+  gateReason =
+    'no scope manifest or no applicable requirements found — run /sf-security-review-toolkit:scope-submission first'
+} else if (blocked) {
   band = 'BLOCKED'
   const parts = []
   if (openBlockerFindings.length) parts.push(`${openBlockerFindings.length} open critical finding(s)`)

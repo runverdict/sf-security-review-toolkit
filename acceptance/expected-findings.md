@@ -73,7 +73,25 @@ real, not user-mode-masked).
 
 ---
 
-## E. Negative controls — the verifier MUST NOT flag these
+## E. External-endpoint surface — WI-17 OSS scanners (run-scans Families 7/8 + DAST/TLS)
+
+The companion server tree + IaC. These are caught by **mechanical OSS scanners**
+on the external surface (Code Analyzer never sees it), not by the LLM finder
+dimensions. Graded by run-scans Families 7 (SAST) and 8 (SCA + IaC).
+
+| id | probe | file | trigger | scanner | expected severity |
+|----|-------|------|---------|---------|-------------------|
+| E1 | OS command injection | `server/index.js` (`/diagnostics/ping`) | `exec('ping -c 1 ' + req.query.host)` — caller-supplied host shelled out, unauthenticated | Semgrep / njsscan (Family 7 SAST) | critical |
+| E2 | known-vulnerable dependencies | `server/package-lock.json` | lodash@4.17.4, minimist@1.2.0, express@4.18.2 (CVE-bearing pins) | OSV-Scanner (Family 8 SCA) | high (14 GHSAs incl. lodash prototype pollution) |
+| E3 | Dockerfile misconfig | `Dockerfile` | hardcoded `ENV` secret, runs as root, `node:latest` tag, exposed port | Checkov / Trivy (Family 8 IaC) | medium–high |
+| E4 | Terraform misconfig | `infra/main.tf` | security group ingress `0.0.0.0/0`, S3 `acl = "public-read"` | Checkov (Family 8 IaC) | high |
+
+DAST/TLS extensions (Family 3/4) require a live endpoint and are validated against
+a locally-run instance of `server/` where feasible; otherwise the invocation is
+authored + the evidence path documented (the same owner-run pattern as the
+existing ZAP plan).
+
+## E2. Negative controls — the verifier MUST NOT flag these
 
 | id | safe pattern | file | why it is not a finding |
 |----|--------------|------|--------------------------|

@@ -145,10 +145,17 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.4.0 — acceptance-proven + readiness scoring.** The toolkit ships **13
-skills**, **16 audit dimensions**, **6 scan families**, and a deterministic
-**Submission Completeness Index**. Component status, plainly:
+**0.4.1 — acceptance-proven + readiness scoring + external-surface scanners.**
+The toolkit ships **13 skills**, **16 audit dimensions**, **8 scan families**, and
+a deterministic **Submission Completeness Index**. Component status, plainly:
 
+- **New in 0.4.1 — OSS external-surface scanners (WI-17).** The partner-hosted
+  server tree + its IaC — which Code Analyzer never sees but Salesforce explicitly
+  pen-tests — is now mechanically scanned by free/OSS tools: **Family 7 SAST**
+  (Semgrep + Bandit/njsscan/gosec), **Family 8 SCA + IaC** (OSV-Scanner + Checkov),
+  plus DAST (Nuclei + Schemathesis) and local TLS evidence (testssl.sh/sslyze,
+  which clears the one `conflicting` SSL-Labs baseline entry). Proven by running
+  each tool against a seeded fixture; findings feed the SCI.
 - **New in 0.4.0 — the Submission Completeness Index (SCI) + a formal evidence
   model.** `compile-submission` now emits a deterministic, gated readiness score
   (`harness/compute-sci.mjs`) — a hard blocker floor over a

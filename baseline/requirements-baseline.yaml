@@ -900,6 +900,70 @@
   verification: verified_primary
   last_verified: "2026-06-12"
 
+- id: scan-external-sast
+  requirement: The partner-hosted external endpoint's source (Python/Node/Java/Go) should pass a mechanical SAST scan before submission, to pre-empt the reviewer's penetration test of that surface.
+  details: >
+    Salesforce Code Analyzer scans only the Salesforce-package surface
+    (Apex/VF/Aura); it never sees the external server, but Salesforce explicitly
+    pen-tests it (the "Test Your Entire Solution" guidance: include all external
+    endpoints, follow-the-data, run automated scanning tools). The toolkit
+    recommends a free/OSS SAST pass over every detected non-package source root —
+    Semgrep (multi-language keystone) plus a language gate (Bandit/njsscan/gosec) —
+    so injection / auth-bypass / SSRF classes are fixed before the reviewer's pen
+    test reaches them. This is a toolkit recommendation that reduces bounce risk,
+    NOT a Salesforce-mandated submission artifact; the specific tool choice is the
+    toolkit's. A confirmed critical in reviewer-reachable server code is a fix-now
+    blocker; a missing scan is a major materials gap.
+  applies_to: [external-endpoint]
+  automation: fully
+  automation_notes: run-scans Family 7 runs Semgrep + the language gate over each detected source root, emits evidence, and folds findings into the dossier + the audit ledger.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/blogs/2023/08/the-top-20-vulnerabilities-found-in-the-appexchange-security-review
+      date: "2023-08"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-06-15"
+
+- id: scan-external-sca
+  requirement: Third-party dependencies of the external endpoint must be free of known CVEs, evidenced by a mechanical SCA scan of every lockfile under a non-package source root.
+  details: >
+    The companion server's dependency tree is in scope the same way the package's
+    bundled libraries are (baseline scan-dependency-vulnerabilities), but Code
+    Analyzer's RetireJS only covers packaged JS. The toolkit recommends OSV-Scanner
+    (multi-ecosystem, OSV DB; leaner than per-ecosystem npm/pip audit) over every
+    external lockfile, with upgrade targets. Reuse the OSV output as the SBOM /
+    component-version table for the security-program element-4 slot.
+  applies_to: [external-endpoint]
+  automation: fully
+  automation_notes: run-scans Family 8 runs OSV-Scanner over each external lockfile.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/blogs/2023/08/the-top-20-vulnerabilities-found-in-the-appexchange-security-review
+      date: "2023-08"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-06-15"
+
+- id: scan-iac-misconfig
+  requirement: Infrastructure-as-code shipped with the external endpoint (Dockerfile, Terraform, CloudFormation, Kubernetes) should pass a misconfiguration scan before submission.
+  details: >
+    A secret in a Dockerfile, a security group open to 0.0.0.0/0, or a public-read
+    bucket is part of the attack surface the reviewer's pen test reaches by
+    following the data. The toolkit recommends Checkov (or Trivy) over every
+    Dockerfile / IaC file. A hardcoded secret found here is ALSO a Family-6
+    fail-hardcoded-secrets hit — cross-reference, do not double-disposition.
+  applies_to: [external-endpoint]
+  automation: fully
+  automation_notes: run-scans Family 8 runs Checkov over the IaC dir + each Dockerfile.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/blogs/2023/08/the-top-20-vulnerabilities-found-in-the-appexchange-security-review
+      date: "2023-08"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-06-15"
+
 - id: scan-dependency-vulnerabilities
   requirement: All bundled third-party libraries and dependencies must be free of known CVEs.
   details: >

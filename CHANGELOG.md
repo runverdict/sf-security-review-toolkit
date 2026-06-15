@@ -4,6 +4,47 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.4.1] — 2026-06-15
+
+WI-17 — the OSS external-surface scanners. The biggest coverage add: the
+partner-hosted server tree + its IaC, which Code Analyzer never sees but
+Salesforce explicitly pen-tests ("Test Your Entire Solution"), goes from
+LLM-read + secret-scanned to mechanically **SAST'd, SCA'd, and IaC-scanned**.
+All tools free/OSS. `run-scans` is now eight families.
+
+### Added — two scan families + two extensions (all free/OSS)
+- **Family 7 — External SAST:** **Semgrep** (multi-language keystone, custom-rule
+  capable) + **Bandit**/**njsscan**/**gosec** per detected language, over every
+  non-package source root.
+- **Family 8 — External SCA + IaC:** **OSV-Scanner** (multi-ecosystem CVE scan of
+  every external lockfile) + **Checkov** (Terraform/CloudFormation/K8s/Dockerfile
+  misconfig); **Trivy** is a one-tool substitute.
+- **Family 3 (DAST) extension:** **Nuclei** (community CVE/misconfig templates) +
+  **Schemathesis** (OpenAPI-driven contract fuzzing, riding the OpenAPI artifact
+  `generate-artifacts` already emits) + ZAP OpenAPI import.
+- **Family 4 (TLS) extension:** **testssl.sh / sslyze** producing *local,
+  deterministic* TLS evidence — the file that **satisfies
+  `endpoint-ssl-labs-a-grade` deterministically and clears its `conflicting`
+  status** (no reliance on a contested external letter grade).
+- Three new baseline gates (`scan-external-sast`, `scan-external-sca`,
+  `scan-iac-misconfig`, `applies_to: [external-endpoint]`, `major`) — they
+  auto-flow into `applicableBaselineIds` and feed the SCI; a confirmed critical in
+  reviewer-reachable server code is a fix-now blocker.
+
+### Fixed
+- `compute-sci.mjs` now **fails closed** on an empty/missing scope manifest
+  (0 applicable requirements → `NOT READY`, not the prior fail-open
+  `NO-SURPRISES READY`).
+
+### Validated (on the seeded Helios fixture — extended with a vulnerable server
+route, a CVE-bearing lockfile, a misconfigured Dockerfile + Terraform)
+- Semgrep caught the OS command injection (`server/index.js`); OSV-Scanner caught
+  14 GHSAs (lodash/minimist/express); Checkov caught the Terraform `0.0.0.0/0`
+  security group + public-read S3 and the Dockerfile latest-tag + runs-as-root.
+  The scan evidence registers into the evidence index → the three external-scan
+  requirements read `SATISFIED` in the SCI; the SAST-found critical flows to the
+  ledger → `BLOCKED`. Every probe proven by running the actual tool, not asserted.
+
 ## [0.4.0] — 2026-06-15
 
 The **autonomous-orchestration extensions** spine (roadmap §3a, WI-20 + WI-18) —
