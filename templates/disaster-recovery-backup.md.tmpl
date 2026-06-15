@@ -1,0 +1,197 @@
+<!--
+TEMPLATE: disaster-recovery-backup.md.tmpl
+Output:   <target>/docs/security-review/disaster-recovery-backup.md
+Filled by: /sf-security-review-toolkit:generate-artifacts pre-fills ONLY the
+           hosting provider + region (from data-flow-diagram.md) and the
+           managed-service primitives it can read from infra config; EVERYTHING
+           ELSE is owner-input. DR/backup posture is an operational POLICY
+           commitment — an agent cannot observe an RPO target, a restore drill,
+           or a failover plan from source code. The owner completes and SIGNS.
+Satisfies: baseline entry artifact-dr-backup-statement.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- This is a STUB the owner completes. An unfilled {{SLOT}} is not a draft to
+  approve — it is a NOT-submission-ready signal (CONVENTIONS §2: no credit for
+  an un-evidenced assertion). RPO/RTO/last-tested-date carry no weight unless
+  backed by a runbook, a backup config, or a drill record the owner can produce.
+- Scope is the PARTNER-HOSTED external endpoint only. Salesforce-side data
+  durability (the subscriber org's own data) is Salesforce's responsibility and
+  is explicitly out of scope here — say so, do not claim it.
+-->
+
+# {{PARTNER_NAME}} — Disaster Recovery & Backup Statement (partner-hosted endpoint)
+
+| | |
+|---|---|
+| **Document** | Disaster Recovery & Backup — partner-hosted external endpoint |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **STATUS: PARTIAL until owner-completed and signed.** This template is a
+> stub. Every `{{SLOT}}` below is an owner commitment that must be filled and
+> backed by evidence (a backup configuration, a restore runbook, a drill
+> record). Until the provenance footer carries a signature and a non-empty
+> "Verified by" on every row, this document is NOT submission-ready.
+
+> **What this document is.** A statement of how the partner-hosted external
+> endpoint's data and service survive a disaster: backup cadence/scope/
+> encryption, recovery objectives (RPO/RTO), restore-test cadence and the last
+> date a restore was actually exercised, the failover/redundancy posture, and
+> the hosting provider's DR capabilities relied upon. It is an operational
+> commitment, not an agent-verified fact set.
+
+> **Out of scope (stated plainly).** {{SALESFORCE_SIDE_DURABILITY_STATEMENT}}
+<!-- guidance: One line: the subscriber org's Salesforce data durability is
+Salesforce's responsibility, not covered here; this document covers ONLY the
+data and service the partner hosts. Do not claim to back up or recover the
+customer's Salesforce org. -->
+
+---
+
+## 1. Hosting & provider DR capabilities relied upon
+
+<!-- guidance: The provider/region rows are the ONLY ones generate-artifacts
+pre-fills, sourced from data-flow-diagram.md. The owner confirms them and fills
+WHICH provider DR primitives are actually relied upon (multi-AZ, automated
+snapshots, cross-region replication, managed-DB point-in-time recovery) and the
+provider's published durability/availability SLA. A relied-upon capability the
+owner cannot point at in the provider console is not a control — leave it out. -->
+
+| Item | Value | Source |
+|---|---|---|
+| Hosting provider | {{HOSTING_PROVIDER}} | pre-filled from data-flow diagram; owner-confirmed |
+| Primary region | {{PRIMARY_REGION}} | pre-filled from data-flow diagram; owner-confirmed |
+| Secondary / DR region | {{DR_REGION_OR_NONE}} | owner-input |
+| Provider DR primitives relied upon | {{PROVIDER_DR_PRIMITIVES}} | owner-input |
+| Provider durability / availability SLA | {{PROVIDER_SLA}} | owner-input (cite provider doc) |
+
+{{PROVIDER_DR_NOTES}}
+<!-- guidance: Brief prose: which provider-managed features carry the DR load
+(e.g. managed-Postgres automated backups + PITR, object-store cross-region
+replication) versus what the partner operates themselves. State the shared-
+responsibility line: the provider durably stores; the partner is responsible
+for configuring backups, testing restores, and the failover decision. -->
+
+---
+
+## 2. Backup cadence, scope & encryption (owner-input)
+
+<!-- guidance: One row per backed-up data store / asset. Cadence (e.g. continuous
+WAL + daily full), what is in scope (which datastore, which buckets — and what is
+deliberately NOT backed up, e.g. reconstructible caches), retention window, and
+the at-rest encryption of the backup itself (the backup must be encrypted, not
+only the live store). Reviewers check that backups are encrypted and that the
+retention window is stated, not implied. Each row needs an evidence pointer the
+owner can produce (a backup-policy config, a console screenshot). -->
+
+| Data store / asset | Cadence | In-scope contents | Retention | Backup encryption (at rest) | Evidence |
+|---|---|---|---|---|---|
+| {{STORE}} | {{CADENCE}} | {{CONTENTS}} | {{RETENTION}} | {{BACKUP_ENCRYPTION}} | {{EVIDENCE_REF}} |
+
+**Backup transit & access:** {{BACKUP_TRANSIT_AND_ACCESS}}
+<!-- guidance: How backups move (encrypted in transit) and who can access /
+restore them (least-privilege; the restore role is separate from day-to-day
+app credentials). State that backup access is logged. -->
+
+**Excluded from backup (by design):** {{BACKUP_EXCLUSIONS_OR_NONE}}
+<!-- guidance: Name what is intentionally not backed up because it is
+reconstructible (derived caches, ephemeral queues) — an explicit exclusion list
+reads as deliberate; silence reads as a gap. -->
+
+---
+
+## 3. Recovery objectives — RPO & RTO (owner-input)
+
+<!-- guidance: RPO = maximum tolerable data loss (how far back the last good
+backup is); RTO = maximum tolerable time to restore service. State the COMMITTED
+target AND how the design supports it (continuous WAL → low RPO; warm standby →
+low RTO). A target with no mechanism behind it is aspirational; reviewers want
+the mechanism. If targets differ per datastore, give a row each. -->
+
+| Objective | Target | How the design supports it | Evidence |
+|---|---|---|---|
+| **RPO** (max data loss) | {{RPO_TARGET}} | {{RPO_MECHANISM}} | {{RPO_EVIDENCE}} |
+| **RTO** (max time to recover) | {{RTO_TARGET}} | {{RTO_MECHANISM}} | {{RTO_EVIDENCE}} |
+
+{{RPO_RTO_NOTES}}
+
+---
+
+## 4. Restore testing — cadence & last exercised (owner-input)
+
+<!-- guidance: THE highest-signal section. A backup that has never been restored
+is not a backup. State the restore-test cadence, the DATE a restore was last
+actually exercised (not scheduled — performed), what was validated (data
+integrity + app boot + a smoke check), and where the drill record lives. An
+empty {{LAST_TESTED_DATE}} or a date that predates the last major schema/infra
+change is a finding the owner should close before submission, not gloss. -->
+
+| Field | Value |
+|---|---|
+| Restore-test cadence | {{RESTORE_TEST_CADENCE}} |
+| **Last restore actually exercised (date)** | {{LAST_TESTED_DATE}} |
+| What was validated | {{RESTORE_VALIDATION_SCOPE}} |
+| Result of last drill | {{LAST_DRILL_RESULT}} |
+| Drill record location | {{DRILL_RECORD_REF}} |
+
+---
+
+## 5. Failover & redundancy posture (owner-input)
+
+<!-- guidance: How the running service survives the loss of an instance / AZ /
+region. State the redundancy model (single-AZ / multi-AZ / multi-region), whether
+failover is automatic or a manual runbook decision, who is authorized to invoke
+it, and the honest current state — a single-region warm-standby posture is fine
+to submit IF stated plainly; do not describe a multi-region active-active design
+the infra does not actually run. CONVENTIONS §2: never over-claim. -->
+
+| Aspect | Posture |
+|---|---|
+| Redundancy model | {{REDUNDANCY_MODEL}} |
+| Failover trigger | {{FAILOVER_TRIGGER}} (automatic / runbook-manual) |
+| Failover runbook location | {{FAILOVER_RUNBOOK_REF}} |
+| Authorized to invoke failover | {{FAILOVER_AUTHORITY}} |
+| Known single points of failure | {{SPOF_STATEMENT_OR_NONE}} |
+
+{{REDUNDANCY_NOTES}}
+<!-- guidance: One honest paragraph on the current posture and any gap on the
+roadmap. A stated, dated gap is credible; a hidden one found during the pen test
+is a credibility hit. -->
+
+---
+
+## 6. Cross-references
+
+{{CROSS_REFERENCES}}
+<!-- guidance: data-flow-diagram.md (provider/region/data stores),
+data-sensitivity.md (what class of data the backups carry — Restricted backups
+inherit the minimization/encryption obligations), access-control.md (the restore
+role). -->
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). ONLY §1's provider + region are
+agent pre-filled (from the data-flow diagram, static review). Every other section
+— cadence, RPO/RTO, restore drills, failover — is OWNER-INPUT operational policy
+the agent cannot observe or verify. An empty "Verified by" anywhere means NOT
+submission-ready. This is a stub for owner completion and SIGNATURE, not an
+agent-verified document. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| §1 Hosting & provider DR | agent (provider/region) + owner | data-flow-diagram.md; provider console | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §2 Backup cadence/scope/encryption | owner | backup config / policy | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §3 RPO & RTO | owner | DR design / runbook | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §4 Restore testing | owner | drill records | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §5 Failover & redundancy | owner | failover runbook / infra | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Agent pre-fill is limited to hosting provider and region (§1), read from `data-flow-diagram.md`. All recovery objectives, backup commitments, restore-test dates, and failover posture are owner-attested operational policy — the agent did not and cannot verify them.
+- Owner sign-off (name + role + date): {{OWNER_SIGNATURE_OR_UNSIGNED}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This is a stub completed and signed by the owner; it is a policy statement, not an agent-verified document and not a warranty. Salesforce performs its own penetration testing and may independently audit DR/backup claims regardless of this document.

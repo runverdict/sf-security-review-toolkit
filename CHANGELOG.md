@@ -4,6 +4,44 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.4.2] — 2026-06-15
+
+WI-19 — the written-policy / org-config artifact pack. Closes the surface where a
+submission stalls *after* the code is clean: the questionnaire's written-policy +
+org-config materials that no static finder can produce. All six are owner-completed
+**stubs** `generate-artifacts` pre-fills from detected facts — policy is a human
+deliverable; the SCI counts each SATISFIED only with an owner-signed evidence entry,
+never an un-signed stub.
+
+### Added — six policy templates + baseline gates
+- **`templates/`**: `incident-response-plan` (incl. the mandatory 24-hour Salesforce
+  reporting duty), `data-retention-deletion` (retention per data class +
+  deletion-on-uninstall), `disaster-recovery-backup` (RPO/RTO + restore testing),
+  `vulnerability-remediation-sla` (time-to-fix by severity + the scan cadence),
+  `hosting-architecture` (provider/region/network/prod-access/encryption, **extending**
+  the data-flow subprocessor table, not duplicating it), `prior-pentest-attestation`
+  (declare prior pen test / Checkmarx / SOC2 / ISO — or an explicit none + compensating
+  posture). Authored multi-agent in the toolkit idiom (STATUS-PARTIAL header, `{{slots}}`,
+  owner-input markers, provenance footer); secret-scan clean.
+- Six baseline gates (`artifact-incident-response-plan`, `-data-retention-deletion`,
+  `-disaster-recovery-backup`, `-vuln-remediation-sla`, `-hosting-architecture`,
+  `-prior-pentest-attestation`), `applies_to` keyed to listing class, honestly calibrated
+  `major` / `web_research_unverified` (toolkit-recommended completeness materials, pending
+  per-item confirmation against the login-gated questionnaire).
+
+### Wired — autonomous orchestration
+- `generate-artifacts` step 11 auto-drafts the pack from the required-materials matrix for
+  the detected listing class, pre-filling from §7/§8 facts (hosts, subprocessors, data
+  classes, scan families) and leaving the rest owner-input + owner-signed. Bucket table,
+  prerequisites, and description updated. `readiness-tracker` §1.7 carries the rows
+  (SATISFIED only when signed).
+
+### Validated
+- For an external-endpoint + package scope the six policy ids select into
+  `applicableBaselineIds` and read `MISSING` in the SCI (0 satisfied — correctly *not*
+  credited until owner-completed + signed). Each template confirmed STATUS-PARTIAL +
+  slots + provenance; `hosting-architecture` extends the subprocessor table.
+
 ## [0.4.1] — 2026-06-15
 
 WI-17 — the OSS external-surface scanners. The biggest coverage add: the

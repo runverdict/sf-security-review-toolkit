@@ -2762,6 +2762,120 @@
   verification: verified_primary
   last_verified: "2026-06-12"
 
+# --- WI-19 written-policy / org-config artifact pack ----------------------------
+# Toolkit-recommended completeness materials for the questionnaire's written-policy
+# + org-config surface (the place a submission stalls AFTER the code is clean).
+# Each is an owner-completed STUB that generate-artifacts pre-fills from what the
+# toolkit detects; SATISFIED only when owner-completed + signed (evidence). Marked
+# web_research_unverified pending per-item confirmation against the login-gated
+# questionnaire — promote to verified_primary as each is confirmed.
+
+- id: artifact-incident-response-plan
+  requirement: Provide an incident-response plan covering detection, triage, containment, and the mandatory 24-hour Salesforce security-incident reporting duty.
+  details: >
+    generate-artifacts drafts a stub (incident-response-plan.md.tmpl) pre-filled
+    with the security owner from the access-control personas; the owner completes
+    contacts, severity matrix, and process and signs. Cross-references the 24-hour
+    reporting obligation (post-incident-reporting-24h, stay-listed).
+  applies_to: [external-endpoint]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner completes + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
+- id: artifact-data-retention-deletion
+  requirement: Provide a data-retention and deletion-on-uninstall statement covering retention periods per data class, deletion on package uninstall + contract end, and data residency.
+  details: >
+    generate-artifacts drafts a stub (data-retention-deletion.md.tmpl) pre-filled
+    with the data classes from data-sensitivity + the hosts/regions from the
+    data-flow diagram; owner completes retention periods + the deletion mechanism
+    and signs. The deletion-on-uninstall behavior is a recurring questionnaire item.
+  applies_to: [managed-package, external-endpoint]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner completes + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
+- id: artifact-disaster-recovery-backup
+  requirement: Provide a disaster-recovery and backup statement for the partner-hosted endpoint (backup cadence, RPO/RTO, restore testing, failover posture).
+  details: >
+    generate-artifacts drafts a stub (disaster-recovery-backup.md.tmpl) pre-filled
+    with the hosting provider/region from the data-flow diagram; owner completes
+    RPO/RTO + restore-test cadence and signs.
+  applies_to: [external-endpoint]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner completes + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
+- id: artifact-vuln-remediation-sla
+  requirement: Provide a vulnerability-remediation SLA / patch-management statement (time-to-fix by severity, dependency-update cadence, externally-reported-vuln intake).
+  details: >
+    generate-artifacts drafts a stub (vulnerability-remediation-sla.md.tmpl)
+    pre-filled with the scan families that run (run-scans Families 5-8); owner
+    completes the SLA windows + disclosure channel and signs.
+  applies_to: [external-endpoint]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner completes + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
+- id: artifact-hosting-architecture
+  requirement: Provide an external-services / hosting-architecture statement (provider + region, network architecture, production-access control, encryption, sub-processor list).
+  details: >
+    generate-artifacts drafts a stub (hosting-architecture.md.tmpl) pre-filled with
+    the hosts/regions/subprocessors from the data-flow diagram; owner completes the
+    network + access-control detail and signs. Extends (does not duplicate) the
+    data-flow subprocessor table.
+  applies_to: [external-endpoint]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner completes + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
+- id: artifact-prior-pentest-attestation
+  requirement: Declare any prior independent security testing (penetration test, Checkmarx, SOC 2, ISO 27001) with date/scope/remediation status — or an explicit none with the compensating posture.
+  details: >
+    generate-artifacts drafts a stub (prior-pentest-attestation.md.tmpl) pre-filled
+    with the toolkit's own audit + scan evidence as the compensating-posture
+    baseline; owner declares prior-test details + signs. A disclosure slot, not a
+    substitute — Salesforce re-tests regardless.
+  applies_to: [all]
+  automation: partially
+  automation_notes: Stub drafted by generate-artifacts; owner declares + signs.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/security_review_required_materials.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: "2026-06-15"
+
 # ----------------------------------------------------------------------------
 # post-approval — staying listed
 # ----------------------------------------------------------------------------
