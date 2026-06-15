@@ -4,6 +4,62 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.3.1] — 2026-06-15
+
+Acceptance-proven release. The 0.3.0 coverage dimensions were validated by a
+fresh-context run against a fixture that actually *contains* their failure
+classes — and that run found (and this release fixes) two engine-robustness gaps
+and one verifier-guidance loophole that would have let a real partner run silently
+under-report. The dimension *concepts* were sound; the gaps were all in the shared
+engine and the verifier's refute rules.
+
+### Added — the acceptance harness (`acceptance/`)
+- **`generate-fixture.mjs`** — builds "Helios Service Agent", a synthetic
+  Agentforce managed 2GP seeded with one concrete instance of every probe in the
+  three 0.3.0 dimensions, negative controls, and a deleted-but-recoverable
+  git-history secret. Synthetic secrets are assembled from parts at runtime so the
+  generator itself stays secret-scan-clean; the fixture is regenerated on demand,
+  never committed.
+- **`expected-findings.md`** — the sealed ground-truth plant list (grading key),
+  kept out of the fixture so finders cannot read it.
+- **`build-run-args.mjs`** — mechanically performs the `audit-codebase` run-args
+  step (extract §4 finder prompt + §5/§6 verifier guidance per dimension, inject a
+  project-local engine), with a focused single-dimension re-run mode.
+- **`acceptance-report-2026-06-15.md`** — the graded result: `apex-exposed-surface`
+  8/8 planted classes, `package-metadata` 10/10, `agentforce-package` caught the
+  VerifiedCustomerId/third-party-LLM/confirmation/invocable/LLM-output/logging/
+  prompt-hardening classes, Family 6 recovered the deleted secret from history, and
+  0 false positives on the 8 negative controls.
+
+### Fixed — engine robustness (`harness/workflow-template.mjs`)
+- **Finder repo-anchoring.** A finder could be derailed onto the current working
+  directory's *foreign* `scope-manifest.json` (when the engine runs from another
+  project's directory) and return "the codebase is not present" — a silent false
+  "clean". The shared context now hard-anchors every finder and verifier to
+  `REPO_ROOT`, forbids reading the cwd or any foreign manifest, and forbids an
+  empty result on a "could-not-find-the-repo" basis. (Surfaced when one finder
+  produced 0 findings on a fixture loaded with planted issues; with the fix it went
+  0 → 19.)
+- **Verifier now receives §5/§6.** The adversarial verifier previously saw only a
+  generic "confirm only if the exploit is reachable in real code" prompt and never
+  the dimension's own verifier guidance / false-positive patterns — so it
+  over-refuted declaration-level metadata violations (exposed message channel,
+  `http://`/wildcard trusted host, `position:absolute` in component CSS) on a "no
+  live caller / dormant config" rationale the Salesforce static review does not
+  apply. The engine now threads each dimension's §5+§6 as a `verifierNotes` run-arg
+  and treats declaration-level violations as confirmed-on-declaration (reachability
+  sets severity, not validity). Documented in the template header and the
+  `audit-codebase` skill so a partner's run threads it too.
+
+### Fixed — dimension verifier guidance (`agentforce-package.md` §5)
+- **"Reachability first" no longer reads as license to refute.** A packaged
+  `genAiPromptTemplate`/`GenAiFunction`/action that ships in the managed package is
+  a reviewer-visible artifact even when not currently wired to a live agent. §5 now
+  states that reachability sets *severity* (downgrade to low/info, verdict
+  `partially_real`) and **never** issues `false_positive` on a "dead packaged code
+  / not currently invoked" basis — closing the loophole by which the under-hardened
+  prompt-template finding (AP7/8/9/12) was being dropped.
+
 ## [0.3.0] — 2026-06-15
 
 Coverage-completeness release — the recall-defining structural work. A maintainer

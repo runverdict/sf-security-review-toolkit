@@ -105,7 +105,7 @@ allowlist or auto-accept silences them.
 |---|---|---|
 | `/sf-security-review-toolkit:security-review-journey` | The autonomous driver: a preflight scan (+ Dev Hub auto-resolution when `sf` is authed), then runs the whole journey end to end, pausing only at the safety gates; also does state detection / routing / status | Autonomous (gated) |
 | `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, external endpoint, MCP server, Canvas, LWC), compiles which requirements apply, gates on partner-program prerequisites | Automated |
-| `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 13 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
+| `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 16 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
 | `/sf-security-review-toolkit:generate-artifacts` | Drafts the submission artifacts from your code: AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, exposed-tools inventory + OpenAPI, access-control documentation, credential-storage statement | Automated draft, human review |
 | `/sf-security-review-toolkit:run-scans` | Runs Code Analyzer v5 and dependency scans; verifies TLS grade; generates an authenticated DAST plan (including identity endpoints) and folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
 | `/sf-security-review-toolkit:prepare-test-environment` | Runbooks for the reviewer-facing test org: Trialforce/DE org, agent + Topics + reasoning engine + utterances, two test users, the per-user authorization-boundary proof | Guided manual |
@@ -145,7 +145,9 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.2.0 — autonomous.** Component status, plainly:
+**0.3.1 — coverage-complete + acceptance-proven.** The toolkit now ships **13
+skills**, **16 audit dimensions**, and **6 scan families**. Component status,
+plainly:
 
 - **Field-tested:** the audit methodology (CONVENTIONS, audit-methodology, the
   find → adversarial-verify → synthesize engine) and the harness assets — these
@@ -155,14 +157,32 @@ primary-source citations are the most valuable contribution you can make.
   cold against a real production codebase (FastAPI + Postgres RLS + an OAuth 2.1
   authorization server + an MCP server + two 2GP packages). From an empty ledger
   the audit re-discovered every known-open finding, refuted false candidates with
-  code evidence, and the generated artifact pack matched a hand-built reference —
-  surfacing real findings the hand-built audit had under-rated. See the
-  [`CHANGELOG`](CHANGELOG.md).
-- **New in 0.2.0:** the autonomous, preflight-gated orchestrator; Dev Hub
-  auto-resolution in `scope-submission`; the wizard-slot submission-package
-  assembler; the eight-category report spine and the agent/ForcedLeak detectors;
-  and the optional `sf`-CLI-gated deployed-org deep audit (the five lifecycle
-  skills above). 13 skills, 13 dimension files.
+  code evidence, and the generated artifact pack matched a hand-built reference.
+- **Coverage closures (0.3.0):** three new dimensions —
+  [`agentforce-package`](methodology/dimensions/agentforce-package.md) (the
+  packaged Agentforce/AI surface, audited independent of any MCP server),
+  [`package-metadata`](methodology/dimensions/package-metadata.md) (the
+  metadata/XML violation class no code-AST dimension reads), and
+  [`apex-exposed-surface`](methodology/dimensions/apex-exposed-surface.md)
+  (exposed-entry-point authorization / IDOR / guest-reachability) — plus
+  `run-scans` **Family 6** (mechanical secret scan over the working tree **and
+  full git history**). These close the four CRITICAL recall gaps from the
+  maintainer coverage-gap audit.
+- **Acceptance-proven (0.3.1):** a dedicated [`acceptance/`](acceptance/) harness
+  builds a synthetic Agentforce managed package seeded with one concrete instance
+  of every probe in the new dimensions (plus a deleted-but-recoverable
+  git-history secret and negative controls), then runs the toolkit against it
+  cold. The run auto-selected all three new dimensions, Family 6 recovered the
+  deleted secret from history, and the finders caught the planted classes
+  (`apex-exposed-surface` flagged every planted entry-point at critical/high;
+  `agentforce-package` flagged the service-agent IDOR / VerifiedCustomerId /
+  third-party-LLM / prompt-injection classes). The run also surfaced — and the
+  release fixes — two **engine-robustness** gaps: a finder could be derailed onto
+  a foreign repo's stale scope-manifest (now hard-anchored to the audit target),
+  and the adversarial verifier never received each dimension's §5/§6 refute rules
+  (now threaded in, so declaration-level metadata violations are no longer
+  over-refuted on a "no live caller" rationale). See the [`CHANGELOG`](CHANGELOG.md)
+  and [`acceptance/expected-findings.md`](acceptance/expected-findings.md).
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
   delta, 115 of 146 baseline entries are `verified_primary` (confirmed
@@ -173,7 +193,10 @@ primary-source citations are the most valuable contribution you can make.
   from this repo. Verification status is per-entry in the YAML; check the
   entries you rely on, not the aggregate.
 
-Use the readiness verdict as preparation guidance, not as a pass prediction.
+Use the readiness verdict as preparation guidance, not as a pass prediction. The
+acceptance test proves the toolkit *catches its known failure classes* on a
+seeded fixture — a no-surprises bar, never a guarantee that Salesforce's own
+pen test (which runs regardless) finds nothing.
 
 ## License
 

@@ -470,7 +470,16 @@ double-counted).
   quality (CSPRNG vs weak PRNG) is `crypto-internals`' call — route it there;
   this dimension confirms only presence + per-inference freshness. A template
   with no untrusted/user merge data at all (fully static, operator-authored) does
-  not need an enclosure — refute.
+  not need an enclosure — refute. **A packaged `genAiPromptTemplate` that
+  interpolates untrusted record/user merge fields into the instruction region is
+  a DECLARATION-level finding: it confirms on the template body ALONE.** Whether
+  the template is currently bound to a live `GenAiFunction`/agent is a SEVERITY
+  input (see reachability below), never grounds to refute — the under-hardened
+  template ships in the managed package and a subscriber admin can bind it, so
+  "not wired to any function / dead packaged code / no execution path" is NOT a
+  valid refute. The only valid refutes are the two §6 cases (fully static
+  operator-authored content, or a template already carrying all four hardening
+  elements).
 - **For LLM-output-untrusted claims, find the constraint/encode step.** Trace the
   generated-content variable to its sink: a format/value validation (size,
   char-set, integer bounds, Salesforce-Id shape check) before DML/SOQL, or an
@@ -478,10 +487,18 @@ double-counted).
   here as root cause with the sink dimension named. Generated content that is
   only ever displayed as inert, escaped text the agent never acts on is lower
   severity, not high.
-- **Reachability first, always.** A violating action behind an unshipped /
-  inactive plugin, a flow not wired to any agent, or an operator-only topic is
-  `low`/`info` with a note, not the headline severity. Confirm the action is
-  actually reachable by a live agent before assigning a blocker.
+- **Reachability sets SEVERITY; it never refutes a shipped artifact.** A
+  violating action behind an unshipped / inactive plugin, a flow not wired to any
+  agent, an unbound prompt template, or an operator-only topic is `low`/`info`
+  with a note — that is a **downgrade, not a false positive**. Anything that
+  SHIPS in the managed package (`genAiPromptTemplate`, `GenAiFunction`, action
+  Apex/flow, `Bot`/plugin metadata) is a reviewer-visible artifact even when
+  nothing currently wires it to a live agent: a subscriber admin can bind it, and
+  the Salesforce reviewer flags shipped metadata regardless. So downgrade the
+  SEVERITY and confirm with verdict `partially_real` plus a "not currently wired"
+  note — **never** issue `false_positive` on a "dead packaged code / no execution
+  path / not currently invoked" rationale. Confirm live-agent reachability before
+  assigning a BLOCKER severity, never before assigning the finding at all.
 
 ## 6. Known false-positive patterns
 

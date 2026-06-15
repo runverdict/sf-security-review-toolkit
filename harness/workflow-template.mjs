@@ -32,9 +32,15 @@
  *      target map to the user BEFORE fanning out; a wrong target map silently
  *      audits the wrong code for the whole run.
  *   3. For each selected dimension, read
- *      ${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/<key>.md and extract the
- *      threat-focus paragraph from its finder prompt block (§4 of every
- *      dimension file) — that paragraph is the dimension's `finderPrompt` arg.
+ *      ${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/<key>.md and extract TWO
+ *      blocks: the threat-focus paragraph from its finder prompt block (§4) —
+ *      that paragraph is the dimension's `finderPrompt` arg — AND its §5
+ *      Verifier guidance + §6 Known-false-positive patterns block — that is the
+ *      dimension's `verifierNotes` arg. The verifier MUST get §5/§6: without it
+ *      the generic skepticism over-refutes declaration-level metadata violations
+ *      (an exposed LMC, an http:// trusted host, position:absolute in component
+ *      CSS, an unenclosed prompt template) on a "no live caller / dead-code
+ *      artifact" rationale the Salesforce static review does not apply.
  *   4. Compile the do-not-re-report digest from
  *      `<target>/.security-review/audit-ledger.json` — one line per entry:
  *      `[state] title — file (one-line resolution or refute reason)`.
@@ -86,11 +92,15 @@
  *     },
  *     dimensions: [      // One entry per applicable dimension, targets already
  *                        // resolved by the stack-adapter step.
- *       { key:          "oauth-identity",
- *         targets:      "comma/newline-separated repo paths (starting points,
- *                        not boundaries — finders follow imports)",
- *         stackNotes:   "optional per-dimension repo facts from the adapter",
- *         finderPrompt: "the dimension file's threat-focus paragraph" }
+ *       { key:           "oauth-identity",
+ *         targets:       "comma/newline-separated repo paths (starting points,
+ *                         not boundaries — finders follow imports)",
+ *         stackNotes:    "optional per-dimension repo facts from the adapter",
+ *         finderPrompt:  "the dimension file's §4 threat-focus paragraph",
+ *         verifierNotes: "the dimension file's §5 Verifier guidance + §6
+ *                         false-positive patterns (drives the verifier's
+ *                         refute rules; optional but strongly recommended —
+ *                         omitting it over-refutes declaration-level findings)" }
  *     ]
  *   }
  */
@@ -155,6 +165,18 @@ AppExchange/AgentExchange security review. The review probes:
 {{REVIEW_SURFACES}}
 
 Stack: {{STACK_SUMMARY}}. Code root: {{REPO_ROOT}}.
+
+REPOSITORY ANCHOR — non-negotiable: the ONLY codebase in scope is the repository
+rooted at {{REPO_ROOT}}. Every file you read, and every finding's file path,
+MUST be under {{REPO_ROOT}}. Do NOT read any scope-manifest.json or other
+.security-review/ file, and do NOT read, grep, or inspect any path OUTSIDE
+{{REPO_ROOT}} — in particular, IGNORE your current working directory when it
+differs from {{REPO_ROOT}} (the engine usually runs from a different directory,
+and any manifest or code there belongs to an unrelated project, not your
+target). The repository IS present at {{REPO_ROOT}}; if a target path looks
+absent, grep UNDER {{REPO_ROOT}} to locate the real file — never conclude the
+codebase is missing, never audit a different repo's files, and never return an
+empty result because you could not find the code.
 
 Architecture security model (claims from the partner's own documentation —
 verify every claim against the ACTUAL code, do not assume):
@@ -237,15 +259,18 @@ const finderPrompt = (dim) =>
   `Known findings — do NOT re-report any of these:\n${LEDGER_DIGEST}\n\n` +
   `Read the ACTUAL code in ${REPO}. Report every grounded finding with exact file:line and a concrete exploit_scenario. ` +
   `If a control is correctly implemented, do NOT report it as a finding (you may note a notably strong control as a single info-level finding). ` +
-  `An empty findings array is a valid result — do not invent findings. Return your findings.`
+  `An empty findings array is valid ONLY after you have actually read the targets under ${REPO} and found nothing real — never return empty because you could not locate the repository (it is at ${REPO}, audit it). Do not invent findings. Return your findings.`
 
 const verifierPrompt = (dim, f) =>
   `${CONTEXT}\n\n## Adversarial verification\n\n` +
   `A finder in the '${dim.key}' dimension reported the finding below. Your job is to REFUTE it if you can. ` +
   `Read the actual code at the cited location AND every control that gates the claimed path (auth dependency, tenant-isolation policy, scope check, input validation, constant-time compare, nonce handling — whatever applies to the claim). ` +
   `Default to skepticism: many findings are false positives because a control elsewhere already prevents them, OR because the behavior is intentional and spec-correct — e.g., loopback redirect URIs on a native-client OAuth flow are REQUIRED by RFC 8252; flagging them is itself an error. ` +
-  `Only confirm if the exploit is genuinely reachable in the real code.\n\n` +
+  `Confirm only if the issue is genuinely real AS SHIPPED. For a code-exploit finding that means the exploit is reachable in the real code. But for a DECLARATION-level package/metadata violation (a component apiVersion, an isExposed flag, an http:// or wildcard trusted-host entry, position:absolute/fixed in component CSS, an onClickJavaScript weblink, confirmationTokenRequired) it means the offending declaration is actually present in the shipped package — the Salesforce static review flags what the package SHIPS to every subscriber org, so "no live caller / dormant config / not currently reachable / shadow-DOM isolates it" LOWERS the severity, it does NOT make the finding a false positive. Refute a declaration-level violation only when a §6 false-positive pattern below actually matches.\n\n` +
   `FINDING:\n- title: ${f.title}\n- severity: ${f.severity}\n- file: ${f.file}\n- description: ${f.description}\n- exploit_scenario: ${f.exploit_scenario}\n\n` +
+  (dim.verifierNotes
+    ? `Dimension-specific verifier guidance for '${dim.key}' (the dimension author's refute rules — these take PRECEDENCE over the generic skepticism above wherever they conflict; for this dimension's declaration-level violations the §6 false-positive patterns are the ONLY valid grounds to refute):\n${dim.verifierNotes}\n\n`
+    : '') +
   `Read ${REPO}/${String(f.file || '').split(':')[0]} and any code that gates the claimed path. Return your verdict with the exact code evidence that decides it.`
 
 // ---------------------------------------------------------------------------
