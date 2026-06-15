@@ -49,7 +49,7 @@ undispositioned findings — each of those bounces at the materials check
   write a secret into a plan, an evidence file, or the run log
   (CONVENTIONS §6).
 
-## The five families
+## The six families
 
 | Family | Applies when (manifest) | Scan runner | Evidence file(s) under `.security-review/evidence/` | Gate |
 |---|---|---|---|---|
@@ -58,6 +58,7 @@ undispositioned findings — each of those bounces at the materials check
 | 3. Authenticated DAST | external-endpoint / mcp-server | owner executes; agent generates the plan | `dast/dast-report.{html,json}`, `dast/dast-url-proof.png`, `dast/run-notes.md` | `dast-self-run-required`, `dast-authenticated-scans` (blockers) |
 | 4. TLS grade | external-endpoint / mcp-server | agent (API) or owner (web UI) | `ssllabs-<host>.json` + capture | `endpoint-ssl-labs-a-grade` (blocker — qualitative codified bar; A grade is the recommended target) |
 | 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
+| 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
 
 ## Steps
 
@@ -260,7 +261,42 @@ undispositioned findings — each of those bounces at the materials check
    readiness tracker's CI-evidence rows, and the dossier cross-references it
    whenever another scanner flags the same library.
 
-7. **Fold everything into one dossier.** Instantiate
+7. **Family 6 — Secret scan, working tree AND full git history.** *Requires:* a
+   no-hardcoded-secrets posture backed by a **mechanical** scan, not an assertion
+   (baseline: `fail-hardcoded-secrets` — an auto-fail class; managed-package code
+   obscurity is explicitly not a defense; `artifact-credential-storage-attestation`
+   (blocker) pairs the scan output with an owner signature, and the *absence* of
+   that scan output is itself the bounce). This family is the mechanical
+   complement to the `secrets-credentials` dimension's LLM finder, never its
+   replacement.
+   *Tool:* **gitleaks** (preferred — native full-history mode + deleted-blob
+   surfacing); trufflehog / detect-secrets are substitutes. *Two passes, both
+   mandatory:* (1) **working-tree** over every resolved source root including IaC
+   paths (Dockerfile `ENV`/`ARG`, terraform `*.tf`/`*.tfvars`/`*.tfstate`,
+   CloudFormation/Ansible) — catches a secret in the submittable surface a
+   reviewer's bundled scanner reaches; (2) **full git history** (`gitleaks
+   detect` over all history) — surfaces deleted-but-recoverable blobs explicitly
+   (the mechanical form of the `secrets-credentials` `git log --diff-filter=D`
+   heuristic — a tool invocation, not an LLM spot-check). *Agent runs:* both
+   passes, parsing, dossier rows. *Owner runs:* the **rotation** of every
+   confirmed live secret — the agent cannot certify a credential dead.
+   *Evidence:* `evidence/secret-scan-<date>.json` (redacted). *Gate:*
+   `fail-hardcoded-secrets` (blocker); it also **backs**
+   `artifact-credential-storage-attestation`. *Disposition — keep the per-finding
+   distinction:* a secret in the partner's **private repo history** is rotate-now
+   breach debt the reviewer does not scan for; a secret in the **submitted
+   package/code** is a literal review gate — both NOT-CLEAN until dispositioned;
+   remediation is **rotation first, scrub second** (scrubbing without rotation is
+   theater); the dossier carries a **rotation-evidence** field (changed key-id /
+   revocation record / dated owner-signed note). *Honest ceiling — state it in the
+   evidence summary (CONVENTIONS §2):* mechanical scanners reliably catch
+   **provider-prefixed** (`AKIA…`/`sk-…`/`ghp_…`/`-----BEGIN … PRIVATE KEY-----`)
+   and **high-entropy** secrets but **MISS custom-format / low-entropy** ones (a
+   bespoke token shaped like a UUID or a base64 config blob); the
+   `secrets-credentials` LLM finder is the standing complement. Full mechanics:
+   `${CLAUDE_PLUGIN_ROOT}/skills/run-scans/SECRET-SCAN-FAMILY-6.md`.
+
+8. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
    `<target>/docs/security-review/fp-dossier.md` (or update it
    incrementally). The template's per-finding structure mirrors the official
@@ -270,7 +306,7 @@ undispositioned findings — each of those bounces at the materials check
    References, the reviewer-reserved section), toolkit value-add fields in
    the marked Supplementary section — so the filled dossier drops into the
    wizard's FP slot without reformatting, and a wrong FP format never costs
-   the review cycle. One dossier across all five families: register row plus a
+   the review cycle. One dossier across all six families: register row plus a
    per-finding block with all four required parts (flagged issue at
    file:line, functional explanation, the concrete mitigation, technical
    non-exploitability argument with evidence). Where the audit ledger
@@ -282,7 +318,7 @@ undispositioned findings — each of those bounces at the materials check
    the finding itself (baseline: `scan-false-positive-documentation`,
    `scan-no-clean-scan-required`).
 
-8. **Verify evidence on disk, then report status.** List
+9. **Verify evidence on disk, then report status.** List
    `.security-review/evidence/` and confirm each selected family's files
    exist before stating any family's status; append a dated entry to
    `.security-review/run-log.md` (what ran, tool versions, repo commit, what

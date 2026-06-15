@@ -65,7 +65,7 @@ offer to re-scope before fanning out.
 
 ### 1.2 Dimension selection
 
-Thirteen dimensions live in `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/`.
+Sixteen dimensions live in `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/`.
 Each is **concept-stable, target-variable** (CONVENTIONS §7): the file defines
 the threat concept, what "good" looks like, and per-stack detection heuristics —
 never hard-coded paths. Applicability:
@@ -85,14 +85,21 @@ never hard-coded paths. Applicability:
 | `data-export.md` | file/CSV/archive export or upload endpoints |
 | `email-outbound.md` | outbound message construction (email, chat posts, webhooks) from user- or CRM-influenced data |
 | `admin-surface.md` | a privileged operator/admin console or admin-role endpoints — the highest-value target in a multi-tenant product, because a break there is cross-tenant by construction |
+| `agentforce-package.md` | a managed-package element carrying packaged-AI metadata (`genAiPlannerBundle`/`genAiPlugin`/`genAiFunction`/`genAiPromptTemplate`, `Bot`, or autolaunched-flow / invocable-Apex agent actions) — **independent of whether an MCP server exists**. The AgentExchange auto-fail classes (VerifiedCustomerId scoping, user-controlled record refs, third-party-LLM-in-package, prompt hardening) live here |
+| `package-metadata.md` | a managed-package element — audits the package's **metadata/XML** surface (LWC/Aura/VF component config + apiVersion, message channels, weblinks/buttons, component CSS, RemoteSiteSettings/CspTrustedSites), the Top-20 violation class no code-AST dimension reads |
+| `apex-exposed-surface.md` | a managed-package element with Apex — the **exposed-entry-point authorization** surface (`@AuraEnabled`/`@RestResource`/`webservice`/`@InvocableMethod`/`global`/guest-reachable) that Code Analyzer path-traces but does not reason about (*should* this be exposed? per-record/IDOR authz?) |
 
-Packaged Apex (CRUD/FLS, sharing declarations, install handlers, permission-set
-over-grants) is deliberately **not** a dimension: the structured pass for it is
-Code Analyzer, orchestrated by `/sf-security-review-toolkit:run-scans`. Several
-dimensions carry Apex-specific heuristics where the concept overlaps (SOQL
-injection → `injection-xss`, metadata secrets → `secrets-credentials`, package
-session handling → `sessionid-egress`), but the engine must never claim Apex
-CRUD/FLS coverage — say so in the report's "not covered" list.
+Packaged Apex's **structured CRUD/FLS dataflow** stays Code Analyzer's job (the
+Graph Engine pass, orchestrated by `/sf-security-review-toolkit:run-scans`) — the
+engine never claims to reproduce SFGE's dataflow analysis. But two Apex/package
+concerns Code Analyzer does **not** reason about are now first-class dimensions:
+`apex-exposed-surface` (whether an entry point *should* be exposed + per-record /
+IDOR authorization) and `package-metadata` (the metadata/XML violation class).
+Several other dimensions also carry Apex-specific heuristics where the concept
+overlaps (SOQL/SOSL injection → `injection-xss`, metadata secrets →
+`secrets-credentials`, package session handling → `sessionid-egress`). The
+report's "not covered" list still names what only Code Analyzer's structured
+CRUD/FLS dataflow and the owner-run scans reach.
 
 ### 1.3 Stack-adapter resolution (the target map)
 
@@ -404,6 +411,9 @@ using the title and the verified evidence. The default dimension→category mapp
 | `background-jobs` | `authorization` | `logging/error-handling` |
 | `data-export` | `authorization` | `output-encoding` |
 | `email-outbound` | `output-encoding` | `input-validation` |
+| `agentforce-package` | `authorization` (VerifiedCustomerId/IDOR, action authz) | `input-validation` (prompt injection), `output-encoding` (LLM output to render/DML), `communications-security` (third-party-LLM egress), `logging/error-handling` (prompt/response logging) |
+| `package-metadata` | `output-encoding` (component XSS/CSS/JS-in-domain) | `communications-security` (RemoteSiteSettings/CspTrustedSites), `authorization` (CSRF on instantiation), `secrets-storage` (sensitive-info-in-URL) |
+| `apex-exposed-surface` | `authorization` (entry-point authz / IDOR / over-exposure / guest reach) | `authentication/session-management` (unauthenticated guest entry points) |
 
 Rules:
 
@@ -479,7 +489,7 @@ Default bands, ordered by how a reviewer actually attacks:
 
 | Pass | Band | Default dimensions |
 |---|---|---|
-| 1 | **External attack surface** — what the review's own pen test hits from outside | `oauth-identity`, `mcp-surface`, `mcp-threat-model`, `sessionid-egress`, `tenant-isolation` (cross-tenant focus), `injection-xss`, `web-client`, `secrets-credentials` |
+| 1 | **External attack surface** — what the review's own pen test hits from outside | `oauth-identity`, `mcp-surface`, `mcp-threat-model`, `sessionid-egress`, `tenant-isolation` (cross-tenant focus), `injection-xss`, `web-client`, `secrets-credentials`, `agentforce-package` (BLOCKER agent auto-fails), `package-metadata` (UI/metadata violations), `apex-exposed-surface` (entry-point/IDOR/guest reach) |
 | 2 | **Intra-org authorization + privileged surfaces** — what an authenticated tenant user or a hostile insider reaches | `admin-surface`, plus focused re-runs of `tenant-isolation` (in-tenant object-level authorization / IDOR matrix), `oauth-identity` (privileged grants, role changes), `web-client` (authenticated flows, token storage) — re-runs are cheap because the pass-1 ledger digest suppresses everything already found |
 | 3 | **Internals** — what only a code reader finds | `crypto-internals`, `background-jobs`, `data-export`, `email-outbound` |
 
