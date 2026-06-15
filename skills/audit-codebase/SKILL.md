@@ -113,7 +113,16 @@ regardless of anything this engine produces.
    `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`. The invocation, per
    its header: extract each selected dimension's threat-focus paragraph from
    the §4 finder prompt block of its dimension file, build the run-args
-   object, and JSON-serialize it.
+   object, and JSON-serialize it. For each dimension extract TWO blocks: the
+   threat-focus paragraph (the `finderPrompt`) AND the Verifier-guidance +
+   false-positive-patterns block (the `verifierNotes`). **Both are
+   load-bearing.** The verifier only sees the generic skepticism prompt unless
+   you pass `verifierNotes`; without the dimension's own refute rules it
+   over-refutes declaration-level metadata violations (an exposed message
+   channel, an `http://`/wildcard trusted host, `position:absolute` in component
+   CSS, an unenclosed prompt template) on a "no live caller / dead-code
+   artifact" rationale the Salesforce static review — which flags whatever the
+   package SHIPS — does not apply.
 
    **Then — unconditionally — inject it and run a project-local copy:**
 
@@ -164,6 +173,7 @@ regardless of anything this engine produces.
        { "key": "tenant-isolation",
          "targets": "src/db/policies.py\nsrc/api/deps.py",
          "stackNotes": "<per-dimension repo facts from the adapter>",
+         "verifierNotes": "<the dimension file's Verifier-guidance + false-positive-patterns block, verbatim — the verifier's refute rules>",
          "finderPrompt": "<the dimension file's §4 threat-focus paragraph, verbatim>" }
      ]
    }
