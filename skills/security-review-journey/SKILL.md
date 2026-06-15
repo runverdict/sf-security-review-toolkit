@@ -254,11 +254,16 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    complete downloadable `submission-package/` with the wizard-slot `INDEX.md`
    (each artifact mapped to its exact Security Review Wizard step + upload slot),
    `PENDING-OWNER-RUN.md` (the human tail), and `readiness-verdict.md`. The
-   verdict is per-category, lists **what was NOT verified**, carries any open
-   ledger findings forward, and ends on the fixed caveat: Salesforce performs its
-   own penetration test regardless of submitted evidence. Empty conditional slots
-   self-suppress — the operator never faces a slot for an element that doesn't
-   exist.
+   verdict is headed by the **Submission Completeness Index** — a deterministic,
+   gated rollup (`harness/compute-sci.mjs`) of the ledger + evidence index +
+   scope-filtered baseline that this skill surfaces as the autonomous **pre-compile
+   go/no-go signal**: `BLOCKED`/`NOT READY` halts (fix the named blockers, re-run),
+   `MATERIALS COMPLETE`/`NO-SURPRISES READY` proceeds. The verdict is also
+   per-category, lists **what was NOT verified**, carries any open ledger findings
+   forward, and ends on the fixed caveat: Salesforce performs its own penetration
+   test regardless of submitted evidence, and the SCI measures completeness, never
+   a pass. Empty conditional slots self-suppress — the operator never faces a slot
+   for an element that doesn't exist.
 
 ### Ask-tolerance (the only knob)
 
