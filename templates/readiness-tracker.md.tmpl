@@ -18,6 +18,13 @@
 | **Scope** | {{THE LISTING SURFACES — every managed package and every external endpoint in this submission, named}} |
 | **Submission surface** | Partner Console → Technologies → Security Review Wizard. The artifact list is generated per architecture by the Checklist Builder (baseline: `process-checklist-builder`) — this tracker pre-stages it; the Builder's compiled checklist wins on any mismatch. |
 
+<!-- SCI_BLOCK: compile-submission renders the Submission Completeness Index here,
+     verbatim from `node ${CLAUDE_PLUGIN_ROOT}/harness/compute-sci.mjs`. It is a
+     deterministic, gated rollup of this tracker + the audit ledger + the evidence
+     index — materials + disposition completeness, NEVER a pass prediction. Do not
+     hand-edit the number; re-run the engine. -->
+{{SUBMISSION_COMPLETENESS_INDEX_BLOCK}}
+
 ## Honesty posture (fill in plainly — this block is the tracker's contract)
 
 > {{PARTNER_NAME}} {{holds / does not hold}} **SOC 2** ({{Type I/II/none}}),

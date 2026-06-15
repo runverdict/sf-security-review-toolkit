@@ -4,6 +4,57 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.4.0] — 2026-06-15
+
+The **autonomous-orchestration extensions** spine (roadmap §3a, WI-20 + WI-18) —
+the dependency root the rest of the 0.4.x work hangs off. Built and wired into the
+existing journey so it fires with no manual step; the remaining extensions (WI-17
+OSS external-surface scanners, WI-19 written-policy artifacts, WI-21 reviewer-sim,
+WI-16 Checkmarx-predict, WI-22 path-to-green) are queued behind it. Provenance:
+synthesized from the 2026-06-15 external-review pass (Gemini / ChatGPT / Claude
+web), reconciled against the 0.3.1 dimension internals (most reviewer-flagged
+code gaps were already covered — see the gap-audit §3a).
+
+### Added — WI-20: the formal evidence model
+- **`templates/evidence-index.schema.json`** — every readiness claim, scan family,
+  generated artifact, and confirmed finding registers a typed evidence entry
+  (`source`, `collected_by` agent/owner/scanner, `verified{value,how}`, `location`,
+  `sha256`, `disposition`). Makes the toolkit's implicit HAVE-requires-evidence
+  rule explicit data: a requirement is SATISFIED only with a registered, verified,
+  on-disk file — no credit for un-evidenced self-attestation. `compile-submission`
+  materializes the index from its artifact/evidence inventory.
+
+### Added — WI-18: the Submission Completeness Index (SCI)
+- **`harness/compute-sci.mjs`** — a deterministic, explainable readiness number
+  that measures *materials + disposition completeness, never pass likelihood*
+  (Salesforce pen-tests regardless). Pure rollup, no LLM, no learned weights, no
+  network, no dependencies — same inputs yield byte-identical output. It reads the
+  audit ledger + the evidence index + the scope-filtered baseline and emits a
+  GATED block: a hard **blocker floor** (any open critical finding or unsatisfied
+  `severity_if_missing: blocker` requirement → `BLOCKED`), over a 3-part vector
+  (coverage `SATISFIED/PARTIAL/MISSING`, disposition of undispositioned
+  critical/high, evidence freshness vs the 90-day window + `conflicting` baseline
+  entries), a completeness % **explicitly labelled not-a-pass-prediction**, and the
+  standing "NOT verified by this toolkit" list. Bands:
+  `BLOCKED → NOT READY → MATERIALS COMPLETE → NO-SURPRISES READY`. Honesty by
+  construction: never a naked single number, never the % without the gate and the
+  not-verified list (CONVENTIONS §2; Claude-web's warning).
+
+### Wired — autonomous orchestration
+- `compile-submission` (Phase 5) writes the evidence index, runs `compute-sci`, and
+  renders its block at the top of `readiness-verdict.md` and the readiness-tracker
+  header (new `{{SUBMISSION_COMPLETENESS_INDEX_BLOCK}}` slot).
+- `security-review-journey` surfaces the SCI as the **pre-compile go/no-go signal**:
+  `BLOCKED`/`NOT READY` halts and names the blockers; `MATERIALS COMPLETE`/
+  `NO-SURPRISES READY` proceeds.
+
+### Validated
+- Ran `compute-sci` against the 0.3.1 Helios acceptance run: correctly `BLOCKED`
+  (14 open critical findings + 18 unsatisfied blocker requirements), coverage
+  5/107 satisfied, disposition 14 critical / 39 high / 14 dispositioned, freshness
+  flagged the 1 `conflicting` baseline entry (`endpoint-ssl-labs-a-grade`),
+  completeness 5% — and byte-identical on re-run (deterministic).
+
 ## [0.3.1] — 2026-06-15
 
 Acceptance-proven release. The 0.3.0 coverage dimensions were validated by a

@@ -199,6 +199,26 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    `<target>/docs/security-review/submission/readiness-verdict.md` and echo
    it in the run output. Structure, in order — the honesty block is
    mandatory, not decoration (CONVENTIONS §2):
+   - **Write the evidence index, then compute the Submission Completeness
+     Index (SCI) — the headline gate.** First materialize the WI-20 evidence
+     model from the inventory you already built: write
+     `<target>/.security-review/evidence/index.json` per
+     `${CLAUDE_PLUGIN_ROOT}/templates/evidence-index.schema.json`, one entry per
+     artifact/scan/finding that backs a baseline id — a row is SATISFIED only
+     with a real, on-disk, verified evidence file (no credit for un-evidenced
+     self-attestation; a questionnaire "yes" with no file is PARTIAL). Then run
+     the deterministic engine:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/compute-sci.mjs --target <target> --plugin ${CLAUDE_PLUGIN_ROOT} --date <runDate>`.
+     It reads the audit ledger + the evidence index + the scope-filtered baseline
+     and emits a GATED block — `READINESS: BLOCKED | NOT READY | MATERIALS
+     COMPLETE | NO-SURPRISES READY`, a coverage/disposition/freshness vector, a
+     completeness % **explicitly labelled materials-not-pass-odds**, and the
+     standing "NOT verified by this toolkit" list. Render that block verbatim at
+     the TOP of this verdict and the readiness-tracker header. It is a pure
+     rollup: never edit the number by hand, never collapse it to a single naked
+     figure, never show the % without the gate and the not-verified list. The
+     SCI is the autonomous go/no-go signal `security-review-journey` surfaces at
+     the pre-compile gate.
    - **Per-category ready / not-ready**, using the tracker's section
      boundaries (documentation artifacts; package code-scan artifacts;
      external-endpoint artifacts; CI scanning evidence; test environment;

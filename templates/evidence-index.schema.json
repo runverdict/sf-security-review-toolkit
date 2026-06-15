@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/redbeardenduro/sf-security-review-toolkit/evidence-index.schema.json",
+  "title": "Submission evidence index (WI-20)",
+  "description": "The formal evidence model. Every readiness claim, scan family, generated artifact, and confirmed finding registers an entry here so HAVE/SATISFIED is always backed by an on-disk, hash-verified file the toolkit produced — never an un-evidenced self-attestation. Written to <target>/.security-review/evidence/index.json. The Submission Completeness Index (compute-sci.mjs) reads it; compile-submission's readiness-tracker links each row to it.",
+  "type": "object",
+  "required": ["schema_version", "generated", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "generated": { "type": "string", "description": "ISO date the index was last written" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref_type", "ref_id", "source", "collected_by", "verified", "location"],
+        "additionalProperties": false,
+        "properties": {
+          "ref_type": {
+            "type": "string",
+            "enum": ["requirement", "finding", "artifact", "scan"],
+            "description": "requirement = a baseline id this evidence satisfies; finding = a ledger finding id; artifact = a generated submission doc; scan = a scan-family evidence file"
+          },
+          "ref_id": {
+            "type": "string",
+            "description": "the baseline id (for requirement), ledger finding id, artifact slug, or scan-family key this entry is evidence for"
+          },
+          "source": {
+            "type": "string",
+            "description": "which skill/scanner produced it, e.g. 'run-scans:family-6:gitleaks', 'audit-codebase:pass1', 'generate-artifacts:authn-authz-flow'"
+          },
+          "collected_by": {
+            "type": "string",
+            "enum": ["agent", "owner", "scanner"],
+            "description": "agent = an LLM finder/synthesizer; scanner = a mechanical tool; owner = a human action the agent cannot perform (portal scan, signature)"
+          },
+          "verified": {
+            "type": "object",
+            "required": ["value", "how"],
+            "additionalProperties": false,
+            "properties": {
+              "value": { "type": "boolean" },
+              "how": {
+                "type": "string",
+                "description": "how the evidence was verified, e.g. 'file exists + sha256 + adversarial-verifier confirmed', 'scanner exit + parsed report', 'owner-signed'. An entry with verified.value=false is PARTIAL, never SATISFIED."
+              }
+            }
+          },
+          "location": { "type": "string", "description": "path to the evidence file, relative to the target repo root" },
+          "sha256": { "type": "string", "description": "sha256 of the evidence file at registration time (optional; recorded when the agent can hash it)" },
+          "timestamp": { "type": "string", "description": "ISO time the evidence was registered" },
+          "disposition": {
+            "type": "string",
+            "enum": ["satisfied", "partial", "pending-owner", "n-a"],
+            "description": "rollup status this evidence confers on its ref; 'pending-owner' = the agent did its part, a human action remains"
+          },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

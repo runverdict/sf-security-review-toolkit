@@ -145,9 +145,21 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.3.1 — coverage-complete + acceptance-proven.** The toolkit now ships **13
-skills**, **16 audit dimensions**, and **6 scan families**. Component status,
-plainly:
+**0.4.0 — acceptance-proven + readiness scoring.** The toolkit ships **13
+skills**, **16 audit dimensions**, **6 scan families**, and a deterministic
+**Submission Completeness Index**. Component status, plainly:
+
+- **New in 0.4.0 — the Submission Completeness Index (SCI) + a formal evidence
+  model.** `compile-submission` now emits a deterministic, gated readiness score
+  (`harness/compute-sci.mjs`) — a hard blocker floor over a
+  coverage/disposition/freshness vector, with a completeness % **explicitly
+  labelled "not a pass prediction"** and the standing "not verified by this
+  toolkit" list. Every readiness claim is backed by a typed entry in the evidence
+  index (`templates/evidence-index.schema.json`) — no credit for un-evidenced
+  self-attestation. `security-review-journey` surfaces the SCI as the autonomous
+  pre-compile go/no-go signal. This is the spine of the
+  [autonomous-orchestration extensions roadmap](#status) (OSS external-surface
+  scanners, written-policy artifacts, and reviewer-simulation follow).
 
 - **Field-tested:** the audit methodology (CONVENTIONS, audit-methodology, the
   find → adversarial-verify → synthesize engine) and the harness assets — these
