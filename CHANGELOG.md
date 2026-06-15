@@ -4,6 +4,64 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.3.0] — 2026-06-15
+
+Coverage-completeness release — the recall-defining structural work. A maintainer
+coverage-gap audit mapped the toolkit against the *complete* AppExchange/AgentExchange
+review surface (the baseline's `fail-*`/`violation-*`/`agentforce-*` corpus + the Top-20 +
+the reviewer categories) and found the recall holes were **structural** — whole classes a
+real reviewer catches that no dimension or scan family touched. This release closes the four
+CRITICAL ones. Built multi-agent (author → adversarial-review, with a "specificity" gate so
+every probe is a concrete imperative command, not a vague mention a finder could skip);
+engine-wiring done by hand. Honesty posture unchanged: this raises *recall on the known
+failure classes* — a no-surprises submission, never a guaranteed pass; Salesforce pen-tests
+regardless.
+
+### Added — three new audit dimensions (the toolkit now has 16)
+- **`agentforce-package.md`** — the single largest gap closed. Audits the *packaged*
+  Agentforce/AI surface (GenAiPlanner/Plugin/Function, prompt templates, Bot, invocable-Apex
+  actions) **independent of whether an MCP server exists** — so a managed-package-only
+  AgentExchange listing is no longer un-audited. Covers the BLOCKER auto-fail classes
+  (`VerifiedCustomerId` scoping, user-controlled record refs, third-party-LLM-in-package),
+  prompt-injection hardening, LLM-output-as-taint, action classification + per-action
+  CRUD/FLS, confirmation-required, prompt/response logging.
+- **`package-metadata.md`** — the metadata/XML violation class no code-AST dimension reads:
+  Locker apiVersion <40, LMC `isExposed`, JS-in-Salesforce-domain (`onClickJavaScript`
+  weblinks, `REQUIRESCRIPT`), CSS-isolation (`position:absolute/fixed`), static-resource
+  hotlinking, open-redirect `PageReference`, CSRF `confirmationTokenRequired`,
+  RemoteSiteSettings/CspTrustedSites inventory, sensitive-info-in-URL.
+- **`apex-exposed-surface.md`** — the exposed-entry-point authorization surface Code
+  Analyzer path-traces but doesn't reason about: `@AuraEnabled`/`@RestResource`/`webservice`/
+  `@InvocableMethod`/`global`/guest-reachable Apex — should it be exposed? per-record/IDOR
+  authz? over-exposure? (Complements, never duplicates, SFGE's structured CRUD/FLS dataflow.)
+
+### Added — new scan family
+- **`run-scans` Family 6 — Secret scan (working tree + full git history).** Closes the gap
+  where the checklist *asserts* a secret-scan evidence file that nothing produced. Mechanical
+  gitleaks/trufflehog over every source root + IaC paths AND full history (deleted-blob
+  surfacing — the `git log --diff-filter=D` heuristic becomes a real tool invocation), gated
+  on `fail-hardcoded-secrets`, backing `artifact-credential-storage-attestation`. Keeps the
+  private-repo-history vs submitted-surface distinction + a rotation-evidence field, and
+  states the mechanical-scanner ceiling (misses custom-format/low-entropy secrets — the
+  `secrets-credentials` LLM finder is the standing complement).
+
+### Wired
+- `audit-methodology.md` §1.2 applicability matrix + §4.1 dimension→category table + §6
+  pass-1 band; the "Packaged Apex is not a dimension" note reconciled (structured CRUD/FLS
+  dataflow stays Code Analyzer; should-this-be-exposed/per-record-authz + metadata violations
+  are now dimensions). `CONVENTIONS §8` repo layout. So the engine **auto-selects** the new
+  dimensions on detection — a fresh skill-guided run includes them with no manual step.
+
+### Notes
+- Remaining roadmap: 0.2.2 quick-wins (Code-Analyzer engine-selection by element, RetireJS
+  over static resources, Apex-test-coverage gate, injection-xss SOSL/open-redirect, ZAP
+  error-hygiene/header probes, agentforce metadata-lint, compile-submission gates) + the
+  HIGH/MEDIUM probes. Two cosmetic minors deferred (an inlined §4.1 subsection that restates
+  the now-authoritative central table; one host-anchored grep seed).
+- **Acceptance test pending:** a fresh-context run against a fixture containing a packaged
+  Agentforce agent + LWC/Aura + Flows + a git-history secret, to prove the toolkit (not a
+  clever operator) auto-fires the new dimensions.
+
 ## [0.2.1] — 2026-06-13
 
 Fixes from the first **fresh-window end-to-end run** of the autonomous flow against

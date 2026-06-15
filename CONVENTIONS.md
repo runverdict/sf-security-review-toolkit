@@ -139,7 +139,8 @@ sf-security-review-toolkit/
 │       ├── injection-xss.md         ├── web-client.md
 │       ├── crypto-internals.md      ├── background-jobs.md
 │       ├── data-export.md           ├── email-outbound.md
-│       └── admin-surface.md
+│       ├── admin-surface.md         ├── agentforce-package.md
+│       ├── package-metadata.md      └── apex-exposed-surface.md
 ├── templates/
 │   ├── submission-checklist.md.tmpl # the required-artifacts table, per-row
 │   ├── authn-authz-flow.md.tmpl     ├── data-flow-diagram.md.tmpl
