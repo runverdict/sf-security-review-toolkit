@@ -1,6 +1,6 @@
 ---
 name: run-scans
-description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST plan generation, TLS grading, and dependency audits — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. Use after artifacts exist; the scan evidence is what the submission attaches.
+description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. Use after artifacts exist; the scan evidence is what the submission attaches.
 allowed-tools: Read Grep Glob Write Edit Bash AskUserQuestion
 ---
 
@@ -44,21 +44,35 @@ undispositioned findings — each of those bounces at the materials check
 - Per family: the Code Analyzer CLI + JDK 11+ (PMD engine) for the package
   track; a ZAP install (or the container) wherever the owner will run DAST;
   network access for the TLS check; ecosystem package managers for the
-  dependency audit.
+  dependency audit. For the external-endpoint families (7/8) and the DAST/TLS
+  extensions, the free/OSS tools — **Semgrep** (`pip install semgrep`),
+  **OSV-Scanner** + **Checkov** (`pip install checkov`), and optionally
+  **Trivy / Nuclei / Schemathesis / testssl.sh / sslyze**; each is auto-detected
+  and, if absent, the family hands the owner the exact install + run command as
+  `PENDING-OWNER-RUN` rather than skipping silently.
 - Credentials only ever via environment variables — this skill refuses to
   write a secret into a plan, an evidence file, or the run log
   (CONVENTIONS §6).
 
-## The six families
+## The eight families
+
+Families 1–6 cover the Salesforce-package surface + secrets/deps/TLS. Families 7–8
+(0.4.x, WI-17) close the **external-endpoint mechanical-scan gap**: the
+partner-hosted server tree (Python/Node/Java/Go) + its IaC, which Code Analyzer
+never sees and the LLM dimensions read but do not mechanically scan — yet
+Salesforce explicitly pen-tests it ("Test Your Entire Solution… include all
+external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 
 | Family | Applies when (manifest) | Scan runner | Evidence file(s) under `.security-review/evidence/` | Gate |
 |---|---|---|---|---|
 | 1. Code Analyzer | managed-package element | agent | `code-analyzer-<date>.html` + `.json` | `scan-code-analyzer-v5-required` (blocker) |
 | 2. Partner Security Portal scanner (Checkmarx) | managed-package element | owner (portal); agent parses the report | `portal-scan-<date>.*` | `scan-checkmarx-partner-portal` (blocker — required IN ADDITION to Code Analyzer) |
-| 3. Authenticated DAST | external-endpoint / mcp-server | owner executes; agent generates the plan | `dast/dast-report.{html,json}`, `dast/dast-url-proof.png`, `dast/run-notes.md` | `dast-self-run-required`, `dast-authenticated-scans` (blockers) |
-| 4. TLS grade | external-endpoint / mcp-server | agent (API) or owner (web UI) | `ssllabs-<host>.json` + capture | `endpoint-ssl-labs-a-grade` (blocker — qualitative codified bar; A grade is the recommended target) |
+| 3. Authenticated DAST (+ Nuclei templates, Schemathesis OpenAPI fuzz) | external-endpoint / mcp-server | owner executes; agent generates the plan + runs what it can | `dast/dast-report.{html,json}`, `dast/dast-url-proof.png`, `dast/nuclei-<date>.json`, `dast/schemathesis-<date>.json`, `dast/run-notes.md` | `dast-self-run-required`, `dast-authenticated-scans` (blockers) |
+| 4. TLS grade (SSL Labs **or** local testssl.sh/sslyze) | external-endpoint / mcp-server | agent | `ssllabs-<host>.json` **or** `tls-<host>-<date>.json` + capture | `endpoint-ssl-labs-a-grade` (qualitative bar; local TLS evidence satisfies it deterministically) |
 | 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
 | 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
+| 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code) |
+| 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
 
 ## Steps
 
@@ -205,6 +219,17 @@ undispositioned findings — each of those bounces at the materials check
    than that bar (a disposition for every finding, fix don't document
    anything High/Critical) because undocumented low/medium noise still
    invites reviewer questions.
+   *Extension — template DAST + spec-driven fuzzing (WI-17, agent-runnable where
+   a staging URL + probe consent exist):* beyond the authenticated ZAP crawl, run
+   **Nuclei** (`nuclei -u <url> -severity low,medium,high,critical -json-export
+   evidence/dast/nuclei-<date>.json`) for the community CVE / misconfig / exposure
+   template library, and **Schemathesis** (`schemathesis run <openapi-spec>
+   --base-url <url> --checks all`) driven from the OpenAPI artifact
+   `generate-artifacts` already emits — a genuinely different test class than the
+   crawl (it exercises the CONTRACT: 500s, auth-bypass on undocumented methods,
+   spec/implementation drift). Feed that same spec to ZAP's OpenAPI import so the
+   authenticated scan covers documented endpoints explicitly, not only what it
+   crawled. Same fix-vs-document bar; evidence under `evidence/dast/`.
 
 5. **Family 4 — TLS grade, every external hostname.** *Requires:* the
    codified transport bar per `endpoint-ssl-labs-a-grade` is qualitative —
@@ -239,6 +264,17 @@ undispositioned findings — each of those bounces at the materials check
    reviewer discretion — fix it anyway; exceeding the gate is cheap.
    Record the failing protocol/cipher detail from the JSON as the
    remediation pointer.
+   *Extension — local deterministic TLS evidence (WI-17):* the SSL Labs grade is
+   a contested external dependency (this entry's one open conflict — whether
+   reviewers enforce the letter grade). Produce **local, deterministic** TLS
+   evidence instead with **testssl.sh** (`testssl.sh --jsonfile
+   evidence/tls-<host>-<date>.json <host>:443`) or **sslyze** (`sslyze
+   --json_out=evidence/tls-<host>-<date>.json <host>:443`): protocol versions,
+   cipher list, cert chain + expiry, HSTS — the same qualitative bar, evidenced
+   offline with no third-party grade. This is the evidence file that **satisfies
+   `endpoint-ssl-labs-a-grade` deterministically** and clears its `conflicting`
+   status: you assert the qualitative properties directly (HTTPS-only, secure
+   versions, weak ciphers disabled, HSTS) rather than leaning on a letter grade.
 
 6. **Family 5 — Dependency audit, every detected stack.** *Requires:*
    bundled third-party components free of known CVEs (baseline:
@@ -296,7 +332,61 @@ undispositioned findings — each of those bounces at the materials check
    `secrets-credentials` LLM finder is the standing complement. Full mechanics:
    `${CLAUDE_PLUGIN_ROOT}/skills/run-scans/SECRET-SCAN-FAMILY-6.md`.
 
-8. **Fold everything into one dossier.** Instantiate
+8. **Family 7 — External SAST (the partner-hosted server tree).** *Applies when:*
+   the manifest shows an `external-endpoint` element with source — every detected
+   non-package language root (Code Analyzer scans only Apex/VF/Aura; it never sees
+   the Python/Node/Java/Go server Salesforce explicitly pen-tests). *Tool:*
+   **Semgrep** (OSS engine + free community rulesets) is the keystone — one tool
+   across languages, and custom-rule capable (a future pack can re-express the LLM
+   dimensions' heuristics as deterministic rules). Add a language gate where it
+   sharpens recall: **Bandit** (Python), **njsscan** (Node), **gosec** (Go).
+   *Invocation (verify flags against your installed version):*
+
+   ```bash
+   semgrep scan --config p/security-audit --config p/secrets \
+     --config p/<language> --json --output evidence/semgrep-<date>.json <server-root>
+   ```
+
+   The registry configs are fetched once; if the host is offline, vendor the rules
+   first (`semgrep --config <dir>`). *Agent runs:* the scan, JSON parsing, diffing
+   against the audit ledger (the `injection-xss`/`oauth-identity` dimensions may
+   already have flagged the same sink — cross-reference, don't double-report),
+   dossier rows. *Owner runs:* the code fixes. *Evidence:*
+   `evidence/semgrep-<date>.json` (+ per-language files). *Gate:*
+   `scan-external-sast` (major; a confirmed critical in reviewer-reachable server
+   code — an injection, an auth bypass, an SSRF — is a blocker, because the
+   reviewer's pen test reaches it). *Honest ceiling:* SAST has a false-negative
+   floor; it complements the LLM dimensions + the reviewer's pen test, it replaces
+   neither.
+
+9. **Family 8 — External SCA + IaC.** *Applies when:* any lockfile, Dockerfile, or
+   IaC file exists under a non-package source root — the supply-chain + infra
+   surface the reviewer treats as in-scope when data flows through it. *Tools:*
+   **OSV-Scanner** (Google, OSS — multi-ecosystem, queries the OSV DB; leaner +
+   lower-noise than a per-ecosystem `npm/pip audit`) for SCA; **Checkov** (OSS) for
+   IaC misconfig (Terraform/CloudFormation/Kubernetes/Dockerfile); **Trivy** (OSS)
+   is an acceptable one-tool substitute covering container image + deps +
+   Dockerfile + secrets together. *Invocations:*
+
+   ```bash
+   osv-scanner -r <server-root> --format json > evidence/osv-<date>.json
+   checkov -d <iac-dir> --framework terraform -o json > evidence/iac-terraform-<date>.json
+   checkov -f <Dockerfile> --framework dockerfile -o json > evidence/iac-dockerfile-<date>.json
+   ```
+
+   *Agent runs:* both passes, parsing, the SBOM / component-version table for the
+   security-program element-4 slot (reuse the OSV output), dossier rows. *Owner
+   runs:* dependency bumps + infra fixes. *Evidence:* `evidence/osv-<date>.json`,
+   `evidence/iac-*-<date>.json`. *Gate:* `scan-external-sca` (major — a known-CVE
+   dependency reachable in the deployed server), `scan-iac-misconfig` (major — an
+   open security group, a public bucket, a hardcoded image secret). A secret in a
+   Dockerfile `ENV`/`ARG` is ALSO a Family-6 `fail-hardcoded-secrets` hit —
+   cross-reference, don't double-disposition. *Honest ceiling:* SCA catches *known*
+   CVEs in *declared* deps; a vendored copy or a zero-day is invisible to it
+   (RetireJS over packaged static resources + the reviewer's pen test are the
+   complements).
+
+10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
    `<target>/docs/security-review/fp-dossier.md` (or update it
    incrementally). The template's per-finding structure mirrors the official
@@ -318,7 +408,7 @@ undispositioned findings — each of those bounces at the materials check
    the finding itself (baseline: `scan-false-positive-documentation`,
    `scan-no-clean-scan-required`).
 
-9. **Verify evidence on disk, then report status.** List
+11. **Verify evidence on disk, then report status.** List
    `.security-review/evidence/` and confirm each selected family's files
    exist before stating any family's status; append a dated entry to
    `.security-review/run-log.md` (what ran, tool versions, repo commit, what
