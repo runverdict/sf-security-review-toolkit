@@ -250,7 +250,16 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    this previews the reviewer's own install/uninstall test. Skip silently when
    the power-up was declined — the source audit is the always-on core.
 
-7. **Compile** → `/sf-security-review-toolkit:compile-submission`. Assembles the
+7. **Reviewer simulation** → `/sf-security-review-toolkit:reviewer-simulation`.
+   Reframes everything the audit + scans (+ deep audit) found as **what Salesforce
+   Product Security will see** — the challenge checklist run against the ledger,
+   ranked by the reviewer's own attack priority (public reach → authz → injection
+   → egress → package hygiene → infra), headed by the first things they will hit.
+   Introduces no new finding; it is the narrative over the ledger + SCI. Always
+   runs (it only needs the ledger); its open-challenge list seeds the
+   path-to-green in compile.
+
+8. **Compile** → `/sf-security-review-toolkit:compile-submission`. Assembles the
    complete downloadable `submission-package/` with the wizard-slot `INDEX.md`
    (each artifact mapped to its exact Security Review Wizard step + upload slot),
    `PENDING-OWNER-RUN.md` (the human tail), and `readiness-verdict.md`. The

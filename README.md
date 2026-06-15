@@ -40,9 +40,10 @@ directly) and it takes over:
         ├─ 0. /sf-security-review-toolkit:scope-submission           what are you listing? which requirements apply?
         ├─ 1. /sf-security-review-toolkit:audit-codebase             autonomous find → verify → synthesize audit
         ├─ 2. /sf-security-review-toolkit:generate-artifacts         authn/authz flow, data flow, tools list, …
-        ├─ 3. /sf-security-review-toolkit:run-scans                  Code Analyzer v5 · DAST (ZAP) · SSL Labs · deps
-        ├─ 4. /sf-security-review-toolkit:prepare-test-environment   Trialforce org, agent + Topics, test users
-        ├─ 5. /sf-security-review-toolkit:compile-submission         questionnaire, checklist, wizard-slot package
+        ├─ 3. /sf-security-review-toolkit:run-scans                  8 families: Code Analyzer · DAST · TLS · deps · secrets · ext SAST/SCA/IaC
+        ├─ 4. /sf-security-review-toolkit:reviewer-simulation        what Salesforce Product Security will see, ranked by attack priority
+        ├─ 5. /sf-security-review-toolkit:prepare-test-environment   Trialforce org, agent + Topics, test users
+        ├─ 6. /sf-security-review-toolkit:compile-submission         questionnaire, checklist, SCI verdict, wizard-slot package
         └─ ∞. /sf-security-review-toolkit:stay-listed                periodic re-review, release gates, incident duties
 
    optional, `sf`-authed power-up — audit the package AS THE REVIEWER WILL (deployed in an org):
@@ -107,7 +108,8 @@ allowlist or auto-accept silences them.
 | `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, external endpoint, MCP server, Canvas, LWC), compiles which requirements apply, gates on partner-program prerequisites | Automated |
 | `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 16 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
 | `/sf-security-review-toolkit:generate-artifacts` | Drafts the submission artifacts from your code: AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, exposed-tools inventory + OpenAPI, access-control documentation, credential-storage statement | Automated draft, human review |
-| `/sf-security-review-toolkit:run-scans` | Runs Code Analyzer v5 and dependency scans; verifies TLS grade; generates an authenticated DAST plan (including identity endpoints) and folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
+| `/sf-security-review-toolkit:run-scans` | Eight scan families: Code Analyzer v5, Checkmarx-portal check, authenticated DAST plan, TLS grade, dependency audit, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC); folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
+| `/sf-security-review-toolkit:reviewer-simulation` | Reframes everything the audit + scans found as **what Salesforce Product Security will see** — the challenge checklist ranked by the reviewer's own attack priority, headed by the first things they will hit | Automated synthesis |
 | `/sf-security-review-toolkit:prepare-test-environment` | Runbooks for the reviewer-facing test org: Trialforce/DE org, agent + Topics + reasoning engine + utterances, two test users, the per-user authorization-boundary proof | Guided manual |
 | `/sf-security-review-toolkit:compile-submission` | Pre-fills the questionnaire (with an "every N/A needs a reason" lint), fills the required-artifacts checklist row by row, emits the readiness tracker and verdict | Automated compile, human submits |
 | `/sf-security-review-toolkit:stay-listed` | The post-approval obligations on a schedule: periodic re-review, the per-release gate (listing association + readiness inheritance), incident-reporting duties, platform security mandates | Guided recurring |
@@ -145,10 +147,17 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.4.2 — acceptance-proven + readiness scoring + external-surface scanners +
-written-policy pack.** The toolkit ships **13 skills**, **16 audit dimensions**,
-**8 scan families**, and a deterministic **Submission Completeness Index**.
-Component status, plainly:
+**0.4.3 — acceptance-proven, readiness scoring, external-surface scanners,
+written-policy pack, reviewer simulation.** The toolkit ships **14 skills**, **16
+audit dimensions**, **8 scan families**, and a deterministic **Submission
+Completeness Index**. Component status, plainly:
+
+- **New in 0.4.3 — reviewer-simulation (WI-21).** A first-class "audit AS THE
+  REVIEWER WILL" pass: it reframes everything the audit + scans found as *what
+  Salesforce Product Security will see*, ranked by the reviewer's own attack
+  priority (public/guest reach → authz → injection → egress → package hygiene →
+  infra) and headed by the first things they will hit — each challenge marked
+  WILL-FIND / ADDRESSED / NOT-STATICALLY-EXAMINED.
 
 - **New in 0.4.2 — the written-policy / org-config artifact pack (WI-19).** The
   surface where a submission stalls *after* the code is clean: `generate-artifacts`

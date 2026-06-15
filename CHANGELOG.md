@@ -4,6 +4,38 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.4.3] — 2026-06-15
+
+WI-21 — reviewer-simulation. A new (14th) skill that reframes everything the audit
++ scans found as **what Salesforce Product Security will see**, ranked by the
+reviewer's own attack priority. ChatGPT rated "audit AS THE REVIEWER WILL" the
+toolkit's strongest idea; this makes it first-class. It introduces no new finding
+and no new SCI gate — it is the narrative over the ledger + SCI.
+
+### Added
+- **`methodology/reviewer-challenges.md`** — the Product-Security challenge
+  checklist: the reviewer's questions + probes, ordered by their attack priority
+  (Tier 1 public/guest reach → 2 authz bypass → 3 injection → 4 egress → 5 package
+  hygiene → 6 infra/supply-chain), each mapped to the dimension(s)/scan family and
+  baseline id that answers it, and the scope element that triggers it.
+- **`skills/reviewer-simulation/SKILL.md`** — synthesizes
+  `docs/security-review/reviewer-simulation.md`: each applicable challenge marked
+  **WILL-FIND** (a confirmed-open ledger/scan entry matches — the reviewer
+  reproduces it), **ADDRESSED** (a fixed/refuted entry with evidence — a
+  no-surprises disclosure for the FP dossier), or **NOT-STATICALLY-EXAMINED**
+  (named pen-test territory, never implied clean). Headed by "the first things the
+  reviewer will hit." Filters by manifest elements (no TLS challenge for a
+  package-only listing).
+- Wired as journey step 7 (after scans/deep-audit, before compile; its
+  open-challenge list seeds the path-to-green). Skill catalog + journey diagram
+  updated (14 skills).
+
+### Validated
+- Against the Helios audit ledger (61 confirmed findings, managed-package +
+  external-endpoint): the verdict mapping correctly surfaces Tier-1 guest-reach
+  (WILL-FIND), Tier-2 IDOR×16 + VerifiedCustomerId (WILL-FIND), and Tier-4
+  third-party-LLM (WILL-FIND) as the headline.
+
 ## [0.4.2] — 2026-06-15
 
 WI-19 — the written-policy / org-config artifact pack. Closes the surface where a
