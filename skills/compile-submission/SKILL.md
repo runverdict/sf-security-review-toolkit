@@ -1,6 +1,6 @@
 ---
 name: compile-submission
-description: Phase 5 of security review prep. Inventories every artifact and evidence file against the baseline, fills the required-artifacts checklist (HAVE only with verified evidence), pre-fills the questionnaire with the hard N/A lint, cross-checks answers against artifacts, compiles the readiness tracker, emits an honest readiness verdict, and assembles the downloadable submission-package with a wizard-slot INDEX, a PENDING-OWNER-RUN handoff, and step-grouped artifacts. Use as the go/no-go check before paying the review fee — the human submits; this skill makes sure nothing bounces at the materials check.
+description: Phase 5 of security review prep. Inventories every artifact and evidence file against the baseline, fills the required-artifacts checklist (HAVE only with verified evidence), pre-fills the questionnaire with the hard N/A lint, cross-checks answers against artifacts, compiles the readiness tracker, computes the deterministic Submission Completeness Index (the gated go/no-go), emits an honest readiness verdict + a sequenced path-to-green remediation checklist, and assembles the downloadable submission-package with a wizard-slot INDEX, a PENDING-OWNER-RUN handoff, and step-grouped artifacts. Use as the go/no-go check before paying the review fee — the human submits; this skill makes sure nothing bounces at the materials check.
 allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) AskUserQuestion
 ---
 
@@ -241,6 +241,22 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      penetration testing regardless of submitted evidence. The strongest
      verdict this toolkit ever emits is "no known blockers remain in what
      this toolkit can verify" — never "will pass".
+
+   Then write **`<target>/docs/security-review/path-to-green.md` (WI-22) — the
+   single ordered remediation checklist** that takes the partner from the current
+   SCI band to `NO-SURPRISES READY`. Assemble it mechanically from the same inputs
+   the SCI read, sequenced **blocker → major → minor**:
+   1. every open `critical`/`high` ledger finding (file:line + the one-line fix +
+      "unblocks: SCI disposition / the reviewer-simulation WILL-FIND it");
+   2. every unsatisfied `severity_if_missing: blocker` requirement (what closes it
+      + its owner);
+   3. every `MISSING`/`PARTIAL` required artifact (incl. the WI-19 owner-signed
+      policy stubs and the reviewer-simulation NOT-STATICALLY-EXAMINED list);
+   4. every `caveated`/`conflicting` baseline entry (confirm with your PAM).
+   Each item carries which gate or SCI point it unblocks, so the partner works the
+   list top-down and watches the band climb. It is a view over existing state —
+   never invent an item, never soften a severity to shorten the list; an empty
+   path-to-green is what `NO-SURPRISES READY` looks like.
 
 9. **Walk the operator to the wizard.** Everything below the first item is
    read from the baseline at walkthrough time — fees, windows, and queue

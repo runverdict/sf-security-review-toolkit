@@ -4,6 +4,33 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.4.4] — 2026-06-15
+
+WI-16 + WI-22 — the last two roadmap items. With these the autonomous-orchestration
+extensions (gap-audit §3a) are **feature-complete**: the toolkit now runs the whole
+journey end to end and tells the partner, deterministically, exactly what to fix and
+in what order.
+
+### Added — WI-16: Checkmarx prediction (`run-scans` Family 2)
+- The portal Checkmarx scan is owner-gated (auth + upload + 3 runs/version) and is
+  never claimed as agent-run. Instead, after Family 1 + the LLM package dimensions,
+  run-scans now **maps every confirmed package finding to its likely Checkmarx query
+  category** and emits `evidence/checkmarx-prediction-<date>.md` — so the partner's
+  three precious portal runs come back with *no surprises*. Honest framing: a
+  prediction, never an equivalence. Optional genuinely-headless path: if `CX_APIKEY`
+  (a paid CxOne licence) is set, run the real `cx scan create … --report-format sarif`
+  as Family 2b; absent it, prediction-only.
+
+### Added — WI-22: path-to-green
+- `compile-submission` now writes `docs/security-review/path-to-green.md` — the single
+  ordered remediation checklist from the current SCI band to `NO-SURPRISES READY`,
+  sequenced **blocker → major → minor**: open critical/high findings (file:line + fix),
+  unsatisfied blocker requirements, MISSING/PARTIAL artifacts (incl. the WI-19 policy
+  stubs + the reviewer-simulation NOT-STATICALLY-EXAMINED list), and caveated/conflicting
+  baseline entries — each tagged with the gate/SCI point it unblocks. A view over
+  existing state; an empty path-to-green is what readiness looks like.
+- README leads with outcomes (what you get) ahead of the component counts.
+
 ## [0.4.3] — 2026-06-15
 
 WI-21 — reviewer-simulation. A new (14th) skill that reframes everything the audit

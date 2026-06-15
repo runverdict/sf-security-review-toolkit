@@ -164,6 +164,28 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    positive — EXCEPT those labeled "Code Quality" (baseline:
    `scan-severity-threshold-unpublished`; the DAST companion bar lives in
    `dast-severity-bar`).
+   *Prediction — pre-empt your 3 portal runs (WI-16).* The portal scan is
+   owner-gated, but the toolkit already ran Code Analyzer (Family 1) + the LLM
+   package dimensions (audit-codebase), which overlap heavily with Checkmarx's
+   Apex/VF/Lightning query families. Map every CONFIRMED package finding in the
+   ledger to its likely Checkmarx category and emit
+   `evidence/checkmarx-prediction-<date>.md` — "your 3 portal runs will likely
+   surface these; fix or pre-disposition first." The mapping (finding class →
+   Checkmarx category): SOQL/SOSL injection → SQL/SOQL Injection · missing
+   CRUD/FLS → Missing Object/Field-Level Security · sharing bypass → Insecure
+   Sharing · XSS sinks → Stored/Reflected XSS · open redirect → Unvalidated
+   Redirect · hardcoded secret/ID → Hardcoded Credentials/Salesforce ID ·
+   JS-in-origin / Locker<40 → Lightning component hygiene · CSRF-on-instantiation
+   → CSRF. **Honesty: this is a PREDICTION, not an equivalence** — Checkmarx's
+   proprietary queries find classes the local stack misses and vice versa; the
+   value is that your portal runs come back with *no surprises*, never "Checkmarx
+   will find nothing." Pre-fill the FP dossier with the dispositions you already
+   hold so a predicted finding the portal confirms is answered before you spend
+   run #2. *Optional, genuinely headless (paid CxOne licence):* if `CX_APIKEY` is
+   in the env, run the real Checkmarx One CLI (`cx scan create … --report-format
+   sarif`) as Family 2b over the package source and parse the SARIF — a licence
+   lifts the 3-run limit + the listing-link prerequisite; absent the key,
+   prediction-only.
 
 4. **Family 3 — Authenticated DAST: the agent generates the plan; the owner
    executes the scan.** *Requires:* partner-run DAST of every external

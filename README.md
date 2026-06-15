@@ -147,11 +147,19 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.4.3 — acceptance-proven, readiness scoring, external-surface scanners,
-written-policy pack, reviewer simulation.** The toolkit ships **14 skills**, **16
-audit dimensions**, **8 scan families**, and a deterministic **Submission
-Completeness Index**. Component status, plainly:
+**0.4.4 — feature-complete autonomous-orchestration extensions.** The toolkit
+ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
+**Submission Completeness Index**, and a sequenced **path-to-green**. Component
+status, plainly:
 
+- **New in 0.4.4 — Checkmarx prediction (WI-16) + path-to-green (WI-22).** run-scans
+  now predicts the findings your owner-gated portal Checkmarx scan will surface (so
+  your 3 runs come back with no surprises — a prediction, never an equivalence; an
+  optional CxOne CLI path runs the real scan if you hold a licence). And
+  compile-submission writes a single ordered `path-to-green.md` — every open item
+  from the current SCI band to NO-SURPRISES READY, sequenced blocker → major → minor,
+  each tagged with the gate it unblocks. The autonomous-orchestration roadmap
+  (WI-16..22) is complete.
 - **New in 0.4.3 — reviewer-simulation (WI-21).** A first-class "audit AS THE
   REVIEWER WILL" pass: it reframes everything the audit + scans found as *what
   Salesforce Product Security will see*, ranked by the reviewer's own attack
