@@ -1,0 +1,226 @@
+<!--
+TEMPLATE: incident-response-plan.md.tmpl
+Output:   <target>/docs/security-review/incident-response-plan.md
+Filled by: /sf-security-review-toolkit:generate-artifacts PRE-FILLS only what the
+           toolkit can detect — the security owner from the access-control
+           personas, and the detection sources it can see in code/config
+           (audit log, error monitor, host alerting). EVERYTHING ELSE is
+           owner-input: this is a POLICY/ORG-CONFIG document, and policy is a
+           HUMAN deliverable. The owner completes the stub and SIGNS it.
+Satisfies: baseline entry post-incident-reporting-24h — the MANDATORY duty to
+           report a confirmed security incident affecting Salesforce customer
+           data to Salesforce within 24 hours. The recurring obligation is
+           tracked by /sf-security-review-toolkit:stay-listed.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- An UNFILLED {{SLOT}} means this document is NOT submission-ready. The agent
+  cannot invent a named on-call contact, a severity threshold, or a recovery
+  runbook — those are operational decisions the owner makes and signs for. No
+  credit is taken for an un-evidenced assertion (CONVENTIONS §2).
+- This is a STUB for owner completion + signature, NOT an agent-verified
+  document. Salesforce pen-tests and audits the live solution regardless of
+  what this plan asserts.
+-->
+
+# {{PARTNER_NAME}} — Incident Response Plan
+
+> **STATUS: PARTIAL until owner-completed and signed.** Every {{SLOT}} below is
+> owner-input unless its section note says the toolkit pre-fills it. While any
+> slot remains unfilled or the signature block is empty, this document is a
+> stub and is NOT submission-ready.
+
+| | |
+|---|---|
+| **Document** | Incident Response Plan — detection, triage, containment, the Salesforce 24-hour duty |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} <!-- pre-filled from access-control personas; owner confirms --> |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} <!-- which systems/data this plan covers; the listing + the server-side service handling Salesforce customer data --> |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **What this document is.** The operational runbook for a security incident:
+> who responds, how an incident is detected and rated, how it is contained and
+> recovered, and — load-bearing for the review — the **mandatory duty to report
+> a confirmed incident affecting Salesforce customer data to Salesforce within
+> 24 hours.** A reviewer reads this for evidence that the duty is wired into a
+> runbook *now*, not improvised during an incident.
+
+---
+
+## 1. Roles + named contacts (OWNER-INPUT)
+
+<!-- guidance: Named humans, not "the security team." A reviewer wants a person
+who picks up. The Security Owner pre-fills from the access-control personas; the
+on-call, the executive escalation, and the customer-comms owner are owner-input.
+A role with no named person is an unfilled slot. -->
+
+| Role | Named person | Contact (channel + how-to-reach) | Responsibility |
+|---|---|---|---|
+| Security owner / incident commander | {{SECURITY_OWNER_NAME_ROLE}} <!-- pre-filled from access-control personas --> | {{SECURITY_OWNER_CONTACT}} | Declares an incident; owns the response; authorizes the Salesforce report |
+| On-call / first responder | {{ONCALL_NAME}} | {{ONCALL_CONTACT}} | Triages the alert; engages the commander on a suspected incident |
+| Executive escalation | {{EXEC_ESCALATION_NAME}} | {{EXEC_ESCALATION_CONTACT}} | Authorizes external comms / customer + regulator notification |
+| Customer / comms owner | {{COMMS_OWNER_NAME}} | {{COMMS_OWNER_CONTACT}} | Drafts and sends customer notifications |
+
+**Salesforce report destination (fixed):** {{SALESFORCE_SECURITY_CONTACT}}
+<!-- guidance: This one is NOT owner-discretionary — it is security@salesforce.com
+per the partner program (baseline post-incident-reporting-24h). Confirm the
+current address against your CA/ECA / Partner Account Manager; the toolkit pins
+the baseline value but the owner attests it is current. -->
+
+---
+
+## 2. Detection sources
+
+<!-- guidance: The toolkit PRE-FILLS the sources it can see in code/config — the
+immutable audit log, an error/exception monitor, host/uptime alerting, a
+dependency-advisory feed. The owner ADDS the human + external sources the agent
+cannot detect: customer reports, the Salesforce vuln-disclosure inbound, a
+researcher/VDP report, threat-intel. Each source names what it would surface and
+who watches it. -->
+
+| Source | Pre-filled? | What it surfaces | Who watches it |
+|---|---|---|---|
+| {{DETECTION_SOURCE}} | {{AGENT_OR_OWNER}} | {{WHAT_IT_SURFACES}} | {{WATCHER}} |
+
+---
+
+## 3. Severity / triage matrix (OWNER-INPUT)
+
+<!-- guidance: The owner sets the thresholds — the agent cannot decide what your
+business calls Critical. Anchor the top of the matrix to the trigger that gates
+§5: any confirmed incident affecting Salesforce customer data is Critical/High
+and starts the 24-hour clock. Keep it small; a reviewer wants the decision rule,
+not a taxonomy essay. -->
+
+| Severity | Definition (incl. the Salesforce-customer-data trigger) | Response time | Triggers §5 report? |
+|---|---|---|---|
+| {{SEV_LEVEL}} | {{SEV_DEFINITION}} | {{RESPONSE_TIME}} | {{YES_NO}} |
+
+**Declaration rule:** {{DECLARATION_RULE}}
+<!-- guidance: One sentence — who can declare an incident and what flips a
+"suspected event" into a "declared incident" (the act that starts clocks and the
+post-incident review). -->
+
+---
+
+## 4. Containment → eradication → recovery (OWNER-INPUT)
+
+<!-- guidance: The concrete runbook for THIS solution — credential rotation, the
+specific tokens/keys that get revoked (cross-reference the secrets inventory),
+how a tenant is isolated, how the external endpoint / MCP server is taken
+offline or scoped down, how the managed package side is handled. Generic
+"contain the threat" is not a runbook. Each phase = ordered, actionable steps a
+responder follows under pressure. -->
+
+### 4.1 Containment
+{{CONTAINMENT_STEPS}}
+<!-- guidance: Stop the bleeding — revoke the implicated OAuth tokens / API
+keys, disable the affected connected app or Named Credential, isolate the
+tenant, take the endpoint offline if needed. Name the exact controls and where
+the responder operates them. -->
+
+### 4.2 Eradication
+{{ERADICATION_STEPS}}
+<!-- guidance: Remove the root cause — patch the vulnerability, rotate every
+secret in the blast radius (cross-ref the credentials inventory), invalidate
+sessions, remove attacker persistence. -->
+
+### 4.3 Recovery
+{{RECOVERY_STEPS}}
+<!-- guidance: Restore to a known-good state and confirm it — restore from a
+verified backup, re-enable services, monitor for recurrence, and the explicit
+exit criterion that closes the incident. -->
+
+---
+
+## 5. MANDATORY — Salesforce 24-hour security-incident report
+
+<!-- guidance: This section is the reviewer's highest-signal read in this
+document and is NON-NEGOTIABLE per baseline post-incident-reporting-24h. Do NOT
+soften it: a confirmed incident affecting Salesforce customer data MUST be
+reported to Salesforce within 24 hours of confirmation. The owner fills the
+report-owner and the internal trigger; the duty, window, and destination are
+fixed by the baseline. -->
+
+**Duty (fixed — baseline `post-incident-reporting-24h`).** Upon a **confirmed**
+security incident affecting Salesforce customer data — including a vulnerability
+reasonably expected to result in unauthorized disclosure or access — notify
+Salesforce security **without undue delay and within 24 hours** of confirmation,
+to **{{SALESFORCE_SECURITY_CONTACT}}**, with: a technical account of the
+incident, an impact analysis (which customers / data are affected), the
+remediation status, and a response contact.
+
+| Field | Value |
+|---|---|
+| Trigger (internal) | {{REPORT_TRIGGER}} <!-- owner: the §3 severity row(s) that start the clock --> |
+| Window | **24 hours from confirmation** (fixed) |
+| Destination | {{SALESFORCE_SECURITY_CONTACT}} (fixed — confirm current per CA/ECA) |
+| Report owner | {{REPORT_OWNER}} <!-- owner: the named person who sends it --> |
+| Recurring tracking | This obligation persists post-approval; watched by `/sf-security-review-toolkit:stay-listed`. |
+
+> The 24-hour window and the destination are pinned from the baseline; the
+> owner attests they remain current against the partner program (CA/ECA) and
+> their Partner Account Manager. The baseline notes the window itself has not
+> been re-verified against a current primary source — confirm before relying.
+
+---
+
+## 6. Customer + regulatory notification (OWNER-INPUT)
+
+{{CUSTOMER_NOTIFICATION_POLICY}}
+<!-- guidance: Distinct from the Salesforce duty in §5. State the trigger,
+timeline, channel, and who authorizes customer notification, plus any regulatory
+breach-notification obligations the owner is subject to (GDPR/CCPA/state breach
+laws). The agent cannot know your legal posture — this is owner-input, ideally
+reviewed by counsel. -->
+
+---
+
+## 7. Post-incident review (OWNER-INPUT)
+
+{{POST_INCIDENT_REVIEW_PROCESS}}
+<!-- guidance: The blameless review run after every declared incident — timeline
+reconstruction, root cause, the corrective actions with owners + due dates, and
+how those actions feed back into controls and into this plan. Name when it runs
+(e.g. within N business days of closure) and who owns it. -->
+
+---
+
+## 8. Plan maintenance + signature (OWNER-INPUT)
+
+{{REVIEW_CADENCE}}
+<!-- guidance: How often this plan is reviewed/tested (at minimum annually and
+after any declared incident) and who owns the refresh. The signature below is
+what flips STATUS from PARTIAL to complete — an unsigned plan is a stub. -->
+
+| | |
+|---|---|
+| **Approved by** | {{APPROVER_NAME_ROLE}} |
+| **Signature / approval record** | {{SIGNATURE_OR_APPROVAL_REF}} |
+| **Date** | {{APPROVAL_DATE}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Be blunt: this is a POLICY
+document, so almost every section is OWNER-input. The agent pre-fills only the
+security owner (from access-control personas) and the code/config-detectable
+detection sources (§2). An empty "Verified by" — or any unfilled {{SLOT}} above
+— means NOT submission-ready. The agent did NOT verify the operational accuracy
+of any runbook step; it cannot. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| 1 Roles + contacts | owner (security owner pre-filled from access-control personas) | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 2 Detection sources | agent pre-fill (code/config) + owner additions | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 3 Severity / triage | owner | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 4 Contain / eradicate / recover | owner | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 5 Salesforce 24h report | owner (duty + window + destination fixed from baseline) | baseline | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 6 Customer / regulatory | owner | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 7 Post-incident review | owner | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Pre-filled fields: security owner (from access-control personas) and detection sources (§2). All other content is owner-input; this is a STUB for owner completion and signature, **not** an agent-verified document.
+- Baseline entries referenced: `post-incident-reporting-24h` (and the recurring duty tracked by `/sf-security-review-toolkit:stay-listed`) — {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This plan is an operational policy stub provided for the review and is not a warranty. Salesforce performs its own penetration testing and audits regardless of this document, and the 24-hour reporting duty applies independently of whether this plan is filled in.

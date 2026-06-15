@@ -1,0 +1,194 @@
+<!--
+TEMPLATE: data-retention-deletion.md.tmpl
+Output:   <target>/docs/security-review/data-retention-deletion.md
+Filled by: /sf-security-review-toolkit:generate-artifacts PRE-FILLS only what the
+           toolkit can detect — the data classes (from data-sensitivity.md), the
+           external hosts/regions (from data-flow-diagram.md), and the detected
+           subprocessors. EVERYTHING ELSE IS OWNER-INPUT: retention periods,
+           deletion-on-uninstall behavior, residency commitments, and the backup
+           interplay are POLICY the owner sets, completes, and SIGNS.
+Satisfies: baseline entry artifact-data-retention-deletion — the deletion-on-
+           uninstall question is a recurring security-questionnaire item; an
+           unanswered or vague answer bounces at the materials check.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- This is a POLICY/ORG-CONFIG document. POLICY IS A HUMAN DELIVERABLE: the agent
+  can name the data classes and the hosts, but the RETENTION PERIODS and the
+  DELETION BEHAVIOR are commitments only the owner can make and must sign.
+- An unfilled {{SLOT}} means NOT submission-ready. No credit for an un-evidenced
+  assertion: "data is deleted on uninstall" without naming the mechanism that
+  performs the deletion is an aspiration, not a control.
+-->
+
+# {{PARTNER_NAME}} — Data Retention & Deletion-on-Uninstall
+
+> **STATUS: PARTIAL until owner-completed and signed.** This document is a STUB
+> the partner completes and signs. It is NOT an agent-verified document. The
+> agent pre-fills only the data classes and hosts it can detect; every retention
+> period, deletion commitment, and residency statement below is owner-input.
+> Salesforce performs its own penetration testing and audits regardless of this
+> statement.
+
+| | |
+|---|---|
+| **Document** | Data Retention & Deletion (including deletion-on-uninstall) |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Status** | {{DOC_STATUS}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Authority** | {{RETENTION_POLICY_REF_OR_INLINE}} |
+
+<!-- guidance: Authority cell — if a written retention/deletion policy governs,
+cite it and state "the policy wins where this doc and that policy disagree." If
+none exists, this doc IS the authority and the owner is committing to it by
+signing §6. -->
+
+> **What this document is.** The statement a reviewer (and every customer
+> security questionnaire) asks for: how long subscriber data lives in the
+> solution, **what happens to it when the package is uninstalled or the contract
+> ends**, where it resides, how backups interplay with deletion, and whether
+> deletion is automatic or request-based. The deletion-on-uninstall row is the
+> one reviewers most often probe — answer it concretely or it bounces.
+
+---
+
+## 1. Retention period per data class (owner-input; classes pre-filled)
+
+<!-- guidance: One row per data class carried over from data-sensitivity.md §3
+(the agent PRE-FILLS the Class id + name from that doc — do not invent new
+classes here; cross-reference the C-ids). The owner sets the RETENTION PERIOD,
+the TRIGGER that starts the clock, and the DISPOSITION at end-of-period. A class
+with no owner-set period is not submission-ready — "indefinite" is a valid answer
+ONLY if it is the deliberate, stated policy, never a blank left to default. -->
+
+| Data class (from data-sensitivity §3) | Where stored | Retention period | Clock starts on | End-of-period disposition |
+|---|---|---|---|---|
+| {{DATA_CLASS_ID_AND_NAME}} | {{STORE_HOST}} | {{RETENTION_PERIOD}} | {{RETENTION_TRIGGER}} | {{DISPOSITION}} |
+
+**Derived/calculated data (scores, snapshots, audit logs):** {{DERIVED_DATA_RETENTION}}
+<!-- guidance: State separately how long agent-derived artifacts live — these
+often outlive the source rows by design (immutable audit logs especially). Name
+the legal/operational basis for any class retained longer than the source. -->
+
+---
+
+## 2. Deletion on package UNINSTALL (the recurring questionnaire item)
+
+<!-- guidance: THE row reviewers probe. Answer all four concretely; a vague
+"data is removed" with no mechanism is not a control. (a) What subscriber data
+the solution holds OUTSIDE the subscriber org (the external store from the
+data-flow diagram — agent pre-fills the host). (b) The exact mechanism that
+deletes it on uninstall: a package Uninstall handler (cite the Apex class), a
+webhook/Connect-API teardown call, or a request-based process. (c) The deletion
+SLA (how long after uninstall). (d) What, if anything, survives and why
+(audit/legal-hold). If uninstall does NOT automatically purge the external
+store, SAY SO and document the request-based path in §5 — silence here reads as
+orphaned subscriber data. -->
+
+| Question | Answer |
+|---|---|
+| Subscriber data held outside the subscriber org | {{EXTERNAL_DATA_HELD}} (host: {{EXTERNAL_HOST_REGION}}) |
+| Deletion mechanism on uninstall | {{UNINSTALL_DELETION_MECHANISM}} |
+| Deletion SLA after uninstall | {{UNINSTALL_DELETION_SLA}} |
+| What survives uninstall and why | {{UNINSTALL_SURVIVES}} |
+
+**In-org data on uninstall:** {{IN_ORG_UNINSTALL_BEHAVIOR}}
+<!-- guidance: Packaged custom objects/records inside the subscriber org are
+removed by the platform on uninstall per Salesforce's own behavior — state that,
+and note the platform's export window (uninstalled-package data is retained by
+Salesforce for the standard recovery period before purge). Distinguish this
+platform behavior from YOUR external-store deletion above. -->
+
+---
+
+## 3. Deletion on contract termination (distinct from uninstall)
+
+{{CONTRACT_TERMINATION_DELETION}}
+
+<!-- guidance: Owner-input. Uninstall and contract-end are NOT the same event —
+a customer can churn without uninstalling, or uninstall while still contracted.
+State the deletion trigger, the SLA, the certificate-of-deletion offering (if
+any), and whether termination deletion is automatic or request-based (point to
+§5). If they collapse to the same path, say so explicitly rather than leaving
+the reviewer to assume it. -->
+
+---
+
+## 4. Data residency / region (host+region pre-filled; commitment owner-input)
+
+<!-- guidance: The agent PRE-FILLS the host + region rows from the data-flow
+diagram's external-host inventory. The owner states the RESIDENCY COMMITMENT:
+whether data stays in-region, whether any subprocessor moves it cross-border,
+and the lawful-transfer basis if it does. Carry the cross-border honesty line
+from the data-flow / data-sensitivity docs VERBATIM — do not soften it. -->
+
+| Store / subprocessor | Region (pre-filled from data-flow) | Residency commitment |
+|---|---|---|
+| {{HOST_OR_SUBPROCESSOR}} | {{REGION}} | {{RESIDENCY_COMMITMENT}} |
+
+**Cross-border transfer statement:** {{CROSS_BORDER_LINE_OR_NA}}
+
+---
+
+## 5. Backups & deletion interplay (owner-input)
+
+{{BACKUP_RETENTION_INTERPLAY}}
+
+<!-- guidance: The honest, load-bearing answer reviewers and DPAs check: a
+record deleted from the live store still lives in backups until they roll off.
+State the backup retention window, that deletion from backups is by EXPIRY (not
+targeted purge) unless you offer targeted backup deletion, and the maximum time
+after a deletion request that all copies — live + backup — are gone. An
+unbounded backup window silently defeats a stated deletion SLA; reconcile the
+two numbers here. -->
+
+---
+
+## 6. Deletion mechanism: automatic vs. request-based (owner-input)
+
+<!-- guidance: One row per deletion path. State whether it fires automatically
+(uninstall handler, TTL/retention job, scheduled purge — cite the class/job) or
+is request-based (a support/email/in-app request — name the channel and the
+response SLA). A retention job CLAIMED but not running is not a control: if the
+purge is automated, name the job and its schedule; if it is request-based, name
+the intake channel and SLA. -->
+
+| Data scope | Trigger | Automatic or request-based | Mechanism (job/handler/channel) | SLA |
+|---|---|---|---|---|
+| {{DELETION_SCOPE}} | {{DELETION_TRIGGER}} | {{AUTO_OR_REQUEST}} | {{DELETION_MECHANISM}} | {{DELETION_SLA}} |
+
+**Owner sign-off:** {{OWNER_SIGNATURE_NAME_TITLE_DATE}}
+<!-- guidance: This document is a COMMITMENT. It is not submission-ready until a
+named, titled owner signs and dates this line. An empty sign-off = PARTIAL. -->
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Only the data-class names (§1)
+and the host/region rows (§4) and the external-host name (§2) are agent
+pre-filled — all from sibling artifacts (data-sensitivity, data-flow-diagram),
+which is static cross-read, NOT verification of the policy. EVERY retention
+period, deletion mechanism, SLA, residency commitment, and backup window is
+OWNER-INPUT and unverifiable by the agent. An empty "Verified by" anywhere =
+NOT submission-ready. This is a stub for owner completion + signature, not an
+agent-verified document. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| §1 retention table (classes) | agent pre-fill | data-sensitivity.md §3 | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §1 retention periods + disposition | owner-input | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §2 deletion-on-uninstall | owner-input (host pre-filled) | data-flow-diagram.md | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §3 contract-termination deletion | owner-input | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §4 residency (host/region) | agent pre-fill | data-flow-diagram.md | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §4 residency commitment | owner-input | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §5 backup interplay | owner-input | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| §6 deletion mechanism + sign-off | owner-input | — | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Data classes pre-filled from data-sensitivity.md; hosts/regions pre-filled from data-flow-diagram.md. These are cross-reads, not policy verification.
+- Retention periods, deletion mechanisms, residency commitments, and sign-off (§6) owner-confirmed by: {{OWNER_NAME_OR_UNCONFIRMED}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- **This is a stub for owner completion and signature, NOT an agent-verified document.** Any unfilled {{SLOT}} means this artifact is not submission-ready. Salesforce performs its own penetration testing and audits regardless of this statement.

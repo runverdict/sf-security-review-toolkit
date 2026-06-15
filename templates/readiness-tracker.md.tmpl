@@ -149,6 +149,22 @@
 | Partner Program enrollment + distribution agreement | both | {{...}} | {{...}} | business | `process-partner-program-prerequisites` |
 | Review fee budgeted — Returned and FP-only resubmissions are free; a remediated retest (new version + new review) pays again | both | {{...}} | {{amount + exemptions are perishable: confirm in the Partner Console — `process-review-fee`. Budget for one remediated retest}} | business | `process-review-fee`, `process-failure-remediation-flow` |
 
+### 1.7 Written-policy / org-config (owner-completed stubs — WI-19)
+
+Drafted as stubs by `/sf-security-review-toolkit:generate-artifacts`, pre-filled
+from detected facts; **PARTIAL until the owner completes and signs each** — policy
+is a human deliverable, and the Submission Completeness Index counts these
+SATISFIED only with an owner-signed evidence entry, never an un-signed stub.
+
+| Artifact / requirement | Required for | Status | Evidence / what closes it | Owner | Baseline |
+|---|---|---|---|---|---|
+| Incident-response plan (incl. the 24-hour reporting duty) | external-endpoint | {{...}} | {{docs/security-review/incident-response-plan.md — owner-signed}} | business | `artifact-incident-response-plan` |
+| Data retention + deletion-on-uninstall | package + external | {{...}} | {{docs/security-review/data-retention-deletion.md — owner-signed}} | business | `artifact-data-retention-deletion` |
+| Disaster recovery + backup | external-endpoint | {{...}} | {{docs/security-review/disaster-recovery-backup.md — owner-signed}} | business | `artifact-disaster-recovery-backup` |
+| Vulnerability-remediation SLA | external-endpoint | {{...}} | {{docs/security-review/vulnerability-remediation-sla.md — owner-signed}} | business | `artifact-vuln-remediation-sla` |
+| Hosting architecture / external-services | external-endpoint | {{...}} | {{docs/security-review/hosting-architecture.md — owner-signed}} | business | `artifact-hosting-architecture` |
+| Prior independent security-testing attestation | all | {{...}} | {{docs/security-review/prior-pentest-attestation.md — owner-signed (or explicit "none")}} | business | `artifact-prior-pentest-attestation` |
+
 ---
 
 ## 2. Open findings gate

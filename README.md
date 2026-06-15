@@ -145,10 +145,18 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.4.1 — acceptance-proven + readiness scoring + external-surface scanners.**
-The toolkit ships **13 skills**, **16 audit dimensions**, **8 scan families**, and
-a deterministic **Submission Completeness Index**. Component status, plainly:
+**0.4.2 — acceptance-proven + readiness scoring + external-surface scanners +
+written-policy pack.** The toolkit ships **13 skills**, **16 audit dimensions**,
+**8 scan families**, and a deterministic **Submission Completeness Index**.
+Component status, plainly:
 
+- **New in 0.4.2 — the written-policy / org-config artifact pack (WI-19).** The
+  surface where a submission stalls *after* the code is clean: `generate-artifacts`
+  now drafts six owner-completed stubs — incident-response plan (with the 24-hour
+  reporting duty), data-retention + deletion-on-uninstall, DR/backup,
+  vuln-remediation SLA, hosting architecture, and prior-pen-test attestation —
+  pre-filled from detected facts, each `PARTIAL` until owner-signed (the SCI never
+  credits an un-signed stub).
 - **New in 0.4.1 — OSS external-surface scanners (WI-17).** The partner-hosted
   server tree + its IaC — which Code Analyzer never sees but Salesforce explicitly
   pen-tests — is now mechanically scanned by free/OSS tools: **Family 7 SAST**

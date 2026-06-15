@@ -1,6 +1,6 @@
 ---
 name: generate-artifacts
-description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
+description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton, and the written-policy / org-config pack (incident-response, data-retention + deletion-on-uninstall, DR/backup, vuln-remediation SLA, hosting architecture, prior-pen-test attestation) as owner-completed stubs — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
 allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) AskUserQuestion
 ---
 
@@ -43,7 +43,10 @@ marked owner-input.
 - Templates in `${CLAUDE_PLUGIN_ROOT}/templates/` — this phase consumes
   `submission-checklist.md.tmpl`, `authn-authz-flow.md.tmpl`,
   `data-flow-diagram.md.tmpl`, `data-sensitivity.md.tmpl`,
-  `access-control.md.tmpl`, and `fp-dossier.md.tmpl`
+  `access-control.md.tmpl`, `fp-dossier.md.tmpl`, and the WI-19 written-policy
+  pack (`incident-response-plan.md.tmpl`, `data-retention-deletion.md.tmpl`,
+  `disaster-recovery-backup.md.tmpl`, `vulnerability-remediation-sla.md.tmpl`,
+  `hosting-architecture.md.tmpl`, `prior-pentest-attestation.md.tmpl`)
 
 ## Steps
 
@@ -70,7 +73,7 @@ marked owner-input.
 
    | Bucket | Rows | Owner |
    |---|---|---|
-   | Drafted this phase | AuthN/AuthZ flow · architecture/data-flow · data sensitivity · access control · exposed tools + API spec · FP-dossier skeleton · endpoint inventory half of MCP server details | this skill |
+   | Drafted this phase | AuthN/AuthZ flow · architecture/data-flow · data sensitivity · access control · exposed tools + API spec · FP-dossier skeleton · endpoint inventory half of MCP server details · the written-policy pack (IR plan · retention + deletion-on-uninstall · DR/backup · vuln-remediation SLA · hosting architecture · prior-pen-test attestation) as owner-completed stubs | this skill |
    | Other phases | DAST reports (`/sf-security-review-toolkit:run-scans`) · test environment + utterances (`/sf-security-review-toolkit:prepare-test-environment`) · questionnaire + final checklist (`/sf-security-review-toolkit:compile-submission`) | route, don't duplicate |
    | Owner-run, registered only | org credentials · third-party credentials + two test users · every credential-bearing cell | human |
 
@@ -320,7 +323,33 @@ marked owner-input.
     not required, only investigation encouraged), so a future bar change
     never strands stale prose.
 
-11. **Cross-read the full set before handing anything to the owner —
+11. **Draft the written-policy / org-config pack (WI-19) — owner-completed
+    stubs, driven by the required-materials matrix.** This is the questionnaire's
+    written-policy + org-config surface that no static finder can produce — the
+    place a submission stalls *after* the code is clean. For each `artifact-*`
+    policy id the matrix selects for THIS listing class, instantiate its template
+    from `${CLAUDE_PLUGIN_ROOT}/templates/` and **pre-fill only what the toolkit
+    already detected, leaving the rest owner-input**:
+
+    | Template | Pre-fill from | Baseline id |
+    |---|---|---|
+    | `incident-response-plan.md.tmpl` | security owner (access-control personas); the 24-hour reporting duty | `artifact-incident-response-plan` |
+    | `data-retention-deletion.md.tmpl` | data classes (§8); hosts/regions (§7) | `artifact-data-retention-deletion` |
+    | `disaster-recovery-backup.md.tmpl` | hosting provider/region (§7) | `artifact-disaster-recovery-backup` |
+    | `vulnerability-remediation-sla.md.tmpl` | the scan families that run (run-scans) | `artifact-vuln-remediation-sla` |
+    | `hosting-architecture.md.tmpl` | hosts/regions/subprocessors (§7) — **EXTEND** the data-flow subprocessor table, never duplicate it | `artifact-hosting-architecture` |
+    | `prior-pentest-attestation.md.tmpl` | the toolkit's own audit + scan evidence as the compensating-posture baseline | `artifact-prior-pentest-attestation` |
+
+    Policy is a HUMAN deliverable: every one is **STATUS PARTIAL until the owner
+    completes and SIGNS it**. Register each as a PARTIAL checklist + readiness-
+    tracker row; the Submission Completeness Index counts it SATISFIED only with an
+    owner-signed evidence entry (never an un-evidenced stub — the stub *asks*, it
+    does not *assert*). Do not invent a policy the partner has not stated. These
+    are recommended completeness materials (baseline `verification:
+    web_research_unverified` pending per-item confirmation) — say so in the recap,
+    not a verbatim mandate.
+
+12. **Cross-read the full set before handing anything to the owner —
     artifacts contradicting each other is the failure mode reviewers exploit
     first**, because a contradiction means at least one document is wrong
     and they get to pick which to test. The minimum diff set:
@@ -338,7 +367,7 @@ marked owner-input.
     round a number or soften a sentence to force agreement. Record the
     cross-read result in the run log.
 
-12. **Mark provenance and hand off for review.** Every artifact carries its
+13. **Mark provenance and hand off for review.** Every artifact carries its
     mandatory footer (CONVENTIONS §2): per-section `Drafted by` (agent, with
     the exact inputs read) vs owner rows, generation date, `git rev-parse
     HEAD` commit, baseline ids referenced with the oldest `last_verified`.

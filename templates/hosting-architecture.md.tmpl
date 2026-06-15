@@ -1,0 +1,224 @@
+<!--
+TEMPLATE: hosting-architecture.md.tmpl
+Output:   <target>/docs/security-review/hosting-architecture.md
+Filled by: /sf-security-review-toolkit:generate-artifacts PRE-FILLS only what the
+           toolkit detects — the cloud host(s), region(s), and the subprocessor
+           rows (carried from the data-flow-diagram). EVERYTHING ELSE is
+           owner-input: this is an org-CONFIG / POLICY questionnaire, and policy
+           is a HUMAN deliverable. The owner completes the network, access,
+           encryption, and attestation answers from how production is actually
+           run and configured, then SIGNS.
+Satisfies: baseline entry artifact-hosting-architecture (External-Services /
+           Hosting questionnaire). For a listing with NO external backend
+           (package-only), this whole artifact is N/A — see the N/A line below.
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- This is a STUB the partner COMPLETES and SIGNS. The agent cannot read your
+  cloud console, your IAM grants, or your encryption settings — it can name the
+  host it found in config and the subprocessors already in the data-flow
+  diagram, and nothing more. An unfilled {{SLOT}} = not submission-ready.
+- Honesty (CONVENTIONS §2): never describe a control you have not configured as
+  operating. "Planned" is not "in place." No credit for an un-evidenced
+  assertion — a configured control names where a reviewer can see it.
+-->
+
+# {{PARTNER_NAME}} — Hosting & External-Services Architecture
+
+> **STATUS: PARTIAL until owner-completed and signed.** Every {{SLOT}} below is
+> owner-input unless its row is marked *(agent pre-fill)*. This is a STUB for
+> owner completion + signature — it is NOT an agent-verified document.
+
+| | |
+|---|---|
+| **Document** | Hosting & External-Services Architecture — where the backend runs, who can reach production, how data is protected |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **What this document is.** The External-Services / Hosting questionnaire: a
+> statement of where the external backend runs, how its network is segmented and
+> guarded at the edge, who can touch production and how that is controlled,
+> how data is encrypted at rest and in transit, the full subprocessor list, and
+> any compliance attestations. It describes ORG CONFIGURATION and POLICY, which
+> the agent cannot read — so it is a stub the owner fills from how production is
+> actually operated.
+
+<!-- guidance: PACKAGE-ONLY N/A. If the listing is a managed package with no
+external backend the agent controls, replace every section below with:
+"Not applicable — this listing ships only Salesforce package metadata and runs
+entirely on the Salesforce platform; it operates no external hosting. Platform
+infrastructure controls are Salesforce's. See access-control.md Part A for the
+packaged grants." Do not delete the sections silently — an absent answer reads
+as an unanswered question. -->
+
+---
+
+## 1. Where the backend runs
+
+<!-- guidance: PARTLY agent pre-fill. The agent names the cloud provider and
+region(s) it detected in deploy config / infra-as-code / connection strings; the
+owner CONFIRMS them and supplies everything config-derived (account/project
+boundary, deployment model, why this region for data-residency). A detected
+host the owner does not confirm is a guess, not an answer. -->
+
+| Property | Value | Source |
+|---|---|---|
+| Cloud provider(s) | {{CLOUD_PROVIDER}} *(agent pre-fill — detected in deploy config)* | {{CONFIG_REF}} |
+| Region(s) / data residency | {{REGIONS}} *(agent pre-fill — detected)* | {{CONFIG_REF}} |
+| Deployment model | {{DEPLOYMENT_MODEL}} *(owner — e.g. managed containers, VMs, serverless)* | {{OWNER_REF}} |
+| Account / project isolation boundary | {{ACCOUNT_BOUNDARY}} *(owner)* | {{OWNER_REF}} |
+| Managed data store(s) + region | {{DATA_STORES}} *(owner — name each, with its region)* | {{OWNER_REF}} |
+
+**Data-residency statement:** {{RESIDENCY_STATEMENT}}
+<!-- guidance: One owner-written line: does any customer data leave its home
+region (including for AI inference or log aggregation)? Carry the same answer
+verbatim as data-flow-diagram.md §7 — do not soften it here. -->
+
+---
+
+## 2. Network architecture (owner-input)
+
+<!-- guidance: The agent cannot see your VPC. Describe the real topology: which
+tiers are public vs private, the subnet/segmentation model, the edge (load
+balancer / CDN), and the WAF — its mode (block vs monitor) and ruleset. A WAF in
+monitor-only mode is a detection control, not a prevention control; say which it
+is. Name where a reviewer can verify each (console, IaC file, provider dashboard). -->
+
+| Layer | Configuration | Public-reachable? | Evidence (config / console ref) |
+|---|---|---|---|
+| Edge / CDN | {{EDGE_CONFIG}} | {{YES_NO}} | {{EVIDENCE_REF}} |
+| WAF | {{WAF_CONFIG}} (mode: {{BLOCK_OR_MONITOR}}) | — | {{EVIDENCE_REF}} |
+| Public ingress (LB / gateway) | {{INGRESS_CONFIG}} | {{YES_NO}} | {{EVIDENCE_REF}} |
+| Application tier | {{APP_TIER_CONFIG}} | {{YES_NO}} | {{EVIDENCE_REF}} |
+| Data tier (DB / cache) | {{DATA_TIER_CONFIG}} | {{YES_NO}} | {{EVIDENCE_REF}} |
+
+**Segmentation statement:** {{SEGMENTATION_STATEMENT}}
+<!-- guidance: One owner line — e.g. "the data tier accepts no public ingress;
+only the app tier, on a private subnet, may reach it." This is the property the
+reviewer most wants stated plainly. -->
+
+---
+
+## 3. Production access — who, and how it is controlled (owner-input)
+
+<!-- guidance: The highest-signal section. Who can reach the production
+environment (people + roles + automation principals), the authentication
+mechanism (SSO/IdP), whether MFA is ENFORCED (not merely available), how
+least-privilege is applied, and how access is granted/revoked/reviewed. The
+agent cannot read your IAM — every cell here is owner-attested against your
+real grants. An unenforced MFA answer is the kind of gap the reviewer probes. -->
+
+| Question | Answer | Evidence (where a reviewer can verify) |
+|---|---|---|
+| Who can access production? (roles, headcount, automation principals) | {{ACCESS_PRINCIPALS}} | {{EVIDENCE_REF}} |
+| Authentication to the cloud control plane | {{CONTROL_PLANE_AUTH}} (IdP: {{IDP}}) | {{EVIDENCE_REF}} |
+| Is MFA **enforced** for all production access? | {{MFA_ENFORCED_YES_NO}} | {{EVIDENCE_REF}} |
+| Least-privilege model (how scoped, standing vs just-in-time) | {{LEAST_PRIV_MODEL}} | {{EVIDENCE_REF}} |
+| Grant / revoke / periodic access-review process | {{ACCESS_REVIEW_PROCESS}} | {{EVIDENCE_REF}} |
+| Audit logging of production access | {{ACCESS_AUDIT}} | {{EVIDENCE_REF}} |
+
+**Least-privilege attestation:** {{LEAST_PRIV_ATTESTATION}} — owner-signed.
+<!-- guidance: An owner-attested line that no broader standing access exists
+than this section documents. The reviewer reads an un-attested access section as
+"undocumented half." -->
+
+---
+
+## 4. Encryption (owner-input, config-evidenced)
+
+<!-- guidance: At rest AND in transit. For each: the algorithm/standard, the key
+management (provider-managed vs customer-managed KMS), and where it is
+CONFIGURED — not asserted. "TLS 1.2+" is only credible with the grade evidence;
+point at the run-scans TLS result. "Encrypted at rest" is only credible with the
+store's encryption setting named. Provider-default encryption is a real control —
+but say it is the provider's default, not a control you built, if that is true. -->
+
+| Surface | Mechanism | Key management | Evidence (config / scan ref) |
+|---|---|---|---|
+| In transit (client ↔ edge) | {{TLS_IN_TRANSIT}} | — | {{TLS_GRADE_REF}} (run-scans TLS evidence) |
+| In transit (internal service ↔ service) | {{TLS_INTERNAL}} | — | {{EVIDENCE_REF}} |
+| At rest — primary data store | {{AT_REST_DB}} | {{KEY_MGMT_DB}} | {{EVIDENCE_REF}} |
+| At rest — backups / object storage / logs | {{AT_REST_BACKUPS}} | {{KEY_MGMT_BACKUPS}} | {{EVIDENCE_REF}} |
+| Secrets at rest (API keys, External-Credential principals) | {{SECRETS_STORE}} | {{KEY_MGMT_SECRETS}} | {{EVIDENCE_REF}} |
+
+---
+
+## 5. Subprocessors (extends the data-flow subprocessor table)
+
+<!-- guidance: DO NOT DUPLICATE the data-flow-diagram subprocessor list — it is
+the source of truth for WHO and WHAT-THEY-PROCESS. The agent CARRIES those rows
+here as pre-fill (name · role · region · data class), and this questionnaire
+ADDS the columns the hosting reviewer wants that the diagram does not track:
+the access type each subprocessor has to customer data and the contractual
+basis (DPA / SCCs in place?). The owner fills the two added columns — the agent
+cannot know your contracts. If a row here has no matching diagram row (or vice
+versa), that is a generator/owner gap to reconcile before submission. -->
+
+**Source of truth:** the subprocessor inventory in `data-flow-diagram.md §6`.
+This section reproduces it and extends it with access + contract columns.
+
+| Subprocessor | Role / data class received | Region | Access type | Contract basis (DPA / SCCs) |
+|---|---|---|---|---|
+| {{SUBPROCESSOR}} *(agent pre-fill — from data-flow §6)* | {{ROLE_AND_DATA_CLASS}} *(agent pre-fill)* | {{REGION}} *(agent pre-fill)* | {{ACCESS_TYPE}} *(owner)* | {{CONTRACT_BASIS}} *(owner)* |
+
+**Reconciliation:** rows here vs `data-flow-diagram.md §6`: {{RECONCILES_YES_NO}}.
+**Inference-provider note:** {{INFERENCE_PROVIDER_NOTE}}
+<!-- guidance: An AI inference provider that sees deal/customer text IS a
+subprocessor and MUST appear above with its real data class and access type —
+omitting it is the gap the pen test surfaces by watching outbound connections. -->
+
+---
+
+## 6. Compliance attestations (owner-input — cross-ref readiness-tracker)
+
+<!-- guidance: State plainly what you HOLD and what you do NOT. None of these is
+a mandatory Security Review gate (baseline: process-soc2-informational) — they
+are informational questionnaire items and buyer-procurement concerns. "In
+progress" only when an engagement is actually under way. The single source of
+truth for these states is the readiness-tracker honesty block — keep this
+consistent with it, do not let the two drift. -->
+
+| Attestation | Held? | Type / scope | Evidence or N/A reason |
+|---|---|---|---|
+| SOC 2 | {{SOC2_HELD}} | {{SOC2_TYPE}} | {{SOC2_EVIDENCE}} |
+| ISO 27001 | {{ISO_HELD}} | {{ISO_SCOPE}} | {{ISO_EVIDENCE}} |
+| Third-party penetration test | {{PENTEST_HELD}} | {{PENTEST_SCOPE}} | {{PENTEST_EVIDENCE}} |
+| Other ({{OTHER_ATTESTATION}}) | {{OTHER_HELD}} | {{OTHER_SCOPE}} | {{OTHER_EVIDENCE}} |
+
+**Consistency line:** these states match the honesty posture in
+`submission/readiness-tracker.md`. {{CONSISTENCY_CONFIRMED_YES_NO}}
+<!-- guidance: None of the above is required to pass the review; an honest "do
+not hold" is correct and costs nothing. A claimed-but-unevidenced attestation is
+a credibility hit when the reviewer asks for the report. -->
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Only §1 (host/region) and the
+§5 subprocessor NAME/ROLE/REGION columns are agent pre-fill, carried from
+detected config and the data-flow diagram — STATIC review, not verification of
+how production is operated. EVERYTHING in §2–§4, §6, and the §5 access/contract
+columns is OWNER-INPUT describing org configuration and policy the agent cannot
+read. An empty "Verified by" cell, or any remaining {{SLOT}}, means NOT
+submission-ready. This document is a stub for owner completion + SIGNATURE — it
+is not an agent-verified document. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| 1 — Where the backend runs | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 2 — Network architecture | owner | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 3 — Production access | owner | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 4 — Encryption | owner | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 5 — Subprocessors | {{AGENT_OR_OWNER}} (cols split) | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+| 6 — Compliance attestations | owner | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Pre-filled by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}` — host/region (§1) + subprocessor name/role/region (§5) only.
+- Subprocessor list (§5) reconciles with `data-flow-diagram.md §6`: {{RECONCILES_YES_NO}}.
+- Compliance states (§6) consistent with `submission/readiness-tracker.md` honesty block: {{CONSISTENCY_CONFIRMED_YES_NO}}.
+- Owner signature (completes the stub): {{OWNER_SIGNATURE_OR_UNSIGNED}} — date: {{SIGNATURE_DATE_OR_EMPTY}}.
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This document describes hosting configuration and policy as the owner attests them; it is not an agent-verified document and not a warranty. Salesforce performs its own penetration testing and audits regardless of submitted evidence.
