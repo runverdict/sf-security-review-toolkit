@@ -51,6 +51,7 @@ elements, get the requirement list those elements imply.
    | Element | Detection |
    |---|---|
    | Managed package | `sfdx-project.json`, `force-app/` tree, `*-meta.xml`; record package type (1GP/2GP), namespace, and whether Apex/LWC/Aura/Flows exist |
+   | Agentforce agent | `Bot`/`BotVersion`, `GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`, `genAiPromptTemplate` metadata, or invocable actions wired to a planner — the **AgentExchange listing** signal. Emit a distinct `agentforce` element; it rides the package element but is what makes the `agentforce-*` requirements apply. **Do NOT infer it from `managed-package` alone** — a plain managed package that ships no agent is not an Agentforce listing, and asserting `agentforce-*` requirements against it manufactures blockers it can never satisfy (the cold-start finding this row closes) |
    | MCP server | MCP SDK imports, JSON-RPC `initialize`/`tools/list` dispatch in the partner's own code, an `/mcp`-shaped route they serve |
    | MCP client integration (inbound) | Code that **calls into** a Salesforce-hosted MCP server — a Connected/External Client App config, `mcp_api`+`refresh_token` scope requests, a PKCE+ECA OAuth flow targeting `*.salesforce.com`, redirect-URI handlers pointed at SF. This is the Direction-A signal (see the classifier below) |
    | External web app / API | Server frameworks in manifest files (FastAPI/Express/Rails/Spring…), route definitions, deploy configs; list every base URL the docs and configs claim |
@@ -70,6 +71,20 @@ elements, get the requirement list those elements imply.
    drags in the entire MCP requirement track (DAST of MCP + identity
    endpoints, tools metadata, per-user authz proof) for surfaces that don't
    exist, and the submission reads as confused.
+
+   **Agentforce detection self-check — a miss silently drops 12 requirements.**
+   The `agentforce-*` baseline requirements (incl. the three BLOCKER auto-fails:
+   VerifiedCustomerId scoping, user-controlled record refs, third-party-LLM)
+   now gate **solely** on the `agentforce` element, not on `managed-package`. So
+   a failure to detect the agent under-prepares the partner for an entire
+   AgentExchange track with no error. Before writing the manifest, run a
+   deterministic confirmation: grep `force-app/` for any
+   `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
+   metadata (e.g. `grep -rlE '<(Bot|GenAiPlugin|GenAiPlanner|GenAiFunction)' force-app`
+   plus `find force-app -name '*.genAiPlugin-meta.xml' -o -name '*.bot-meta.xml'`).
+   If any matches but no `agentforce` element was emitted, that is a detection
+   miss — emit the element. (This is the inverse of the MCP-client trap above:
+   there, over-detection drags in a track; here, under-detection drops one.)
 
    **Classify the listing direction — it branches every MCP auth/transport
    check.** A single merged "MCP auth check" emits contradictory guidance,
@@ -254,11 +269,17 @@ elements, get the requirement list those elements imply.
    never as facts), and a one-line product description for the shared audit
    context.
 
-7. **Compile "which requirements apply to you."** Filter every baseline entry's
-   `applies_to` against the detected elements (`all` always matches). This is
-   the toolkit's mirror of the checklist-builder step. Report the applicable
-   count as the **exact length of the compiled `applicableBaselineIds` list** —
-   count the filtered list, never narrate an estimate. The baseline has a fixed
+7. **Compile "which requirements apply to you" — deterministically.** Run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/applicable-requirements.mjs
+   --elements <comma-list of detected element types> --json`. It filters every
+   baseline entry's `applies_to` against the detected elements (`all` always
+   matches; the intersection is a pure set operation) and returns the exact
+   `applicableBaselineIds` + count. Use its output verbatim as the manifest's
+   `applicableBaselineIds` — do **not** hand-filter or narrate an estimate; the
+   element→requirement mapping is data, and computing it by judgment is what let
+   agentforce-*/mcp-* requirements leak onto a non-agent, non-MCP package. The
+   applicable count is the **exact length of that list** by construction; a
+   count that exceeds the baseline total is a counting bug, not a result. The baseline has a fixed
    total number of entries, so an "applicable" count that exceeds it is a
    counting bug, not a result. Two special cases:
    mobile elements have **no baseline coverage** — record the element, state
@@ -286,6 +307,7 @@ elements, get the requirement list those elements imply.
      "listingDirection": "B | A | both",
      "elements": [
        { "type": "managed-package", "evidence": "sfdx-project.json + force-app/ (Apex, LWC)" },
+       { "type": "agentforce", "evidence": "Bot + GenAiPlanner + genAiPromptTemplate in force-app/ — AgentExchange listing (omit when no agent metadata exists)" },
        { "type": "mcp-server", "evidence": "JSON-RPC dispatch in src/mcp/router.*; live probe 2026-06-12" }
      ],
      "endpoints": [

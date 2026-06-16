@@ -169,8 +169,13 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    package dimensions (audit-codebase), which overlap heavily with Checkmarx's
    Apex/VF/Lightning query families. Map every CONFIRMED package finding in the
    ledger to its likely Checkmarx category and emit
-   `evidence/checkmarx-prediction-<date>.md` — "your 3 portal runs will likely
-   surface these; fix or pre-disposition first." The mapping (finding class →
+   `evidence/checkmarx-prediction-<date>.md`. Head that file with the
+   one-directional caveat verbatim so it reaches a partner who never opens this
+   skill: *"This predicts only the categories our local stack can see; Checkmarx
+   runs proprietary queries we don't have and WILL flag categories listed
+   nowhere below. Treat portal run #1 as DISCOVERY, not confirmation."* Then:
+   "your 3 portal runs will likely surface these; fix or pre-disposition first."
+   The mapping (finding class →
    Checkmarx category): SOQL/SOSL injection → SQL/SOQL Injection · missing
    CRUD/FLS → Missing Object/Field-Level Security · sharing bypass → Insecure
    Sharing · XSS sinks → Stored/Reflected XSS · open redirect → Unvalidated
@@ -179,7 +184,13 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    → CSRF. **Honesty: this is a PREDICTION, not an equivalence** — Checkmarx's
    proprietary queries find classes the local stack misses and vice versa; the
    value is that your portal runs come back with *no surprises*, never "Checkmarx
-   will find nothing." Pre-fill the FP dossier with the dispositions you already
+   will find nothing." **The prediction is one-directional: it covers only the
+   categories the local stack can see. Checkmarx runs proprietary queries we do
+   not have and WILL surface categories this prediction structurally cannot.
+   Treat portal run #1 as DISCOVERY of those blind-spot categories, not
+   confirmation of a clean bill — budget the three runs accordingly (run #1
+   finds, #2 confirms the fixes, #3 is the margin), and do not assume #1 is the
+   post-fix run.** Pre-fill the FP dossier with the dispositions you already
    hold so a predicted finding the portal confirms is answered before you spend
    run #2. *Optional, genuinely headless (paid CxOne licence):* if `CX_APIKEY` is
    in the env, run the real Checkmarx One CLI (`cx scan create … --report-format
@@ -418,7 +429,7 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    References, the reviewer-reserved section), toolkit value-add fields in
    the marked Supplementary section — so the filled dossier drops into the
    wizard's FP slot without reformatting, and a wrong FP format never costs
-   the review cycle. One dossier across all six families: register row plus a
+   the review cycle. One dossier across all eight families: register row plus a
    per-finding block with all four required parts (flagged issue at
    file:line, functional explanation, the concrete mitigation, technical
    non-exploitability argument with evidence). Where the audit ledger

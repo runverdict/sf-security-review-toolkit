@@ -28,6 +28,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // ---------------------------------------------------------------------------
 function arg(flag, def) {
@@ -35,7 +36,7 @@ function arg(flag, def) {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def
 }
 const TARGET = arg('--target', process.cwd())
-const PLUGIN = arg('--plugin', '/home/verdict/sf-security-review-toolkit')
+const PLUGIN = arg('--plugin', fileURLToPath(new URL('..', import.meta.url)))
 const AS_JSON = process.argv.includes('--json')
 const RUN_DATE = arg('--date', new Date().toISOString().slice(0, 10))
 
@@ -131,12 +132,26 @@ const completeness = Math.round((satisfied / applicableN) * 100)
 // 4. Evidence freshness — satisfied-but-stale / unverified baseline currency
 // ---------------------------------------------------------------------------
 const FRESH_WINDOW = 90
+// Two DISJOINT currency caveats (their union is `caveated`, kept for the band):
+//   unverified — the maintainer never confirmed it against a primary source
+//                (web_research_unverified / conflicting; carries last_verified:null).
+//   stale      — confirmed once, but the confirmation has aged past the window
+//                (a real last_verified date older than FRESH_WINDOW).
+// Splitting them is honest: "we never verified this" and "we verified it but it
+// may have rotted" are different asks on the partner (the first → confirm with
+// your PAM; the second → re-check against current docs).
+const isUnverified = (b) => b && b.verification && /web_research_unverified|conflicting/.test(b.verification)
+const unverified = applicable.filter((id) => isUnverified(baseline[id]))
+const stale = applicable.filter((id) => {
+  const b = baseline[id]
+  if (!b || isUnverified(b)) return false // unverified is its own bucket, not "stale"
+  return b.last_verified && daysBetween(b.last_verified, RUN_DATE) > FRESH_WINDOW
+})
 const caveated = applicable.filter((id) => {
   const b = baseline[id]
   if (!b) return false
-  const stale = b.last_verified ? daysBetween(b.last_verified, RUN_DATE) > FRESH_WINDOW : true
-  const unverified = b.verification && /web_research_unverified|conflicting/.test(b.verification)
-  return stale || unverified
+  const aged = b.last_verified ? daysBetween(b.last_verified, RUN_DATE) > FRESH_WINDOW : true
+  return aged || isUnverified(b)
 })
 const conflicting = applicable.filter((id) => baseline[id]?.verification === 'conflicting')
 
@@ -169,6 +184,50 @@ if (!applicable.length) {
   gateReason = 'every applicable requirement satisfied with current evidence; every critical/high dispositioned'
 }
 
+// ---------------------------------------------------------------------------
+// 5b. Baseline-currency band floor (the reframed "currency must cost something"
+// gate). TWO-AXES PRINCIPLE — do not conflate these, and never dock the partner
+// for the maintainer's lag:
+//   • completeness % measures whether the PARTNER produced verified evidence
+//     (their work) — currency NEVER decrements it (that would be false
+//     incompleteness: telling a partner who did everything right they are
+//     incomplete because of OUR maintenance lag).
+//   • the band is the overall CONFIDENCE signal — and confidence legitimately
+//     erodes when the readiness rests on guidance that may have rotted
+//     (Salesforce changed the review process three times in eighteen months).
+// So currency rot caps the BAND, never the score. We key on STALE (entries
+// confirmed once but aged past a HARD window), NOT on `unverified` — unverified
+// is a known, stable property of today's baseline (already surfaced as a
+// caveat that blocks NO-SURPRISES READY); penalizing the band for it would
+// fire on every run. STALE is the rot signal: it is ~0 on a freshly maintained
+// baseline and climbs as the guidance ages, which is exactly when a confident
+// readiness verdict would be dishonest.
+const HARD_WINDOW = 180 // 2× the soft caveat window
+const CURRENCY_FLOOR_PCT = 33 // a third of applicable reqs on rotted guidance ⇒ cap confidence
+const hardStale = applicable.filter((id) => {
+  const b = baseline[id]
+  return b && !isUnverified(b) && b.last_verified && daysBetween(b.last_verified, RUN_DATE) > HARD_WINDOW
+})
+const hardStalePct = applicable.length ? Math.round((hardStale.length / applicable.length) * 100) : 0
+// Fire only when currency is the ONLY thing between the partner and ready:
+//   - the band is NO-SURPRISES READY, or MATERIALS COMPLETE with nothing missing/partial
+//     (firing on a missing/partial MATERIALS-COMPLETE would clobber the "finish
+//     materials" reason and tell a mid-prep partner their problem is our baseline);
+//   - and at least 2 hard-stale reqs (not a single req crossing 33% on a tiny manifest).
+// Calibration note: because real-baseline entries share verification dates, hardStalePct
+// is a STEP function — ~0 on a freshly refreshed baseline, then it jumps once the bulk of
+// entries cross HARD_WINDOW (≈180d after the last baseline refresh). It is a "the guidance
+// has aged out" tripwire, not a gradual ramp; that is the intended, honest behavior.
+const materialsTrulyComplete = band === 'NO-SURPRISES READY' || (band === 'MATERIALS COMPLETE' && missing === 0 && partial === 0)
+if (!blocked && applicable.length && hardStale.length >= 2 && hardStalePct >= CURRENCY_FLOOR_PCT && materialsTrulyComplete) {
+  band = 'NOT READY'
+  gateReason =
+    `baseline currency: ${hardStalePct}% of applicable requirements rest on baseline entries last verified ` +
+    `>${HARD_WINDOW}d ago — the readiness signal is built on guidance that may have rotted (the review process ` +
+    `changes often). Re-verify the baseline (see baseline/SOURCES.md) before relying. Your completeness % is ` +
+    `unchanged: this caps confidence, not your materials.`
+}
+
 // The standing "not verified by this toolkit" list — always present.
 const NOT_VERIFIED = [
   'runtime CSP / Trusted-URL behavior (static metadata only)',
@@ -187,7 +246,7 @@ const result = {
   completeness_label: 'materials + disposition completeness, NOT a pass-likelihood',
   coverage: { applicable: applicable.length, satisfied, partial, missing },
   disposition: { open_critical: openCritical, open_high: openHigh, dispositioned },
-  freshness: { caveated: caveated.length, conflicting: conflicting.length, window_days: FRESH_WINDOW },
+  freshness: { caveated: caveated.length, stale: stale.length, unverified: unverified.length, conflicting: conflicting.length, window_days: FRESH_WINDOW, hard_stale: hardStale.length, hard_stale_pct: hardStalePct, hard_window_days: HARD_WINDOW },
   blocker_findings: openBlockerFindings.map((f) => f.id || f.title).slice(0, 10),
   blocker_requirements: openBlockerReqs.slice(0, 10),
   not_verified_by_toolkit: NOT_VERIFIED,
@@ -207,7 +266,7 @@ if (AS_JSON) {
   L.push(`- Gate: ${gateReason}`)
   L.push(`- Coverage: ${satisfied}/${applicable.length} applicable requirements SATISFIED · ${partial} PARTIAL · ${missing} MISSING`)
   L.push(`- Disposition: ${openCritical} open critical · ${openHigh} open high · ${dispositioned} dispositioned`)
-  L.push(`- Evidence: ${caveated.length} caveated (stale >${FRESH_WINDOW}d or unverified) · ${conflicting.length} conflicting`)
+  L.push(`- Currency: ${caveated.length} of ${applicable.length} applicable requirements rest on caveated baseline entries — ${unverified.length} UNVERIFIED (never confirmed against a primary source; confirm with your PAM) · ${stale.length} STALE (verified >${FRESH_WINDOW}d ago; re-check against current docs) · ${conflicting.length} conflicting`)
   L.push(`- Completeness: **${completeness}%** _(materials + disposition completeness, NOT pass likelihood)_`)
   if (openBlockerFindings.length) L.push(`- Open critical findings: ${result.blocker_findings.join(', ')}`)
   if (openBlockerReqs.length) L.push(`- Unsatisfied blocker requirements: ${openBlockerReqs.join(', ')}`)
