@@ -113,6 +113,35 @@ That pass, not the summary, is the reason to trust the result.
 - `compute-sci.mjs` `--plugin` default is now relative (`import.meta.url`), not a
   hardcoded path — portability/cleanliness.
 
+### Validation — clean full-journey integration run (2026-06-16)
+
+A realistic cold-start (a fresh session, `run the security review` against a
+managed-package + external-endpoint fixture) drove the whole journey end to end and
+confirmed the back half **on the live path**, graded off disk:
+- **G4 holds end-to-end** — the continue-with-flags election persisted, the gate was
+  consulted (`flagged`, `suppress` exactly `["authn-authz-flow"]`), and generate-artifacts
+  withheld the AuthN/AuthZ doc (real doc never drafted) for the correct reason, naming all
+  13 open authN/authZ findings — **including A1's regression case** (`web-client` /
+  `package-metadata` *secondary*-category findings, the exact class the gate's first
+  version let escape).
+- **G1 confirmed where the partner reads it** — the compiled SCI returned `BLOCKED`
+  (3 criticals as the floor) with **no phantom `agentforce`/`mcp` blockers** in the
+  blocker list, not just absent from the upstream scope count.
+- **G2 / B1 / D1** rendered correctly live — the cluster view at triage; `ADDRESSED-refuted`
+  sub-labels in the reviewer simulation; the Checkmarx "run #1 = discovery" caveat verbatim.
+- **Smart-resume** recovered a real mid-run API connection-drop.
+- Independent corroboration: Code Analyzer v5 + the Graph Engine (SFGE) — deterministic,
+  non-LLM — flagged the **same** IDOR/CRUD-FLS root cause at the **same lines** the LLM
+  audit found.
+
+**Precisely what is NOT yet live-proven (kept honest — the lesson of this batch):** C1's
+staleness **detection** — flagging a finding whose code *changed* since it was audited.
+The `audited_commit` fingerprint stamps, the staleness harness runs, and the *no-change*
+case correctly reports "current" — all confirmed live. But the code did not change between
+audit and resume this run, so the detect-actual-staleness path remains **unit-test-only**:
+a remaining live test, not a closed one. The G4 PreToolUse-hook hardening and the
+prose-only fixes (D1/B1/agentforce-detection/F4) remain residuals as noted above.
+
 ## [0.4.4] — 2026-06-15
 
 WI-16 + WI-22 — the last two roadmap items. With these the autonomous-orchestration
