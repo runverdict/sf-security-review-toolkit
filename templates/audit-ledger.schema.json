@@ -155,6 +155,10 @@
           "type": "string",
           "format": "date"
         },
+        "audited_commit": {
+          "description": "git HEAD (full or short SHA) of the partner repo at the time this pass ran — the resumption fingerprint. On resume, `git diff --name-only <audited_commit> HEAD` identifies findings whose files changed since the audit; those are flagged potentially-stale (re-audit before trusting the verdict), never silently trusted. Recorded by audit-codebase; consumed by the journey preflight and compile-submission (harness/ledger-staleness.mjs). New passes SHOULD set it — this is enforced by the audit-codebase skill instruction, NOT by this schema (it is intentionally absent from `required` so ledgers written before the field still validate). A latest pass that lacks it is treated as `no-fingerprint` (staleness cannot be verified — re-audit), never silently trusted against an older pass's commit.",
+          "type": "string"
+        },
         "tier": {
           "description": "Token tier the pass ran at (audit-methodology.md §7). The readiness verdict records which tier and how many passes produced the ledger it reads — a quick-tier ledger is a triage, not an audit.",
           "type": "string",

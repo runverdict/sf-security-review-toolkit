@@ -52,10 +52,28 @@ marked owner-input.
 
 1. **Run the gates.** Three, in order. (a) Manifest exists and is not stale —
    spot-check it against the repo (tool count, route tree, `sfdx-project.json`
-   presence); drift means re-scope first. (b) Ledger has zero open
-   critical/high findings — if it has any, stop and route back to remediation;
-   generating now bakes the vulnerability into the documentation the reviewer
-   will use as a map. (c) Baseline currency — read every `artifact-*` entry
+   presence); drift means re-scope first. (b) **Run the artifact gate —
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/artifact-gate.mjs --target <target>
+   --json`** and honor its `mode` exactly. This is the ENFORCED form of the
+   open-critical/high hard stop; do not reason about the ledger by hand, and
+   never skip it on a resume — the gate is a pure function of the ledger plus
+   any persisted `triage-decision.json`, so it returns the same verdict whether
+   this skill is entered fresh, on resume, or invoked directly (a path that
+   trusted the journey's triage *narration* instead would generate over an open
+   hole — that is the bug this gate closes):
+   - **`STOP`** — open critical/high and no continue-with-flags election.
+     **Do not generate anything.** Route back to remediation, or have the
+     operator elect continue-with-flags at the triage gate
+     (`security-review-journey` step 3 writes `triage-decision.json`) and
+     re-run. Generating now bakes the vulnerability into the documentation the
+     reviewer uses as a map.
+   - **`flagged`** — open critical/high, but the operator elected
+     continue-with-flags. Generate the rest of the set, but for every artifact
+     id in the gate's `suppress` list **do NOT draft it** — write the withheld
+     placeholder instead (step 6, AuthN/AuthZ). The verdict still carries the
+     open findings verbatim (`compile-submission`).
+   - **`clean`** — no open critical/high; generate the full set normally.
+   (c) Baseline currency — read every `artifact-*` entry
    the selected set references and warn when any `last_verified` is older
    than 90 days (CONVENTIONS §4). Surface `verification: conflicting` entries
    to the operator now, not mid-draft. As of the 2026-06 sweep none touch
@@ -150,8 +168,22 @@ marked owner-input.
 
 6. **Draft the AuthN/AuthZ flow** from `authn-authz-flow.md.tmpl` (baseline
    `artifact-authn-authz-flow-doc`, plus the § Credential storage section
-   doubling as `artifact-credential-storage-attestation`). What the agent
-   reads, in trace order:
+   doubling as `artifact-credential-storage-attestation`).
+
+   **First, honor the gate (step 1b).** If `authn-authz-flow` is in the gate's
+   `suppress` list (`flagged` mode — an open critical/high finding sits in the
+   authN/authZ category), **do NOT draft this artifact.** Instead write
+   `<target>/docs/security-review/authn-authz-flow.WITHHELD.md` stating: the
+   AuthN/AuthZ flow document is withheld because open authN/authZ finding(s)
+   `<ids + file:line from the gate's open_authz_findings>` remain unremediated;
+   per the toolkit's honesty gate an AuthN/AuthZ flow doc is not generated over
+   a live auth hole because it would map the vulnerability for the reviewer; the
+   open findings are carried verbatim in the readiness verdict instead; resolve
+   the finding(s) (or remove the continue-with-flags election) to regenerate.
+   Footer it with the same provenance block, then skip the rest of step 6.
+
+   Otherwise (`clean` mode, or `flagged` with no authN/authZ finding) draft it.
+   What the agent reads, in trace order:
 
    - **The middleware/decorator chain, from the entry point.** Find where a
      bearer credential enters (the auth dependency, decorator, or middleware

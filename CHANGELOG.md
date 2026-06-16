@@ -4,6 +4,115 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.0] — 2026-06-16
+
+Cold-start acceptance hardening. Two distinct inputs surfaced the gaps in this
+release, and both mattered: **(1)** a 0-context, partner-style run of the whole
+journey against a fresh bare-bones managed package (the cold-start exhibited the
+behaviors a fixture-based acceptance test structurally cannot), and **(2)** an
+**external critical-reader review pass** that named which of them are
+publication-blocking — G4 in particular was escalated from "follow-up" to
+"the thing that cannot ship" by that second reader, not by the run alone. The
+combination is the leverage; neither a green fixture nor a self-review would have
+produced this batch. The honesty-critical **determinizable** properties — the
+artifact gate (G4), element-precise applicability (G1 data), the baseline counts
+(F2), the SCI currency floor + freshness split (A4/A3), cross-dimension de-dup
+(G2), and ledger staleness (C1) — are each **encoded as enforced logic with a
+deterministic standing test**: 6 self-asserting test files (41 checks) that fail
+the build if a refactor silently breaks them. The remaining fixes — the Checkmarx
+"run #1 = discovery" framing (D1), the ADDRESSED sub-labels (B1), the `agentforce`
+element *detection* (a model-run grep self-check), and the recall-capture wiring
+(F4) — are skill/prose changes and are **NOT yet test-backed**: the same residual
+class as the G4 lesson (a prose layer is only as strong as the model invoking it).
+The first cut of all of this was then run through an **adversarial self-audit**
+(skeptics told to assume a bug or overstatement the tests miss), which surfaced
+real issues in the new code — including a false-negative in the very G4 gate this
+release adds, and an over-stripped SSRF control — all fixed here before release.
+That pass, not the summary, is the reason to trust the result.
+
+### Added — deterministic engines + standing tests (no LLM, no deps)
+- `harness/artifact-gate.mjs` — the enforced generate-artifacts gate (G4, below).
+- `harness/applicable-requirements.mjs` — pure `applies_to ∩ elements` applicability
+  computer; scope-submission now uses it for an exact, non-narrated applicable count.
+- `harness/baseline-counts.mjs` — deterministic source of truth for the baseline's
+  self-description numbers (so they can't drift again).
+- `harness/finding-clusters.mjs` — deterministic cross-dimension de-dup for the triage
+  headline (G2, below).
+- `harness/ledger-staleness.mjs` — the resumption fingerprint check (C1, below).
+- `acceptance/test-{artifact-gate,applicable-requirements,baseline-counts,sci,finding-clusters,ledger-staleness}.mjs`.
+- `methodology/known-escapes.md` — a seeded-empty, honest recall log ("zero real-review
+  outcomes recorded to date"). The one validation the fixtures cannot provide — recall
+  against the failure classes the maintainer never thought of — accrues here, one real
+  review outcome at a time. `stay-listed` now captures review outcomes into it.
+- New `agentforce` architecture element + Bot/GenAiPlugin/GenAiPlanner detection in
+  scope-submission; `audited_commit` on the ledger `pass` object (schema).
+
+### Fixed — the publication gate (G4)
+- generate-artifacts' "open critical/high → STOP; withhold the AuthN/AuthZ artifact"
+  rule lived only in the journey's triage **narration** — a resume-into-artifacts (or a
+  direct invocation) improvised past it and generated the very AuthN/AuthZ doc the gate
+  exists to prevent (it would map a live, unremediated auth hole for the reviewer). The
+  gate is now **enforced logic** (`artifact-gate.mjs`), consulted on every entry path;
+  the continue-with-flags election is **persisted** to `.security-review/triage-decision.json`
+  so a resume re-derives it deterministically; the AuthN/AuthZ doc is withheld (with an
+  explicit placeholder) whenever an open finding sits in the authN/authZ category.
+- **Precision about what this guarantees (the lesson of G4, applied to its own fix):**
+  the gate is now enforced by a script the skills invoke on every entry path — strong,
+  and a large step up from prose — but it is **not yet model-independent**. It still
+  depends on the model actually running `artifact-gate.mjs` before generating; a future
+  resume path, direct invocation, or skill-text refactor that reaches artifact generation
+  without invoking it would be the same class of failure, one level less likely. The
+  model-independent version is a **PreToolUse hook** that fires on the artifact-write tool
+  call itself, regardless of which skill prose led there — the next hardening step, tracked
+  as a residual. This release does NOT claim the bypass is structurally impossible; it
+  claims it is enforced by a gate the skills invoke and proven against the exact failure
+  case. (Overstating the fix to the bug whose lesson was "don't trust the bypassable
+  layer" would be the wrong note to ship.)
+
+### Fixed — scope step asserting inapplicable requirements (G1)
+- `agentforce-*` and `mcp-*` requirements were gated on the generic `managed-package`
+  element, so a plain managed package with no agent and no MCP server was told to satisfy
+  Agentforce/MCP requirements it can never meet — manufacturing blockers and distorting
+  the SCI. Re-gated 12 baseline entries (10 agentforce-* + 2 mcp-* listing reqs) onto the
+  precise `agentforce` / `mcp-server` element tokens; scope-submission now detects an
+  `agentforce` element (with a deterministic grep self-check) and computes applicability
+  deterministically. Regression-guarded: a plain package drops all of them, a real
+  agent/MCP package keeps them. (Deliberately NOT re-gated: `mcpthreat-ssrf-mitigation`
+  keeps `external-endpoint` — SSRF is a real risk for any partner-hosted server that
+  performs server-side fetches, not only MCP servers; the adversarial self-audit caught
+  an over-strip of this one and it was restored.)
+
+### Fixed / Changed — honesty surfaces
+- **Currency now costs confidence, not the partner's score (A4):** a new band-level
+  currency floor caps the readiness band below MATERIALS COMPLETE when a material share of
+  applicable requirements rest on baseline entries verified >180d ago — but it **never**
+  decrements completeness % (that would be false-incompleteness, penalizing the partner
+  for the maintainer's lag). The two-axes reasoning is documented in `compute-sci.mjs`.
+- **SCI freshness split (A3):** `caveated` now reports `stale` (verified-but-aged) vs
+  `unverified` (never primary-confirmed) separately — different asks on the partner.
+- **Cross-dimension de-dup (G2):** the triage headline now reports the raw count AND a
+  conservative clustered view (distinct affected files, file-level critical/high,
+  cross-dimension overlap), so the per-dimension fan-out re-finding one root cause under
+  several lenses is never presented as that many distinct problems.
+- **Resumption integrity (C1):** a resumed run now diffs the repo HEAD against each pass's
+  `audited_commit` and flags findings whose files changed since — so a clean verdict is
+  never presented against code that has regressed since the audit.
+- **Checkmarx framing (D1):** the prediction now states explicitly that it is
+  one-directional — Checkmarx runs proprietary queries the local stack lacks and WILL
+  flag categories the prediction cannot see; treat portal run #1 as discovery, not
+  confirmation. The caveat is echoed into the emitted prediction file's header.
+- **ADDRESSED sub-labels (B1):** the reviewer-simulation verdict splits into
+  `ADDRESSED-fixed` (a verified remediation, disclosed as resolved) vs
+  `ADDRESSED-refuted(FP)` (a non-exploitable finding, disclosed via the FP dossier,
+  never as a fix) — so a refuted finding can't be skim-read as fixed.
+- **Baseline self-description counts (F2):** corrected the drifted README/SOURCES numbers
+  to the deterministic count (155 entries: 118 verified_primary, 36 web_research_unverified,
+  1 conflicting) and nulled the 6 WI-19 stub `last_verified` dates (they were never
+  verified; null is honest). `baseline-counts.mjs` + a standing test keep prose and data
+  in lockstep.
+- `compute-sci.mjs` `--plugin` default is now relative (`import.meta.url`), not a
+  hardcoded path — portability/cleanliness.
+
 ## [0.4.4] — 2026-06-15
 
 WI-16 + WI-22 — the last two roadmap items. With these the autonomous-orchestration

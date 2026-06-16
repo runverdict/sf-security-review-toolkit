@@ -229,8 +229,8 @@ status, plainly:
   and [`acceptance/expected-findings.md`](acceptance/expected-findings.md).
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
-  delta, 115 of 146 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 30
+  delta, 118 of 155 baseline entries are `verified_primary` (confirmed
+  against official Salesforce docs or partner-gated primary sources); 36
   remain `web_research_unverified` pending primary-source confirmation, and
   1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
   resolved through your Partner Account Manager or partner Slack, not trusted

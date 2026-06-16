@@ -219,6 +219,15 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      figure, never show the % without the gate and the not-verified list. The
      SCI is the autonomous go/no-go signal `security-review-journey` surfaces at
      the pre-compile gate.
+   - **Ledger freshness — guard against a verdict over moved code.** Run
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/ledger-staleness.mjs --target <target> --json`.
+     If it reports `stale` (findings whose files changed since their
+     `audited_commit`) or `no-fingerprint`, surface that in the verdict and
+     **degrade the readiness language accordingly** — a clean band computed from
+     findings the code has since moved past is not trustworthy; name the stale
+     findings and recommend a re-audit pass before relying on the verdict. Never
+     present a band over a ledger the repo has drifted away from as if it were
+     current.
    - **Per-category ready / not-ready**, using the tracker's section
      boundaries (documentation artifacts; package code-scan artifacts;
      external-endpoint artifacts; CI scanning evidence; test environment;
