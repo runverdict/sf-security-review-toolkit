@@ -1,6 +1,6 @@
 ---
 name: reviewer-simulation
-description: Audit the submission AS THE SALESFORCE REVIEWER WILL. Runs the Product-Security challenge checklist (reviewer-challenges.md) against the audit ledger + scan evidence + the scope manifest, and emits a "what the reviewer will see" report — every challenge marked WILL-FIND / ADDRESSED / NOT-STATICALLY-EXAMINED, ranked by the reviewer's own attack priority (public reach → authz → injection → egress → package hygiene → infra), headed by the first things they will hit. Use after audit-codebase + run-scans, before compile-submission; it reframes what the toolkit already found as what the human tester will reproduce.
+description: Audit the submission AS THE SALESFORCE REVIEWER WILL. Runs the Product-Security challenge checklist (reviewer-challenges.md) against the audit ledger + scan evidence + the scope manifest, and emits a "what the reviewer will see" report — every challenge marked WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED, ranked by the reviewer's own attack priority (public reach → authz → injection → egress → package hygiene → infra), headed by the first things they will hit. Use after audit-codebase + run-scans, before compile-submission; it reframes what the toolkit already found as what the human tester will reproduce.
 allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(cat *) Bash(git rev-parse *) Bash(git log *)
 ---
 
@@ -55,10 +55,18 @@ reviewer intent, **not** the reviewer's live penetration test (CONVENTIONS §2).
    - **WILL-FIND** — a `confirmed`/`regressed` ledger entry (or a scan finding)
      matches. This is the headline case: the reviewer WILL reproduce it. Carry
      the finding's `adjusted_severity`, file:line, and one-line description.
-   - **ADDRESSED** — a `fixed` entry (verified fix), or a `refuted` entry whose
-     verifier reasoning is the non-exploitability argument, or a satisfied control
-     with evidence. Carry the evidence pointer — this is a no-surprises disclosure,
-     and a refuted entry's reasoning is ready for the FP dossier.
+   - **ADDRESSED** — carry the evidence pointer, and **sub-label it by provenance
+     so the table can never be skim-read as "we fixed it" when we did not**:
+     - **ADDRESSED-fixed** — a `fixed` ledger entry: a real remediation landed,
+       backed by a fix commit + a clean re-scan. Disclose as resolved.
+     - **ADDRESSED-refuted(FP)** — a `refuted` entry whose verifier reasoning is
+       the non-exploitability argument, or a satisfied control with evidence.
+       This is **NOT a remediation** — it is "we considered this and it does not
+       apply / is not exploitable," disclosed via the FP dossier. Never present
+       a refuted entry as a fix.
+     The distinction is load-bearing: a partner who reads a bare "ADDRESSED" in
+     the table and discloses a refuted finding to Salesforce as *fixed* would be
+     disclosing a non-fix. The sub-label makes the two paths un-confusable.
    - **NOT-STATICALLY-EXAMINED** — no ledger/scan signal AND the challenge is
      genuine pen-test territory (runtime CSP, live error hygiene, the Agentforce
      two-account probe, a logic bug reachable only at a specific record/permission/
@@ -80,9 +88,11 @@ reviewer intent, **not** the reviewer's live penetration test (CONVENTIONS §2).
      action · file:line · the one-line fix. This is what the partner reads first
      and fixes first.
    - **The full challenge table**, tier by tier: challenge · verdict
-     (WILL-FIND / ADDRESSED / NOT-STATICALLY-EXAMINED / UNEXAMINED) · evidence or
-     finding pointer · the reviewer's probe. N/A challenges are omitted (their
-     count is in the run log).
+     (WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED
+     / UNEXAMINED) · evidence or finding pointer · the reviewer's probe. Use the
+     ADDRESSED sub-labels in the cell — never a bare "ADDRESSED" — so a glance at
+     the table can never read a refuted (false-positive) finding as a remediation.
+     N/A challenges are omitted (their count is in the run log).
    - **No-surprises disclosures** — the ADDRESSED-via-refuted challenges, each
      with the verifier's non-exploitability reasoning, written for direct reuse in
      the FP dossier (these are what you tell the reviewer you already considered).

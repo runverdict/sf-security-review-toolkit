@@ -195,7 +195,12 @@ regardless of anything this engine produces.
 6. **Merge mechanically; let synthesis write the report.** The synthesis agent
    writes `<target>/docs/security-review/audit-report-<date>-pass<N>.md` from
    confirmed/partial findings only, with the §9 contract: (1) executive
-   summary — blocking vs hardening, stated plainly; (2) prioritized findings
+   summary — blocking vs hardening, stated plainly, and headed by the
+   deterministic cluster view (`node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs
+   --target <target> --json`): report the raw confirmed counts AND the distinct
+   affected files / file-level critical-high / cross-dimension-overlap headline,
+   so the per-dimension fan-out re-finding one root cause under several lenses is
+   never presented as that many distinct problems; (2) prioritized findings
    table sorted by the verifier's `adjusted_severity` (the finder's severity
    is provenance only); (3) a short, concrete remediation plan per
    critical/high finding; (4) **strong controls observed** — written for reuse
@@ -212,7 +217,10 @@ regardless of anything this engine produces.
    entry's key flips it back to `confirmed` with `regression: true`. Redact
    any credential value captured in an evidence snippet (`***redacted***`)
    before writing anything (CONVENTIONS §6), append the pass entry to
-   `.security-review/run-log.md`, and surface the unverified list.
+   `.security-review/run-log.md`, and surface the unverified list. **Stamp the
+   pass object's `audited_commit` with `git -C <target> rev-parse HEAD`** — the
+   resumption fingerprint. Without it a later resume cannot tell whether the code
+   behind a finding moved since the audit (step 7 / `harness/ledger-staleness.mjs`).
 
 7. **Gate and route.** Open `critical`/`high` findings halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the

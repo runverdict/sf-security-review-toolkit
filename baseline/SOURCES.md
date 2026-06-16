@@ -29,14 +29,15 @@ Every entry in the baseline sits on one of three rungs:
 
 1. `web_research_unverified` (`last_verified: null`) — found in public web
    research only. The fact may be right, but no primary channel has confirmed
-   it. 30 entries remain here (mostly the MCP-spec threat-model section and
-   a handful of endpoint/test-env hygiene items the 2026-06 evidence did not
-   touch).
+   it. 36 entries remain here (mostly the MCP-spec threat-model section, the
+   WI-19 written-policy artifact stubs, and a handful of endpoint/test-env
+   hygiene items the 2026-06 evidence did not touch). Counts are emitted
+   deterministically by `harness/baseline-counts.mjs` — do not hand-edit them.
 2. `verified_primary` (`last_verified: YYYY-MM-DD`) — confirmed against a
    primary source: the ISVforce Guide read directly at its current version,
    an official Salesforce blog/page read directly, a login-gated partner
    document or official partner-Slack post, or an empirical test. A fact
-   merely re-found on another blog is NOT a promotion. 115 entries.
+   merely re-found on another blog is NOT a promotion. 118 entries.
 3. `conflicting` — primary-grade sources disagree, or the only source is
    single-tier and uncorroborated; the `conflicts:` field states exactly what
    is open. Skills surface these as "verify with your Partner Account

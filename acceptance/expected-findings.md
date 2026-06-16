@@ -3,7 +3,7 @@
 **This file is the grading key for the acceptance test. It lives in the toolkit
 repo, NOT in the fixture — a finder that could read it would cheat the recall
 measurement.** Built by `acceptance/generate-fixture.mjs`. Every planted issue
-below is a deliberate, realistic instance of one probe in a 0.3.0 finder
+below is a deliberate, realistic instance of one probe in a finder
 dimension (or run-scans Family 6). Citations are by file + construct (line
 numbers shift across regenerations).
 

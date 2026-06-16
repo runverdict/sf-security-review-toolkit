@@ -34,10 +34,14 @@ anything else.
 Each row: the reviewer's question · what they actually do · the dimension(s) /
 scan family that answers it · the baseline id(s) · which scope element triggers
 it. `reviewer-simulation` marks each **WILL-FIND** (a confirmed-open ledger entry
-or scan finding matches), **ADDRESSED** (a `fixed`/`refuted` ledger entry with
-evidence, or a satisfied control), or **NOT-STATICALLY-EXAMINED** (genuine
-pen-test territory the static pass cannot settle — name it, never imply it's
-clean).
+or scan finding matches), **ADDRESSED-fixed** (a `fixed` ledger entry — a real
+remediation with a fix commit + clean re-scan, disclosed as resolved),
+**ADDRESSED-refuted(FP)** (a `refuted` entry with non-exploitability reasoning or
+a satisfied control — disclosed via the FP dossier, NEVER as a fix), or
+**NOT-STATICALLY-EXAMINED** (genuine pen-test territory the static pass cannot
+settle — name it, never imply it's clean). The two ADDRESSED sub-labels stay
+distinct everywhere a verdict is rendered so a refuted finding is never skim-read
+as fixed.
 
 ### Tier 1 — Public / guest reach
 

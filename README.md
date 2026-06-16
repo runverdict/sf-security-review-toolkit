@@ -11,7 +11,12 @@ you submit.*
 > **What this toolkit is not.** It prepares a submission; it does not pass one.
 > Salesforce's Product Security team runs its own penetration test regardless of
 > what you submit. Nothing here represents a scan, test, or certification as
-> complete unless there is an evidence file behind it.
+> complete unless there is an evidence file behind it. Where a property can be
+> made deterministic, it is enforced by code rather than left to the model's good
+> behavior: the AuthN/AuthZ artifact is **withheld by an enforced gate**
+> (`harness/artifact-gate.mjs`) while any critical/high finding is open, and the
+> recall misses a real review catches that the audit didn't are logged in
+> `methodology/known-escapes.md`.
 
 ## Why it exists
 
@@ -105,7 +110,7 @@ allowlist or auto-accept silences them.
 | Skill | What it does | Automation level |
 |---|---|---|
 | `/sf-security-review-toolkit:security-review-journey` | The autonomous driver: a preflight scan (+ Dev Hub auto-resolution when `sf` is authed), then runs the whole journey end to end, pausing only at the safety gates; also does state detection / routing / status | Autonomous (gated) |
-| `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, external endpoint, MCP server, Canvas, LWC), compiles which requirements apply, gates on partner-program prerequisites | Automated |
+| `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, Agentforce agent, external endpoint, MCP server, Canvas, LWC/Aura, mobile), compiles which requirements apply, gates on partner-program prerequisites | Automated |
 | `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 16 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
 | `/sf-security-review-toolkit:generate-artifacts` | Drafts the submission artifacts from your code: AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, exposed-tools inventory + OpenAPI, access-control documentation, credential-storage statement | Automated draft, human review |
 | `/sf-security-review-toolkit:run-scans` | Eight scan families: Code Analyzer v5, Checkmarx-portal check, authenticated DAST plan, TLS grade, dependency audit, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC); folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
@@ -147,11 +152,30 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.4.4 — feature-complete autonomous-orchestration extensions.** The toolkit
-ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
-**Submission Completeness Index**, and a sequenced **path-to-green**. Component
-status, plainly:
+**0.5.0 — cold-start acceptance hardening: enforced gates + deterministic engines + standing tests.**
+The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
+**Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
+engines in `harness/` guarded by 6 standing test files (43 checks)** that fail the build if a
+refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.5.0 — cold-start acceptance hardening (enforced gates + deterministic engines +
+  standing tests).** A 0-context, partner-style cold-start run of the whole journey plus an
+  external critical-reader review surfaced gaps the fixture-based acceptance test structurally
+  could not. Five new no-LLM/no-dependency engines turn the honesty-critical properties into
+  enforced logic: `harness/artifact-gate.mjs` STOPs artifact generation while an open
+  critical/high finding stands and **withholds the AuthN/AuthZ artifact** (fail-closed, not on the
+  model's good behavior); `applicable-requirements.mjs` makes applicability an exact
+  `applies_to ∩ elements` set; `baseline-counts.mjs` is the deterministic source of truth for the
+  baseline self-description; `finding-clusters.mjs` de-dups the per-dimension fan-out for an honest
+  triage headline; `ledger-staleness.mjs` flags findings whose code changed since they were
+  audited (a per-pass `audited_commit` fingerprint). The SCI now splits stale-vs-unverified
+  evidence and adds a band-level **currency floor** (caps confidence, never the partner's
+  completeness %). A new **`agentforce`** architecture element gates the agentforce-* / mcp-*
+  requirements precisely — off the generic managed-package element, so a plain package is no longer
+  told to satisfy Agentforce requirements it has no surface for. Findings carry **ADDRESSED-fixed**
+  vs **ADDRESSED-refuted(FP)** sub-labels so a false positive can't be skim-read as a fix. Six
+  standing test files (`acceptance/test-*.mjs`, 43 deterministic checks) guard all of the above,
+  and `methodology/known-escapes.md` is the seeded recall log for real-review misses.
 - **New in 0.4.4 — Checkmarx prediction (WI-16) + path-to-green (WI-22).** run-scans
   now predicts the findings your owner-gated portal Checkmarx scan will surface (so
   your 3 runs come back with no surprises — a prediction, never an equivalence; an
@@ -165,7 +189,7 @@ status, plainly:
   Salesforce Product Security will see*, ranked by the reviewer's own attack
   priority (public/guest reach → authz → injection → egress → package hygiene →
   infra) and headed by the first things they will hit — each challenge marked
-  WILL-FIND / ADDRESSED / NOT-STATICALLY-EXAMINED.
+  WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED.
 
 - **New in 0.4.2 — the written-policy / org-config artifact pack (WI-19).** The
   surface where a submission stalls *after* the code is clean: `generate-artifacts`
@@ -229,8 +253,8 @@ status, plainly:
   and [`acceptance/expected-findings.md`](acceptance/expected-findings.md).
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
-  delta, 115 of 146 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 30
+  delta, 118 of 155 baseline entries are `verified_primary` (confirmed
+  against official Salesforce docs or partner-gated primary sources); 36
   remain `web_research_unverified` pending primary-source confirmation, and
   1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
   resolved through your Partner Account Manager or partner Slack, not trusted

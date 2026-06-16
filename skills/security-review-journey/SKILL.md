@@ -80,7 +80,11 @@ missing or a key piece of the architecture was misread.
    mode live there). At preflight depth you are only deciding *what tier each
    input lands in*, not writing the manifest. In the target repo, in one sweep:
    - **Detect architecture elements** by evidence: `sfdx-project.json` +
-     `force-app/` (managed package, namespace, Apex/LWC/Aura), MCP SDK imports /
+     `force-app/` (managed package, namespace, Apex/LWC/Aura),
+     `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
+     metadata (an **`agentforce`** element — the AgentExchange-listing signal
+     that gates the agentforce-* requirements; a miss silently drops 12 of them,
+     so do not infer it from `managed-package` alone), MCP SDK imports /
      JSON-RPC `initialize`+`tools/list` dispatch in the partner's *own* code
      (MCP **server** — not a Named Credential pointing at someone else's, which
      makes them an MCP client), server frameworks + route definitions (external
@@ -107,6 +111,20 @@ missing or a key piece of the architecture was misread.
    are there new route files? **On drift, the resume point becomes Phase 0** —
    re-scope before anything downstream, because every later phase keys off the
    manifest. Drift is normal operation, not failure.
+
+   **Spot-check the LEDGER against the repo too — manifest drift is not the only
+   way a resume goes stale.** When an `audit-ledger.json` exists, run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/ledger-staleness.mjs --target <target>
+   --json`. It diffs the repo HEAD against each pass's `audited_commit`
+   fingerprint and flags findings whose files changed since they were audited —
+   a `fixed` whose fix was reverted, a `refuted` whose non-exploitability no
+   longer holds, a `confirmed` already remediated. Stale findings are surfaced as
+   "re-audit before the verdict relies on this" and added to the re-audit
+   dimension set; they are NEVER silently carried into the readiness verdict. A
+   ledger with no fingerprint (written before this field) cannot be verified —
+   say so and recommend a fresh pass rather than trusting it. This is what stops
+   a resumed run from presenting a clean verdict against code that has since
+   regressed.
 
 4. **Auto-resolve from `sf` — only if already authed, never prompting here.**
    Run `sf org list`/`sf config get target-org` to sense an existing
@@ -205,20 +223,43 @@ pass the detected-state summary forward so no phase re-detects from scratch.
 
 3. **Triage gate (the blocker policy).** Read `audit-ledger.json`. On any open
    critical/high finding the autonomous run **DEFAULTS to halt-and-report** —
-   the same safe default the audit and artifact skills enforce. Surface the
-   blockers and offer two ways forward: **continue with honest inline flags**
+   the same safe default the audit and artifact skills enforce. **Surface the
+   blockers via the deterministic cluster view, not the raw ledger count** —
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target>
+   --json`. Report the raw counts AND the clustered headline (distinct affected
+   files + the file-level critical/high count + which files carry cross-dimension
+   overlap), so "N findings across D dimensions" is never presented as N distinct
+   problems — the audit fans out per dimension and re-finds one root cause under
+   several lenses (e.g. a `without sharing` class flagged by apex-exposed-surface
+   AND web-client AND package-metadata is one issue, not three). The gate
+   DECISION is unchanged (any open critical/high still halts); only the headline
+   gets honest. Then offer two ways forward: **continue with honest inline flags**
    (the open findings called out verbatim in the verdict) or **fix-first** (pause
    while the partner remediates, then re-audit). "Continue with honest inline
    flags" is the **explicit blocker-policy the operator selects** (the
    ask-tolerance choice), never the silent default — the orchestrator does not
    ship a package over an open critical/high without the operator electing that
+   path. **Persist the election the moment it is made:** write
+   `<target>/.security-review/triage-decision.json`
+   (`{decision: "continue-with-flags" | "fix-first" | "stop", decided_date,
+   decided_at_pass, open_at_decision: {critical, high}, rationale, elected_by}`)
+   BEFORE invoking the next phase. This is load-bearing — the election is
+   conversation state, and a later resume (or a direct
+   `generate-artifacts` invocation) would otherwise lose it; the artifact gate
+   (`generate-artifacts` step 1b / `harness/artifact-gate.mjs`) reads this file,
+   so the decision survives and is re-derived deterministically on every entry
    path. The one rule that holds regardless of which path is chosen: **if an
-   open finding is in the AuthN/AuthZ category, SKIP the AuthN/AuthZ artifact**
-   in the next phase and state why — generating an authn-authz-flow doc that
+   open critical/high finding is in the AuthN/AuthZ category, the AuthN/AuthZ
+   artifact is WITHHELD** in the next phase — generating an authn-authz-flow doc that
    describes a flow with a live, unremediated auth hole would hand the reviewer
-   a self-incriminating document and misrepresent the posture. When the operator
-   elects continue-with-flags, every other artifact still generates and the
-   verdict carries the open findings forward verbatim.
+   a self-incriminating document and misrepresent the posture. This is no longer
+   a matter of narration the orchestrator must remember: with the election
+   persisted, the artifact gate computes the `suppress` list itself (it withholds
+   the AuthN/AuthZ doc when an open **critical/high** finding sits in the
+   authN/authZ category — the publication-blocking threshold) and the
+   `generate-artifacts` skill withholds the doc on any entry path. When the
+   operator elects continue-with-flags, every other artifact still generates and
+   the verdict carries the open findings forward verbatim.
 
 4. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
    only the artifacts whose `applies_to` matched the manifest; honors the

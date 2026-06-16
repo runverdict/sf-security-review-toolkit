@@ -257,6 +257,21 @@ published consequence (baseline: `post-pkce-refresh-rotation-mandate`).
    (CONVENTIONS §4) only works if some cycle closes the loop; this is the
    cycle that does.
 
+   **Close the recall loop too.** Whenever a review stage concludes — the
+   initial approval, an annual or Product-Security-initiated re-review, or the
+   penetration test — compare what Product Security actually surfaced against
+   what the audit ledger had. For every finding the real review raised that the
+   toolkit's audit did **not** confirm (or never raised), record an escape in
+   `${CLAUDE_PLUGIN_ROOT}/methodology/known-escapes.md`: the finding class, where
+   the review caught it, the dimension/scan-family that *should* have caught it,
+   why it escaped, and the toolkit change that closes it. This is the one
+   validation the acceptance fixtures cannot provide (recall against the classes
+   the maintainer never thought of), so it is the highest-signal feedback the
+   toolkit gets — and it is the canonical input to the next coverage-gap audit.
+   Anonymize the partner; the finding class and the dimension mapping are what
+   generalize. Per the standing rule, every escape becomes a toolkit change
+   proven by a fresh acceptance run — never a note left for a future session.
+
 10. **Wire the cadence.** The schedule: quarterly recurring runs, the
     pre-horizon run ~60 days before the re-review horizon, and the
     release gate on every release. The mechanism is deliberately
