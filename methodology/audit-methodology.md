@@ -423,6 +423,13 @@ Rules:
   category of its **root cause** (here `input-validation`), with the second named
   in the finding's report row. Never double-count one finding across two matrix
   cells; the per-category counts must sum to the total confirmed count.
+- **This map is consumed mechanically by `harness/artifact-gate.mjs`** — its
+  `AUTHN_AUTHZ_DIMENSIONS` set is every dimension whose **default OR secondary**
+  category is `authentication/session-management` or `authorization` (which is
+  why `web-client` and `package-metadata` are in it, via their secondaries). The
+  gate withholds the AuthN/AuthZ artifact under continue-with-flags when an open
+  critical/high finding sits in one of those dimensions. If you change a
+  dimension's category here, update that set (and `acceptance/test-artifact-gate.mjs`).
 - **A category with no applicable dimension is `not-assessed-by-this-engine`,
   not `pass`.** The engine reads source; it does not exercise the running system.
   Several categories are only partly visible to static review —
@@ -624,10 +631,22 @@ contract:
    its reviewer category through to the readiness verdict's per-category matrix.
 
 After synthesis, the engine (code, not the agent): merges verdicts into the
-ledger by dedup key, appends the pass summary to
+ledger by dedup key, **stamps the pass's `audited_commit` with the repo HEAD SHA
+(the resumption fingerprint)**, appends the pass summary to
 `<target>/.security-review/run-log.md` (pass number, tier, dimensions run,
 candidates/confirmed/refuted counts, report path), and prints the per-§3.3
 unverified list if any.
+
+**Resumption / staleness.** On a resumed run, before trusting a prior pass's
+findings the engine runs `harness/ledger-staleness.mjs`, which diffs the repo
+HEAD against the latest pass's `audited_commit` and flags any finding whose file
+changed since — a `fixed` whose fix was reverted, a `refuted` whose
+non-exploitability no longer holds, a `confirmed` already remediated. Stale
+findings are surfaced as "re-audit before the verdict relies on this," never
+silently carried forward; a ledger with no fingerprint cannot be verified and
+says so. The triage gate likewise records the operator's blocker-policy election
+to `<target>/.security-review/triage-decision.json`, which `harness/artifact-gate.mjs`
+reads to decide clean / flagged / STOP on every entry path (CONVENTIONS §7).
 
 ---
 
@@ -636,7 +655,8 @@ unverified list if any.
 | File | Written by | Committed? |
 |---|---|---|
 | `.security-review/target-map.json` | adapter stage | yes (recommended — it documents what was and wasn't audited) |
-| `.security-review/audit-ledger.json` | engine merge | yes — the ledger is what makes re-audits incremental (CONVENTIONS §6) |
+| `.security-review/audit-ledger.json` | engine merge | yes — the ledger is what makes re-audits incremental (CONVENTIONS §6); each pass carries an `audited_commit` fingerprint |
+| `.security-review/triage-decision.json` | triage gate | yes — the persisted blocker-policy election; read by `harness/artifact-gate.mjs` |
 | `.security-review/run-log.md` | engine | yes |
 | `docs/security-review/audit-report-<date>-pass<N>.md` | synthesis agent | yes |
 

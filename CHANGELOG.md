@@ -18,7 +18,7 @@ produced this batch. The honesty-critical **determinizable** properties — the
 artifact gate (G4), element-precise applicability (G1 data), the baseline counts
 (F2), the SCI currency floor + freshness split (A4/A3), cross-dimension de-dup
 (G2), and ledger staleness (C1) — are each **encoded as enforced logic with a
-deterministic standing test**: 6 self-asserting test files (41 checks) that fail
+deterministic standing test**: 6 self-asserting test files (43 checks) that fail
 the build if a refactor silently breaks them. The remaining fixes — the Checkmarx
 "run #1 = discovery" framing (D1), the ADDRESSED sub-labels (B1), the `agentforce`
 element *detection* (a model-run grep self-check), and the recall-capture wiring
@@ -44,7 +44,7 @@ That pass, not the summary, is the reason to trust the result.
   outcomes recorded to date"). The one validation the fixtures cannot provide — recall
   against the failure classes the maintainer never thought of — accrues here, one real
   review outcome at a time. `stay-listed` now captures review outcomes into it.
-- New `agentforce` architecture element + Bot/GenAiPlugin/GenAiPlanner detection in
+- New `agentforce` architecture element + Bot/GenAiPlugin/GenAiPlanner/GenAiFunction detection in
   scope-submission; `audited_commit` on the ledger `pass` object (schema).
 
 ### Fixed — the publication gate (G4)

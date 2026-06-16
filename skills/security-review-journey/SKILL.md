@@ -80,7 +80,11 @@ missing or a key piece of the architecture was misread.
    mode live there). At preflight depth you are only deciding *what tier each
    input lands in*, not writing the manifest. In the target repo, in one sweep:
    - **Detect architecture elements** by evidence: `sfdx-project.json` +
-     `force-app/` (managed package, namespace, Apex/LWC/Aura), MCP SDK imports /
+     `force-app/` (managed package, namespace, Apex/LWC/Aura),
+     `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
+     metadata (an **`agentforce`** element — the AgentExchange-listing signal
+     that gates the agentforce-* requirements; a miss silently drops 12 of them,
+     so do not infer it from `managed-package` alone), MCP SDK imports /
      JSON-RPC `initialize`+`tools/list` dispatch in the partner's *own* code
      (MCP **server** — not a Named Credential pointing at someone else's, which
      makes them an MCP client), server frameworks + route definitions (external

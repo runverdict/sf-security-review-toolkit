@@ -120,6 +120,20 @@ Skills write into the PARTNER's repo, never into the plugin:
   threat concept, what "good" looks like, and **detection heuristics** for
   locating the relevant code per stack (the stack-adapter step resolves real
   paths before finders run).
+- **Determinizable honesty claims are engine-backed, not narrated (0.5.0).** Any
+  self-describing count, applicability set, readiness band/gate, finding de-dup,
+  or staleness check MUST be computed by a pure `harness/*.mjs` engine — no LLM,
+  no network, no dependencies, byte-identical on re-run — and guarded by a
+  self-asserting `acceptance/test-*.mjs` standing test that fails the build if the
+  property breaks. A rule that exists only as skill prose is only as strong as the
+  model that remembers to invoke it (a cold-start run proved this twice: the
+  AuthN/AuthZ-withhold gate, when it lived in journey narration, was improvised
+  past on a resume path). The enforced form lives in `harness/artifact-gate.mjs`,
+  `applicable-requirements.mjs`, `baseline-counts.mjs`, `finding-clusters.mjs`,
+  `ledger-staleness.mjs`, and `compute-sci.mjs`. Prose-only fixes are permitted
+  but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
+  a high-stakes prose layer is a candidate for promotion to an engine + a
+  PreToolUse hook (runtime-independent enforcement).
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -132,7 +146,9 @@ sf-security-review-toolkit/
 │   └── SOURCES.md                   # source registry + verification status
 ├── methodology/
 │   ├── audit-methodology.md         # engine spec: loop, severity, ledger, adapters
-│   └── dimensions/                  # one file per audit dimension
+│   ├── reviewer-challenges.md       # Product-Security challenge checklist (reviewer-simulation)
+│   ├── known-escapes.md             # seeded-empty recall log: real-review misses accrue here
+│   └── dimensions/                  # one file per audit dimension (16)
 │       ├── oauth-identity.md        ├── tenant-isolation.md
 │       ├── sessionid-egress.md      ├── secrets-credentials.md
 │       ├── mcp-surface.md           ├── mcp-threat-model.md
@@ -141,26 +157,49 @@ sf-security-review-toolkit/
 │       ├── data-export.md           ├── email-outbound.md
 │       ├── admin-surface.md         ├── agentforce-package.md
 │       ├── package-metadata.md      └── apex-exposed-surface.md
-├── templates/
+├── templates/                       # 16 reviewer-facing artifact templates + 2 schemas
 │   ├── submission-checklist.md.tmpl # the required-artifacts table, per-row
 │   ├── authn-authz-flow.md.tmpl     ├── data-flow-diagram.md.tmpl
 │   ├── data-sensitivity.md.tmpl     ├── access-control.md.tmpl
 │   ├── fp-dossier.md.tmpl           ├── questionnaire.md.tmpl
 │   ├── readiness-tracker.md.tmpl    # HAVE/PARTIAL/TODO × owner
-│   └── audit-ledger.schema.json
-├── harness/
+│   ├── incident-response-plan.md.tmpl        ├── data-retention-deletion.md.tmpl
+│   ├── disaster-recovery-backup.md.tmpl      ├── vulnerability-remediation-sla.md.tmpl
+│   ├── hosting-architecture.md.tmpl          ├── prior-pentest-attestation.md.tmpl  # WI-19 owner-completed pack
+│   ├── audit-ledger.schema.json     # ledger shape (+ per-pass audited_commit fingerprint)
+│   └── evidence-index.schema.json   # WI-20 typed evidence model
+├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
+│   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor (WI-18/A3/A4)
+│   ├── artifact-gate.mjs            # enforced gate: open-crit/high STOP + AuthN/AuthZ withhold (G4)
+│   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
+│   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
+│   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2)
+│   ├── ledger-staleness.mjs         # resumption fingerprint: flag findings whose code changed (C1)
 │   └── zap/{README.md, zap-plan-template.yaml}   # authenticated DAST plan generator assets
-└── skills/
+├── acceptance/                      # the acceptance + standing-test harness
+│   ├── generate-fixture.mjs         # builds the synthetic "Helios" fixture on demand (never committed)
+│   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
+│   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
+│   ├── README.md
+│   └── test-{artifact-gate,applicable-requirements,baseline-counts,sci,finding-clusters,ledger-staleness}.mjs
+│                                    # 6 dependency-free standing tests (43 checks) guarding the harness/ engines
+└── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing
     ├── scope-submission/            # Phase 0: architecture detection + preflight gates
     ├── audit-codebase/              # Phase 1: the autonomous audit engine
     ├── generate-artifacts/          # Phase 2: submission docs from code + audit
-    ├── run-scans/                   # Phase 3: Code Analyzer / DAST / SSL Labs / deps
+    ├── run-scans/                   # Phase 3: Code Analyzer / DAST / SSL Labs / deps (8 families)
     ├── prepare-test-environment/    # Phase 4: Trialforce, agent+Topics, test users
-    ├── compile-submission/          # Phase 5: questionnaire + checklist + verdict
-    └── stay-listed/                 # post-approval recurring obligations
+    ├── compile-submission/          # Phase 5: questionnaire + checklist + SCI + path-to-green
+    ├── reviewer-simulation/         # audit AS the reviewer will see it (WI-21, 14th skill)
+    ├── stay-listed/                 # post-approval recurring obligations + recall-capture
+    ├── bootstrap-cli-auth/          # deployed-org deep audit: install + auth the Salesforce CLI
+    ├── build-managed-package/       # deep audit: cut a released 2GP when none exists
+    ├── install-and-verify-package/  # deep audit: stand up the package in a throwaway org
+    ├── audit-deployed-package/      # deep audit: security pass over the installed artifact
+    └── teardown-mcp-registration/   # deep audit: zero-residue org cleanup
 ```
 
 ## 9. Writing voice

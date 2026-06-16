@@ -429,7 +429,7 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    References, the reviewer-reserved section), toolkit value-add fields in
    the marked Supplementary section — so the filled dossier drops into the
    wizard's FP slot without reformatting, and a wrong FP format never costs
-   the review cycle. One dossier across all six families: register row plus a
+   the review cycle. One dossier across all eight families: register row plus a
    per-finding block with all four required parts (flagged issue at
    file:line, functional explanation, the concrete mitigation, technical
    non-exploitability argument with evidence). Where the audit ledger
