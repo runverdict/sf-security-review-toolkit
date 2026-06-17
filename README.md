@@ -155,7 +155,7 @@ primary-source citations are the most valuable contribution you can make.
 **0.5.0 — cold-start acceptance hardening: enforced gates + deterministic engines + standing tests.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 6 standing test files (43 checks)** that fail the build if a
+engines in `harness/` guarded by 8 standing test files (80 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.5.0 — cold-start acceptance hardening (enforced gates + deterministic engines +
