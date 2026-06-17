@@ -15,6 +15,7 @@ in one session.*
 | `build-run-args.mjs` | Mechanically performs the `audit-codebase` run-args step: extracts each applicable dimension's §4 finder prompt + §5/§6 verifier guidance from its dimension file and injects a project-local engine copy. Supports a focused single-dimension re-run. |
 | `test-*.mjs` (8 files) | **Standing deterministic tests** — 8 dependency-free, self-asserting test files (**80 checks**) that guard the `harness/` engines: SCI fail-closed + determinism, the artifact gate on every entry path, element-precise applicability, baseline-count consistency, cross-dimension de-dup, and ledger staleness — the latter across three layers: the pure `staleFindings` unit test, a **hermetic detect-path test** (`-detect`, a throwaway git repo driving the CLI end to end), and an **adversarial test** (`-adversary`, 29 skeptic-panel cases on the messy `finding.file` shapes a real finder writes). No LLM, no fixture, no scanners needed — `node` runs them. |
 | `acceptance-report-<date>.md` | The graded result of a fixture run: per-class recall, precision on the negative controls, and every gap the run surfaced (each encoded into the toolkit and re-proven). |
+| `integration-pass-condition-<ver>.md` | The PRE-COMMITTED, write-before-run pass condition for a version's full-journey validation — authored before the run, graded **cold in a fresh restarted session** off disk. A clean pass gates that version's release **tag**. (`-0.5.1` is the current open one.) |
 
 ## Run it
 
