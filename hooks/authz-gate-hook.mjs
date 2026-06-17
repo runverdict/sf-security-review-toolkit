@@ -68,6 +68,12 @@ function decide(payload) {
   try { ledger = JSON.parse(readFileSync(join(root, '.security-review', 'audit-ledger.json'), 'utf8')) } catch {
     return { action: 'deny', reason: 'AuthN/AuthZ flow withheld: the enforcement hook is armed but the audit ledger could not be read to verify there is no open auth hole. Re-audit, or remove .security-review/hook-armed to disarm.' }
   }
+  // Fail CLOSED on a malformed ledger too: a parsed ledger whose `findings` is not
+  // an array (a dict/string, or missing entirely) cannot be trusted to show "no
+  // open auth hole". computeGate treats null/undefined as clean, so guard here.
+  if (!ledger || !Array.isArray(ledger.findings)) {
+    return { action: 'deny', reason: 'AuthN/AuthZ flow withheld: the enforcement hook is armed but the audit ledger is malformed (no findings array) — cannot verify there is no open auth hole. Re-audit, or remove .security-review/hook-armed to disarm.' }
+  }
   let triage = null
   try { triage = JSON.parse(readFileSync(join(root, '.security-review', 'triage-decision.json'), 'utf8')) } catch {}
   const gate = computeGate(ledger && ledger.findings, triage)

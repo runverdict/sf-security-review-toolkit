@@ -168,5 +168,20 @@ check('F-1: open_authz_findings lists only the critical/high authZ finding, not 
   assert.deepEqual(r.open_authz_findings, ['authz-crit (oauth-identity)'])
 })
 
+// truth-audit — MALFORMED ledger fails SAFE, not open. A non-array `findings` (the
+// dict-shaped-payload class) must NOT read as "no findings → clean → draft the doc".
+check('malformed: findings is a DICT (not array) → fail SAFE: flagged + withhold', () => {
+  const r = computeGate({ 'oauth-identity': { severity: 'critical' } }, null)
+  assert.equal(r.mode, 'flagged')
+  assert.deepEqual(r.suppress, ['authn-authz-flow'])
+})
+check('malformed: findings is a STRING → fail SAFE: withhold', () => {
+  assert.deepEqual(computeGate('oops', null).suppress, ['authn-authz-flow'])
+})
+// boundary: null/undefined/[] remain the documented "no findings" = clean case.
+check('boundary: null / undefined / [] findings → clean (the documented no-findings case)', () => {
+  for (const x of [null, undefined, []]) assert.equal(computeGate(x, null).mode, 'clean')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

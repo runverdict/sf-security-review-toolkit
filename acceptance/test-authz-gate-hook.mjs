@@ -69,6 +69,20 @@ check('ARMED + our artifact + ledger UNREADABLE → DENY (fail-closed)', () => {
   cleanup(root)
 })
 
+// truth-audit — a ledger that PARSES but whose findings is malformed (a dict, or
+// missing entirely) must also fail CLOSED. computeGate treats null/undefined as
+// clean, so the hook guards explicitly.
+check('ARMED + our artifact + findings is a DICT (malformed) → DENY (fail-closed)', () => {
+  const { root, artifact } = setup({ armed: true, ledger: { findings: { 'oauth-identity': {} } } })
+  assert.equal(decide(payload(artifact)).action, 'deny')
+  cleanup(root)
+})
+check('ARMED + our artifact + ledger has NO findings key → DENY (fail-closed)', () => {
+  const { root, artifact } = setup({ armed: true, ledger: { note: 'partial — no findings array' } })
+  assert.equal(decide(payload(artifact)).action, 'deny')
+  cleanup(root)
+})
+
 check('the .WITHHELD.md placeholder is NOT the gated artifact → allow', () => {
   const { root } = setup({ armed: true, ledger: OPEN_AUTHZ })
   assert.equal(decide(payload(join(root, 'docs', 'security-review', 'authn-authz-flow.WITHHELD.md'))).action, 'allow')

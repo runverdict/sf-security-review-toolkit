@@ -110,6 +110,26 @@ export const AUTHN_AUTHZ_DIMENSIONS = new Set([
  * the parsed triage-decision.json (or null). No I/O — unit-testable.
  */
 export function computeGate(findings, triage) {
+  // Fail SAFE on a MALFORMED ledger. `findings` present but NOT an array (a
+  // dict/string — the dict-shaped-payload class, CLAUDE-rule-8 corollary) must
+  // never read as "no findings → clean → generate the AuthN/AuthZ doc". We cannot
+  // verify there is no open auth hole, so WITHHOLD rather than draft over an
+  // unverifiable ledger. (null/undefined keeps the documented "no findings" =
+  // clean meaning — the CLI default and an explicitly empty audit.) Both the CLI
+  // gate and the G4 hook inherit this. (truth-audit, next checkpoint.)
+  if (findings != null && !Array.isArray(findings)) {
+    return {
+      mode: 'flagged',
+      proceed: true,
+      reason:
+        'audit-ledger findings is malformed (not an array) — cannot verify the ' +
+        'absence of an open authN/authZ hole; failing safe and WITHHOLDING the AuthN/AuthZ flow.',
+      open: { critical: 0, high: 0 },
+      open_authz_findings: [],
+      suppress: ['authn-authz-flow'],
+      election: triage && typeof triage.decision === 'string' ? triage.decision : null,
+    }
+  }
   const all = Array.isArray(findings) ? findings : []
   const open = all.filter(isOpen)
   const openCritical = open.filter((f) => sevOf(f) === 'critical')

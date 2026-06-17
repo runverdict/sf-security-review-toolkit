@@ -100,7 +100,13 @@ The hook ships disabled-by-default; validate both states **live** in the session
 - `ls docs/security-review/` + `cat authn-authz-flow.WITHHELD.md` → withheld present,
   real absent, placeholder names the open authz findings incl. the JWT ones.
 - `node harness/compute-sci.mjs --target <fixture> --json` → BLOCKED, deterministic.
-- `for t in acceptance/test-*.mjs; do node "$t"; done` → all green (84).
+- `for t in acceptance/test-*.mjs; do node "$t"; done` → all green (the pass is
+  ZERO failing files, not a fixed count — the suite grows each checkpoint; it was
+  ~100 at the 0.5.2 head and is higher now, which is expected, not a regression).
 
-A clean PASS → tag 0.5.2; then G5 (write-side anchor) and G4 (consent-flag hook)
-as their own increments off the tagged baseline.
+NOTE — scope of this run: this bar grades the **0.5.2** plugin behavior (triage
+auto-proceed, ledger-driven withhold, G5 launch, G4 deny). The running cold
+session loads the **frozen 0.5.2 cache**, so it does NOT exercise the 0.5.3
+proactive power-up offer or the next-checkpoint fixes (P0 install boundary, etc.)
+— those get their own pass-condition + cold run on the updated plugin. A clean
+PASS here → tag 0.5.2 at its commit.

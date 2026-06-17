@@ -45,14 +45,34 @@ undispositioned findings — each of those bounces at the materials check
   track; a ZAP install (or the container) wherever the owner will run DAST;
   network access for the TLS check; ecosystem package managers for the
   dependency audit. For the external-endpoint families (7/8) and the DAST/TLS
-  extensions, the free/OSS tools — **Semgrep** (`pip install semgrep`),
-  **OSV-Scanner** + **Checkov** (`pip install checkov`), and optionally
-  **Trivy / Nuclei / Schemathesis / testssl.sh / sslyze**; each is auto-detected
+  extensions, the free/OSS tools — **Semgrep**, **OSV-Scanner**, **Checkov**,
+  and optionally **Trivy / Nuclei / Schemathesis / testssl.sh / sslyze**; each
+  is auto-**detected** (never auto-installed — see the hard boundary below)
   and, if absent, the family hands the owner the exact install + run command as
   `PENDING-OWNER-RUN` rather than skipping silently.
 - Credentials only ever via environment variables — this skill refuses to
   write a secret into a plan, an evidence file, or the run log
   (CONVENTIONS §6).
+
+> **HARD BOUNDARY — never mutate the host, never auto-fetch (no consent gate
+> exists for it yet).** This skill **detects** scanners; it **never installs**
+> them. It MUST NOT run `pip install` / `pipx` / `npm i -g` / `brew` / a venv
+> bootstrap / any package manager, and MUST NOT run a scan that **fetches
+> third-party content over the network** (e.g. Semgrep pulling registry rule
+> packs like `p/security-audit`). Installing software and fetching remote rule
+> sets are **environment mutations / network egress the operator did not
+> consent to** — and `silence-is-yes` / full-auto authorizes neither (it covers
+> only the inputs the preflight already DETECTED). A scanner that is absent, or
+> a scan that would require an install or a remote fetch, is **`PENDING-OWNER-RUN`**:
+> emit the exact install + run command for the owner, and move on. "Real
+> evidence beats a PENDING stub" is **not** a license to self-install — a
+> PENDING stub with the precise command IS the honest evidence here.
+> The one carve-out: a tool that is **already present** doing its **standard,
+> bundled** read (`npm audit` hitting the registry it already targets; Code
+> Analyzer's RetireJS using its shipped vuln DB) is allowed — that is neither an
+> install nor a surprise third-party fetch. Consent-gated local install
+> (offer → on yes, tool-scoped dir outside the repo + self-clean) is a planned
+> capability; **until it ships, the answer is always PENDING-OWNER-RUN.**
 
 ## The eight families
 

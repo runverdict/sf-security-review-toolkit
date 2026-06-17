@@ -406,7 +406,7 @@ using the title and the verified evidence. The default dimension→category mapp
 | `admin-surface` | `authorization` | `authentication/session-management` |
 | `injection-xss` | `input-validation` (injection half) | `output-encoding` (XSS half) |
 | `web-client` | `output-encoding` | `authentication/session-management` (token storage) |
-| `crypto-internals` | `cryptography` | — |
+| `crypto-internals` | `cryptography` | `authentication/session-management` (JWT verification: algorithm pinning + iss/aud/exp claim validation — a broken verify is an auth hole) |
 | `secrets-credentials` | `secrets-storage` | `cryptography` (weak KDF) |
 | `background-jobs` | `authorization` | `logging/error-handling` |
 | `data-export` | `authorization` | `output-encoding` |

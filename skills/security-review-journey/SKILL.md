@@ -10,10 +10,16 @@ The autonomous driver for the AppExchange/AgentExchange security-review
 submission. One trigger phrase runs a seconds-long preflight, surfaces a single
 3-tier report, then drives every phase to a finished, downloadable submission
 package — pausing only when an input would actually degrade the audit, or when
-touching something live (a read-only probe, a scratch org) needs consent. It
+an action reaches **outside read-only-local**: touching something live (a
+read-only probe, a scratch org) OR mutating the host / egressing to the network
+(installing a scanner, fetching third-party rule packs). Those all need
+explicit consent — `silence-is-yes` / full-auto authorizes only the inputs the
+preflight already DETECTED, never an install or a network fetch. It
 never says "will pass": the strongest verdict it can reach is "first-attempt-
 ready / no known blockers in what we can verify — Salesforce pen-tests
-regardless." It is read-only on the partner's source.
+regardless." It is read-only on the partner's source, and never installs
+software or fetches remote content without a yes (see `run-scans`' hard
+boundary; an absent scanner is `PENDING-OWNER-RUN`, not an auto-install).
 
 This is a deliberate change from the 0.1 router: that version only detected
 state and handed off. This one *drives*. It still answers "just this step" and
@@ -286,13 +292,15 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    become tasks in `PENDING-OWNER-RUN.md`, not blockers. A scan is only "done"
    with a verified evidence file; a plan with no report is not (CONVENTIONS §2).
 
-6. **Deep audit (offered + invoked only when its lifecycle skills are present
-   and enabled, and only if the deployed-org power-up was accepted).** Before
-   compile, fold in the CLI-gated deployed-org pass — *what the Salesforce
+6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
+   Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce
    reviewer actually does*: stand the package up in a throwaway org and audit the
-   installed artifact. This native deployed-org pass is a later-release
-   capability; treat it as an offer that runs when those skills are wired, not
-   a guaranteed step of every run. When present and accepted, compose the
+   installed artifact. The five lifecycle skills below are all shipped, so this is
+   NOT a "later-release maybe" — it runs whenever the preflight's proactive
+   deployed-org offer was accepted (gated on `package-readiness`: `installable` →
+   run it; `needs-build` → build first then run, on the same yes). It is not a
+   step of *every* run only because it is a LIVE op behind explicit consent — not
+   because the capability is unwired. When accepted, compose the
    authored lifecycle steps, in order, each pausing for scratch-org consent:
    `/sf-security-review-toolkit:bootstrap-cli-auth` (headless auth) →
    `/sf-security-review-toolkit:teardown-mcp-registration` (clean baseline) →

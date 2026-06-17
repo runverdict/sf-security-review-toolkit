@@ -4,6 +4,60 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.4] — 2026-06-17
+
+Hardening from the 0.5.2 cold-validation run + a parallel adversarial truth-audit
+of the 0.5.2/0.5.3 code. Encoded immediately rather than parked (the toolkit's own
+"encode the fix, don't remember it" rule). Two larger items the same run surfaced —
+the SCI must not credit auto-fail classes from the toolkit's OWN static read, and
+the per-run audit/merge/index engines should ship in `harness/` rather than being
+re-authored each run — are scoped for the next checkpoint, not this one.
+
+### Fixed
+- **Scans never mutate the host or auto-fetch (P0, the cold-run's main finding).**
+  `run-scans` now has a HARD BOUNDARY: it **detects** scanners but **never installs**
+  them (`pip`/`pipx`/`npm i -g`/`brew`/venv bootstrap all forbidden) and never runs a
+  scan that fetches third-party content over the network (e.g. Semgrep pulling
+  registry rule packs). An absent scanner — or a scan needing an install/remote
+  fetch — is `PENDING-OWNER-RUN` with the exact command. The cold run had
+  `pip install`ed Semgrep + detect-secrets (then bootstrapped a venv) and fetched
+  rule packs in a full-auto run; `silence-is-yes` authorizes neither. The
+  `security-review-journey` consent contract now names installs/network egress
+  alongside live-probe + scratch-org as actions that need explicit consent.
+  Carve-out: an already-present tool's standard read (`npm audit`, RetireJS's
+  bundled DB) is fine. (Consent-gated local install is a planned later capability.)
+- **Artifact gate fails SAFE on a malformed ledger.** `computeGate` treated a
+  non-array `findings` (a dict/string — the dict-shaped-payload class) as "no
+  findings → clean → generate everything", silently fail-OPEN. It now WITHHOLDS the
+  AuthN/AuthZ doc when `findings` is present but not an array (null/undefined keep
+  the documented "no findings = clean" meaning). The **G4 hook** inherits this and
+  also guards explicitly (a parsed-but-malformed ledger → DENY, fail-closed).
+- **`package-readiness` no longer false-positives on an unrelated `04t` alias.** The
+  `installable` scan matched ANY `04t` version alias in `packageAliases`, so a
+  dependency package's alias — or a stale/renamed one — could mark the current
+  (source-only) package `installable` and cite the wrong version. It now requires
+  the alias key to be bound to the configured package (`${pkgName}` / `${pkgName}@…`).
+
+### Changed
+- `methodology/audit-methodology.md` dimension→category table: `crypto-internals`
+  secondary is now `authentication/session-management` (JWT verification), reconciling
+  the table with the code (`AUTHN_AUTHZ_DIMENSIONS`) and the prose two paragraphs below.
+- `security-review-journey` Step 6 (deep audit) no longer hedges it as a "later-release
+  capability / not a guaranteed step" — all five lifecycle skills ship; it runs whenever
+  the preflight's proactive deployed-org offer is accepted (it's gated by LIVE consent,
+  not by being unwired).
+- `integration-pass-condition-0.5.2.md`: the brittle "(84)" suite-count annotation is
+  replaced with "zero failing files" (the count grows each checkpoint), plus an explicit
+  scope note (this bar grades the frozen-cache 0.5.2 behavior; 0.5.3/0.5.4 get their own).
+- `acceptance/README.md` standing-tests section refreshed (dropped the stale "all eight"
+  + the "STOP mode" description; enumerated the hook / injection / readiness families).
+
+### Tests
+- `test-artifact-gate.mjs` +3 (malformed dict/string → withhold; null/undefined/[] →
+  clean). `test-authz-gate-hook.mjs` +2 (malformed dict / missing-findings → fail-closed
+  DENY). `test-package-readiness.mjs` +1 (unrelated/dependency `04t` alias → needs-build).
+  Suite **106 → 112 checks** / 11 files, all green.
+
 ## [0.5.3] — 2026-06-17
 
 Preflight accuracy + proactive power-up offers. From watching a live cold run: the

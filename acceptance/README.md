@@ -13,7 +13,7 @@ in one session.*
 | `generate-fixture.mjs` | Builds "Helios Service Agent" (`~/srt-helios`) — a synthetic Agentforce managed 2GP seeded with one concrete instance of every probe in the `agentforce-package` / `package-metadata` / `apex-exposed-surface` finder dimensions, negative controls, and a deleted-but-recoverable git-history secret. Synthetic secrets are assembled from parts at runtime so this generator stays secret-scan-clean. |
 | `expected-findings.md` | The **sealed ground-truth plant list** — the grading key. Lives here, never in the fixture, so finders cannot read it. |
 | `build-run-args.mjs` | Mechanically performs the `audit-codebase` run-args step: extracts each applicable dimension's §4 finder prompt + §5/§6 verifier guidance from its dimension file and injects a project-local engine copy. Supports a focused single-dimension re-run. |
-| `test-*.mjs` (11 files) | **Standing deterministic tests** — 11 dependency-free, self-asserting test files (**106 checks**) that guard the `harness/` engines + the `hooks/` enforcement hook: SCI fail-closed + determinism, the artifact gate on every entry path (incl. the audit-only auto-proceed + the authN/authZ withhold), the **PreToolUse hook** (no-op unless armed + writing the gated artifact → denies; fail-closed), the **deployed-audit readiness** check (placeholder/`needs-build` vs `installable` — so the preflight power-up offer is accurate up front), element-precise applicability, baseline-count consistency, cross-dimension de-dup, the audit-engine **injection pre-launch check** (decoy-anchored), and ledger staleness — the latter across three layers: the pure `staleFindings` unit test, a **hermetic detect-path test** (`-detect`, a throwaway git repo driving the CLI end to end), and an **adversarial test** (`-adversary`, the messy `finding.file` shapes a real finder writes). No LLM, no fixture, no scanners needed — `node` runs them. |
+| `test-*.mjs` (11 files) | **Standing deterministic tests** — 11 dependency-free, self-asserting test files (**112 checks**) that guard the `harness/` engines + the `hooks/` enforcement hook: SCI fail-closed + determinism, the artifact gate on every entry path (incl. the audit-only auto-proceed + the authN/authZ withhold), the **PreToolUse hook** (no-op unless armed + writing the gated artifact → denies; fail-closed), the **deployed-audit readiness** check (placeholder/`needs-build` vs `installable` — so the preflight power-up offer is accurate up front), element-precise applicability, baseline-count consistency, cross-dimension de-dup, the audit-engine **injection pre-launch check** (decoy-anchored), and ledger staleness — the latter across three layers: the pure `staleFindings` unit test, a **hermetic detect-path test** (`-detect`, a throwaway git repo driving the CLI end to end), and an **adversarial test** (`-adversary`, the messy `finding.file` shapes a real finder writes). No LLM, no fixture, no scanners needed — `node` runs them. |
 | `acceptance-report-<date>.md` | The graded result of a fixture run: per-class recall, precision on the negative controls, and every gap the run surfaced (each encoded into the toolkit and re-proven). |
 | `integration-pass-condition-<ver>.md` | The PRE-COMMITTED, write-before-run pass condition for a version's full-journey validation — authored before the run, graded **cold in a fresh restarted session** off disk. A clean pass gates that version's release **tag**. (`-0.5.2` is the current open one; `-0.5.1` passed + is tagged.) |
 
@@ -35,26 +35,36 @@ verifier over-fires — tighten the §5/§6 refute rules.
 
 ## Standing tests (deterministic — no fixture, no LLM, no scanners)
 
-The `harness/` engines that encode the honesty-critical determinizable properties
-each carry a self-asserting test. Run all eight (exit 0 = pass):
+The `harness/` engines (and the `hooks/` enforcement hook) that encode the
+honesty-critical determinizable properties each carry a self-asserting test. Run
+the whole suite (exit 0 = pass; the file/check count grows each checkpoint — the
+pass is ZERO failures, not a fixed number; see the table at the top of this file
+for the current totals):
 
 ```bash
 for t in acceptance/test-*.mjs; do node "$t" || exit 1; done
 ```
 
 They assert, respectively: the SCI fails CLOSED on an empty/missing manifest and
-is byte-identical on re-run (currency floor included); the artifact gate returns
-STOP / flagged / clean correctly on every entry path and withholds the AuthN/AuthZ
-artifact only for an open critical/high authN/authZ finding; applicability drops
-agentforce-* / mcp-* for a plain package and keeps them for a real agent/MCP one;
-the baseline self-description counts match the prose; cross-dimension findings
-de-dup to a distinct-file headline; and ledger staleness flags findings whose code
-changed since their `audited_commit` — proven at three layers: the pure
-`staleFindings` unit test, a hermetic detect-path test that drives the git-shelling
-CLI against a throwaway repo, and an adversarial test over the messy real-world
-`finding.file` shapes (comma/range suffixes, two-file cites, absolute paths). A
-refactor that breaks any of these fails the
-test — that is what makes the enforcement real rather than narrated.
+is byte-identical on re-run (currency floor included); the **artifact gate** is
+audit-only (clean / flagged — there is NO STOP mode) and withholds the AuthN/AuthZ
+artifact only for an open critical/high authN/authZ finding, **failing SAFE
+(withhold) on a malformed non-array ledger** rather than reading it as clean; the
+**G4 PreToolUse hook** is a no-op unless armed + writing the gated artifact, denies
+over an open hole, and **fails CLOSED** on an unreadable/malformed ledger; the
+**audit-engine injection check** anchors past the header-comment decoy; the
+**deployed-audit readiness** check reads `installable` / `needs-build` /
+`no-package` and is bound to the configured package (an unrelated/dependency `04t`
+alias cannot fake `installable`); applicability drops agentforce-* / mcp-* for a
+plain package and keeps them for a real agent/MCP one; the baseline self-description
+counts match the prose; cross-dimension findings de-dup to a distinct-file
+headline; and ledger staleness flags findings whose code changed since their
+`audited_commit` — proven at three layers: the pure `staleFindings` unit test, a
+hermetic detect-path test that drives the git-shelling CLI against a throwaway
+repo, and an adversarial test over the messy real-world `finding.file` shapes
+(comma/range suffixes, two-file cites, absolute paths). A refactor that breaks any
+of these fails the test — that is what makes the enforcement real rather than
+narrated.
 
 The fixture is intentionally *not* committed (it carries planted vulnerabilities
 and a git-history secret); it is regenerated on demand from the deterministic

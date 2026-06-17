@@ -48,8 +48,17 @@ export function packageReadiness(proj) {
   }
   const pkgName = pkgDir.package
   const aliases = proj.packageAliases && typeof proj.packageAliases === 'object' ? proj.packageAliases : {}
-  // The installable artifact is a real 04t version-id alias (not a placeholder).
-  const versionAlias = Object.entries(aliases).find(([, v]) => VERSION_ID.test(String(v)) && !isPlaceholder(v))
+  // The installable artifact is a real 04t version-id alias BOUND TO THIS PACKAGE.
+  // `sf package version create` writes the alias key as `${pkgName}@x.y.z-n`, so an
+  // alias belongs to this package only if its key is exactly `pkgName` or starts
+  // with `${pkgName}@`. Matching ANY 04t alias (the old behavior) let a stale/
+  // renamed alias — or a DEPENDENCY package's 04t alias, a routine entry in
+  // packageAliases — falsely mark THIS package installable and cite an unrelated
+  // version, defeating the helper's whole purpose. (truth-audit, next checkpoint.)
+  const isThisPkg = (key) => key === pkgName || key.startsWith(`${pkgName}@`)
+  const versionAlias = Object.entries(aliases).find(
+    ([k, v]) => isThisPkg(k) && VERSION_ID.test(String(v)) && !isPlaceholder(v)
+  )
   if (versionAlias) {
     return {
       status: 'installable',

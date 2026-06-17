@@ -64,5 +64,21 @@ check('a PLACEHOLDER 04t alias does not count as installable → needs-build', (
   assert.equal(r.status, 'needs-build')
 })
 
+// truth-audit: the configured package is source-only (.NEXT, only a 0Ho id), but an
+// UNRELATED package's real 04t alias also lives in packageAliases (a dependency, or
+// a stale/renamed package — both routine). The old "match ANY 04t alias" marked THIS
+// package installable and cited the wrong version. It must read needs-build.
+check('cross-package: only an UNRELATED 04t alias present → needs-build (no false installable)', () => {
+  const r = packageReadiness({
+    packageDirectories: [{ path: 'force-app', package: 'Acme', versionNumber: '1.0.0.NEXT' }],
+    packageAliases: {
+      Acme: '0Ho5e0000008aBcCAE', // this package: only the 0Ho id, source-only
+      'DepLib@2.3.0-4': '04t5e0000004DEPAAU', // a DEPENDENCY package's real version alias
+      'OldName@9.9.9-1': '04t5e0000009OLDAAU', // a stale/renamed package's alias
+    },
+  })
+  assert.equal(r.status, 'needs-build')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

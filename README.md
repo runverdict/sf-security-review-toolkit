@@ -169,14 +169,17 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.5.2–0.5.3 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
+**0.5.2–0.5.4 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
 NOT-READY report (no fix-first, no human election), withholding only the AuthN/AuthZ doc over a
-live auth hole (now incl. session-token egress + JWT verification); the deployed-org-deep-audit
-power-up offer is now accurate up front (install-readiness sensed in the preflight, not discovered
-mid-run). 0.5.1 (tagged) proved C1 staleness live + the fix-first gate's positive side.**
+live auth hole (now incl. session-token egress + JWT verification), and failing SAFE on a malformed
+ledger; the deployed-org-deep-audit power-up offer is accurate up front (install-readiness sensed in
+the preflight). 0.5.4 hardens from the 0.5.2 cold run: scans NEVER self-install or auto-fetch rule
+packs (an absent scanner is PENDING-OWNER-RUN — installs/network egress need explicit consent), plus
+a batch of cold-run + truth-audit fixes. 0.5.1 (tagged) proved C1 staleness live + the fix-first
+gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 11 standing test files (106 checks)** that fail the build if a
+engines in `harness/` guarded by 11 standing test files (112 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.5.3 — accurate, proactive power-up offers.** The preflight now settles
