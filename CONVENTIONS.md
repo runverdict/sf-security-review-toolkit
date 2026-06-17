@@ -183,8 +183,8 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-{artifact-gate,applicable-requirements,baseline-counts,sci,finding-clusters,ledger-staleness}.mjs
-│                                    # 6 dependency-free standing tests (43 checks) guarding the harness/ engines
+│   └── test-*.mjs                   # 8 dependency-free standing tests (80 checks) guarding the harness/ engines
+│                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 └── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing
     ├── scope-submission/            # Phase 0: architecture detection + preflight gates
