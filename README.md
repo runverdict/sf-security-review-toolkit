@@ -169,15 +169,23 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.5.2 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
+**0.5.2–0.5.3 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
 NOT-READY report (no fix-first, no human election), withholding only the AuthN/AuthZ doc over a
-live auth hole (now incl. session-token egress + JWT verification). 0.5.1 (tagged) proved C1
-staleness live + the fix-first gate's positive side.**
+live auth hole (now incl. session-token egress + JWT verification); the deployed-org-deep-audit
+power-up offer is now accurate up front (install-readiness sensed in the preflight, not discovered
+mid-run). 0.5.1 (tagged) proved C1 staleness live + the fix-first gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 10 standing test files (100 checks)** that fail the build if a
+engines in `harness/` guarded by 11 standing test files (106 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.5.3 — accurate, proactive power-up offers.** The preflight now settles
+  deployed-org-deep-audit **install-readiness up front** (`harness/package-readiness.mjs`:
+  `installable` / `needs-build` / `n/a` from `sfdx-project.json`) instead of announcing "deep
+  audit available (sf authed)" and only discovering the blocker — a placeholder package alias /
+  unbuilt version — later in scope. The deep audit is then offered **proactively and accurately**
+  (ready → "run it?"; `needs-build` → "build first, then deep-audit?") so the one consent decision
+  is fully informed, not a mid-run surprise.
 - **New in 0.5.2 — audit-only triage + a wider authN/authZ withhold.** The gate no longer pauses
   at an open critical/high or offers a fix path: the toolkit **audits and reports**, always
   producing the full NOT-READY report (it never drafts/suggests/writes code; read-only on your

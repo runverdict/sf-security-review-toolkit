@@ -126,18 +126,24 @@ missing or a key piece of the architecture was misread.
    a resumed run from presenting a clean verdict against code that has since
    regressed.
 
-4. **Auto-resolve from `sf` — only if already authed, never prompting here.**
-   Run `sf org list`/`sf config get target-org` to sense an existing
-   authenticated DevHub or scratch org. If one is present, note that the deep
-   DevHub auto-resolution — `IsSecurityReviewed` status, Remote Site /
+4. **Auto-resolve from `sf` — only if already authed, never prompting here —
+   AND settle deployed-audit readiness UP FRONT.** Run `sf org list` /
+   `sf config get target-org` to sense an existing authenticated DevHub or
+   scratch org; the DevHub auto-resolution (`IsSecurityReviewed`, Remote Site /
    CSP-Trusted-Sites endpoint inventory, permission matrix, code coverage,
-   namespace — and the deployed-org deep audit are *available* — they surface
-   as OPTIONAL POWER-UPS, not as work the preflight does unprompted. The
-   deployed-org deep audit is offered and invoked only when its lifecycle
-   skills are present and enabled in this toolkit version; it is not a
-   guaranteed step of every run. If no auth is sensed, do not run a single
-   Tooling query; the offer to "install + auth `sf`" is itself an optional
-   power-up. The preflight stays cheap and read-only.
+   namespace) and the deployed-org deep audit surface as OPTIONAL POWER-UPS, not
+   work the preflight does unprompted. **In the same pass, run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/package-readiness.mjs --target <target>
+   --json`** — because `sf` auth is **necessary but not sufficient** for the deep
+   audit: it installs an *installable released version*, and a placeholder package
+   alias / `…NEXT` versionNumber / missing `04t` alias means there is nothing to
+   install (`needs-build`). Gather this make-or-break fact HERE, before the
+   summary, so the power-up offer below states the true situation the first time —
+   never "I have the auth" only to discover downstream the auth is moot. If no auth
+   is sensed, do not run a single Tooling query; "install + auth `sf`" is itself an
+   optional power-up. The preflight stays cheap and read-only (`package-readiness`
+   reads only `sfdx-project.json`; a live `sf package version list` confirms an
+   alias is PROMOTED only if the deep audit is later accepted).
 
 5. **Classify every needed input into exactly one tier, and per applicable
    dimension assign GREEN/YELLOW/RED audit-readiness.** The classification rule
@@ -151,13 +157,27 @@ missing or a key piece of the architecture was misread.
    | **⚠ NEED-FROM-YOU** | the **only** hard-stop, and only for audit-BLOCKING gaps: source not findable; an MCP server claimed (in docs/scope) but neither reachable nor present in the partner's own code; an applicable dimension whose targets can't be resolved (e.g. an external-endpoint element with zero discoverable base URLs) | ask the minimum to unblock, or abort. Nothing else stops the run. |
    | **✦ OPTIONAL POWER-UP** | contextual, generated from what the preflight sensed; opt-in; **defaults to skip so "go" runs immediately** | never blocks. See the generated offers below. |
 
-   **Optional power-ups are generated from sensed context, not a fixed menu:**
-   - `sf` auth sensed → "spin up a fresh scratch org and audit the **deployed**
-     package — what the Salesforce reviewer actually does (install your package
-     and test the artifact)?" This runs the §3 deep-audit composition.
-   - No `sf` auth → "install + authenticate `sf` so I can audit the deployed
-     package and auto-resolve your endpoint/permission/coverage facts from the
-     DevHub?"
+   **Optional power-ups are generated from sensed context, not a fixed menu.
+   Surface them PROACTIVELY and ACCURATELY in the summary (per the up-front
+   precondition scan) so the operator decides once, up front — never buried as
+   "available on request" only to be corrected mid-run:**
+   - `sf` authed **AND `package-readiness` = `installable`** → the deployed-org
+     deep audit is READY. Offer it as a proactive consent point: "stand up a fresh
+     scratch org and audit the **deployed** package (what the Salesforce reviewer
+     actually does)? It's a live op, so it pauses for your explicit yes." On yes,
+     run the §3 deep-audit composition end to end — no further mid-run interruption.
+   - `sf` authed **AND `package-readiness` = `needs-build`** → say it plainly, do
+     NOT call it ready: "a deployed-org deep audit needs an installable version,
+     and there isn't one yet (`<package-readiness reason>`) — want me to
+     `build-managed-package` first, then deep-audit?" (a bigger, live operation).
+   - **`package-readiness` = `no-package`**, or no `sf` auth → the deep audit is
+     N/A (nothing to install) or needs `sf` first; offer "install + authenticate
+     `sf` so I can audit the deployed package and auto-resolve endpoint/permission/
+     coverage facts from the DevHub?" Never imply a deep audit is runnable when it
+     isn't.
+   For any of these the run still proceeds on silence (a LIVE power-up needs an
+   explicit yes — the hard floor); the change is that the offer is proactive and
+   true, so the operator's one up-front decision is fully informed.
    - A live endpoint URL present in config/docs → "probe it **read-only** to
      capture the real protocol version / tool inventory / auth mode?" (the
      handshake is read-only; consent + an explicit staging-vs-production label
@@ -186,8 +206,11 @@ missing or a key piece of the architecture was misread.
    ⚠ NEED-FROM-YOU (blocks a good audit — the only hard-stop)
      • <only if a genuinely audit-blocking gap exists; otherwise: "none">
 
-   ✦ OPTIONAL POWER-UPS (opt-in; skipped by default so the run starts now)
-     • <deep audit / live probe / install-sf — generated from what was sensed>
+   ✦ OPTIONAL POWER-UPS (proactive + accurate; a LIVE power-up runs only on your explicit yes)
+     • Deployed-org deep audit — <READY (installable) → "run it?"  |  needs-build
+       (<reason from package-readiness>) → "build first, then deep-audit?"  |  N/A
+       (no installable package / no sf auth)>
+     • <live probe / install-sf — generated from what was sensed>
 
    Ask-tolerance: <full-auto | guided>   →  say "go" to run, or correct anything above.
    ```

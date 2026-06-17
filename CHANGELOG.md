@@ -4,6 +4,40 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.3] — 2026-06-17
+
+Preflight accuracy + proactive power-up offers. From watching a live cold run: the
+preflight announced "deployed-org deep audit available (sf authed)" but only
+discovered the blocker — a placeholder package alias / unbuilt version, i.e. nothing
+installable — later, in the scope phase. So it told the operator "I have the auth"
+before knowing the auth was moot. (Implemented immediately rather than parked in
+notes — the toolkit's own "encode the fix, don't remember it" rule.)
+
+### Added
+- `harness/package-readiness.mjs` — deterministic deep-audit install-readiness from
+  `sfdx-project.json`: `installable` (a real `04t…` version alias), `needs-build` (a
+  2GP package is defined but has a placeholder `0Ho…XXXX` alias / `…NEXT`
+  versionNumber / no `04t` alias), or `no-package`. Pure, no deps. Standing test
+  `test-package-readiness.mjs` (incl. the exact Lumina placeholder shape →
+  needs-build). Suite 100 → **106 checks** / 11 files.
+
+### Changed
+- Preflight (`security-review-journey` step 4) now runs `package-readiness` in the
+  same pass as the `sf` auth sense, so **all** deep-audit preconditions are gathered
+  UP FRONT — `sf` auth is necessary but not sufficient.
+- The deployed-org deep-audit power-up is surfaced **proactively and accurately**:
+  `installable` → a proactive consent point ("run it?"); `needs-build` → "no
+  installable version (<reason>) — build first, then deep-audit?"; `no-package` / no
+  auth → N/A. The operator's one up-front decision is fully informed instead of a
+  mid-run "wait, the auth won't work" surprise. (A LIVE power-up still runs only on an
+  explicit yes — the hard floor; the change is that the offer is true the first time.)
+
+### Validated
+- Deterministic core proven by `test-package-readiness.mjs` (6) + a live verdict on
+  the Lumina fixture (`needs-build`, exact diagnostic). The preflight's integration
+  behavior (gathers up front + offers accurately) is validated in the
+  deployed-org-deep-audit coverage run (which needs an installable-version fixture).
+
 ## [0.5.2] — 2026-06-17
 
 Triage simplification + a wider, election-independent AuthN/AuthZ withhold. Two
