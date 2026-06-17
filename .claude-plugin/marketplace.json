@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "redbeardenduro-plugins",
+  "name": "runverdict-plugins",
   "owner": {
-    "name": "Aiden Seeley",
-    "url": "https://github.com/redbeardenduro"
+    "name": "Verdict",
+    "url": "https://github.com/runverdict"
   },
   "description": "Claude Code plugins for Salesforce ISV partners",
   "plugins": [
