@@ -57,9 +57,35 @@ egress). This bar proves that behavior end-to-end, not just in the unit tests.
   fix-first positive-side — remediate → re-audit → gate clean → doc regenerates —
   is already proven in the 0.5.1 run; here it is the clean-mode spot check.)
 
+## PART D — G5 (audit-engine launch, decoy-anchored injection)
+This batch also ships G5, so the run must actually **launch the audit** (a fresh
+scope/audit, OR advance the fixture HEAD so staleness triggers a re-audit — a bare
+resume with staleness `current` does NOT exercise G5). On launch:
+- The injected `audit-engine.mjs` runs (agents fan out, findings produced) — i.e.
+  the pre-launch check did NOT false-fail on the header-comment decoy. Cross-check:
+  `node harness/injection-check.mjs <fixture>/.security-review/audit-engine.mjs` →
+  exit 0. (`test-injection-check.mjs` is the deterministic guard.)
+
+## PART E — G4 (the enforcement hook, live)
+The hook ships disabled-by-default; validate both states **live** in the session:
+- **Unarmed (no `.security-review/hook-armed`):** a `Write` to
+  `docs/security-review/authn-authz-flow.md` is NOT blocked by the hook (the skill
+  gate still withholds, but the hook itself is a no-op). Any unrelated `Write`/`Edit`
+  is never blocked.
+- **Armed (`touch <fixture>/.security-review/hook-armed`) + an open authN/authZ
+  critical/high:** a deliberate `Write` to that exact doc is **DENIED** by the hook
+  (Claude Code shows the `permissionDecision: deny` reason naming the open findings).
+  Disarm (delete the flag) → the write proceeds. (`test-authz-gate-hook.mjs` is the
+  deterministic guard for the decision logic; this confirms Claude Code actually
+  invokes + honors it.)
+
 ## FAIL — any of these
 - The run HALTS at triage / presents a fix-first|continue-with-flags menu / emits
   an AskUserQuestion at triage (the gate must auto-proceed).
+- G5: the audit fails to launch because the pre-launch check mis-sliced the
+  INJECTED marker (false "injection failed").
+- G4: the armed hook does NOT block a write to the gated doc over an open authz
+  hole, OR the hook blocks an unrelated write / blocks when unarmed.
 - The toolkit offers to draft/write/apply code fixes.
 - `authn-authz-flow.md` is drafted while an open authN/authZ critical/high stands,
   OR the withhold fails to fire absent an election (the election-independence bug).

@@ -184,8 +184,11 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 9 dependency-free standing tests (91 checks) guarding the harness/ engines
+│   └── test-*.mjs                   # 10 dependency-free standing tests (100 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
+├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
+│   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook
+│   └── authz-gate-hook.mjs          # NO-OP unless armed (.security-review/hook-armed) + writing authn-authz-flow.md → consults the gate, denies on a live authz hole (fail-closed)
 └── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing
     ├── scope-submission/            # Phase 0: architecture detection + preflight gates

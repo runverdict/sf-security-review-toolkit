@@ -52,17 +52,32 @@ would have generated the AuthN/AuthZ doc over a live hole.
   with a decoy-bearing standing test (`test-injection-check.mjs`). Sweep: no other
   slice-parse fragility exists (the `{{…}}` template slots are fill-the-slot, a
   different mechanism; the cwd-during-perl wobble was a session incident, not a
-  shipped artifact). Suite 80 → **91 checks**.
+  shipped artifact).
 - Deliberately NOT added: `injection-xss` and `secrets-credentials` — inclusion is
   by **defect category, not blast-radius** (documented in the gate + methodology so
   a future change is a conscious one, not a silent re-introduction).
+- **G4 — opt-in runtime-independent enforcement hook** (`hooks/hooks.json` +
+  `hooks/authz-gate-hook.mjs`, auto-discovered on plugin enable). Backstops the
+  AuthN/AuthZ withhold at the tool-call level, so a resume / refactor / direct
+  write can't author the doc over a live hole even if it bypasses the skill gate.
+  It is a **no-op by default**: it acts only when (a) the write targets the
+  toolkit's own `docs/security-review/authn-authz-flow.md` AND (b) the operator
+  opted in by creating `.security-review/hook-armed`; every other write exits
+  immediately (the partner's unrelated work is never touched). Armed + gate
+  withholds → it denies via the documented `permissionDecision: "deny"` (verified
+  against current hook docs — exit 0 + JSON, not exit 2); **fail-closed** if the
+  ledger can't be read. Reuses `computeGate` so the hook and skill can't disagree.
+  Disarm = delete the flag. Defense-in-depth the human opts into, NOT structural
+  impossibility. Standing test `test-authz-gate-hook.mjs` (9 checks). Suite 80 →
+  **100 checks**.
 
 ### Validated
-- The deterministic core is proven by the standing tests (84 green). The full
-  end-to-end behavior (the journey auto-proceeds, never halts at triage, the
-  withhold holds from the ledger) is gated by
-  `acceptance/integration-pass-condition-0.5.2.md` — a fresh cold full-journey run
-  before the 0.5.2 tag.
+- The deterministic core is proven by the standing tests (**100 green**). The
+  end-to-end LLM-loop behavior — the journey auto-proceeds (never halts at triage,
+  no fix-offer), the withhold holds from the ledger, G5's anchored assembler
+  launches the audit, and the G4 hook actually denies a live write when armed — is
+  gated by `acceptance/integration-pass-condition-0.5.2.md`, a fresh cold
+  full-journey run before the 0.5.2 tag.
 
 ## [0.5.1] — 2026-06-17
 

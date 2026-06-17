@@ -105,6 +105,23 @@ Either way, the optional `sf`-CLI deployed-org deep audit and any live-endpoint
 probe **always pause for explicit consent** — those touch live systems, and no
 allowlist or auto-accept silences them.
 
+### Optional enforcement hook (disclosed in full)
+
+The plugin ships a `PreToolUse` hook (`hooks/`) that loads when the plugin is
+enabled. **It is a no-op by default and never touches your normal work:** for
+every `Write`/`Edit` it exits immediately unless the file being written is the
+toolkit's own `docs/security-review/authn-authz-flow.md` **and** you have armed it
+by creating `.security-review/hook-armed` in the target repo. Armed, it blocks
+writing that one doc while an open authentication/authorization critical/high
+finding stands (the same withhold the journey already enforces — this is the
+runtime-independent backstop). It reads only the ledger; it never modifies your
+source, never phones home, and is plain, readable source in `hooks/`.
+
+- **Arm it:** `touch <repo>/.security-review/hook-armed` (or say yes when the
+  journey offers it). **Disarm:** delete that file. That's the whole control.
+- It's defense-in-depth the human opts into, not a guarantee — you own whether the
+  plugin is enabled and whether the flag is set.
+
 ## Skill catalog
 
 | Skill | What it does | Automation level |
@@ -158,7 +175,7 @@ live auth hole (now incl. session-token egress + JWT verification). 0.5.1 (tagge
 staleness live + the fix-first gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 9 standing test files (91 checks)** that fail the build if a
+engines in `harness/` guarded by 10 standing test files (100 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.5.2 — audit-only triage + a wider authN/authZ withhold.** The gate no longer pauses
@@ -169,7 +186,10 @@ refactor breaks an enforced gate or its determinism. Component status, plainly:
   `sessionid-egress` (the review's named auto-fail class) and `crypto-internals` (JWT verification),
   gaps an adversarial pass caught. Plus **G5** — the audit-engine pre-launch check is
   now a decoy-anchored helper (`injection-check.mjs`) so a header-comment mention of
-  the inject marker can't be misread as a failed injection. Suite now **9 files / 91 checks**.
+  the inject marker can't be misread as a failed injection. And **G4** — an opt-in
+  PreToolUse hook (`hooks/`) that, once you arm it, blocks writing the AuthN/AuthZ doc
+  while an open auth hole stands (runtime-independent backstop to the skill gate).
+  Suite now **10 files / 100 checks**.
 - **New in 0.5.1 — C1 staleness hardened + fix-first validated.** The resumption staleness check
   (`ledger-staleness.mjs`) is rebuilt to handle the messy `finding.file` shapes a real finder writes
   (comma/range line suffixes, two-file cites, absolute paths) — its detect-changed-code path is now
