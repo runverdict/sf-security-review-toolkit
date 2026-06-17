@@ -346,7 +346,7 @@ source for fees, thresholds, or timelines.
 
 | Severity | Meaning | Review consequence | Downstream handling |
 |---|---|---|---|
-| `critical` | Auto-fail class: cross-tenant read/write, key or secret compromise, session-identifier egress off-platform, unauthenticated reach into tenant data | Submitting with this open burns the attempt — a fee-bearing resubmission plus lost queue position (see baseline entries `process-review-fee` and `process-review-timeline` for current figures; both are perishable facts) | The journey halts here. Fix before artifact generation — the AuthN/AuthZ doc would otherwise describe the vulnerable flow. Readiness verdict: NOT READY |
+| `critical` | Auto-fail class: cross-tenant read/write, key or secret compromise, session-identifier egress off-platform, unauthenticated reach into tenant data | Submitting with this open burns the attempt — a fee-bearing resubmission plus lost queue position (see baseline entries `process-review-fee` and `process-review-timeline` for current figures; both are perishable facts) | The journey does NOT halt — it auto-proceeds to the full NOT-READY report; the AuthN/AuthZ doc is WITHHELD (it would otherwise map the vulnerable flow for the reviewer). Readiness verdict: NOT READY |
 | `high` | Exploitable by a single authenticated user or a realistic external attacker; a reviewer running their own pen test plausibly reproduces it | Near-certain failed cycle | Must fix before submission. Readiness verdict: NOT READY |
 | `medium` | Likely flagged: missing defense-in-depth, exploitable only under limited preconditions | Fix-or-document | Fix, or carry a justified entry in the false-positive dossier (`${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl`). Undispositioned mediums block the compile-submission gate |
 | `low` | Hardening | Rarely blocks alone, but volume reads as immaturity to a reviewer | Backlog; dossier mention optional |
@@ -401,7 +401,7 @@ using the title and the verified evidence. The default dimension→category mapp
 | `oauth-identity` | `authentication/session-management` | `authorization` (privileged grants, role changes) |
 | `mcp-surface` | `authentication/session-management` | `authorization` |
 | `mcp-threat-model` | `authorization` (audience/confused-deputy) | `input-validation` (SSRF, untrusted-text-as-instructions), `output-encoding` (output-egress), `communications-security` (token transport), `secrets-storage` (allowlist exposure) |
-| `sessionid-egress` | `communications-security` | `secrets-storage` |
+| `sessionid-egress` | `authentication/session-management` (a SessionId is a bearer credential for the org session — egress is named under this category above) | `communications-security` (the off-platform egress channel) |
 | `tenant-isolation` | `authorization` | — |
 | `admin-surface` | `authorization` | `authentication/session-management` |
 | `injection-xss` | `input-validation` (injection half) | `output-encoding` (XSS half) |
@@ -426,10 +426,12 @@ Rules:
 - **This map is consumed mechanically by `harness/artifact-gate.mjs`** — its
   `AUTHN_AUTHZ_DIMENSIONS` set is every dimension whose **default OR secondary**
   category is `authentication/session-management` or `authorization` (which is
-  why `web-client` and `package-metadata` are in it, via their secondaries). The
-  gate withholds the AuthN/AuthZ artifact under continue-with-flags when an open
-  critical/high finding sits in one of those dimensions. If you change a
-  dimension's category here, update that set (and `acceptance/test-artifact-gate.mjs`).
+  why `web-client`, `package-metadata`, and `crypto-internals` are in it, via
+  their secondaries — a broken JWT verify is an authentication hole). The gate
+  withholds the AuthN/AuthZ artifact — automatically, from the ledger alone (no
+  election) — when an open critical/high finding sits in one of those dimensions.
+  If you change a dimension's category here, update that set (and
+  `acceptance/test-artifact-gate.mjs`).
 - **A category with no applicable dimension is `not-assessed-by-this-engine`,
   not `pass`.** The engine reads source; it does not exercise the running system.
   Several categories are only partly visible to static review —
@@ -644,9 +646,10 @@ changed since — a `fixed` whose fix was reverted, a `refuted` whose
 non-exploitability no longer holds, a `confirmed` already remediated. Stale
 findings are surfaced as "re-audit before the verdict relies on this," never
 silently carried forward; a ledger with no fingerprint cannot be verified and
-says so. The triage gate likewise records the operator's blocker-policy election
-to `<target>/.security-review/triage-decision.json`, which `harness/artifact-gate.mjs`
-reads to decide clean / flagged / STOP on every entry path (CONVENTIONS §7).
+says so. The artifact gate (`harness/artifact-gate.mjs`) reads the **ledger** to
+decide clean / flagged on every entry path (CONVENTIONS §7) — an audit tool always
+reports, so there is no STOP and no election to consult; an optional
+`<target>/.security-review/triage-decision.json` note is informational only.
 
 ---
 
@@ -656,7 +659,7 @@ reads to decide clean / flagged / STOP on every entry path (CONVENTIONS §7).
 |---|---|---|
 | `.security-review/target-map.json` | adapter stage | yes (recommended — it documents what was and wasn't audited) |
 | `.security-review/audit-ledger.json` | engine merge | yes — the ledger is what makes re-audits incremental (CONVENTIONS §6); each pass carries an `audited_commit` fingerprint |
-| `.security-review/triage-decision.json` | triage gate | yes — the persisted blocker-policy election; read by `harness/artifact-gate.mjs` |
+| `.security-review/triage-decision.json` | triage gate (optional) | no — an informational audit note of what was open when the report ran; the gate decides from the ledger, never this file |
 | `.security-review/run-log.md` | engine | yes |
 | `docs/security-review/audit-report-<date>-pass<N>.md` | synthesis agent | yes |
 

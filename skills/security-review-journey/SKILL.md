@@ -221,9 +221,12 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    ledger so confirmed/refuted findings are not re-reported. Declare the
    token-cost tier up front (`quick`/`standard`/`exhaustive`).
 
-3. **Triage gate (the blocker policy).** Read `audit-ledger.json`. On any open
-   critical/high finding the autonomous run **DEFAULTS to halt-and-report** —
-   the same safe default the audit and artifact skills enforce. **Surface the
+3. **Triage gate (the blocker policy).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
+   does NOT halt the run and does NOT offer a fix path — it **auto-proceeds** to
+   the full NOT-READY report. It never pauses to fix, never drafts/suggests/writes
+   code, and is read-only on the partner's source; if the partner wants to
+   remediate, they do so on their own and re-run (the staleness check re-audits
+   the changed dimensions automatically). **Surface the
    blockers via the deterministic cluster view, not the raw ledger count** —
    `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target>
    --json`. Report the raw counts AND the clustered headline (distinct affected
@@ -231,35 +234,23 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    overlap), so "N findings across D dimensions" is never presented as N distinct
    problems — the audit fans out per dimension and re-finds one root cause under
    several lenses (e.g. a `without sharing` class flagged by apex-exposed-surface
-   AND web-client AND package-metadata is one issue, not three). The gate
-   DECISION is unchanged (any open critical/high still halts); only the headline
-   gets honest. Then offer two ways forward: **continue with honest inline flags**
-   (the open findings called out verbatim in the verdict) or **fix-first** (pause
-   while the partner remediates, then re-audit). "Continue with honest inline
-   flags" is the **explicit blocker-policy the operator selects** (the
-   ask-tolerance choice), never the silent default — the orchestrator does not
-   ship a package over an open critical/high without the operator electing that
-   path. **Persist the election the moment it is made:** write
-   `<target>/.security-review/triage-decision.json`
-   (`{decision: "continue-with-flags" | "fix-first" | "stop", decided_date,
-   decided_at_pass, open_at_decision: {critical, high}, rationale, elected_by}`)
-   BEFORE invoking the next phase. This is load-bearing — the election is
-   conversation state, and a later resume (or a direct
-   `generate-artifacts` invocation) would otherwise lose it; the artifact gate
-   (`generate-artifacts` step 1b / `harness/artifact-gate.mjs`) reads this file,
-   so the decision survives and is re-derived deterministically on every entry
-   path. The one rule that holds regardless of which path is chosen: **if an
-   open critical/high finding is in the AuthN/AuthZ category, the AuthN/AuthZ
-   artifact is WITHHELD** in the next phase — generating an authn-authz-flow doc that
-   describes a flow with a live, unremediated auth hole would hand the reviewer
-   a self-incriminating document and misrepresent the posture. This is no longer
-   a matter of narration the orchestrator must remember: with the election
-   persisted, the artifact gate computes the `suppress` list itself (it withholds
-   the AuthN/AuthZ doc when an open **critical/high** finding sits in the
-   authN/authZ category — the publication-blocking threshold) and the
-   `generate-artifacts` skill withholds the doc on any entry path. When the
-   operator elects continue-with-flags, every other artifact still generates and
-   the verdict carries the open findings forward verbatim.
+   AND web-client AND package-metadata is one issue, not three).
+
+   The one honesty line the gate enforces: **if an open critical/high finding is
+   in the AuthN/AuthZ category, the AuthN/AuthZ artifact is WITHHELD** in the next
+   phase — an authn-authz-flow doc describing a flow with a live, unremediated auth
+   hole would hand the reviewer a self-incriminating map and misrepresent the
+   posture. This is ENFORCED LOGIC, not narration, and it does NOT depend on any
+   human election: `harness/artifact-gate.mjs` computes the `suppress` list as a
+   pure function of the **ledger** (it withholds the AuthN/AuthZ doc when an open
+   **critical/high** finding sits in the authN/authZ category — the
+   publication-blocking threshold), and `generate-artifacts` honors it on every
+   entry path (fresh / resume / direct), so no missing election or resume can skip
+   it. Every other artifact still generates and the verdict carries the open
+   findings forward verbatim, with `path-to-green` saying exactly what to fix.
+   Optionally drop a `<target>/.security-review/triage-decision.json` note
+   recording what was open when the report was produced — it is **informational
+   only**; the gate never reads it for the decision.
 
 4. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
    only the artifacts whose `applies_to` matched the manifest; honors the
@@ -307,8 +298,10 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    verdict is headed by the **Submission Completeness Index** — a deterministic,
    gated rollup (`harness/compute-sci.mjs`) of the ledger + evidence index +
    scope-filtered baseline that this skill surfaces as the autonomous **pre-compile
-   go/no-go signal**: `BLOCKED`/`NOT READY` halts (fix the named blockers, re-run),
-   `MATERIALS COMPLETE`/`NO-SURPRISES READY` proceeds. The verdict is also
+   go/no-go signal**: `BLOCKED`/`NOT READY` is the honest verdict (the full report
+   is still produced — it just says *don't submit yet* and names the blockers to
+   fix + re-run), `MATERIALS COMPLETE`/`NO-SURPRISES READY` means the materials
+   are ready. The verdict is also
    per-category, lists **what was NOT verified**, carries any open ledger findings
    forward, and ends on the fixed caveat: Salesforce performs its own penetration
    test regardless of submitted evidence, and the SCI measures completeness, never
@@ -321,11 +314,11 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 
 - **Full-auto** — default for "just do it" / "run the whole thing": on a YELLOW
   ambiguity, make the best call and **flag it** in the run log and verdict; stop
-  on RED (a NEED-FROM-YOU audit-blocker), at the triage gate when the audit
-  surfaces an open critical/high finding (halt-and-report, then let the operator
-  pick continue-with-flags or fix-first), and at live-probe / scratch-org
-  consent. This is the path that gets a complete package with everything
-  uncertain honestly marked.
+  on RED (a NEED-FROM-YOU audit-blocker) and at live-probe / scratch-org consent.
+  An open critical/high does NOT stop the run — it auto-proceeds to the full
+  NOT-READY report (the toolkit audits and reports; it never pauses to fix). This
+  is the path that gets a complete package with everything uncertain honestly
+  marked.
 - **Guided** — default for an apparent first run, or when the operator says
   "walk me through it": on a YELLOW ambiguity, ask before deciding; on GREEN,
   proceed. Same RED hard-stops.
@@ -342,15 +335,15 @@ end-to-end drive across scope → audit → triage → artifacts → scans →
 (opt-in deep audit) → compile, with every contradiction flagged inline.
 
 Manual: correcting a misread in the preflight; supplying any ⚠ NEED-FROM-YOU
-audit-blocker; choosing the blocker policy at the triage gate when the audit
-surfaces an open critical/high (continue-with-flags or fix-first); consenting to
-a live read-only probe and to standing up a scratch
+audit-blocker; consenting to a live read-only probe and to standing up a scratch
 org; and every deferred owner-run item in `PENDING-OWNER-RUN.md` — the DAST and
 Checkmarx runs, all credentials and the vault they belong in, the partner-program
 gates, the questionnaire field entry, the review fee, and the Submit click. The
 toolkit auto-answers the evidence; the human owns the Partner-Console residue and
-the decision to submit. This skill never modifies the partner's source, and never
-says "will pass."
+the decision to submit. This skill never modifies the partner's source — it
+**audits and reports**; it never pauses to fix, and never drafts, suggests, or
+writes code changes (per-finding remediation *guidance* in the report is the
+ceiling) — and never says "will pass."
 
 ## What feeds the next skill
 

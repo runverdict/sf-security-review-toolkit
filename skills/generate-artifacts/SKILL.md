@@ -55,23 +55,19 @@ marked owner-input.
    presence); drift means re-scope first. (b) **Run the artifact gate —
    `node ${CLAUDE_PLUGIN_ROOT}/harness/artifact-gate.mjs --target <target>
    --json`** and honor its `mode` exactly. This is the ENFORCED form of the
-   open-critical/high hard stop; do not reason about the ledger by hand, and
-   never skip it on a resume — the gate is a pure function of the ledger plus
-   any persisted `triage-decision.json`, so it returns the same verdict whether
-   this skill is entered fresh, on resume, or invoked directly (a path that
-   trusted the journey's triage *narration* instead would generate over an open
-   hole — that is the bug this gate closes):
-   - **`STOP`** — open critical/high and no continue-with-flags election.
-     **Do not generate anything.** Route back to remediation, or have the
-     operator elect continue-with-flags at the triage gate
-     (`security-review-journey` step 3 writes `triage-decision.json`) and
-     re-run. Generating now bakes the vulnerability into the documentation the
-     reviewer uses as a map.
-   - **`flagged`** — open critical/high, but the operator elected
-     continue-with-flags. Generate the rest of the set, but for every artifact
-     id in the gate's `suppress` list **do NOT draft it** — write the withheld
-     placeholder instead (step 6, AuthN/AuthZ). The verdict still carries the
-     open findings verbatim (`compile-submission`).
+   AuthN/AuthZ withhold; do not reason about the ledger by hand, and never skip
+   it on a resume — the gate is a pure function of the **ledger** (the toolkit is
+   an audit tool: it always produces the full report, so there is no STOP mode
+   and no election to consult), so it returns the same verdict whether this skill
+   is entered fresh, on resume, or invoked directly (a path that trusted the
+   journey's triage *narration* instead would generate over an open hole — that
+   is the bug this gate closes):
+   - **`flagged`** — open critical/high. Generate the full NOT-READY set, but for
+     every artifact id in the gate's `suppress` list **do NOT draft it** — write
+     the withheld placeholder instead (step 6, AuthN/AuthZ). The `suppress` list
+     fires purely from the ledger (an open critical/high in the authN/authZ
+     category), independent of any election. The verdict still carries the open
+     findings verbatim (`compile-submission`).
    - **`clean`** — no open critical/high; generate the full set normally.
    (c) Baseline currency — read every `artifact-*` entry
    the selected set references and warn when any `last_verified` is older
@@ -179,7 +175,7 @@ marked owner-input.
    per the toolkit's honesty gate an AuthN/AuthZ flow doc is not generated over
    a live auth hole because it would map the vulnerability for the reviewer; the
    open findings are carried verbatim in the readiness verdict instead; resolve
-   the finding(s) (or remove the continue-with-flags election) to regenerate.
+   the finding(s) and re-run the audit to regenerate.
    Footer it with the same provenance block, then skip the rest of step 6.
 
    Otherwise (`clean` mode, or `flagged` with no authN/authZ finding) draft it.

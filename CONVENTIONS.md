@@ -172,7 +172,7 @@ sf-security-review-toolkit/
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor (WI-18/A3/A4)
-│   ├── artifact-gate.mjs            # enforced gate: open-crit/high STOP + AuthN/AuthZ withhold (G4)
+│   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
 │   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2)
@@ -183,7 +183,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 8 dependency-free standing tests (80 checks) guarding the harness/ engines
+│   └── test-*.mjs                   # 8 dependency-free standing tests (84 checks) guarding the harness/ engines
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 └── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing

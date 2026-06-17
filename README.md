@@ -152,18 +152,27 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.5.1 — C1 staleness detection proven live + the fix-first gate's positive side validated
-(on the 0.5.0 cold-start-hardening base).**
+**0.5.2 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
+NOT-READY report (no fix-first, no human election), withholding only the AuthN/AuthZ doc over a
+live auth hole (now incl. session-token egress + JWT verification). 0.5.1 (tagged) proved C1
+staleness live + the fix-first gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 8 standing test files (80 checks)** that fail the build if a
+engines in `harness/` guarded by 8 standing test files (84 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.5.2 — audit-only triage + a wider authN/authZ withhold.** The gate no longer pauses
+  at an open critical/high or offers a fix path: the toolkit **audits and reports**, always
+  producing the full NOT-READY report (it never drafts/suggests/writes code; read-only on your
+  source). The one honesty line — withholding the AuthN/AuthZ doc over an open authN/authZ
+  critical/high — now fires purely from the ledger (no election to skip) and covers
+  `sessionid-egress` (the review's named auto-fail class) and `crypto-internals` (JWT verification),
+  gaps an adversarial pass caught. Suite now **8 files / 84 checks**.
 - **New in 0.5.1 — C1 staleness hardened + fix-first validated.** The resumption staleness check
   (`ledger-staleness.mjs`) is rebuilt to handle the messy `finding.file` shapes a real finder writes
   (comma/range line suffixes, two-file cites, absolute paths) — its detect-changed-code path is now
   proven LIVE on a real fixture and guarded by a hermetic + an adversarial standing test (suite now
-  **8 files / 80 checks**). The artifact gate's *positive* side is validated end to end (remediate →
+  **8 files**). The artifact gate's *positive* side is validated end to end (remediate →
   re-audit → 0 open critical/high → gate clean → the withheld AuthN/AuthZ doc regenerates). Repo
   moved to the **`runverdict`** org.
 - **New in 0.5.0 — cold-start acceptance hardening (enforced gates + deterministic engines +

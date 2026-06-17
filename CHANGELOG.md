@@ -4,6 +4,56 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.2] — 2026-06-17
+
+Triage simplification + a wider, election-independent AuthN/AuthZ withhold. Two
+product calls from the 0.5.1 cold-validation run drove this: (1) the toolkit is an
+AUDIT tool — it should always produce the full report and never pause to "fix or
+flag" (and never offer to fix code — a 0.5.1 run improvised a draft-fixes offer the
+skill never contained); (2) the gate had a secondary-category gap (JWT verification)
+the grade surfaced. An adversarial pass over the reworked gate then caught a third
+gap — session-token egress, the review's own named critical auto-fail class — that
+would have generated the AuthN/AuthZ doc over a live hole.
+
+### Changed — the gate is audit-only (no STOP, no fix-first, no election)
+- `harness/artifact-gate.mjs` — collapsed STOP/election into auto-proceed: an open
+  critical/high → `flagged` (full NOT-READY report, findings carried forward
+  verbatim), never STOP, never a fix-first/continue-with-flags election. The one
+  honesty line — withhold the AuthN/AuthZ doc over an open authN/authZ
+  critical/high — now fires purely from the **ledger**, independent of any election
+  (closing the bypass where a missing/non-continue-with-flags election skipped it).
+  The `election` field is informational only.
+- Skill prose (`security-review-journey`, `generate-artifacts`, `audit-methodology`,
+  CONVENTIONS) — removed the fix-first triage option and the halt-on-open-critical
+  default; the gate auto-proceeds. Made the identity boundary explicit: the toolkit
+  **audits and reports, never pauses to fix, never drafts/suggests/writes code, and
+  is read-only on partner source** (per-finding remediation *guidance* in the report
+  is the ceiling).
+
+### Added — AuthN/AuthZ withhold coverage (gaps caught by the 0.5.1 grade + an adversarial pass)
+- `crypto-internals` → the authN/authZ dimension set (JWT verification: a broken
+  alg-pin / claim-validation IS an authentication hole). Surfaced by the 0.5.1 grade.
+- `sessionid-egress` → the set (a leaked SessionId is a bearer credential — the
+  review's named critical auto-fail class). The methodology dimension→category map
+  (which routed it to `communications-security`, contradicting its own category
+  *definition* listing egress under authentication) is reconciled to match.
+- The dimension membership match now trims+lowercases (a stray serialization
+  whitespace can't silently drop the withhold).
+- `acceptance/test-artifact-gate.mjs` — rewritten for the new contract (withhold
+  fires with no election; no STOP; crypto-internals + sessionid-egress withhold;
+  whitespace tolerated; `injection-xss` correctly NOT withheld). Suite 80 → **84
+  checks**.
+- Deliberately NOT added: `injection-xss` and `secrets-credentials` — inclusion is
+  by **defect category, not blast-radius** (documented in the gate + methodology so
+  a future change is a conscious one, not a silent re-introduction).
+
+### Validated
+- The deterministic core is proven by the standing tests (84 green). The full
+  end-to-end behavior (the journey auto-proceeds, never halts at triage, the
+  withhold holds from the ledger) is gated by
+  `acceptance/integration-pass-condition-0.5.2.md` — a fresh cold full-journey run
+  before the 0.5.2 tag.
+
 ## [0.5.1] — 2026-06-17
 
 Closing the two honest residuals 0.5.0 left open — and the close of the first
