@@ -64,9 +64,19 @@ it cites changed.
   unaffected because it anchors to the target repo (the 0.3.1 REPOSITORY ANCHOR
   discipline is exactly why).
 
-### Changed
-- `.claude-plugin/plugin.json` — version `0.5.1`; `repository`/`homepage` updated to
-  the new `github.com/runverdict/...` location (the repo moved orgs).
+### Changed — repo moved + renamed to the `runverdict` org
+- `.claude-plugin/plugin.json` — version `0.5.1`; `repository` / `homepage` / `author`
+  URLs → `github.com/runverdict`.
+- `.claude-plugin/marketplace.json` — marketplace **`redbeardenduro-plugins` →
+  `runverdict-plugins`** (owner → Verdict / `github.com/runverdict`).
+- `templates/evidence-index.schema.json` `$id` and the README `marketplace add` command
+  → `runverdict`. No `redbeardenduro` reference remains anywhere in the repo.
+- **Install path changed** to:
+  `claude plugin marketplace add runverdict/sf-security-review-toolkit` then
+  `plugin install`/`update sf-security-review-toolkit@runverdict-plugins`. Note: the new
+  marketplace name resolves only once this changeset lands on `main` — until merge,
+  `main` still advertises `redbeardenduro-plugins` (the marketplace manifest is read from
+  the default branch).
 
 ## [0.5.0] — 2026-06-16
 

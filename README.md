@@ -152,12 +152,20 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.5.0 — cold-start acceptance hardening: enforced gates + deterministic engines + standing tests.**
+**0.5.1 — C1 staleness detection proven live + the fix-first gate's positive side validated
+(on the 0.5.0 cold-start-hardening base).**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
 engines in `harness/` guarded by 8 standing test files (80 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.5.1 — C1 staleness hardened + fix-first validated.** The resumption staleness check
+  (`ledger-staleness.mjs`) is rebuilt to handle the messy `finding.file` shapes a real finder writes
+  (comma/range line suffixes, two-file cites, absolute paths) — its detect-changed-code path is now
+  proven LIVE on a real fixture and guarded by a hermetic + an adversarial standing test (suite now
+  **8 files / 80 checks**). The artifact gate's *positive* side is validated end to end (remediate →
+  re-audit → 0 open critical/high → gate clean → the withheld AuthN/AuthZ doc regenerates). Repo
+  moved to the **`runverdict`** org.
 - **New in 0.5.0 — cold-start acceptance hardening (enforced gates + deterministic engines +
   standing tests).** A 0-context, partner-style cold-start run of the whole journey plus an
   external critical-reader review surfaced gaps the fixture-based acceptance test structurally
