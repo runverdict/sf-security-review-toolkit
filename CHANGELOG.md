@@ -4,6 +4,80 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.1] — 2026-06-17
+
+Closing the two honest residuals 0.5.0 left open — and the close of the first
+was earned by *exercising* the engine, not reasoning about it.
+
+**C1 staleness — the detect-changed-code path, finally run for real.** 0.5.0
+shipped `ledger-staleness.mjs` with the fingerprint + no-change path live-proven,
+but the path that *flags* a finding whose code changed had only ever run against
+clean, hand-written paths in the unit test. Run against the real Lumina ledger it
+immediately under-counted — **14/10 where the truth was 15/11** — because three
+messy-but-real `finding.file` shapes a live finder actually writes defeated the
+normalizer and were silently reported *current* (the worst direction for a
+staleness check): comma/range line suffixes (`…:5,15-19`), a single finding citing
+**two files** (`…server/index.js:27 and /abs/…/panel.html:7`), and target-absolute
+path tokens. The normalizer is rebuilt (`fileTokens`): a conditional multi-file
+split (only when `" and "` sits between real file cites, so `Command and Control/`
+or `docs/sales and marketing/` is *not* fragmented), a letter-led extension check
+(drops version strings like `v2.0`), a broader location-suffix stripper
+(`#L7`, `:L5`, `(line 5)`, spaced commas), absolute-token relativization against
+the git top-level with an absolute-suffix fallback, and the reported `file` is now
+the *matched* changed path (not the first cite). A finding is stale if **any** file
+it cites changed.
+
+### Added
+- `acceptance/test-ledger-staleness-detect.mjs` — a **hermetic** detect-path test:
+  it stands up a throwaway git repo, writes a ledger with the real messy shapes,
+  advances HEAD with real commits, and drives the CLI `main()` end to end (the
+  git-shelling path the unit test never touched). Red on the 0.5.0 engine, green now.
+- `acceptance/test-ledger-staleness-adversary.mjs` — 29 adversarial cases from a
+  4-lens skeptic panel (false-positive / false-negative / encoding / crash),
+  hand-adjudicated, plus the display + two-file contracts. The panel found a real
+  false-positive class the first hardening introduced (the unconditional `" and "`
+  split); it is fixed and locked here. Two out-of-domain limitations are asserted at
+  their accepted behavior (extension-less bare-filename joins; a Windows repoRoot
+  that is a subdir of the git top-level) so a future "fix" is a conscious choice.
+- The standing-test suite is now **8 files / 80 checks** (was 6 / 43).
+
+### Validated (no code change — the proof 0.5.0 deferred)
+- **C1 detect path, LIVE.** On the real `~/srt-coldstart` fixture: a one-commit
+  change to `ForecastService.cls` (+ `.gitignore` run-state hygiene) advanced HEAD
+  past the audited commit, and `ledger-staleness` flagged **exactly the 15
+  ForecastService findings** as stale while leaving the unchanged `server/index.js`,
+  `ForecastController`, and Named Credential findings current — the two-sided bar.
+- **fix-first — the gate's positive side, end to end.** 0.5.0 only ever proved the
+  *withhold* (negative) side of the artifact gate. On a throwaway copy of the
+  fixture, the three root causes + the XSS sink were remediated, then **every**
+  confirmed finding was re-verified against the remediated source by an independent
+  skeptic (default-to-still-present if the fix can't be quoted). Result: 22 fixed, 3
+  honest low/medium residuals kept open → **0 open critical/high** →
+  `artifact-gate` flips `flagged`→`clean` (suppress `[authn-authz-flow]`→`[]`) → the
+  withheld `authn-authz-flow.WITHHELD.md` is **regenerated** as the real document.
+  Staleness also flipped `stale`→`current` once the re-audit recorded the new
+  fingerprint. The re-verification is the verifier half of a re-audit (not a full
+  finder re-discovery); the deterministic gate flip is the proven mechanism. A
+  process note from this run: an *ad-hoc* validation harness that let an agent read
+  "the ledger" from the session cwd wandered into a foreign project's
+  `.security-review/` — a guard caught it loud; the toolkit's own engine is
+  unaffected because it anchors to the target repo (the 0.3.1 REPOSITORY ANCHOR
+  discipline is exactly why).
+
+### Changed — repo moved + renamed to the `runverdict` org
+- `.claude-plugin/plugin.json` — version `0.5.1`; `repository` / `homepage` / `author`
+  URLs → `github.com/runverdict`.
+- `.claude-plugin/marketplace.json` — marketplace **`redbeardenduro-plugins` →
+  `runverdict-plugins`** (owner → Verdict / `github.com/runverdict`).
+- `templates/evidence-index.schema.json` `$id` and the README `marketplace add` command
+  → `runverdict`. No `redbeardenduro` reference remains anywhere in the repo.
+- **Install path changed** to:
+  `claude plugin marketplace add runverdict/sf-security-review-toolkit` then
+  `plugin install`/`update sf-security-review-toolkit@runverdict-plugins`. Note: the new
+  marketplace name resolves only once this changeset lands on `main` — until merge,
+  `main` still advertises `redbeardenduro-plugins` (the marketplace manifest is read from
+  the default branch).
+
 ## [0.5.0] — 2026-06-16
 
 Cold-start acceptance hardening. Two distinct inputs surfaced the gaps in this

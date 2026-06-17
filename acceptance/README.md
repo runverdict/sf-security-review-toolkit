@@ -13,7 +13,7 @@ in one session.*
 | `generate-fixture.mjs` | Builds "Helios Service Agent" (`~/srt-helios`) — a synthetic Agentforce managed 2GP seeded with one concrete instance of every probe in the `agentforce-package` / `package-metadata` / `apex-exposed-surface` finder dimensions, negative controls, and a deleted-but-recoverable git-history secret. Synthetic secrets are assembled from parts at runtime so this generator stays secret-scan-clean. |
 | `expected-findings.md` | The **sealed ground-truth plant list** — the grading key. Lives here, never in the fixture, so finders cannot read it. |
 | `build-run-args.mjs` | Mechanically performs the `audit-codebase` run-args step: extracts each applicable dimension's §4 finder prompt + §5/§6 verifier guidance from its dimension file and injects a project-local engine copy. Supports a focused single-dimension re-run. |
-| `test-{artifact-gate,applicable-requirements,baseline-counts,sci,finding-clusters,ledger-staleness}.mjs` | **Standing deterministic tests (0.5.0)** — 6 dependency-free, self-asserting test files (**43 checks**) that guard the `harness/` engines: SCI fail-closed + determinism, the artifact gate on every entry path, element-precise applicability, baseline-count consistency, cross-dimension de-dup, and ledger staleness. No LLM, no fixture, no scanners needed — `node` runs them. |
+| `test-*.mjs` (8 files) | **Standing deterministic tests** — 8 dependency-free, self-asserting test files (**80 checks**) that guard the `harness/` engines: SCI fail-closed + determinism, the artifact gate on every entry path, element-precise applicability, baseline-count consistency, cross-dimension de-dup, and ledger staleness — the latter across three layers: the pure `staleFindings` unit test, a **hermetic detect-path test** (`-detect`, a throwaway git repo driving the CLI end to end), and an **adversarial test** (`-adversary`, 29 skeptic-panel cases on the messy `finding.file` shapes a real finder writes). No LLM, no fixture, no scanners needed — `node` runs them. |
 | `acceptance-report-<date>.md` | The graded result of a fixture run: per-class recall, precision on the negative controls, and every gap the run surfaced (each encoded into the toolkit and re-proven). |
 
 ## Run it
@@ -35,7 +35,7 @@ verifier over-fires — tighten the §5/§6 refute rules.
 ## Standing tests (deterministic — no fixture, no LLM, no scanners)
 
 The `harness/` engines that encode the honesty-critical determinizable properties
-each carry a self-asserting test. Run all six (exit 0 = pass):
+each carry a self-asserting test. Run all eight (exit 0 = pass):
 
 ```bash
 for t in acceptance/test-*.mjs; do node "$t" || exit 1; done
@@ -48,7 +48,11 @@ artifact only for an open critical/high authN/authZ finding; applicability drops
 agentforce-* / mcp-* for a plain package and keeps them for a real agent/MCP one;
 the baseline self-description counts match the prose; cross-dimension findings
 de-dup to a distinct-file headline; and ledger staleness flags findings whose code
-changed since their `audited_commit`. A refactor that breaks any of these fails the
+changed since their `audited_commit` — proven at three layers: the pure
+`staleFindings` unit test, a hermetic detect-path test that drives the git-shelling
+CLI against a throwaway repo, and an adversarial test over the messy real-world
+`finding.file` shapes (comma/range suffixes, two-file cites, absolute paths). A
+refactor that breaks any of these fails the
 test — that is what makes the enforcement real rather than narrated.
 
 The fixture is intentionally *not* committed (it carries planted vulnerabilities
