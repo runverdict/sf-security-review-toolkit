@@ -158,7 +158,7 @@ live auth hole (now incl. session-token egress + JWT verification). 0.5.1 (tagge
 staleness live + the fix-first gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 8 standing test files (84 checks)** that fail the build if a
+engines in `harness/` guarded by 9 standing test files (91 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.5.2 — audit-only triage + a wider authN/authZ withhold.** The gate no longer pauses
@@ -167,7 +167,9 @@ refactor breaks an enforced gate or its determinism. Component status, plainly:
   source). The one honesty line — withholding the AuthN/AuthZ doc over an open authN/authZ
   critical/high — now fires purely from the ledger (no election to skip) and covers
   `sessionid-egress` (the review's named auto-fail class) and `crypto-internals` (JWT verification),
-  gaps an adversarial pass caught. Suite now **8 files / 84 checks**.
+  gaps an adversarial pass caught. Plus **G5** — the audit-engine pre-launch check is
+  now a decoy-anchored helper (`injection-check.mjs`) so a header-comment mention of
+  the inject marker can't be misread as a failed injection. Suite now **9 files / 91 checks**.
 - **New in 0.5.1 — C1 staleness hardened + fix-first validated.** The resumption staleness check
   (`ledger-staleness.mjs`) is rebuilt to handle the messy `finding.file` shapes a real finder writes
   (comma/range line suffixes, two-file cites, absolute paths) — its detect-changed-code path is now

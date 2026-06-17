@@ -177,13 +177,14 @@ sf-security-review-toolkit/
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
 │   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2)
 │   ├── ledger-staleness.mjs         # resumption fingerprint: flag findings whose code changed (C1)
+│   ├── injection-check.mjs          # audit-engine pre-launch check: decoy-anchored INJECTED-object validate (G5)
 │   └── zap/{README.md, zap-plan-template.yaml}   # authenticated DAST plan generator assets
 ├── acceptance/                      # the acceptance + standing-test harness
 │   ├── generate-fixture.mjs         # builds the synthetic "Helios" fixture on demand (never committed)
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 8 dependency-free standing tests (84 checks) guarding the harness/ engines
+│   └── test-*.mjs                   # 9 dependency-free standing tests (91 checks) guarding the harness/ engines
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 └── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing

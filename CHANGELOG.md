@@ -41,8 +41,18 @@ would have generated the AuthN/AuthZ doc over a live hole.
   whitespace can't silently drop the withhold).
 - `acceptance/test-artifact-gate.mjs` — rewritten for the new contract (withhold
   fires with no election; no STOP; crypto-internals + sessionid-egress withhold;
-  whitespace tolerated; `injection-xss` correctly NOT withheld). Suite 80 → **84
-  checks**.
+  whitespace tolerated; `injection-xss` correctly NOT withheld).
+- **G5 — audit-engine pre-launch check hardened.** The launch copies the Workflow
+  template, replaces the `const INJECTED = … null` marker with the run-args, and
+  validates it parses before running. The old recipe ("`JSON.parse` the slice
+  between `const INJECTED = ` and the next `const`") matched the template's own
+  header-comment mention of the marker → a false SyntaxError a weak model misreads
+  as "injection failed" and aborts a healthy run. New `harness/injection-check.mjs`
+  anchors on the real line-start `\nconst INJECTED = {` (string-aware brace match),
+  with a decoy-bearing standing test (`test-injection-check.mjs`). Sweep: no other
+  slice-parse fragility exists (the `{{…}}` template slots are fill-the-slot, a
+  different mechanism; the cwd-during-perl wobble was a session incident, not a
+  shipped artifact). Suite 80 → **91 checks**.
 - Deliberately NOT added: `injection-xss` and `secrets-credentials` — inclusion is
   by **defect category, not blast-radius** (documented in the gate + methodology so
   a future change is a conscious one, not a silent re-introduction).

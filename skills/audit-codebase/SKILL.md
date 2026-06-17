@@ -147,10 +147,15 @@ regardless of anything this engine produces.
    `SyntaxError: Illegal return statement`. That is **expected** — the Workflow
    runtime wraps the script body in an async function scope where top-level
    `return` is legal. **Do not "fix" it** by removing, wrapping, or `export`-ing
-   the `return`; that breaks how the script hands results back. If you want a
-   pre-launch check, validate only that the injected `INJECTED` object parses as
-   JSON (`JSON.parse` the slice between `const INJECTED = ` and the next `const`),
-   not that the whole module passes `node --check`.
+   the `return`; that breaks how the script hands results back. For a pre-launch
+   check, run **`node ${CLAUDE_PLUGIN_ROOT}/harness/injection-check.mjs
+   <target>/.security-review/audit-engine.mjs`** (exit 0 = the injected `INJECTED`
+   object parses and carries `repoRoot`). It anchors on the real line-start
+   `\nconst INJECTED = {` assignment — **do NOT hand-slice on the bare
+   `const INJECTED = ` substring**, which also matches the template's
+   header-comment mention of the marker (and the pre-injection `= null`), yielding
+   a false SyntaxError (a weak model then misreads "injection failed" and aborts a
+   healthy run). Validate only that object, never the whole module via `node --check`.
 
    The run-args shape:
 

@@ -56,8 +56,11 @@
  *      NOTE: `node --check` on the assembled file reports the top-level
  *      `return {…}` as "Illegal return statement" — that is EXPECTED (the
  *      Workflow runtime wraps the body in an async scope; top-level return is
- *      legal there). Do NOT remove/wrap/export the return. To pre-check, JSON
- *      .parse only the injected INJECTED object, not the whole module.
+ *      legal there). Do NOT remove/wrap/export the return. To pre-check, run
+ *      harness/injection-check.mjs on the assembled copy — it validates ONLY the
+ *      injected INJECTED object, anchoring on the real line-start `\nconst
+ *      INJECTED = {` (NOT the bare `const INJECTED = ` substring, which also hits
+ *      this header comment). Never `node --check` the whole module.
  *   6. Invoke the Workflow tool with `scriptPath` = the injected copy. On return: merge
  *      `ledger_updates` into the ledger by dedup key (normalized file path +
  *      normalized title — never description, never line numbers; §5.2), map
