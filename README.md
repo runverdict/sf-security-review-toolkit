@@ -67,7 +67,7 @@ Salesforce pen-tests regardless,"* never *"you will pass."*
 ## Install
 
 ```
-/plugin marketplace add redbeardenduro/sf-security-review-toolkit
+/plugin marketplace add runverdict/sf-security-review-toolkit
 /plugin install sf-security-review-toolkit
 ```
 
