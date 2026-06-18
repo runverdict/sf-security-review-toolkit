@@ -46,13 +46,17 @@
               }
             }
           },
+          "reviewer_reproducible": {
+            "type": "boolean",
+            "description": "Whether the Salesforce reviewer could INDEPENDENTLY reproduce this evidence. TRUE for scanner reports the reviewer re-runs (Code Analyzer / SFGE / the Checkmarx portal scan / gitleaks / Semgrep / OSV), owner-signed artifacts and attestations, and structural N/A confirmations a reviewer can also verify (e.g. 'no IaC in repo'). FALSE (or absent) for a clear that rests ONLY on this toolkit's own white-box LLM static audit. THE CREDIT RULE: compute-sci.mjs counts a requirement SATISFIED only on a reviewer_reproducible=true entry, and FAILS CLOSED when the field is absent — a satisfied/verified entry without it is treated as statically-cleared, never SATISFIED. This is set DETERMINISTICALLY by harness/build-evidence-index.mjs from the evidence SOURCE/location, never asserted by an LLM."
+          },
           "location": { "type": "string", "description": "path to the evidence file, relative to the target repo root" },
           "sha256": { "type": "string", "description": "sha256 of the evidence file at registration time (optional; recorded when the agent can hash it)" },
           "timestamp": { "type": "string", "description": "ISO time the evidence was registered" },
           "disposition": {
             "type": "string",
-            "enum": ["satisfied", "partial", "pending-owner", "n-a"],
-            "description": "rollup status this evidence confers on its ref; 'pending-owner' = the agent did its part, a human action remains"
+            "enum": ["satisfied", "statically-cleared", "partial", "pending-owner", "n-a"],
+            "description": "rollup status this evidence confers on its ref. 'satisfied' (credits the SCI) requires reviewer_reproducible=true. 'statically-cleared' = the toolkit's own white-box static audit found the class clean but with NO reviewer-reproducible scanner/owner evidence — surfaced as a SEPARATE signal, NEVER counted SATISFIED and NEVER clears the blocker floor (Salesforce pen-tests these classes regardless). 'pending-owner' = the agent did its part, a human action remains; 'partial' = drafted, owner completes/signs."
           },
           "note": { "type": "string" }
         }

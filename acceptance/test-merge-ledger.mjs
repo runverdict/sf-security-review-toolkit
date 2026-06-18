@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+/**
+ * Standing test for harness/merge-ledger.mjs — the mechanical, incremental ledger merge.
+ * HERMETIC: builds a throwaway git repo so the audited_commit stamp is real.
+ *
+ * Guards:
+ *   M1 — pass 1: verdicts map to states; stable dedup id; redaction; first/last_seen=1.
+ *   M2 — incremental pass 2: a re-found finding keeps first_seen, advances last_seen;
+ *        a NEW finding enters with first_seen=2. The merge is INTO the existing ledger,
+ *        not an overwrite (the cold-run improvisation overwrote).
+ *   M3 — regression: a `fixed` entry re-found flips to confirmed + regression:true.
+ *   M4 — dedup: same file+title at a different line collapses to one entry.
+ *   M5 — wrapper: accepts both the bare result and the tool wrapper ({result, agentCount}).
+ *
+ * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
+ */
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+
+const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
+const MERGE = join(PLUGIN, 'harness', 'merge-ledger.mjs')
+
+let pass = 0, fail = 0
+const dirs = []
+const check = (name, fn) => {
+  try { fn(); pass++; console.log(`  ✓ ${name}`) }
+  catch (e) { fail++; console.log(`  ✗ ${name}\n    ${e.message}`) }
+}
+
+function gitRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'merge-test-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
+  writeFileSync(join(dir, 'f.txt'), 'x')
+  execFileSync('git', ['add', '-A'], { cwd: dir })
+  execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
+  mkdirSync(join(dir, '.security-review'), { recursive: true })
+  return dir
+}
+function runMerge(dir, result, passN = 1) {
+  const rp = join(dir, '.security-review', `result-${passN}.json`)
+  writeFileSync(rp, JSON.stringify(result))
+  execFileSync('node', [MERGE, '--repo', dir, '--result', rp, '--date', '2026-06-17', '--pass', String(passN), '--tier', 'standard'], { encoding: 'utf8' })
+  return JSON.parse(readFileSync(join(dir, '.security-review', 'audit-ledger.json'), 'utf8'))
+}
+const u = (o) => ({ verdict: 'confirmed_real', dimension: 'crypto-internals', finder_severity: 'high', adjusted_severity: 'high', verdict_reasoning: 'reasoned', evidence: 'snippet', exploit_scenario: 'x', recommendation: 'fix it', ...o })
+
+console.log('merge-ledger standing test')
+
+check('M1 pass 1: verdict→state, stable id, first/last_seen=1, run echoes commit', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' }),
+    u({ verdict: 'false_positive', file: 'a.cls:5', title: 'SOQL injection in getRows', verdict_reasoning: 'bound variable only' }),
+  ], dimensions_run: ['crypto-internals'], total_candidates: 2 })
+  assert.equal(l.findings.length, 2)
+  const jwt = l.findings.find((f) => f.title.startsWith('JWT'))
+  assert.equal(jwt.status, 'confirmed')
+  assert.match(jwt.id, /^[0-9a-f]{16}$/)
+  assert.equal(jwt.first_seen, 1)
+  assert.equal(jwt.last_seen, 1)
+  assert.equal(jwt.file, 'server/index.js:13')
+  assert.equal(l.findings.find((f) => f.title.startsWith('SOQL')).status, 'refuted')
+  assert.equal(l.passes[0].confirmed, 1)
+  assert.equal(l.passes[0].refuted, 1)
+  assert.ok(l.passes[0].audited_commit && l.passes[0].audited_commit.length >= 7)
+})
+
+check('M2 incremental: re-found keeps first_seen=1/last_seen=2; new finding first_seen=2', () => {
+  const d = gitRepo(); dirs.push(d)
+  runMerge(d, { ledger_updates: [u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' })], dimensions_run: ['crypto-internals'], total_candidates: 1 }, 1)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' }),
+    u({ file: 'b.cls:9', title: 'Missing CRUD check on update', dimension: 'apex-exposed-surface' }),
+  ], dimensions_run: ['crypto-internals', 'apex-exposed-surface'], total_candidates: 2 }, 2)
+  assert.equal(l.findings.length, 2, 'must merge INTO the ledger, not overwrite')
+  const jwt = l.findings.find((f) => f.title.startsWith('JWT'))
+  assert.equal(jwt.first_seen, 1)
+  assert.equal(jwt.last_seen, 2)
+  const crud = l.findings.find((f) => f.title.startsWith('Missing CRUD'))
+  assert.equal(crud.first_seen, 2)
+  assert.equal(l.passes.length, 2)
+})
+
+check('M3 regression: a fixed entry re-found flips to confirmed + regression:true', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l1 = runMerge(d, { ledger_updates: [u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' })], dimensions_run: ['crypto-internals'], total_candidates: 1 }, 1)
+  // mark it fixed by hand (as a remediation step would)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  const led = JSON.parse(readFileSync(lp, 'utf8'))
+  led.findings[0].status = 'fixed'; led.findings[0].fix_commit = 'abc1234'
+  writeFileSync(lp, JSON.stringify(led))
+  const l = runMerge(d, { ledger_updates: [u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' })], dimensions_run: ['crypto-internals'], total_candidates: 1 }, 2)
+  const jwt = l.findings[0]
+  assert.equal(jwt.status, 'confirmed')
+  assert.equal(jwt.regression, true)
+  assert.equal(jwt.last_seen, 2)
+})
+
+check('M4 dedup: same file+title at a different line → one entry', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' }),
+    u({ file: 'server/index.js:99', title: 'JWT verify without algorithm allowlist' }),
+  ], dimensions_run: ['crypto-internals'], total_candidates: 2 })
+  assert.equal(l.findings.length, 1, 'line-only difference must not create a second finding')
+})
+
+check('M4b redaction: a secret value in evidence is redacted, the name is kept', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'server/index.js:5', title: 'hardcoded token', evidence: 'const t = "abcd1234efgh5678"; token = "abcd1234efgh5678"' }),
+  ], dimensions_run: ['secrets-credentials'], total_candidates: 1 })
+  const f = l.findings[0]
+  assert.match(f.evidence, /redacted/, 'secret value must be redacted')
+  assert.doesNotMatch(f.evidence, /abcd1234efgh5678(?!")/, 'raw secret must not survive in the assignment form')
+})
+
+check('M5 wrapper: accepts the tool wrapper {result, agentCount}', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { result: { ledger_updates: [u({ file: 'x.js:1', title: 'a finding' })], dimensions_run: ['crypto-internals'], total_candidates: 1 }, agentCount: 7 })
+  assert.equal(l.findings.length, 1)
+  assert.equal(l.findings[0].status, 'confirmed')
+})
+
+for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

@@ -199,15 +199,24 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    `<target>/docs/security-review/submission/readiness-verdict.md` and echo
    it in the run output. Structure, in order — the honesty block is
    mandatory, not decoration (CONVENTIONS §2):
-   - **Write the evidence index, then compute the Submission Completeness
-     Index (SCI) — the headline gate.** First materialize the WI-20 evidence
-     model from the inventory you already built: write
-     `<target>/.security-review/evidence/index.json` per
-     `${CLAUDE_PLUGIN_ROOT}/templates/evidence-index.schema.json`, one entry per
-     artifact/scan/finding that backs a baseline id — a row is SATISFIED only
-     with a real, on-disk, verified evidence file (no credit for un-evidenced
-     self-attestation; a questionnaire "yes" with no file is PARTIAL). Then run
-     the deterministic engine:
+   - **Build the evidence index, then compute the Submission Completeness
+     Index (SCI) — the headline gate.** You do NOT hand-write the index. Write your
+     evidence MAPPING as DATA — `<target>/.security-review/evidence-input.json`
+     (which scan produced which requirement, which artifacts were drafted, which
+     owner-run items were prepared, which auto-fail classes the audit cleared and
+     with what evidence; schema in `${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs`'s
+     header) — then run the shipped producer:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs --repo <target> --date <runDate> --input <target>/.security-review/evidence-input.json`.
+     It writes `evidence/index.json` and ENFORCES the credit rule DETERMINISTICALLY
+     (the engine decides credit from the evidence location, never from anything the
+     input asserts): a requirement is SATISFIED only on REVIEWER-REPRODUCIBLE evidence
+     — a scanner report the reviewer re-runs (Code Analyzer/SFGE/Checkmarx/gitleaks/
+     Semgrep/OSV under `.security-review/evidence/`), an owner-signed artifact, or a
+     structural N/A. An auto-fail class cleared ONLY by the white-box static audit is
+     `statically-cleared`: surfaced as a separate signal, **never headline credit and
+     never a blocker-floor clear** — you do not grade your own exam; Salesforce
+     pen-tests these classes regardless. A row with no real, on-disk file is dropped
+     or PARTIAL (no credit for un-evidenced self-attestation). Then run the SCI engine:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/compute-sci.mjs --target <target> --plugin ${CLAUDE_PLUGIN_ROOT} --date <runDate>`.
      It reads the audit ledger + the evidence index + the scope-filtered baseline
      and emits a GATED block — `READINESS: BLOCKED | NOT READY | MATERIALS

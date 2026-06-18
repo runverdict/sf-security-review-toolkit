@@ -23,6 +23,14 @@
  *     list. Never collapse to one figure.
  *   - No credit for un-evidenced self-attestation: a requirement counts SATISFIED
  *     only with a registered, verified evidence entry. No evidence → PARTIAL/MISSING.
+ *   - No credit for self-grading (P1): SATISFIED requires REVIEWER-REPRODUCIBLE
+ *     evidence (reviewer_reproducible=true — a scanner report the reviewer re-runs,
+ *     an owner-signed artifact, or a structural N/A). A clear that rests only on this
+ *     toolkit's own white-box LLM static audit is 'statically-cleared': surfaced as a
+ *     separate signal, NEVER counted SATISFIED, NEVER clears the blocker floor
+ *     (Salesforce pen-tests these classes regardless). FAILS CLOSED: a missing
+ *     reviewer_reproducible flag is treated as not-reproducible, so a hand-authored or
+ *     over-crediting index under-credits (safe) instead of inflating the headline.
  *
  * Usage: node compute-sci.mjs --target <repo> --plugin <pluginRoot> [--date YYYY-MM-DD] [--json]
  */
@@ -89,13 +97,25 @@ function daysBetween(a, b) {
   return Number.isFinite(ms) ? Math.round(ms / 86400000) : NaN
 }
 
-// Requirement satisfaction: a baseline id is SATISFIED iff a verified evidence
-// entry registers it (ref_type=requirement, disposition=satisfied, verified=true).
-// pending-owner / partial / unverified => PARTIAL. No entry => MISSING.
+// Requirement satisfaction with the CREDIT RULE (P1). A baseline id is:
+//   SATISFIED          — a REVIEWER-REPRODUCIBLE verified evidence entry registers it
+//                        (disposition=satisfied, verified.value=true, reviewer_reproducible=true).
+//   STATICALLY_CLEARED — the only "clear" is the toolkit's own white-box static audit
+//                        (disposition='statically-cleared', OR satisfied/verified but
+//                        reviewer_reproducible is absent/false — FAIL CLOSED). Real signal,
+//                        but never headline credit and never a blocker-floor clear.
+//   PARTIAL            — an entry exists but is pending-owner / drafted / unverified.
+//   MISSING            — no entry.
+const isCreditable = (e) =>
+  e.disposition === 'satisfied' && e.verified && e.verified.value === true && e.reviewer_reproducible === true
+const isStaticClear = (e) =>
+  e.disposition === 'statically-cleared' ||
+  (e.disposition === 'satisfied' && e.verified && e.verified.value === true && e.reviewer_reproducible !== true)
 function requirementStatus(id) {
   const evs = evEntries.filter((e) => e.ref_type === 'requirement' && e.ref_id === id)
   if (!evs.length) return 'MISSING'
-  if (evs.some((e) => e.disposition === 'satisfied' && e.verified && e.verified.value === true)) return 'SATISFIED'
+  if (evs.some(isCreditable)) return 'SATISFIED'
+  if (evs.some(isStaticClear)) return 'STATICALLY_CLEARED'
   return 'PARTIAL'
 }
 
@@ -118,14 +138,17 @@ const dispositioned = findings.filter((f) => !isOpen(f)).length
 // ---------------------------------------------------------------------------
 // 3. Coverage vector — applicable requirements satisfied with evidence
 // ---------------------------------------------------------------------------
-let satisfied = 0, partial = 0, missing = 0
+let satisfied = 0, staticallyCleared = 0, partial = 0, missing = 0
+const staticallyClearedIds = []
 for (const id of applicable) {
   const s = requirementStatus(id)
   if (s === 'SATISFIED') satisfied++
+  else if (s === 'STATICALLY_CLEARED') { staticallyCleared++; staticallyClearedIds.push(id) }
   else if (s === 'PARTIAL') partial++
   else missing++
 }
 const applicableN = applicable.length || 1
+// Statically-cleared is NEVER in the numerator — it does not inflate the headline.
 const completeness = Math.round((satisfied / applicableN) * 100)
 
 // ---------------------------------------------------------------------------
@@ -173,9 +196,9 @@ if (!applicable.length) {
 } else if (openHigh > 0) {
   band = 'NOT READY'
   gateReason = `${openHigh} open high finding(s) — fix or document before submission`
-} else if (missing > 0 || partial > 0) {
+} else if (missing > 0 || partial > 0 || staticallyCleared > 0) {
   band = 'MATERIALS COMPLETE'
-  gateReason = `no open blocker/high; ${missing} required item(s) MISSING, ${partial} PARTIAL — finish materials`
+  gateReason = `no open blocker/high; ${missing} required item(s) MISSING, ${partial} PARTIAL, ${staticallyCleared} statically-cleared (not reviewer-verified) — finish materials / obtain reviewer-reproducible evidence`
 } else if (caveated.length > 0) {
   band = 'MATERIALS COMPLETE'
   gateReason = `all materials satisfied, but ${caveated.length} rely on stale/unverified baseline entries — confirm currency`
@@ -218,7 +241,7 @@ const hardStalePct = applicable.length ? Math.round((hardStale.length / applicab
 // is a STEP function — ~0 on a freshly refreshed baseline, then it jumps once the bulk of
 // entries cross HARD_WINDOW (≈180d after the last baseline refresh). It is a "the guidance
 // has aged out" tripwire, not a gradual ramp; that is the intended, honest behavior.
-const materialsTrulyComplete = band === 'NO-SURPRISES READY' || (band === 'MATERIALS COMPLETE' && missing === 0 && partial === 0)
+const materialsTrulyComplete = band === 'NO-SURPRISES READY' || (band === 'MATERIALS COMPLETE' && missing === 0 && partial === 0 && staticallyCleared === 0)
 if (!blocked && applicable.length && hardStale.length >= 2 && hardStalePct >= CURRENCY_FLOOR_PCT && materialsTrulyComplete) {
   band = 'NOT READY'
   gateReason =
@@ -244,7 +267,8 @@ const result = {
   blocked,
   completeness_pct: completeness,
   completeness_label: 'materials + disposition completeness, NOT a pass-likelihood',
-  coverage: { applicable: applicable.length, satisfied, partial, missing },
+  coverage: { applicable: applicable.length, satisfied, statically_cleared: staticallyCleared, partial, missing },
+  statically_cleared_requirements: staticallyClearedIds.slice(0, 20),
   disposition: { open_critical: openCritical, open_high: openHigh, dispositioned },
   freshness: { caveated: caveated.length, stale: stale.length, unverified: unverified.length, conflicting: conflicting.length, window_days: FRESH_WINDOW, hard_stale: hardStale.length, hard_stale_pct: hardStalePct, hard_window_days: HARD_WINDOW },
   blocker_findings: openBlockerFindings.map((f) => f.id || f.title).slice(0, 10),
@@ -265,6 +289,9 @@ if (AS_JSON) {
   L.push(`**READINESS: ${band}**`)
   L.push(`- Gate: ${gateReason}`)
   L.push(`- Coverage: ${satisfied}/${applicable.length} applicable requirements SATISFIED · ${partial} PARTIAL · ${missing} MISSING`)
+  if (staticallyCleared > 0) {
+    L.push(`- Statically cleared (NOT reviewer-verified): ${staticallyCleared} — the toolkit's own white-box static audit found these classes clean, but with no reviewer-reproducible scanner/owner evidence. They do NOT count toward the completeness % and do NOT clear the blocker floor; Salesforce pen-tests them regardless. Obtain a Code Analyzer/SFGE/Checkmarx clear to credit them: ${staticallyClearedIds.slice(0, 8).join(', ')}${staticallyClearedIds.length > 8 ? '…' : ''}`)
+  }
   L.push(`- Disposition: ${openCritical} open critical · ${openHigh} open high · ${dispositioned} dispositioned`)
   L.push(`- Currency: ${caveated.length} of ${applicable.length} applicable requirements rest on caveated baseline entries — ${unverified.length} UNVERIFIED (never confirmed against a primary source; confirm with your PAM) · ${stale.length} STALE (verified >${FRESH_WINDOW}d ago; re-check against current docs) · ${conflicting.length} conflicting`)
   L.push(`- Completeness: **${completeness}%** _(materials + disposition completeness, NOT pass likelihood)_`)

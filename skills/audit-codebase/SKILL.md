@@ -109,80 +109,57 @@ regardless of anything this engine produces.
    again. Never let an LLM rewrite ledger entries — the merge is mechanical
    (step 6) or the dedup keys corrupt.
 
-5. **Run the engine.** Preferred substrate: the Workflow tool with
-   `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`. The invocation, per
-   its header: extract each selected dimension's threat-focus paragraph from
-   the §4 finder prompt block of its dimension file, build the run-args
-   object, and JSON-serialize it. For each dimension extract TWO blocks: the
-   threat-focus paragraph (the `finderPrompt`) AND the Verifier-guidance +
-   false-positive-patterns block (the `verifierNotes`). **Both are
-   load-bearing.** The verifier only sees the generic skepticism prompt unless
-   you pass `verifierNotes`; without the dimension's own refute rules it
-   over-refutes declaration-level metadata violations (an exposed message
-   channel, an `http://`/wildcard trusted host, `position:absolute` in component
-   CSS, an unenclosed prompt template) on a "no live caller / dead-code
-   artifact" rationale the Salesforce static review — which flags whatever the
-   package SHIPS — does not apply.
+5. **Run the engine.** Preferred substrate: the Workflow tool with a project-local
+   copy of `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`, assembled by the
+   shipped `build-audit-engine.mjs` (next). You do NOT hand-extract prompts or
+   hand-inject run-args — you supply your scoping as data and the engine assembles
+   the runnable script deterministically (the §4 finder prompt + §5/§6 verifier notes
+   per dimension are pulled by the engine, both load-bearing as detailed below).
 
-   **Then — unconditionally — inject it and run a project-local copy:**
+   **Then — via the shipped assembler, never by hand — build and run a
+   project-local copy.** You write your SCOPING as DATA; the deterministic engine
+   does the assembly (this is the P2 discipline — "engine code, never an LLM" — and
+   it retires the marker-slice fragility G5 hardened):
 
-   1. Copy the template into the target repo:
-      `cp ${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs <target>/.security-review/audit-engine.mjs`.
-      (A copy, never the installed plugin file: the plugin is read-only/shared,
-      and a project-local copy keeps the exact run reproducible and committable.)
-   2. In that copy, **replace** the marked `const INJECTED = /* {{ARGS_OBJECT}} */ null`
-      line so `INJECTED` is your JSON run-args object (JSON is valid JS — paste
-      it raw as the value).
-   3. Invoke the Workflow tool with `scriptPath` pointing at the copy.
+   1. Write `<target>/.security-review/scope-input.json` — the scoping output that
+      is legitimately yours (tier, pass, runDate, the step-4 `ledger` digest, the
+      `context` block assembled from the scope manifest, the `applicable` dimensions
+      with their per-dimension `targets` + `stackNotes`, and the `na` list with
+      reasons). The schema is in `${CLAUDE_PLUGIN_ROOT}/harness/build-audit-engine.mjs`'s
+      header.
+   2. Run the assembler:
+      `node ${CLAUDE_PLUGIN_ROOT}/harness/build-audit-engine.mjs --plugin ${CLAUDE_PLUGIN_ROOT} --repo <target> --input <target>/.security-review/scope-input.json`.
+      It DETERMINISTICALLY extracts, per dimension, the §4 threat-focus paragraph
+      (`finderPrompt`) AND the §5/§6 Verifier-guidance + false-positive-patterns block
+      (`verifierNotes`) from the dimension file — **both load-bearing**: the verifier
+      only sees generic skepticism unless it gets `verifierNotes`, and without the
+      dimension's own refute rules it over-refutes declaration-level metadata
+      violations (an exposed message channel, an `http://`/wildcard trusted host,
+      `position:absolute` in component CSS, an unenclosed prompt template) on a "no
+      live caller / dead-code artifact" rationale the Salesforce static review — which
+      flags whatever the package SHIPS — does not apply. It injects the run-args into
+      `<target>/.security-review/audit-engine.mjs` (a project-local copy of the
+      template — reproducible + committable) and writes `target-map.json`. It aborts
+      LOUD on a missing/malformed dimension file rather than emitting an empty prompt.
+   3. Pre-launch check:
+      `node ${CLAUDE_PLUGIN_ROOT}/harness/injection-check.mjs <target>/.security-review/audit-engine.mjs`
+      (exit 0 = the injected `INJECTED` parses and carries `repoRoot`). Do NOT
+      `node --check` the assembled file — it reports the template's top-level
+      `return {…}` as `SyntaxError: Illegal return statement`, which is **expected**
+      (the Workflow runtime wraps the body in an async scope where top-level `return`
+      is legal); injection-check validates only the injected object.
+   4. Invoke the Workflow tool with `scriptPath` pointing at the produced
+      `audit-engine.mjs`. **Do NOT pass run-args through the Workflow `args`
+      parameter** — they arrive as a JSON *string*, `args.repoRoot` is undefined, and
+      the run fails fast (*"run args missing or incomplete"*, 0 agents). The
+      `args`-binding branch in the template is only a safety net; the assembler-written
+      `INJECTED` is the load-bearing path, every time.
 
-   **Do NOT pass the run-args through the Workflow tool's `args` parameter.** In
-   practice they arrive as a JSON *string*, so `args.repoRoot` is undefined, the
-   template falls through to its `null` placeholder, and the run fails fast with
-   *"run args missing or incomplete"* (0 agents, ~20ms). The `args`-binding
-   branch in the template (`args && args.repoRoot ? args : INJECTED`) is only a
-   safety net — injecting `INJECTED` is the load-bearing path, every time.
-
-   **`node --check` caveat:** if you sanity-check the assembled script, know that
-   `node --check` reports the template's top-level `return {…}` as
-   `SyntaxError: Illegal return statement`. That is **expected** — the Workflow
-   runtime wraps the script body in an async function scope where top-level
-   `return` is legal. **Do not "fix" it** by removing, wrapping, or `export`-ing
-   the `return`; that breaks how the script hands results back. For a pre-launch
-   check, run **`node ${CLAUDE_PLUGIN_ROOT}/harness/injection-check.mjs
-   <target>/.security-review/audit-engine.mjs`** (exit 0 = the injected `INJECTED`
-   object parses and carries `repoRoot`). It anchors on the real line-start
-   `\nconst INJECTED = {` assignment — **do NOT hand-slice on the bare
-   `const INJECTED = ` substring**, which also matches the template's
-   header-comment mention of the marker (and the pre-injection `= null`), yielding
-   a false SyntaxError (a weak model then misreads "injection failed" and aborts a
-   healthy run). Validate only that object, never the whole module via `node --check`.
-
-   The run-args shape:
-
-   ```jsonc
-   {
-     "repoRoot": "/abs/path/to/partner/repo",
-     "scopeManifestPath": "/abs/path/to/partner/repo/.security-review/scope-manifest.json",
-     "tier": "standard",
-     "passNumber": 1,
-     "runDate": "YYYY-MM-DD",          // pass it in — the runtime restricts Date.now()
-     "reportPath": "/abs/path/to/partner/repo/docs/security-review/audit-report-YYYY-MM-DD-pass1.md",
-     "ledger": "<the step-4 digest, or '' on a first pass>",
-     "context": {                       // assembled FROM THE SCOPE MANIFEST
-       "productOneLiner": "...",
-       "reviewSurfaces": "...",         // what the review pen-tests
-       "stackSummary": "...",
-       "securityModelClaims": "..."     // labeled as claims — finders verify, never assume
-     },
-     "dimensions": [
-       { "key": "tenant-isolation",
-         "targets": "src/db/policies.py\nsrc/api/deps.py",
-         "stackNotes": "<per-dimension repo facts from the adapter>",
-         "verifierNotes": "<the dimension file's Verifier-guidance + false-positive-patterns block, verbatim — the verifier's refute rules>",
-         "finderPrompt": "<the dimension file's §4 threat-focus paragraph, verbatim>" }
-     ]
-   }
-   ```
+   The assembler writes the full run-args object (`repoRoot`, `scopeManifestPath`,
+   `tier`, `passNumber`, `runDate`, `reportPath`, `ledger`, `context`, and a
+   `dimensions[]` where each entry additionally carries the engine-extracted
+   `finderPrompt` + `verifierNotes`) into `audit-engine.mjs`. You author only the
+   `scope-input.json` from step 1, never this object by hand.
 
    Without the Workflow tool, degrade to
    `${CLAUDE_PLUGIN_ROOT}/harness/sequential-fallback.md`: same prompts, same
@@ -212,20 +189,22 @@ regardless of anything this engine produces.
    in the reviewer-facing artifacts; (5) **coverage and residual risk** —
    which dimensions ran, which were N/A and why, which were unresolved, and
    the white-box-static caveat (a report without this section is dishonest by
-   omission); (6) readiness-tracker mapping. Then engine code — you, working
-   the rote procedure, never an LLM agent — merges verdicts into the ledger:
-   dedup id = first 16 hex chars of SHA-256 over the normalized file path +
-   `\n` + normalized title (exact normalization in
-   `${CLAUDE_PLUGIN_ROOT}/templates/audit-ledger.schema.json` — never the
-   description, never line numbers); `confirmed_real`/`partially_real` →
-   `confirmed`, `false_positive` → `refuted`; a candidate matching a `fixed`
-   entry's key flips it back to `confirmed` with `regression: true`. Redact
-   any credential value captured in an evidence snippet (`***redacted***`)
-   before writing anything (CONVENTIONS §6), append the pass entry to
-   `.security-review/run-log.md`, and surface the unverified list. **Stamp the
-   pass object's `audited_commit` with `git -C <target> rev-parse HEAD`** — the
-   resumption fingerprint. Without it a later resume cannot tell whether the code
-   behind a finding moved since the audit (step 7 / `harness/ledger-staleness.mjs`).
+   omission); (6) readiness-tracker mapping. Then run the shipped merge engine —
+   mechanical, deterministic, never an LLM (a synthesis agent paraphrasing entries
+   corrupts the dedup keys). Write the audit Workflow's return to a file, then:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/merge-ledger.mjs --repo <target> --result <result.json> --date <date> --pass <N> --report <report-path> --tier <tier>`.
+   It computes the dedup ids (16 hex of SHA-256 over normalized file path + `\n` +
+   normalized title — never the description, never line numbers; exact normalization
+   in `${CLAUDE_PLUGIN_ROOT}/templates/audit-ledger.schema.json`), maps
+   `confirmed_real`/`partially_real` → `confirmed` and `false_positive` → `refuted`,
+   flips a re-found `fixed` entry back to `confirmed` with `regression: true`, redacts
+   any credential value in an evidence snippet (CONVENTIONS §6), tracks first/last-seen
+   across passes, merges INTO the existing ledger (never an overwrite), stamps the pass
+   `audited_commit` with the target's `git rev-parse HEAD` (the resumption fingerprint —
+   without it a later resume cannot tell whether the code behind a finding moved since
+   the audit; step 7 / `harness/ledger-staleness.mjs`), and appends the pass entry to
+   `.security-review/run-log.md`. Surface the unverified list from the run. Do NOT
+   hand-edit ledger entries.
 
 7. **Gate and route.** Open `critical`/`high` findings halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the

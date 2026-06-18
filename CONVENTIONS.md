@@ -130,7 +130,14 @@ Skills write into the PARTNER's repo, never into the plugin:
   AuthN/AuthZ-withhold gate, when it lived in journey narration, was improvised
   past on a resume path). The enforced form lives in `harness/artifact-gate.mjs`,
   `applicable-requirements.mjs`, `baseline-counts.mjs`, `finding-clusters.mjs`,
-  `ledger-staleness.mjs`, and `compute-sci.mjs`. Prose-only fixes are permitted
+  `ledger-staleness.mjs`, `injection-check.mjs`, `package-readiness.mjs`,
+  `compute-sci.mjs`, and the three per-run engines that replaced LLM-authored
+  scripts — `build-audit-engine.mjs` (extract + inject the run-args),
+  `merge-ledger.mjs` (mechanical ledger merge), and `build-evidence-index.mjs`
+  (the evidence index + the reviewer-reproducible credit rule). The credit rule
+  is the load-bearing one: SATISFIED requires reviewer-reproducible evidence;
+  an audit-only clear is `statically-cleared` and never moves the headline (the
+  toolkit must not grade its own exam). Prose-only fixes are permitted
   but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
   a high-stakes prose layer is a candidate for promotion to an engine + a
   PreToolUse hook (runtime-independent enforcement).
@@ -171,7 +178,10 @@ sf-security-review-toolkit/
 ├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
-│   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor (WI-18/A3/A4)
+│   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
+│   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2)
+│   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2)
+│   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
@@ -185,7 +195,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 11 dependency-free standing tests (112 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 14 dependency-free standing tests (134 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

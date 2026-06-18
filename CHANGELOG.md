@@ -4,6 +4,76 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [0.5.5] — 2026-06-18
+
+The two larger items the 0.5.2 cold run surfaced and 0.5.4 deferred: the SCI must
+not grade its own exam (P1), and the per-run audit/merge/index engines must ship in
+`harness/` instead of being re-authored by the LLM every run (P2). Both encoded with
+standing tests in the same changeset. Suite: 11 files/112 checks → **14 files/134 checks**.
+
+### Fixed
+- **P1 — the SCI no longer credits the toolkit's own static clears (anti-self-grading).**
+  In the cold run, the (then LLM-authored) evidence index marked auto-fail classes
+  (CRUD/FLS, sharing, SOQL-injection, sessionid-egress, XSS) SATISFIED from the toolkit's
+  OWN white-box audit, moving the Submission Completeness Index 9%→17% — the tool grading
+  its own exam. `compute-sci.mjs` now applies a **reviewer-reproducible credit rule**: a
+  requirement counts SATISFIED only on evidence a Salesforce reviewer can independently
+  reproduce (a scanner report the reviewer re-runs — Code Analyzer/SFGE/Checkmarx/gitleaks/
+  Semgrep/OSV — an owner-signed artifact, or a structural N/A). A clear that rests only on
+  the white-box static audit is the new `statically-cleared` disposition: surfaced as a
+  separate signal, **never counted toward the completeness %, never clears the blocker
+  floor** (Salesforce pen-tests these classes regardless). It **fails closed** — a
+  satisfied/verified entry with no `reviewer_reproducible: true` flag is treated as
+  statically-cleared, so an over-crediting or hand-authored index under-credits (safe)
+  rather than inflating the headline. The clean-package path survives: a reviewer-
+  reproducible scanner clear of a blocker class still clears the floor. Grounded in the
+  live SF review (Code Analyzer is the tool SF itself runs; SFGE is the only user-mode-
+  complete engine for CRUD/FLS), so a scanner clear is reviewer-meaningful while an LLM
+  audit conclusion is not part of what the reviewer consumes.
+
+### Added
+- **`harness/build-evidence-index.mjs` (P1+P2)** — the deterministic evidence-index
+  producer that compute-sci reads. The driver supplies its evidence MAPPING as DATA
+  (`evidence-input.json`); the engine assembles `evidence/index.json` and **adjudicates
+  the credit rule from the evidence location, never from anything the input asserts** —
+  a cleared class backed by a scanner file under `.security-review/evidence/` (on disk) is
+  reviewer-reproducible+satisfied; the same class backed only by the `docs/` audit report
+  is statically-cleared. Fail-safe: a cleared class pointing at a non-existent scanner file
+  degrades to statically-cleared.
+- **`harness/merge-ledger.mjs` (P2)** — the mechanical, INCREMENTAL ledger merge (was
+  LLM-re-authored and pass-1-only/overwrite each run). Loads the existing ledger, computes
+  the dedup ids per `audit-ledger.schema.json`, maps verdicts to states, flips a re-found
+  `fixed` entry to `confirmed`+`regression`, tracks first/last-seen across passes, redacts
+  credential values, stamps the pass `audited_commit`, and appends `run-log.md`. Accepts
+  the audit Workflow's bare result or the `{result, agentCount}` wrapper.
+- **`harness/build-audit-engine.mjs` (P2)** — the deterministic assembler (was LLM-
+  re-authored). The driver supplies its scoping as DATA (`scope-input.json`: applicable
+  dimensions + per-dimension targets/stackNotes + context + N/A); the engine extracts each
+  dimension's §4 finder prompt + §5/§6 verifier notes by marker, injects the run-args into a
+  project-local `audit-engine.mjs`, and writes `target-map.json`. Shipping the marker
+  extraction as tested engine code retires the slice-fragility G5 hardened; it aborts LOUD
+  on a missing/malformed dimension file rather than emitting an empty prompt.
+- Three standing tests: `test-build-evidence-index.mjs` (5), `test-merge-ledger.mjs` (6),
+  `test-build-audit-engine.mjs` (5), plus 5 new P1 credit-rule cases in `test-sci.mjs`.
+
+### Changed
+- `templates/evidence-index.schema.json`: added the `reviewer_reproducible` boolean (the
+  credit discriminator, set deterministically by the engine, never asserted by an LLM) and
+  the `statically-cleared` disposition.
+- `skills/audit-codebase/SKILL.md` (steps 5–6) and `skills/compile-submission/SKILL.md`
+  (step 8) rewired to **invoke the shipped engines** (write the scope/evidence mapping as
+  data → run the engine) instead of hand-assembling/hand-merging/hand-writing the index —
+  closing the methodology's "engine code, never an LLM" contradiction that let the per-run
+  scripts drift.
+- `methodology/audit-methodology.md`, `CONVENTIONS.md` (§7 engine list + §8 layout),
+  `README.md`, `acceptance/README.md` updated for the three engines, the credit rule, and
+  the 133-check suite.
+- `plugin.json` → 0.5.5.
+
+### Validation
+- All 14 standing-test files / 134 checks pass off disk. The cold-run validation of the
+  full credit rule + the shipped engines on a fresh journey (and the tag) is the next step.
+
 ## [0.5.4] — 2026-06-17
 
 Hardening from the 0.5.2 cold-validation run + a parallel adversarial truth-audit

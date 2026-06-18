@@ -632,12 +632,16 @@ contract:
    `/sf-security-review-toolkit:compile-submission`, so each tracker row carries
    its reviewer category through to the readiness verdict's per-category matrix.
 
-After synthesis, the engine (code, not the agent): merges verdicts into the
-ledger by dedup key, **stamps the pass's `audited_commit` with the repo HEAD SHA
-(the resumption fingerprint)**, appends the pass summary to
+After synthesis, the shipped engine `harness/merge-ledger.mjs` (code, not the
+agent — invoked with `--repo/--result/--date/--pass/--report/--tier`) merges
+verdicts into the ledger by dedup key, flips a re-found `fixed` entry to
+`confirmed`+`regression`, tracks first/last-seen across passes, redacts credential
+values, **stamps the pass's `audited_commit` with the repo HEAD SHA (the
+resumption fingerprint)**, appends the pass summary to
 `<target>/.security-review/run-log.md` (pass number, tier, dimensions run,
 candidates/confirmed/refuted counts, report path), and prints the per-§3.3
-unverified list if any.
+unverified list if any. It is shipped engine code invoked with args — never an
+LLM re-authoring the merge each run (which corrupts the dedup keys).
 
 **Resumption / staleness.** On a resumed run, before trusting a prior pass's
 findings the engine runs `harness/ledger-staleness.mjs`, which diffs the repo

@@ -80,7 +80,7 @@ check('A2 determinism: identical inputs + fixed date → byte-identical stdout',
     })
     mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
     writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'),
-      JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: 'scan-code-analyzer-invocation', disposition: 'satisfied', verified: { value: true, how: 'ran it' } }] }))
+      JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: 'scan-code-analyzer-invocation', disposition: 'satisfied', verified: { value: true, how: 'ran it' }, reviewer_reproducible: true }] }))
   }); dirs.push(d)
   const a = runSci(d).raw
   const b = runSci(d).raw
@@ -123,7 +123,7 @@ const a4dir = fixture((dir) => {
   write(dir, 'audit-ledger.json', { findings: [] })
   mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
   writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'),
-    JSON.stringify({ entries: A4_REQS.map((id) => ({ ref_type: 'requirement', ref_id: id, disposition: 'satisfied', verified: { value: true, how: 'test' } })) }))
+    JSON.stringify({ entries: A4_REQS.map((id) => ({ ref_type: 'requirement', ref_id: id, disposition: 'satisfied', verified: { value: true, how: 'test' }, reviewer_reproducible: true })) }))
 })
 dirs.push(a4dir)
 
@@ -150,7 +150,7 @@ const c1dir = fixture((dir) => {
   mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
   // satisfy only ONE of the three → two MISSING → MATERIALS COMPLETE (not ready)
   writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'),
-    JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: A4_REQS[0], disposition: 'satisfied', verified: { value: true, how: 'test' } }] }))
+    JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: A4_REQS[0], disposition: 'satisfied', verified: { value: true, how: 'test' }, reviewer_reproducible: true }] }))
 })
 dirs.push(c1dir)
 check('C1: aged baseline + MISSING items → MATERIALS COMPLETE preserved, floor does NOT clobber', () => {
@@ -168,7 +168,7 @@ const c2dir = fixture((dir) => {
   write(dir, 'audit-ledger.json', { findings: [] })
   mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
   writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'),
-    JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: A4_REQS[1], disposition: 'satisfied', verified: { value: true, how: 'test' } }] }))
+    JSON.stringify({ entries: [{ ref_type: 'requirement', ref_id: A4_REQS[1], disposition: 'satisfied', verified: { value: true, how: 'test' }, reviewer_reproducible: true }] }))
 })
 dirs.push(c2dir)
 check('C2: single hard-stale req → hard floor does NOT fire (needs ≥2)', () => {
@@ -179,6 +179,76 @@ check('C2: single hard-stale req → hard floor does NOT fire (needs ≥2)', () 
   assert.notEqual(j.band, 'NOT READY', 'one stale req must not trip the hard currency floor on a tiny manifest')
   assert.equal(j.band, 'MATERIALS COMPLETE')
   assert.doesNotMatch(j.gate_reason, /baseline currency:/i)
+})
+
+// ---------------------------------------------------------------------------
+// P1 — THE CREDIT RULE (no self-grading). A requirement counts SATISFIED only on
+// REVIEWER-REPRODUCIBLE evidence; a clear that rests only on the toolkit's own
+// white-box static audit is statically-cleared — never headline credit, never a
+// floor clear. The cold-run regression these guard: an LLM-authored evidence index
+// marked auto-fail classes satisfied from its OWN static audit, inflating SCI 9%→17%.
+function evFixture(applicable, entries, findings = []) {
+  return fixture((dir) => {
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: applicable, elements: [{ type: 'managed-package' }] })
+    write(dir, 'audit-ledger.json', { findings })
+    mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
+    writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'), JSON.stringify({ entries }))
+  })
+}
+
+check('P1a statically-cleared disposition → NOT credited, completeness 0, surfaced separately', () => {
+  const d = evFixture(['r1'], [
+    { ref_type: 'requirement', ref_id: 'r1', disposition: 'statically-cleared', verified: { value: true, how: 'white-box audit only' }, reviewer_reproducible: false, location: 'docs/security-review/audit-report-2026-06-16-pass1.md' },
+  ]); dirs.push(d)
+  const { json } = runSci(d)
+  assert.equal(json.coverage.satisfied, 0, 'static clear must not be SATISFIED')
+  assert.equal(json.coverage.statically_cleared, 1)
+  assert.equal(json.completeness_pct, 0, 'static clear must not inflate the headline %')
+  assert.deepEqual(json.statically_cleared_requirements, ['r1'])
+  assert.notEqual(json.band, 'NO-SURPRISES READY')
+})
+
+check('P1b FAIL CLOSED: satisfied+verified but NO reviewer_reproducible flag → statically-cleared, not credited', () => {
+  const d = evFixture(['r1'], [
+    { ref_type: 'requirement', ref_id: 'r1', disposition: 'satisfied', verified: { value: true, how: 'audit said clean' } },
+  ]); dirs.push(d)
+  const { json } = runSci(d)
+  assert.equal(json.coverage.satisfied, 0, 'a missing reviewer_reproducible flag must NOT credit (the self-grading guard)')
+  assert.equal(json.coverage.statically_cleared, 1)
+  assert.equal(json.completeness_pct, 0)
+})
+
+check('P1c reviewer-reproducible scanner clear → SATISFIED, credited, completeness 100', () => {
+  const d = evFixture(['r1'], [
+    { ref_type: 'requirement', ref_id: 'r1', disposition: 'satisfied', verified: { value: true, how: 'SFGE exit + report on disk' }, reviewer_reproducible: true, location: '.security-review/evidence/code-analyzer-sfge.json' },
+  ]); dirs.push(d)
+  const { json } = runSci(d)
+  assert.equal(json.coverage.satisfied, 1)
+  assert.equal(json.coverage.statically_cleared, 0)
+  assert.equal(json.completeness_pct, 100)
+})
+
+// P1d — the blocker floor. A BLOCKER-severity requirement that is only statically
+// cleared must keep the band BLOCKED; the SAME requirement with reviewer-reproducible
+// scanner evidence clears the floor. Uses a synthetic blocker baseline.
+const blockPlugin = synthPlugin([{ id: 'r-block', sev: 'blocker', verification: 'verified_primary', last_verified: '2026-06-12' }])
+dirs.push(blockPlugin)
+check('P1d blocker floor: statically-cleared blocker stays BLOCKED', () => {
+  const d = evFixture(['r-block'], [
+    { ref_type: 'requirement', ref_id: 'r-block', disposition: 'statically-cleared', verified: { value: true, how: 'audit only' }, reviewer_reproducible: false, location: 'docs/security-review/audit-report.md' },
+  ]); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', blockPlugin)
+  assert.equal(j.blocked, true, 'an audit-only clear must NOT unblock a blocker class')
+  assert.equal(j.band, 'BLOCKED')
+  assert.ok(j.blocker_requirements.includes('r-block'))
+})
+check('P1d blocker floor: reviewer-reproducible scanner clear of the SAME blocker → unblocked', () => {
+  const d = evFixture(['r-block'], [
+    { ref_type: 'requirement', ref_id: 'r-block', disposition: 'satisfied', verified: { value: true, how: 'Code Analyzer clean on disk' }, reviewer_reproducible: true, location: '.security-review/evidence/code-analyzer.html' },
+  ]); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', blockPlugin)
+  assert.equal(j.blocked, false, 'a reviewer-reproducible scanner clear must clear the blocker floor (clean-package path survives)')
+  assert.notEqual(j.band, 'BLOCKED')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
