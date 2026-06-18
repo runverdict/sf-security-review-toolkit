@@ -71,8 +71,21 @@ standing tests in the same changeset. Suite: 11 files/112 checks → **14 files/
 - `plugin.json` → 0.5.5.
 
 ### Validation
-- All 14 standing-test files / 134 checks pass off disk. The cold-run validation of the
-  full credit rule + the shipped engines on a fresh journey (and the tag) is the next step.
+- All 14 standing-test files / 134 checks pass off disk.
+- **Cold-validated (2026-06-18).** A full-surface fixture (managed package + Agentforce +
+  MCP server + external API; ~23 organic planted issues + 5 negative controls) ran the
+  autonomous journey end to end → SCI **BLOCKED 5%** (10 open critical / 42 high). Graded
+  off disk:
+  - **P2 confirmed** — the journey wrote `scope-input.json` + `evidence-input.json` and ran
+    the shipped `harness/` engines; NONE of the three were re-authored into `.security-review/`.
+  - **P1 confirmed** — audit-only clears were registered `statically-cleared` (not credited),
+    `0` satisfied-without-`reviewer_reproducible`; re-deriving `compute-sci` off disk matched
+    the run exactly. The 9%→17% self-grading is closed in a live run.
+  - Recall complete (incl. the git-history secret via the Family-6 scan); precision `0/5` on
+    the negative controls (incl. an injection-resistant prompt template).
+  - **G4 live arm-and-deny** — armed, a Write to `authn-authz-flow.md` was DENIED by the
+    PreToolUse hook (Claude Code discovered + invoked + honored the deny); disarmed, the same
+    write proceeded.
 
 ## [0.5.4] — 2026-06-17
 
