@@ -4,6 +4,24 @@ All notable changes to the sf-security-review-toolkit are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+- **`harness/tool-detect.mjs`** (+ `test-tool-detect.mjs`, 6 checks) — deterministic
+  scan-tool detector: per scan family, which local tools are PRESENT vs
+  installable-on-consent vs owner / owner-portal. Detection only — it never installs or
+  fetches. The foundation for the 0.6.0 preflight auto-gate.
+
+### Roadmap — 0.6.0 preflight auto-gate + consent-gated scanner install (owner-pitched)
+- Specced in **`docs/roadmap-0.6.0-preflight-autogate.md`**. Startup quick-scan (scope +
+  `tool-detect` + `package-readiness` + `sf` auth) → ONE up-front consent gate (full-auto
+  vs guided; install the missing scanners to a tmp dir for the run, removed at cleanup with
+  the evidence kept) → everything downstream "just works" (real DAST/TLS/SAST output instead
+  of PENDING-OWNER-RUN). The network install is the 0.5.4 P0 class → explicit consent only,
+  test-backed + cold-validated before it ships. Honest constraint recorded: the toolkit
+  cannot flip Claude Code's permission mode (shift+tab stays the user's), so it only
+  consolidates its OWN confirmations into the single gate.
+
 ## [0.5.5] — 2026-06-18
 
 The two larger items the 0.5.2 cold run surfaced and 0.5.4 deferred: the SCI must

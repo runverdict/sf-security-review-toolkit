@@ -182,6 +182,7 @@ sf-security-review-toolkit/
 │   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2)
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
+│   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
@@ -195,7 +196,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 14 dependency-free standing tests (134 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 15 dependency-free standing tests (140 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook
