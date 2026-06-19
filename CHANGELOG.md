@@ -67,6 +67,19 @@ follow semantic versioning.
   hermetically (12 checks) + a real Atlas smoke: the engines autonomously stood the Node
   API up (synth secret, `/healthz` 200), then tore it down (container + tmp gone, evidence
   kept, fixture left pristine). This makes the prototype's manual loop real engines.
+- **`harness/run-dast.mjs`** (+ `test-run-dast.mjs`, 4) — the 0.7.0 slice-5 payoff: the
+  autonomous DAST against the throwaway. Runs **digest-pinned ZAP** (`zaproxy/zap-stable@sha256:7c2f…`
+  — the strongest acquisition path: the registry verifies it cryptographically and it bundles
+  the JRE) against the URL `standup-stack` published, writes a host-owned copy of the report
+  to `<repo>/.security-review/evidence/dast/`, and summarizes it by risk. ZAP runs as root and
+  writes its working files root-owned, so the wrk dir lives in its OWN tmp tree and is removed
+  via a throwaway root container — neither the project nor stack-teardown ever chases a
+  root-owned file. Fails closed without consent; pure `planDast` + `summarizeZap` + an impure
+  executor. Validated hermetically (4 checks) + the **full engine-chain Atlas smoke**:
+  `standup-stack → run-dast → teardown-stack` produced a real 10 KB ZAP report (4 alerts —
+  CSP missing, X-Powered-By leak, …), host-owned, kept through teardown, fixture pristine.
+  Unauthenticated baseline this slice; the authenticated, endpoint-fed AF-plan pass (using a
+  token minted from the throwaway's own synthesized secret) is the depth refinement (slice 5b).
 - **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 7 checks) — the
   ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
   the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —

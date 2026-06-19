@@ -179,7 +179,7 @@ a batch of cold-run + truth-audit fixes. 0.5.1 (tagged) proved C1 staleness live
 gate's positive side.**
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 20 standing test files (179 checks)** that fail the build if a
+engines in `harness/` guarded by 21 standing test files (183 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.5.3 — accurate, proactive power-up offers.** The preflight now settles
