@@ -120,6 +120,21 @@ the real ones are now fixed + test-backed:
   (above). Remaining: (5) cold-validate the gate fires once with two distinct consents +
   real Semgrep/OSV/DAST evidence on disk + cleanup removes binaries and keeps evidence → tag.
 
+### Roadmap — 0.7.0 throwaway prod-equivalent DAST harness (owner-pitched)
+- Specced in **`docs/roadmap-0.7.0-throwaway-dast-harness.md`**. The server-tier analogue
+  of the deployed-org deep audit, reusing the 0.6.0 install/cleanup machinery: a third
+  up-front consent ("stand up a throwaway prod-equivalent stack + DAST it? yes/no"; either
+  answer proceeds autonomously, marked toolkit-run vs owner-run), an auto-resolve →
+  clarify loop, and a strict credential contract (discover the env *names* not values;
+  consent to read a declared source else scaffold-an-env-stub + guide + confirm + resume;
+  secret values never persisted, burned at teardown). Organizing principle:
+  *throwaway-everything* — you only ever active-scan your own disposable mirror, never
+  live prod / Salesforce infra / anyone else's. New engines mirror 0.6.0:
+  `stack-detect` ↔ `tool-detect`, `standup-stack` ↔ `install-scanners`,
+  `teardown-stack` ↔ `cleanup-scanners` (asymmetric, guaranteed teardown, keep evidence);
+  ZAP folds in as a Docker-digest scan container. Honest ceiling: prod-equivalence is
+  bounded by the repo's recipe, and the evidence is labelled with the throwaway's fidelity.
+
 ## [0.5.5] — 2026-06-18
 
 The two larger items the 0.5.2 cold run surfaced and 0.5.4 deferred: the SCI must

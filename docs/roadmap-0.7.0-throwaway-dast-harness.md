@@ -1,0 +1,165 @@
+# 0.7.0 — Throwaway prod-equivalent DAST harness (autonomous, consented)
+
+**Status: vision captured, not yet built.** This is the server-tier analogue of the
+deployed-org deep audit, and it reuses the 0.6.0 install/cleanup machinery wholesale.
+Owner-pitched (Aiden); committed here so it stays picked up. Build in slices off the
+0.6.0 engines.
+
+## The vision (owner intent)
+
+> Build it into the up-front gated questions, next to "install scan packages to tmp +
+> run scans? yes/no": a third — "stand up a throwaway prod stack and run DAST against
+> it? yes/no". **Either answer proceeds autonomously** — each task gets marked *toolkit-
+> does-this* or *owner-does-this*. Anything it can't find, it asks a clarifying question.
+> On yes, if it can't find the credentials the stack needs, it asks approval to look for
+> them; if it still can't, it **guides the user to exactly where to drop them** (in the
+> directory/stack it created), the user confirms they're in place, and the autonomous
+> loop **resumes**. Take the manual guesswork out; put the partner in the best possible
+> position for the actual SF review.
+
+## The organizing principle — *throwaway-everything*
+
+The active DAST scanner sends real attack payloads (injections, auth-bypass, fuzzing),
+so the rule is **fire it at a disposable, production-*equivalent* mirror with synthetic/
+no real data, then destroy it** — never live production, never Salesforce's infra
+(`*.salesforce.com` is THEIR pen test and out of bounds), never anyone else's anything.
+**No boundary is crossed because the target is your own crash-test dummy.**
+
+The toolkit already does exactly this on the package side. 0.7.0 makes it symmetric:
+
+| ephemeral target | for | lifecycle |
+|---|---|---|
+| throwaway **scratch org** | the deployed-package audit | stand up → audit → tear down |
+| throwaway **prod-equivalent server** | the external-endpoint DAST | stand up → scan → tear down |
+| **tmp scanner dir** (0.6.0) | running the scanners | install → use → remove (keep evidence) |
+
+All three: ephemeral, consented-because-live, torn down **keeping the evidence**.
+
+## The gate — one up-front matrix of independent consents
+
+Extends the 0.6.0 two-consent gate to three:
+
+1. **Mode** — full-auto vs guided (inferred from phrasing).
+2. **Install scanners to tmp?** — explicit yes (network install; the 0.5.4 P0 class).
+3. **Stand up a throwaway DAST stack + scan it?** — explicit yes (a live op + resource
+   use + an active scan).
+
+**Either answer to (2)/(3) proceeds autonomously.** A *no* marks that work
+`owner-does-this` (DAST stays `PENDING-OWNER-RUN` with the generated plan + the exact
+commands); a *yes* marks it `toolkit-does-this` and the toolkit owns the
+stand-up → scan → teardown. That *toolkit-vs-owner* mark **is** the existing
+"Automated vs. owner-run" honesty recap (CONVENTIONS §2) — the gate answers just decide
+which side of that line each task lands on. The live/network consents are
+explicit-yes-only; silence-is-yes never covers them.
+
+## The autonomous resolve → clarify loop
+
+The whole point is to ask the *minimum*, and only for what genuinely can't be resolved.
+
+1. **Deterministic auto-resolve first (the preflight quick-scan).** Resolve everything
+   the repo/org already states:
+   - the **run recipe** — `docker-compose.yml` / `Dockerfile` / Procfile / a documented
+     start command;
+   - the **web tier** to scan + its port(s);
+   - the **endpoint inventory** — autofilled from the authed org (Remote Site Settings,
+     CSP Trusted Sites, Named-Credential URLs, the MCP registration) + the running
+     instance's routes + the OpenAPI artifact;
+   - the **env requirements** — the *names* of the vars the stack needs (from
+     `.env.example`, compose `environment:` keys, documented vars);
+   - a **test user / token** path for the *authenticated* scan (a seed script, a
+     fixtures user).
+2. **For the unresolvable, clarify — bounded by sensitivity.**
+   - *Non-sensitive* (which compose service is the web tier, which port): infer + flag,
+     or ask one cheap question.
+   - *Sensitive* (credentials/secrets): the special path below. Never guessed, never
+     scraped.
+
+## Credentials — the one part that needs real care (CONVENTIONS §6)
+
+This is a security toolkit; mishandling secrets in the tool that *preps security reviews*
+is the cardinal sin. The contract:
+
+- The toolkit discovers **what** secrets the stack needs (the *names*, from declared
+  sources) — **never the values**, and never by scraping arbitrary locations.
+- It may ask consent to read **one specific declared source** that might hold them
+  (e.g. "may I read `./.env` to populate the throwaway?"). Yes → use them only to run
+  the throwaway, in-memory / in the throwaway's own env. No → the scaffold path:
+- **Scaffold-and-guide-and-resume.** The toolkit writes an **empty env stub** at the
+  throwaway's location, tells the user the **exact keys** to fill and **exactly where**
+  (the path it created), and **waits**. The user drops the values in and confirms. The
+  toolkit re-checks **deterministically** (are the required keys now non-empty?) and
+  **resumes the autonomous loop**.
+- **Secret VALUES are NEVER persisted** into `.security-review/` state, the manifest, the
+  evidence, or the run log — they live only in the throwaway's runtime env, and the
+  throwaway (env and all) is destroyed at teardown. The toolkit refuses to write a
+  captured credential anywhere durable and says where it belongs (env/vault).
+
+This is the honest version of "ask for the credentials": discover the *names*, consent
+to read a *declared* source, else scaffold + guide + confirm + resume — and burn the
+values at teardown.
+
+## Honest boundaries (do not relitigate)
+
+- **Prod-equivalence is bounded by the repo's recipe.** Where real prod leans on external
+  managed services (a hosted DB, third-party APIs), the throwaway is *approximate* — the
+  evidence is **labelled with exactly how faithful the mirror was** (services stubbed,
+  data synthetic). Never claimed as a perfect prod replica.
+- **Isolation.** The throwaway runs in its own network/project, no real data, no link to
+  the partner's real infra; the scan hits localhost / the throwaway's container network.
+- **Guaranteed asymmetric teardown.** The stack is ALWAYS torn down — on success, failure,
+  or abort — keeping the evidence. Never leave a half-built prod stack (with secrets in
+  its env) lying around. Same discipline + safety guards as `cleanup-scanners`
+  (manifest of created resources; refuse to tear down anything not recorded).
+- **Active scan = a consented live op**, even against your own throwaway (resource use +
+  an active scan). But the consent is trivial and there's no staging-vs-prod ambiguity:
+  the toolkit *built* the target as a known-throwaway.
+- **Preparation, not a pass.** Salesforce pen-tests the surface regardless; and the
+  *submitted* DAST evidence must ultimately be production-equivalent — the local
+  throwaway is the toolkit's corroborating evidence + a de-risking dry run + "real DAST
+  on cold runs," never a substitute for the owner's production-equivalent submission scan
+  where the throwaway was only approximate.
+
+## Reusable machinery — the 0.6.0 engines are the template
+
+| 0.6.0 (scanners) | 0.7.0 (the stack) |
+|---|---|
+| `tool-detect.mjs` (what's present/installable) | `stack-detect.mjs` (run recipe + web tier + env-name requirements) |
+| `install-scanners.mjs` (consented, isolated, manifest of created paths, teardown-able) | `standup-stack.mjs` (consented, isolated, manifest of created **resources**: containers/networks/volumes/env-stub, teardown-able) |
+| `cleanup-scanners.mjs` (asymmetric: remove tools, KEEP evidence; refuse unrecorded) | `teardown-stack.mjs` (asymmetric: remove the stack, KEEP evidence; refuse unrecorded; guaranteed on abort) |
+| the single consent gate | + the third consent |
+| ZAP via **Docker digest** | the scan container in the throwaway's network (strongest pin + bundles the JRE — folds in instead of a one-off install) |
+
+The safety disciplines transfer verbatim: a manifest of exactly what was created, an
+`assertSafe*` guard so teardown can never touch anything it didn't make, fail-closed on a
+malformed manifest, and "keep the evidence" as a structural invariant.
+
+## Build order (slices — each test-backed + committed, off the 0.6.0 base)
+
+1. **Endpoint-discovery autofill** — populate the DAST/TLS plan targets from the authed
+   org + routes + OpenAPI (cheap, pure win; no stand-up needed).
+2. **`stack-detect.mjs`** — deterministic: run recipe present? web tier + ports? required
+   env-var *names*? → `runnable | needs-recipe | needs-secrets | n/a`. (mirrors
+   `tool-detect`/`package-readiness`.) + test.
+3. **`standup-stack.mjs` + `teardown-stack.mjs`** — the scratch-org analogue for the
+   server: consented, isolated stand-up with a created-resource manifest; guaranteed
+   asymmetric teardown. + tests (hermetic: a trivial compose stack stood up + torn down,
+   evidence-dir survives, unrecorded resources untouched).
+4. **Gate third-consent + the toolkit-vs-owner marking** wired into the journey preflight.
+5. **DAST against the throwaway** — ZAP (Docker digest) + nuclei + schemathesis driven
+   from the autofilled plan against the stand-up; evidence under
+   `.security-review/evidence/dast/`, labelled with the throwaway's fidelity.
+6. **The credential scaffold-and-guide-and-resume loop** — the §"Credentials" contract,
+   with the deterministic "keys now non-empty?" re-check that resumes the loop. + test.
+7. **Cold-validate against `~/srt-coldstart-full` (Atlas)** — its external Node/Python API
+   stood up as a throwaway → real ZAP/nuclei/schemathesis evidence on disk → torn down,
+   evidence kept. Pre-committed pass condition; grade cold off disk → tag.
+
+## Open questions to settle during the build
+
+- **Stand-up engine vs detect-only first**: starting a stack is intrusive/fragile vs
+  detecting an already-running local instance. Likely: detect-running → else offer
+  consented stand-up where a recipe exists → else owner-run. Decide per slice 3.
+- **ZAP acquisition** (Docker-digest vs TOFU-zip vs owner-run) is subsumed here: if the
+  throwaway is containerized, Docker-digest ZAP is the natural, strongest-integrity fit.
+- **Fidelity labelling vocabulary** — how the evidence states "DB synthetic, payment API
+  stubbed, auth real" so the owner knows what their production scan still must cover.
