@@ -7,6 +7,21 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **`harness/namespace-check.mjs`** (+ `test-namespace-check.mjs`, 3 checks) — the 0.7.2
+  deployed-org deep-audit BUILD precondition (a real cold run surfaced the gap; Aiden caught
+  it). When `package-readiness = needs-build`, the gate offered "build a managed 2GP first,
+  then deep-audit" **without checking the package's namespace is registered to the authed
+  Dev Hub** — so for a fictional-namespace fixture it offered a build that would fail at
+  `sf package version create` AND mutate the repo with packaging scaffolding first. Now the
+  gate confirms feasibility before asking: a namespace is **confirmed-buildable iff an authed
+  org carries that `namespacePrefix`** (no CLI lists a Dev Hub's namespace registries
+  cleanly, so this is the honest positive signal), and the build is offered ONLY on
+  confirmation. It errs **conservative** — unconfirmed = "register + link it first," **never
+  a false 'impossible'**. No namespace-corruption risk (a build *uses* a registered
+  namespace, never registers/hijacks one; it operates on the package's own declared ns).
+  Pure `classifyNamespace` + impure `namespaceStatus`. Validated live: Atlas (`atlas`,
+  unregistered) → not-confirmed + the prereq; a `verdict`-namespace repo → buildable.
+  `plugin.json` → 0.7.2.
 - **`harness/docker-check.mjs`** (+ `test-docker-check.mjs`, 2 checks) — the 0.7.1
   throwaway-DAST environment prerequisite. The containerized throwaway (standup-stack +
   run-dast) needs Docker; this reports `available | absent | daemon-down` so the gate

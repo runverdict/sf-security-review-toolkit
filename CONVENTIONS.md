@@ -213,13 +213,14 @@ sf-security-review-toolkit/
 │   ├── run-dast.mjs                 # 0.7.0 slice 5: autonomous DAST — digest-pinned ZAP vs the throwaway's URL → host-owned evidence; fails closed w/o consent; cleans its own root-owned wrk
 │   ├── scaffold-env.mjs             # 0.7.0 slice 6: credential scaffold-and-guide loop — env stub (tmp, never the repo) + deterministic filled-check; standup loads it via docker --env-file
 │   ├── docker-check.mjs             # 0.7.1: throwaway-DAST docker prerequisite (available|absent|daemon-down) — gate offers only when runnable; engines fail with an honest install hint (docker is GUIDED, never tmp-installed)
+│   ├── namespace-check.mjs          # 0.7.2: deep-audit BUILD precondition (buildable iff an authed org carries the pkg namespacePrefix) — gate offers the build only when confirmed, else shows the prereq
 │   └── zap/{README.md, zap-plan-template.yaml}   # authenticated DAST plan generator assets
 ├── acceptance/                      # the acceptance + standing-test harness
 │   ├── generate-fixture.mjs         # builds the synthetic "Helios" fixture on demand (never committed)
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 23 dependency-free standing tests (192 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 24 dependency-free standing tests (195 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

@@ -201,10 +201,18 @@ missing or a key piece of the architecture was misread.
      scratch org and audit the **deployed** package (what the Salesforce reviewer
      actually does)? It's a live op, so it pauses for your explicit yes." On yes,
      run the §3 deep-audit composition end to end — no further mid-run interruption.
-   - `sf` authed **AND `package-readiness` = `needs-build`** → say it plainly, do
-     NOT call it ready: "a deployed-org deep audit needs an installable version,
-     and there isn't one yet (`<package-readiness reason>`) — want me to
-     `build-managed-package` first, then deep-audit?" (a bigger, live operation).
+   - `sf` authed **AND `package-readiness` = `needs-build`** → before offering the
+     build, **confirm the build can actually succeed**:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/namespace-check.mjs --target <target> --json`
+     verifies the package's namespace is registered to the authed Dev Hub (a managed 2GP
+     build fails at `sf package version create` otherwise — AND would mutate the repo with
+     packaging scaffolding first). Only offer the build on `buildable:true`: "a deployed-org
+     deep audit needs an installable version, and there isn't one yet
+     (`<package-readiness reason>`) — want me to `build-managed-package` first, then
+     deep-audit?" If `buildable:false`, do **NOT** ask the yes/no — surface the precondition
+     honestly instead (`<namespace-check reason>`: e.g. "sf is authed, but namespace `atlas`
+     isn't registered to your Dev Hub, so a build can't succeed — register + link it first").
+     Same proactive-accuracy rule as `package-readiness`: never offer a step that can't run.
    - **`package-readiness` = `no-package`**, or no `sf` auth → the deep audit is
      N/A (nothing to install) or needs `sf` first; offer "install + authenticate
      `sf` so I can audit the deployed package and auto-resolve endpoint/permission/
@@ -277,9 +285,10 @@ missing or a key piece of the architecture was misread.
      • <only if a genuinely audit-blocking gap exists; otherwise: "none">
 
    ✦ OPTIONAL POWER-UPS (proactive + accurate; a LIVE power-up runs only on your explicit yes)
-     • Deployed-org deep audit — <READY (installable) → "run it?"  |  needs-build
-       (<reason from package-readiness>) → "build first, then deep-audit?"  |  N/A
-       (no installable package / no sf auth)>
+     • Deployed-org deep audit — <READY (installable) → "run it?"  |  needs-build +
+       namespace registered → "build first, then deep-audit?"  |  needs-build + namespace
+       NOT registered → "can't build: namespace not linked to your Dev Hub — register first"
+       (no yes/no)  |  N/A (no installable package / no sf auth)>
      • <live probe / install-sf — generated from what was sensed>
 
    ── THE SINGLE GATE (distinct consents — decide once, up front) ──
