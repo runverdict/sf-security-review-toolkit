@@ -168,10 +168,12 @@ export function assertSafeTmpRoot(tmpRoot) {
   const under = ALLOWED_BASES.some((b) => p === b || p.startsWith(b + sep))
   if (!under) throw new Error(`unsafe tmp root (outside ${ALLOWED_BASES.join(' / ')}): '${p}'`)
   if (ALLOWED_BASES.includes(p)) throw new Error(`unsafe tmp root (is a base dir, not a sub-path): '${p}'`)
-  // Reject the bare grouping container itself — a real per-run root always has a
-  // run-id segment AFTER it; targeting the group dir would remove sibling runs.
-  if (segs[segs.length - 1] === GROUP_DIR) {
-    throw new Error(`unsafe tmp root (is the shared '${GROUP_DIR}' grouping dir, not a per-run sub-path): '${p}'`)
+  // Reject the bare grouping container itself — a real per-run root always has a run-id
+  // segment AFTER it; targeting the group dir would remove sibling runs. Covers every
+  // sf-srt-* grouping tree (scanners / stack / dast / net), not just the scanner one
+  // (audit: the 0.7.0 stack/dast trees were unboxed).
+  if (/^sf-srt-(scanners|stack|dast|net)$/.test(segs[segs.length - 1])) {
+    throw new Error(`unsafe tmp root (is a shared 'sf-srt-*' grouping dir, not a per-run sub-path): '${p}'`)
   }
   return p
 }

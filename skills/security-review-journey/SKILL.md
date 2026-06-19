@@ -371,16 +371,25 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    standup> --target <target>` (digest-pinned ZAP → real evidence under `evidence/dast/`) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-stack.mjs --target <target>` (destroy the
    throwaway, keep the evidence). **ALWAYS run teardown, even on failure/abort** — never
-   leave a stack (with secrets in its env) up. Label the evidence as **local-throwaway**
+   leave a stack (with secrets in its env) up. As a backstop against a crash between
+   processes, run `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-stack.mjs --sweep` at the
+   START of any throwaway-DAST run (and in `stay-listed`) — it removes every orphaned
+   `sf-srt-stack-*` container + tmp tree from a prior crashed run (name-scoped; evidence
+   untouched). Label the evidence as **local-throwaway**
    (corroborating + a de-risking dry run), NOT the production-equivalent submission scan.
-   If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first:
+   If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
+   ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
+   the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):
+   pick `<id>`, then
    `node ${CLAUDE_PLUGIN_ROOT}/harness/scaffold-env.mjs --target <target> --run-id <id>`
-   writes an env STUB in the throwaway's tmp dir (NEVER the repo) naming the external
-   creds; tell the operator to fill it, then re-check with `--check` (deterministic — a
-   key counts filled only with a non-empty, non-placeholder value); on `ready`, stand up
-   with `standup-stack.mjs … --env-file <stub>` (docker loads the values straight into the
-   container — they never touch argv, the manifest, or `.security-review/`, and the tmp dir
-   is destroyed at teardown). If `needs-recipe`/`n/a`, or the consent was declined, DAST
+   writes the env STUB at `/tmp/sf-srt-stack/<id>/throwaway.env` (NEVER the repo) naming the
+   external creds; tell the operator to fill it, then re-check with the same `--run-id <id>
+   --check` (deterministic — a key counts filled only with a non-empty, non-placeholder
+   value); on `ready`, stand up with `standup-stack.mjs --run-id <id> --env-file
+   /tmp/sf-srt-stack/<id>/throwaway.env …` (standup re-verifies the file is filled, then
+   docker loads the values straight into the container — they never touch argv, the manifest,
+   or `.security-review/`; the whole `/tmp/sf-srt-stack/<id>/` tree, stub included, is
+   destroyed at teardown). If `needs-recipe`/`n/a`, or the consent was declined, DAST
    stays owner-run — emit the ZAP plan into `PENDING-OWNER-RUN.md`, no stand-up.
 
 6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**

@@ -109,6 +109,40 @@ follow semantic versioning.
   nothing-to-clean) + a live install→evidence→cleanup roundtrip (tmp removed, a 75-byte
   evidence file survived byte-for-byte).
 
+### Hardened (post-build adversarial audit of the 0.7.0 throwaway-DAST engines)
+A 4-lens adversarial Workflow (credential-leak, docker-safety, honesty/teardown, wiring)
+over the new engines surfaced 12 confirmed findings — several HIGH on this higher-stakes
+surface (docker + credentials + active scanning). All fixed + test-backed + re-smoked on Atlas:
+- **HIGH — credential leak via `docker logs`.** On a failed stand-up `standup-stack` captured
+  the partner app's boot output (`docker logs`) into the manifest + stdout — an operator-filled
+  external secret echoed at boot (a DSN with a password on a connect error) would land in a
+  state file, violating the NAMES-only contract. The capture is REMOVED; on failure the engine
+  records only a generic toolkit message, never partner output.
+- **HIGH — `run-dast` now enforces a LOOPBACK target.** `planDast` parses the base url and
+  fails closed on any non-loopback host (`refusing to active-scan a non-loopback host …`), so
+  an active scan can only ever hit a local throwaway — never live prod, a remote host, or
+  Salesforce infra. (Validated: it refuses `https://api.example.com`.)
+- **HIGH — secrets off the docker argv.** Synth secret values were passed as `-e KEY=value`
+  (visible in `ps`); they now go through a `0600` `--env-file` in the tmp dir alongside the
+  operator-filled externals — no secret value ever reaches argv.
+- **HIGH — guaranteed teardown.** A signal-handler safety net (`SIGINT`/`SIGTERM`/uncaught) in
+  `standup-stack` removes the container if its own process is interrupted, and a new
+  `teardown-stack --sweep` (name-scoped) removes every orphaned `sf-srt-stack-*` container +
+  tmp tree from a crashed prior run — the engine-backed backstop the journey runs at start.
+- **HIGH — needs-secrets run-id threading.** The journey now threads ONE run-id through
+  scaffold-env → standup → teardown so the filled secret stub lives in the tmp tree teardown
+  destroys (a different run-id would have orphaned it); `standup-stack` re-runs the deterministic
+  `envStatus` and refuses to stand up on an unfilled env-file.
+- **MEDIUM — orphan-on-failure + evidence honesty + grouping guard.** The name-stub manifest is
+  written BEFORE `docker create` (deterministic names) so a crash is always teardown-able; DAST
+  evidence is renamed `zap-throwaway-local-*.json` with a `README-throwaway-dast.md` stating it
+  is NOT the production-equivalent submission scan; `assertSafeTmpRoot` now boxes the
+  `sf-srt-stack`/`sf-srt-dast`/`sf-srt-net` grouping dirs too (not just `sf-srt-scanners`).
+- **LOW — port validation** (`planStandup` rejects a non-1..65535 port).
+- New/extended standing tests lock the fixes (loopback refusal, port validation, the four
+  grouping-dir rejections, the sweep, the unfilled-env-file refusal). Suite **22 files /
+  187 → 190 checks**, all green; the full hardened chain re-smoked on Atlas end-to-end.
+
 ### Hardened (post-build adversarial audit of the 0.6.0 install/cleanup engines)
 A 4-lens adversarial Workflow (supply-chain, rm-safety, honesty, wiring) over the new
 engines surfaced 13 LOW latent findings (none exploitable today — all pin-/consent-gated);

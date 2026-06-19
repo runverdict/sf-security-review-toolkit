@@ -17,8 +17,9 @@
  *
  * USAGE: node teardown-stack.mjs [--target <repo>] [--manifest <file>] [--run-id <id>] [--json]
  */
-import { readFileSync, writeFileSync, existsSync, rmSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, rmSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
@@ -95,9 +96,41 @@ export function teardownStack(opts = {}) {
   }
 }
 
+const runOut = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return '' } }
+
+/**
+ * SWEEP: remove EVERY toolkit throwaway container + tmp tree (orphan cleanup from a crashed
+ * run where the same-run teardown never fired). Name-scoped — only ever touches
+ * `sf-srt-stack-*` containers and `/tmp/sf-srt-{stack,dast}/*` trees, never anything else;
+ * evidence (in the repo) is untouched. This is the engine-backed backstop for the "always
+ * tear down" guarantee an LLM-orchestrated multi-process run can't make on its own.
+ */
+export function sweepStacks() {
+  const removed = []
+  for (const n of runOut('docker', ['ps', '-aq', '--filter', 'name=sf-srt-stack-', '--format', '{{.Names}}']).split('\n').filter(Boolean)) {
+    if (NAME_OK.test(n)) { quiet('docker', ['rm', '-f', n]); removed.push(`container:${n}`) }
+  }
+  for (const img of runOut('docker', ['images', '--filter', 'reference=sf-srt-stack-*', '--format', '{{.Repository}}:{{.Tag}}']).split('\n').filter(Boolean)) {
+    if (NAME_OK.test(img)) { quiet('docker', ['rmi', '-f', img]); removed.push(`image:${img}`) }
+  }
+  for (const group of [join(tmpdir(), 'sf-srt-stack'), join(tmpdir(), 'sf-srt-dast')]) {
+    let subs = []; try { subs = readdirSync(group) } catch {}
+    for (const s of subs) {
+      const d = join(group, s)
+      try { assertSafeTmpRoot(d); rmSync(d, { recursive: true, force: true }); removed.push(`tmp:${d}`) } catch { /* skip anything not a safe per-run dir */ }
+    }
+  }
+  return { status: removed.length ? 'swept' : 'already-clean', removed }
+}
+
 function main() {
   const argv = process.argv
   const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
+  if (argv.includes('--sweep')) {
+    const s = sweepStacks()
+    process.stdout.write((argv.includes('--json') ? JSON.stringify(s, null, 2) : `## teardown-stack --sweep — ${s.status}${s.removed.length ? ': ' + s.removed.join(', ') : ''}`) + '\n')
+    return
+  }
   const r = teardownStack({ target: arg('--target', null), manifestPath: arg('--manifest', null), runId: arg('--run-id', null) })
   if (argv.includes('--json')) { process.stdout.write(JSON.stringify(r, null, 2) + '\n'); process.exitCode = (r.status === 'refused' || r.status === 'error') ? 2 : 0; return }
   const L = ['## teardown-stack']

@@ -22,23 +22,33 @@ const check = (name, fn) => { try { fn(); pass++; console.log(`  ✓ ${name}`) }
 const TMP = join(tmpdir(), 'sf-srt-dast', 'd1')
 console.log('run-dast standing test')
 
-check('D1 planDast: digest-pinned image + correct ZAP command + paths', () => {
+check('D1 planDast: digest-pinned image + correct ZAP command + self-labelled local evidence', () => {
   const p = planDast('http://127.0.0.1:8080', { target: '/repo', runId: 'd1', tmpRoot: TMP })
   assert.equal(p.image, `${ZAP_IMAGE}@${ZAP_DIGEST}`)
   assert.match(p.image, /@sha256:[0-9a-f]{64}$/)            // pinned by digest, not a tag
   assert.ok(p.dockerArgs.includes('--network'))            // reaches the host-published port
   assert.ok(p.dockerArgs.includes('zap-baseline.py'))
   assert.ok(p.dockerArgs.includes('http://127.0.0.1:8080'))
-  assert.equal(p.evidencePath, join('/repo', '.security-review', 'evidence', 'dast', 'zap-baseline-d1.json'))
-  // the report is written under the dast tmp (root-owned), copied to the project
+  // evidence self-identifies as a LOCAL THROWAWAY scan, not a production submission scan
+  assert.equal(p.evidencePath, join('/repo', '.security-review', 'evidence', 'dast', 'zap-throwaway-local-d1.json'))
   assert.equal(p.reportInWrk, join(TMP, 'report.json'))
 })
 
-check('D2 planDast validates base url + run-id', () => {
+check('D2 planDast validates base url + run-id (loopback host)', () => {
   assert.throws(() => planDast('not-a-url', { target: '/r', runId: 'x', tmpRoot: TMP }), /invalid base url/)
   assert.throws(() => planDast('ftp://x', { target: '/r', runId: 'x', tmpRoot: TMP }), /invalid base url/)
-  assert.throws(() => planDast('http://x', { target: '/r', runId: '', tmpRoot: TMP }), /invalid run-id/)
-  assert.throws(() => planDast('http://x', { target: '', runId: 'x', tmpRoot: TMP }), /target repo required/)
+  assert.throws(() => planDast('http://127.0.0.1', { target: '/r', runId: '', tmpRoot: TMP }), /invalid run-id/)
+  assert.throws(() => planDast('http://localhost', { target: '', runId: 'x', tmpRoot: TMP }), /target repo required/)
+})
+
+check('D2b planDast REFUSES a non-loopback target (the active scan may only hit a local throwaway)', () => {
+  for (const bad of ['http://example.com', 'https://api.partner.com/v1', 'http://10.0.0.5:8080', 'http://verdict.my.salesforce.com']) {
+    assert.throws(() => planDast(bad, { target: '/r', runId: 'd2b', tmpRoot: TMP }), /non-loopback host/, `should refuse ${bad}`)
+  }
+  // loopback forms are accepted
+  for (const ok of ['http://127.0.0.1:8080', 'http://localhost:3000', 'http://127.5.5.5', 'http://[::1]:9000']) {
+    assert.doesNotThrow(() => planDast(ok, { target: '/r', runId: 'd2b', tmpRoot: TMP }))
+  }
 })
 
 check('D3 summarizeZap: counts by risk + total + top', () => {

@@ -74,6 +74,13 @@ check('U6 the plan carries only synth env NAMES, never secret values', () => {
   assert.ok(!/[0-9a-f]{48}/.test(blob), 'no synthesized secret value should be in the plan')
 })
 
+check('U8 planStandup rejects an invalid port (NaN / out of range)', () => {
+  for (const bad of ['abc', '0', '70000', '-1']) {
+    assert.throws(() => planStandup(runnable, { runId: 'u8', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u8'), port: bad }), /invalid port/)
+  }
+  assert.equal(planStandup(runnable, { runId: 'u8', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u8'), port: '3000' }).port, 3000)
+})
+
 check('U7 needs-secrets stands up ONLY with a filled --env-file (the scaffold-env loop)', () => {
   const needsSecrets = {
     status: 'needs-secrets', recipe: { kind: 'node', root: 'api', entry: 'index.js' },

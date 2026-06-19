@@ -137,9 +137,11 @@ check('P5 assertSafeTmpRoot rejects dangerous roots (incl. the shared group dir)
   }
   // the temp dir base itself is rejected (must be a sub-path, not the base)
   assert.throws(() => assertSafeTmpRoot(tmpdir()), /unsafe tmp root/)
-  // the SHARED grouping dir is rejected — a degenerate run-id collapsing onto it must
-  // not become an rm -rf target that nukes concurrent runs (audit #8)
-  assert.throws(() => assertSafeTmpRoot(join(tmpdir(), 'sf-srt-scanners')), /grouping dir/)
+  // the SHARED grouping dirs are rejected — a degenerate run-id collapsing onto one must
+  // not become an rm -rf target that nukes concurrent runs (audit #8 + the 0.7.0 trees)
+  for (const g of ['sf-srt-scanners', 'sf-srt-stack', 'sf-srt-dast', 'sf-srt-net']) {
+    assert.throws(() => assertSafeTmpRoot(join(tmpdir(), g)), /grouping dir/, `should reject the bare ${g} group dir`)
+  }
   // a boxed per-run path is accepted
   assert.equal(assertSafeTmpRoot(join(tmpdir(), 'sf-srt-scanners', 'abc')), join(tmpdir(), 'sf-srt-scanners', 'abc'))
 })

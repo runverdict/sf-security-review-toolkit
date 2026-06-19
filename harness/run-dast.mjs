@@ -37,14 +37,25 @@ export const ZAP_DIGEST = 'sha256:7c2f8afc893e4e4000be8ad3fd22013fc36e5cce593593
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const URL_OK = /^https?:\/\/\S+$/i // http(s):// + a non-empty, space-free authority/path
 
+/** Loopback-only hosts — an active DAST may ONLY ever hit a local throwaway. */
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
+
 /** PURE. Compute the ZAP scan plan. Deterministic given (baseUrl, target, runId, tmpRoot). */
 export function planDast(baseUrl, { target, runId, tmpRoot } = {}) {
   if (!URL_OK.test(String(baseUrl || ''))) throw new Error(`planDast: invalid base url '${baseUrl}'`)
+  // HARD: the active scan must target a LOOPBACK throwaway only — never live prod, a remote
+  // host, or Salesforce infra. Fail closed on anything else (audit: loopback enforcement).
+  let host
+  try { host = new URL(baseUrl).hostname } catch { throw new Error(`planDast: unparseable base url '${baseUrl}'`) }
+  if (!LOOPBACK.has(host) && !/^127\./.test(host)) {
+    throw new Error(`run-dast: refusing to active-scan a non-loopback host '${host}' — the DAST may only hit a local throwaway, never a live/remote target. (got ${baseUrl})`)
+  }
   if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`planDast: invalid run-id '${runId}'`)
   if (!target) throw new Error('planDast: target repo required')
   assertSafeTmpRoot(tmpRoot)
   const image = `${ZAP_IMAGE}@${ZAP_DIGEST}`
-  const reportName = `zap-baseline-${runId}.json`
+  // self-identifying name: this is a LOCAL THROWAWAY scan, not the production-equivalent submission scan.
+  const reportName = `zap-throwaway-local-${runId}.json`
   const evidenceDir = join(target, '.security-review', 'evidence', 'dast')
   return {
     schema: 'sf-srt-dast/1', runId, baseUrl, image,
@@ -93,6 +104,18 @@ export function runDast(plan, { consent = false } = {}) {
     if (!existsSync(plan.reportInWrk)) { rec.status = 'failed'; rec.log = `ZAP produced no report — ${rec.log}`.slice(-1500); return rec }
     copyFileSync(plan.reportInWrk, plan.evidencePath) // root-readable → host-owned copy in the project
     rec.evidencePath = plan.evidencePath
+    // self-labelling note so this is never mistaken for the production-equivalent submission scan.
+    try {
+      writeFileSync(join(plan.evidenceDir, 'README-throwaway-dast.md'),
+        '# Throwaway DAST evidence — LOCAL, not production-equivalent\n\n' +
+        `The \`zap-throwaway-local-*.json\` reports here were produced by a digest-pinned ZAP\n` +
+        `scan against a disposable throwaway the toolkit stood up locally (${plan.baseUrl}).\n\n` +
+        'This is the toolkit\'s **corroborating** DAST + a de-risking dry run. It is NOT a\n' +
+        'substitute for the **production-equivalent** DAST the Salesforce submission requires\n' +
+        '(debug off, same hardening, same edge), nor for Salesforce\'s own penetration test.\n' +
+        'Fidelity is bounded by the repo\'s run recipe — where prod depends on external managed\n' +
+        'services, the throwaway only approximates it.\n')
+    } catch { /* note is best-effort */ }
     try { rec.summary = summarizeZap(JSON.parse(readFileSync(plan.evidencePath, 'utf8'))) } catch (e) { rec.summary = { error: String(e.message) } }
     rec.status = 'done'
   } catch (e) {

@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertStackName, planTeardown, teardownStack } from '../harness/teardown-stack.mjs'
+import { assertStackName, planTeardown, teardownStack, sweepStacks } from '../harness/teardown-stack.mjs'
 
 let pass = 0, fail = 0
 const dirs = []
@@ -68,6 +68,15 @@ check('T6 teardownStack: --target with no pointer → nothing-to-tear-down', () 
   const b = box()
   const r = teardownStack({ target: b })
   assert.equal(r.status, 'nothing-to-tear-down')
+})
+
+check('T7 sweepStacks: name-scoped orphan cleanup, structured result, never throws', () => {
+  // hermetic: with no toolkit containers/tmp present, sweep is a clean no-op — it only ever
+  // targets sf-srt-stack-* names + /tmp/sf-srt-{stack,dast}/* trees, never anything else.
+  const r = sweepStacks()
+  assert.ok(['swept', 'already-clean'].includes(r.status), JSON.stringify(r))
+  assert.ok(Array.isArray(r.removed))
+  for (const item of r.removed) assert.match(item, /^(container|image|tmp):/) // strictly toolkit-named
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

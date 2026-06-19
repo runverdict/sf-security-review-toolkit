@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
+import { envStatus } from './scaffold-env.mjs'
 
 export const STACK_SCHEMA = 'sf-srt-stack/1'
 export const NAME_PREFIX = 'sf-srt-stack'
@@ -62,6 +63,9 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
   const recipe = stack.recipe || {}
   const names = stackNames(runId)
   const webPort = Number(port || (stack.webTier && stack.webTier.port) || 8080)
+  if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
+    throw new Error(`planStandup: invalid port '${port || (stack.webTier && stack.webTier.port)}'`)
+  }
   if (recipe.kind !== 'node') {
     return { schema: STACK_SCHEMA, runId, unsupported: recipe.kind || 'unknown',
       reason: `standup of a '${recipe.kind}' recipe is a later slice; this slice stands up 'node' (copy-in) only` }
@@ -128,21 +132,48 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   if (consent !== true) {
     throw new Error('standup-stack: refusing to stand up a live container without explicit consent (a live op + active scan). Pass --consent.')
   }
+  // needs-secrets: the supplied env-file must actually be FILLED (deterministic re-check),
+  // not merely present — else we'd stand up with empty externals (audit: unfilled-env-file).
+  if (plan.envFile) {
+    const content = existsSync(plan.envFile) ? readFileSync(plan.envFile, 'utf8') : ''
+    const st = envStatus(content, plan.externalEnvNames || [])
+    if (!st.ready) return { status: 'needs-secrets', reason: `env-file is missing ${st.missing.join(', ') || '(file absent)'} — fill it (scaffold-env) before stand-up`, resources: { container: plan.container, image: null, network: null } }
+  }
+
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
-  // Synthesize secret VALUES now (runtime only — never persisted to the plan/manifest).
-  const envArgs = []
-  for (const [k, v] of Object.entries(plan.benignEnv)) envArgs.push('-e', `${k}=${v}`)
-  for (const n of plan.synthEnvNames) envArgs.push('-e', `${n}=${randomBytes(24).toString('hex')}`)
+
+  // Secret VALUES go via env-FILEs, never the docker argv — so they don't appear in host
+  // process listings (audit: no secret on argv). The synth file lives in tmpRoot (0600),
+  // destroyed at teardown. The operator-filled external file (if any) is a second --env-file.
+  mkdirSync(plan.tmpRoot, { recursive: true, mode: 0o700 })
+  const synthFile = join(plan.tmpRoot, '.synth.env')
+  writeFileSync(synthFile, [
+    ...Object.entries(plan.benignEnv).map(([k, v]) => `${k}=${v}`),
+    ...plan.synthEnvNames.map((n) => `${n}=${randomBytes(24).toString('hex')}`),
+  ].join('\n') + '\n', { mode: 0o600 })
+  const fileArgs = ['--env-file', synthFile]
+  if (plan.envFile && existsSync(plan.envFile)) fileArgs.push('--env-file', plan.envFile)
+
+  // Name-stub manifest written BEFORE create (names are deterministic) so a create/start
+  // crash is still teardown-able — never orphan a secret-bearing container (audit: orphan).
+  writeManifest(plan, rec, target)
+
+  // Best-effort teardown safety net for THIS process's synchronous window: a SIGINT/SIGTERM/
+  // fatal between create and teardown must not leave a secret-bearing container up (audit:
+  // guaranteed teardown). teardown-stack remains the authoritative removal.
+  const cleanup = () => { try { execFileSync('docker', ['rm', '-f', plan.container], { stdio: 'ignore' }) } catch {} }
+  const handlers = {
+    SIGINT: () => { cleanup(); process.exit(130) },
+    SIGTERM: () => { cleanup(); process.exit(143) },
+    uncaughtException: (e) => { cleanup(); throw e },
+  }
+  for (const [s, h] of Object.entries(handlers)) process.on(s, h)
   try {
     quiet('docker', ['rm', '-f', plan.container]) // clear any stale same-name container
-    // operator-filled external creds: docker reads the file directly (values never in argv).
-    const fileArgs = plan.envFile && existsSync(plan.envFile) ? ['--env-file', plan.envFile] : []
     // COPY-IN, not bind-mount: create → cp source → start (working tree stays in the container).
     run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
-      ...envArgs, ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
-    // manifest is written NOW (container exists) so even a crashed start is teardown-able.
-    writeManifest(plan, rec, target)
+      ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
     run('docker', ['cp', `${plan.sourceDir}/.`, `${plan.container}:${plan.workdir}`])
     run('docker', ['start', plan.container])
     rec.status = 'starting'
@@ -150,16 +181,20 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     let up = false
     while (Date.now() < deadline) {
       if (listening(plan.baseUrl + '/healthz') || listening(plan.baseUrl + '/')) { up = true; break }
-      // bail early if the container already died
       const running = (() => { try { return run('docker', ['inspect', '-f', '{{.State.Running}}', plan.container]).trim() === 'true' } catch { return false } })()
       if (!running) break
       execFileSync('sleep', ['1'])
     }
     rec.status = up ? 'up' : 'failed'
-    if (!up) { try { rec.log = run('docker', ['logs', '--tail', '30', plan.container]).slice(-1500) } catch {} }
+    // We deliberately do NOT capture `docker logs`: partner app boot output can echo
+    // operator-filled secrets, and persisting it would violate the NAMES-only contract
+    // (audit: container-log leak). rec.log carries only this toolkit message.
+    if (!up) rec.log = 'stand-up failed: the web tier did not become reachable in time (run `docker logs` yourself while the container exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
   } catch (e) {
     rec.status = 'failed'
-    rec.log = `${rec.log}\n${String(e && e.message || e)}`.trim().slice(-1500)
+    rec.log = 'stand-up failed during a docker step (the toolkit does not capture container output, to avoid persisting secrets)'
+  } finally {
+    for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }
   return writeManifest(plan, rec, target)
 }
