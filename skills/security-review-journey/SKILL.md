@@ -160,6 +160,17 @@ missing or a key piece of the architecture was misread.
    the first time — which families would go from `PENDING-OWNER-RUN` to real evidence
    if the operator consents to a tmp install. Detection only; it never fetches.
 
+   **And run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/stack-detect.mjs --target <target> --json`** —
+   the deterministic throwaway-DAST-target detector. If the repo has an external backend
+   it reports whether it can be stood up as a disposable, prod-equivalent throwaway for
+   an **autonomous active DAST** (`runnable | needs-recipe | needs-secrets | n/a`) and
+   classifies the env it needs (synthesizable secrets the toolkit fabricates vs external
+   creds the owner must supply). Gather this HERE so the gate's third consent (Step 5 +
+   the report) is accurate: `runnable` → "stand it up + DAST it?"; `needs-secrets` →
+   "…after you drop these creds where I scaffold them"; `needs-recipe`/`n/a` → DAST stays
+   owner-run. Detection only; it stands up nothing here.
+
 5. **Classify every needed input into exactly one tier, and per applicable
    dimension assign GREEN/YELLOW/RED audit-readiness.** The classification rule
    is the whole reason this can be autonomous: block **only** on
@@ -214,6 +225,21 @@ missing or a key piece of the architecture was misread.
      outer tool call, so its pip/curl/git/npm subprocesses run unprompted under it),
      and tears them down with `cleanup-scanners.mjs` at the end (tools removed, evidence
      kept). On no / silence, install nothing — `run-scans` keeps its hard boundary.
+   - **`stack-detect` = `runnable` → the throwaway-DAST consent (the gate's third
+     distinct consent).** Also explicit-yes-only — standing up a container + running an
+     ACTIVE scan is a live op. The active scan only ever hits a **disposable mirror the
+     toolkit stands up** (never live prod, never Salesforce infra, never anyone else's),
+     so there's no boundary to cross — but it's a live op + resource use, so it needs a
+     real yes. Offer it once: "stand up your external backend as an isolated throwaway
+     (synthetic secrets I generate), run a real DAST against it, keep the evidence, and
+     destroy it? Local-throwaway evidence is the toolkit's corroborating DAST + a
+     de-risking dry run — NOT a substitute for the production-equivalent scan the
+     submission ultimately needs." On yes, the run invokes the engine chain
+     `standup-stack.mjs --consent` → `run-dast.mjs --consent` → `teardown-stack.mjs`
+     (the evidence lands in `evidence/dast/`). If `stack-detect` = `needs-secrets`,
+     offer the scaffold-and-guide path (the toolkit writes an env stub, names the keys,
+     you fill + confirm, it resumes); `needs-recipe`/`n/a` → DAST stays owner-run with
+     the generated ZAP plan. On no / silence, stand up nothing.
 
    **Deferrable items are NOT power-ups and NOT questions** — partner-program
    gates (agreement, PBO, listing, namespace, contacts), owner-run DAST /
@@ -244,12 +270,16 @@ missing or a key piece of the architecture was misread.
        (no installable package / no sf auth)>
      • <live probe / install-sf — generated from what was sensed>
 
-   ── THE SINGLE GATE (two distinct consents — decide once, up front) ──
+   ── THE SINGLE GATE (distinct consents — decide once, up front) ──
    (1) Ask-tolerance: <full-auto | guided>   →  say "go" to run, or correct anything above.
    (2) Scan-tool install (network — explicit yes only, silence = skip):
        <N installable scanners: name (method), … → "install to /tmp/sf-srt-scanners/<run>
         for this run, removed at cleanup, evidence kept? (real SAST/SCA/DAST/TLS evidence
         vs PENDING-OWNER-RUN)"  |  "none — all present"  |  "none installable">
+   (3) Throwaway DAST (live op — explicit yes only, silence = skip):
+       <stack-detect=runnable → "stand up <backend> as an isolated throwaway + active-scan
+        it (digest-pinned ZAP), keep evidence, destroy it?"  |  needs-secrets → "…after you
+        fill the scaffolded creds"  |  needs-recipe/n-a → "DAST stays owner-run (plan generated)">
    ```
 
    - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed to
@@ -332,6 +362,22 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    keep the evidence. **If it was declined / never offered**, install nothing —
    absent scanners stay `PENDING-OWNER-RUN` (run-scans' hard boundary is unchanged).
 
+   **If the throwaway-DAST consent was given at preflight** (the gate's third consent;
+   `stack-detect` = `runnable`), run the engine chain so the active DAST hits a
+   disposable mirror — never a live or third-party target:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-stack.mjs --consent --target <target> --json`
+   (isolated container, synthetic secrets, manifest of created resources) →
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --base-url <baseUrl from
+   standup> --target <target>` (digest-pinned ZAP → real evidence under `evidence/dast/`) →
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-stack.mjs --target <target>` (destroy the
+   throwaway, keep the evidence). **ALWAYS run teardown, even on failure/abort** — never
+   leave a stack (with secrets in its env) up. Label the evidence as **local-throwaway**
+   (corroborating + a de-risking dry run), NOT the production-equivalent submission scan.
+   If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first (write the env
+   stub, name the keys, wait for the operator to fill + confirm, then stand up). If
+   `needs-recipe`/`n/a`, or the consent was declined, DAST stays owner-run — emit the ZAP
+   plan into `PENDING-OWNER-RUN.md`, no stand-up.
+
 6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
    Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce
    reviewer actually does*: stand the package up in a throwaway org and audit the
@@ -394,10 +440,10 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
   "walk me through it": on a YELLOW ambiguity, ask before deciding; on GREEN,
   proceed. Same RED hard-stops.
 - Either way, the explicit-consent points — a read-only live probe; standing up a
-  scratch org; **installing the missing scanners to a tmp dir (a network fetch)** —
-  are always honored. Those touch something live or mutate the host / egress to the
-  network, so the run pauses for them regardless of tolerance; full-auto /
-  silence-is-yes never covers them.
+  scratch org; **installing the missing scanners to a tmp dir (a network fetch)**;
+  **standing up a throwaway backend + active-scanning it (a live op)** — are always
+  honored. Those touch something live or mutate the host / egress to the network, so the
+  run pauses for them regardless of tolerance; full-auto / silence-is-yes never covers them.
 
 ## Automated vs. manual recap
 
@@ -409,7 +455,9 @@ end-to-end drive across scope → audit → triage → artifacts → scans →
 
 Manual: correcting a misread in the preflight; supplying any ⚠ NEED-FROM-YOU
 audit-blocker; consenting to a live read-only probe, to standing up a scratch
-org, and to the tmp scanner install (a network fetch); and every deferred owner-run
+org, to the tmp scanner install (a network fetch), and to the throwaway-DAST stand-up
+(a live op) — plus, for a `needs-secrets` stack, dropping the scaffolded creds where the
+toolkit points and confirming; and every deferred owner-run
 item in `PENDING-OWNER-RUN.md` — the DAST and
 Checkmarx runs, all credentials and the vault they belong in, the partner-program
 gates, the questionnaire field entry, the review fee, and the Submit click. The

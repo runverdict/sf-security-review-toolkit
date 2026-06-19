@@ -244,7 +244,15 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    prediction-only.
 
 4. **Family 3 — Authenticated DAST: the agent generates the plan; the owner
-   executes the scan.** *Requires:* partner-run DAST of every external
+   executes the scan against production — OR the toolkit runs it against a
+   throwaway.** *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
+   was given, the toolkit stands the backend up as a disposable mirror and runs a
+   digest-pinned ZAP against THAT (`harness/{standup-stack,run-dast,teardown-stack}.mjs`),
+   landing real evidence in `evidence/dast/zap-baseline-*.json` — **labelled
+   local-throwaway**: it's corroborating DAST + a de-risking dry run, NOT the
+   production-equivalent submission scan (the active scan only ever hits a mirror the
+   toolkit built, never live prod / Salesforce infra / a third party). *Requires (the
+   submission scan):* partner-run DAST of every external
    endpoint with an industry tool — there is no hosted alternative (baseline:
    `dast-self-run-required`); the scan must be **authenticated** (baseline:
    `dast-authenticated-scans` — an anonymous scan covers only the public

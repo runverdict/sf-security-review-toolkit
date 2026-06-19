@@ -124,6 +124,18 @@ the real ones are now fixed + test-backed:
   rejection, extract-to-scratch (only-the-bin-on-PATH), and the cleanup symlink refusal.
 
 ### Changed
+- **`skills/security-review-journey/SKILL.md` + `skills/run-scans/SKILL.md` — the
+  throwaway-DAST engine chain wired into the journey (0.7.0 slice 4).** The preflight
+  quick-scan now also runs `stack-detect`; the single gate gains a **THIRD distinct
+  consent** — "stand up your backend as an isolated throwaway + active-scan it? yes/no"
+  — explicit-yes-only (a live op), surfaced beside the scratch-org / scanner-install
+  floor (never silence-is-yes). On yes (and `stack-detect = runnable`), the autonomous
+  run invokes `standup-stack → run-dast → teardown-stack` (active scan hits a disposable
+  mirror only — never live prod / Salesforce infra / a third party), ALWAYS tearing down
+  even on abort, and labels the evidence **local-throwaway** (corroborating + a dry run,
+  not the production-equivalent submission scan). `needs-secrets` → the scaffold-and-guide
+  loop first; `needs-recipe`/`n/a`/declined → DAST stays owner-run with the generated plan.
+  run-scans Family 3 recognizes the throwaway evidence with the same honesty label.
 - **`skills/security-review-journey/SKILL.md` — the single up-front consent gate wired in
   (0.6.0 build step 3).** The preflight quick-scan now also runs `tool-detect.mjs` up front
   (Step 4) so the gate states the true scanner situation the first time. The preflight
