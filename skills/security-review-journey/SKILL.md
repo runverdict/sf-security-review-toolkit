@@ -151,6 +151,15 @@ missing or a key piece of the architecture was misread.
    reads only `sfdx-project.json`; a live `sf package version list` confirms an
    alias is PROMOTED only if the deep audit is later accepted).
 
+   **In the same up-front pass, run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/tool-detect.mjs --json`** — the deterministic
+   scan-tool detector (it probes PATH, installs nothing). It returns, per scan family,
+   which tools are PRESENT vs `installable_missing` (semgrep/osv-scanner/checkov/…,
+   each with its install method) vs owner / owner-portal. Gather this HERE so the
+   single gate's scanner-install offer (Step 5 + the report) states the true situation
+   the first time — which families would go from `PENDING-OWNER-RUN` to real evidence
+   if the operator consents to a tmp install. Detection only; it never fetches.
+
 5. **Classify every needed input into exactly one tier, and per applicable
    dimension assign GREEN/YELLOW/RED audit-readiness.** The classification rule
    is the whole reason this can be autonomous: block **only** on
@@ -188,6 +197,23 @@ missing or a key piece of the architecture was misread.
      capture the real protocol version / tool inventory / auth mode?" (the
      handshake is read-only; consent + an explicit staging-vs-production label
      are mandatory — never probe an environment you haven't confirmed).
+   - **`tool-detect` reported `installable_missing` scanners → the scan-tool install
+     consent (the second of the gate's two distinct consents).** This is NOT a
+     silence-is-yes power-up: a tmp install **fetches software over the network** —
+     the 0.5.4 P0 class — so it ships **only on an explicit yes**, exactly like the
+     live-probe / scratch-org floor. Offer it once, here: "install the N missing
+     scanners (<name (method)>, …) to `/tmp/sf-srt-scanners/<run>/` **for this run**?
+     They're sha256-verified (pinned binaries), removed at cleanup, and the evidence
+     is kept. This yes also covers **running** them for this run — which fetches their
+     standard rules/templates (Semgrep registry rules, Nuclei templates, the OSV DB) —
+     since that is inseparable from producing the evidence. → yes: real
+     SAST/SCA/secret/DAST/TLS evidence instead of `PENDING-OWNER-RUN`. → no (default):
+     those families stay `PENDING-OWNER-RUN` (today's behavior, unchanged)." On yes, the run later invokes
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
+     <target> --json` (one Bash call = one approval; the CC permission boundary is the
+     outer tool call, so its pip/curl/git/npm subprocesses run unprompted under it),
+     and tears them down with `cleanup-scanners.mjs` at the end (tools removed, evidence
+     kept). On no / silence, install nothing — `run-scans` keeps its hard boundary.
 
    **Deferrable items are NOT power-ups and NOT questions** — partner-program
    gates (agreement, PBO, listing, namespace, contacts), owner-run DAST /
@@ -218,7 +244,12 @@ missing or a key piece of the architecture was misread.
        (no installable package / no sf auth)>
      • <live probe / install-sf — generated from what was sensed>
 
-   Ask-tolerance: <full-auto | guided>   →  say "go" to run, or correct anything above.
+   ── THE SINGLE GATE (two distinct consents — decide once, up front) ──
+   (1) Ask-tolerance: <full-auto | guided>   →  say "go" to run, or correct anything above.
+   (2) Scan-tool install (network — explicit yes only, silence = skip):
+       <N installable scanners: name (method), … → "install to /tmp/sf-srt-scanners/<run>
+        for this run, removed at cleanup, evidence kept? (real SAST/SCA/DAST/TLS evidence
+        vs PENDING-OWNER-RUN)"  |  "none — all present"  |  "none installable">
    ```
 
    - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed to
@@ -291,6 +322,15 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    and Checkmarx are owner-run (creds + the live target are the human's) — those
    become tasks in `PENDING-OWNER-RUN.md`, not blockers. A scan is only "done"
    with a verified evidence file; a plan with no report is not (CONVENTIONS §2).
+   **If the scanner-install consent was given at preflight**, run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
+   <target> --json` BEFORE this phase so `run-scans` finds the tmp-installed tools
+   on the PATH it prepends (from `.security-review/scanner-install.json`) and emits
+   **real** Semgrep/OSV/Checkov/secret/TLS evidence instead of `PENDING-OWNER-RUN`;
+   then run `node ${CLAUDE_PLUGIN_ROOT}/harness/cleanup-scanners.mjs --target
+   <target>` at the end of the run (or in `stay-listed`) to remove the tools and
+   keep the evidence. **If it was declined / never offered**, install nothing —
+   absent scanners stay `PENDING-OWNER-RUN` (run-scans' hard boundary is unchanged).
 
 6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
    Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce
@@ -353,9 +393,11 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 - **Guided** — default for an apparent first run, or when the operator says
   "walk me through it": on a YELLOW ambiguity, ask before deciding; on GREEN,
   proceed. Same RED hard-stops.
-- Either way, the two consent points (a read-only live probe; standing up a
-  scratch org) are always honored — those touch something live, so the run
-  pauses for them regardless of tolerance.
+- Either way, the explicit-consent points — a read-only live probe; standing up a
+  scratch org; **installing the missing scanners to a tmp dir (a network fetch)** —
+  are always honored. Those touch something live or mutate the host / egress to the
+  network, so the run pauses for them regardless of tolerance; full-auto /
+  silence-is-yes never covers them.
 
 ## Automated vs. manual recap
 
@@ -366,8 +408,9 @@ end-to-end drive across scope → audit → triage → artifacts → scans →
 (opt-in deep audit) → compile, with every contradiction flagged inline.
 
 Manual: correcting a misread in the preflight; supplying any ⚠ NEED-FROM-YOU
-audit-blocker; consenting to a live read-only probe and to standing up a scratch
-org; and every deferred owner-run item in `PENDING-OWNER-RUN.md` — the DAST and
+audit-blocker; consenting to a live read-only probe, to standing up a scratch
+org, and to the tmp scanner install (a network fetch); and every deferred owner-run
+item in `PENDING-OWNER-RUN.md` — the DAST and
 Checkmarx runs, all credentials and the vault they belong in, the partner-program
 gates, the questionnaire field entry, the review fee, and the Submit click. The
 toolkit auto-answers the evidence; the human owns the Partner-Console residue and

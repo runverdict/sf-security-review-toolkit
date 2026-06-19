@@ -47,32 +47,47 @@ undispositioned findings — each of those bounces at the materials check
   dependency audit. For the external-endpoint families (7/8) and the DAST/TLS
   extensions, the free/OSS tools — **Semgrep**, **OSV-Scanner**, **Checkov**,
   and optionally **Trivy / Nuclei / Schemathesis / testssl.sh / sslyze**; each
-  is auto-**detected** (never auto-installed — see the hard boundary below)
-  and, if absent, the family hands the owner the exact install + run command as
-  `PENDING-OWNER-RUN` rather than skipping silently.
+  is auto-**detected** (never auto-installed by THIS skill — see the hard
+  boundary below), found on the prepended PATH when the operator consented to a tmp
+  install at the journey gate (`<target>/.security-review/scanner-install.json`),
+  and, if still absent, handed to the owner as the exact install + run command
+  (`PENDING-OWNER-RUN`) rather than skipped silently.
 - Credentials only ever via environment variables — this skill refuses to
   write a secret into a plan, an evidence file, or the run log
   (CONVENTIONS §6).
 
-> **HARD BOUNDARY — never mutate the host, never auto-fetch (no consent gate
-> exists for it yet).** This skill **detects** scanners; it **never installs**
-> them. It MUST NOT run `pip install` / `pipx` / `npm i -g` / `brew` / a venv
-> bootstrap / any package manager, and MUST NOT run a scan that **fetches
-> third-party content over the network** (e.g. Semgrep pulling registry rule
-> packs like `p/security-audit`). Installing software and fetching remote rule
-> sets are **environment mutations / network egress the operator did not
-> consent to** — and `silence-is-yes` / full-auto authorizes neither (it covers
-> only the inputs the preflight already DETECTED). A scanner that is absent, or
-> a scan that would require an install or a remote fetch, is **`PENDING-OWNER-RUN`**:
-> emit the exact install + run command for the owner, and move on. "Real
-> evidence beats a PENDING stub" is **not** a license to self-install — a
-> PENDING stub with the precise command IS the honest evidence here.
-> The one carve-out: a tool that is **already present** doing its **standard,
-> bundled** read (`npm audit` hitting the registry it already targets; Code
-> Analyzer's RetireJS using its shipped vuln DB) is allowed — that is neither an
-> install nor a surprise third-party fetch. Consent-gated local install
-> (offer → on yes, tool-scoped dir outside the repo + self-clean) is a planned
-> capability; **until it ships, the answer is always PENDING-OWNER-RUN.**
+> **HARD BOUNDARY — THIS skill never mutates the host, never auto-fetches.** It
+> **detects** scanners and **consumes** any the operator already consented to install;
+> it **never installs them itself**. It MUST NOT run `pip install` / `pipx` /
+> `npm i -g` / `brew` / a venv bootstrap / any package manager, and MUST NOT run a
+> scan that **fetches third-party content over the network** (e.g. Semgrep pulling
+> registry rule packs like `p/security-audit`). Installing software and fetching
+> remote rule sets are **environment mutations / network egress** that
+> `silence-is-yes` / full-auto never authorizes (it covers only inputs the preflight
+> already DETECTED). A scanner that is absent — with no consented tmp install present
+> (below) — is **`PENDING-OWNER-RUN`**: emit the exact install + run command for the
+> owner, and move on. "Real evidence beats a PENDING stub" is **not** a license to
+> self-install — a PENDING stub with the precise command IS the honest evidence here.
+> The one always-allowed carve-out: a tool that is **already present** doing its
+> **standard, bundled** read (`npm audit` hitting the registry it already targets;
+> Code Analyzer's RetireJS using its shipped vuln DB).
+>
+> **The consent-gated install now EXISTS — and it is a SEPARATE, gated step, not
+> something this skill does.** When the operator says yes at the journey's single
+> preflight gate (the second of its two consents), `harness/install-scanners.mjs`
+> installs the missing scanners to a tmp dir OUTSIDE the repo
+> (`/tmp/sf-srt-scanners/<runid>/`, sha256-pinned binaries) and records them in
+> `<target>/.security-review/scanner-install.json`. **This skill READS that pointer
+> (when its `status` is not `cleaned`), prepends its `pathPrepend` to the PATH for the
+> scan subprocesses, and uses those tools** — turning the absent families into real
+> evidence. It still never runs the installer itself; absent the pointer (declined, or
+> a standalone run with no journey gate), the answer stays `PENDING-OWNER-RUN`. The
+> tmp tools are removed by `cleanup-scanners.mjs` at end-of-run (evidence kept).
+> **When that consent was given, running the consented scanners with their STANDARD
+> rule/template fetches (Semgrep registry rules, Nuclei templates, the OSV DB) is
+> within scope** — the gate's install-yes covers installing AND running them for this
+> run, since the fetch is inseparable from producing the evidence. Absent the consent,
+> the no-remote-fetch rule above holds in full.
 
 ## The eight families
 
@@ -96,10 +111,17 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 
 ## Steps
 
-1. **Read the scope manifest and the baseline; surface the conflicts before
-   running anything.** Select families from the manifest's elements (table
-   above). Warn when any `scan-*`/`dast-*`/`endpoint-*` entry this run uses
-   has `last_verified` older than 90 days (CONVENTIONS §4). Surface every
+1. **Read the scope manifest and the baseline; establish the tool PATH; surface
+   the conflicts before running anything.** Select families from the manifest's
+   elements (table above). **Then read
+   `<target>/.security-review/scanner-install.json` (if present and `status` is not
+   `cleaned`) and prepend its `pathPrepend` entries to the PATH for every scan
+   subprocess** — those are the scanners the operator consented to install for this
+   run; with them on the PATH, the external-SAST/SCA/secret/TLS/DAST families that
+   would otherwise be `PENDING-OWNER-RUN` now resolve to real tools and real evidence.
+   Re-detect availability with the PATH in place (a tool both present-on-PATH and in
+   the pointer is just present). Warn when any `scan-*`/`dast-*`/`endpoint-*` entry
+   this run uses has `last_verified` older than 90 days (CONVENTIONS §4). Surface every
    `conflicting` entry with its `conflicts` text — never silently pick a
    side. As of the 2026-06 baseline sweep the scan-relevant remainder is
    narrow: `endpoint-ssl-labs-a-grade` (only whether reviewers enforce the

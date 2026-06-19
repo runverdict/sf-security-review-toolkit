@@ -55,6 +55,29 @@ follow semantic versioning.
   nothing-to-clean) + a live install→evidence→cleanup roundtrip (tmp removed, a 75-byte
   evidence file survived byte-for-byte).
 
+### Changed
+- **`skills/security-review-journey/SKILL.md` — the single up-front consent gate wired in
+  (0.6.0 build step 3).** The preflight quick-scan now also runs `tool-detect.mjs` up front
+  (Step 4) so the gate states the true scanner situation the first time. The preflight
+  report's single gate now carries **two distinct consents**: (1) ask-tolerance
+  (full-auto vs guided) and (2) **install the `installable_missing` scanners to a tmp dir
+  for this run** — and the install consent is an **explicit yes only** (a network fetch =
+  the 0.5.4 P0 class; silence-is-yes never covers it), surfaced alongside the live-probe /
+  scratch-org floor, not as a silence-is-yes power-up. On yes the run invokes
+  `install-scanners.mjs --consent` before scans and `cleanup-scanners.mjs` after; the
+  consent explicitly covers **running** the tools (their standard Semgrep-rule / Nuclei-
+  template / OSV-DB fetches), since that is inseparable from producing the evidence.
+- **`skills/run-scans/SKILL.md` — consumes the consented tmp install (0.6.0 build step 4),
+  and the 0.5.4 HARD BOUNDARY updated.** run-scans still **never installs anything itself**,
+  but the consent-gated install now EXISTS as a separate gated step: when the journey gate's
+  install-yes ran, run-scans reads `<target>/.security-review/scanner-install.json` (unless
+  `status: cleaned`), prepends its `pathPrepend` to the scan-subprocess PATH, and turns the
+  external-SAST/SCA/secret/TLS/DAST families from `PENDING-OWNER-RUN` into real evidence.
+  Absent the pointer (declined / standalone run), the hard boundary holds in full — absent
+  scanner = `PENDING-OWNER-RUN`. The boundary now also scopes the consented scanners'
+  standard rule/template fetches as within the install-yes (the cold run's Semgrep/Nuclei/OSV
+  fetches are consented, not an unconsented-egress violation).
+
 ### Roadmap — 0.6.0 preflight auto-gate + consent-gated scanner install (owner-pitched)
 - Specced in **`docs/roadmap-0.6.0-preflight-autogate.md`**. Startup quick-scan (scope +
   `tool-detect` + `package-readiness` + `sf` auth) → ONE up-front consent gate (full-auto
@@ -64,10 +87,11 @@ follow semantic versioning.
   test-backed + cold-validated before it ships. Honest constraint recorded: the toolkit
   cannot flip Claude Code's permission mode (shift+tab stays the user's), so it only
   consolidates its OWN confirmations into the single gate.
-- **Build progress:** steps 1 (`install-scanners.mjs`) + 2 (`cleanup-scanners.mjs`)
-  **done** (above). Remaining: (3) wire the single two-consent gate into the
-  `security-review-journey` preflight; (4) `run-scans` consumes the tmp-installed tools
-  (else PENDING-OWNER-RUN, unchanged); (5) cold-validate the gate+install+suite+cleanup → tag.
+- **Build progress:** steps 1 (`install-scanners.mjs`) + 2 (`cleanup-scanners.mjs`) +
+  3 (wire the single two-consent gate into the `security-review-journey` preflight) +
+  4 (`run-scans` consumes the tmp-installed tools; else PENDING-OWNER-RUN) **all done**
+  (above). Remaining: (5) cold-validate the gate fires once with two distinct consents +
+  real Semgrep/OSV/DAST evidence on disk + cleanup removes binaries and keeps evidence → tag.
 
 ## [0.5.5] — 2026-06-18
 
