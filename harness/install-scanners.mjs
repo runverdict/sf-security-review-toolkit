@@ -1,0 +1,444 @@
+#!/usr/bin/env node
+/*
+ * install-scanners.mjs — CONSENTED, tmp-scoped install of the missing scan tools
+ * (0.6.0 preflight auto-gate). See docs/roadmap-0.6.0-preflight-autogate.md.
+ *
+ * WHAT IT DOES. Given tool-detect's `installable_missing` set, it installs each
+ * tool into a tool-scoped temp dir OUTSIDE the partner's repo
+ * (`/tmp/sf-srt-scanners/<runid>/<tool>/`), records an install manifest of
+ * exactly what it created, and writes a project pointer
+ * (`<target>/.security-review/scanner-install.json`) so `cleanup-scanners.mjs`
+ * can remove precisely those paths later while KEEPING the evidence. The scans
+ * then run against the tmp-installed tools; cleanup is asymmetric (remove the
+ * binaries, keep the evidence — the SCI's on-disk proof).
+ *
+ * ── THE ONE ENGINE THAT TOUCHES THE NETWORK (read this) ───────────────────────
+ * Every other harness/*.mjs is pure, dependency-free, no-network, byte-identical
+ * (CONVENTIONS §7). This one is the documented exception: its EXECUTOR fetches and
+ * installs software. It is split so the honesty model still holds:
+ *   • `planInstalls()` — PURE. From the installable set + (runId, tmpRoot, platform,
+ *     arch) it computes the exact plan: per-tool target dir, the literal install
+ *     commands, the pinned download URL + sha256, the PATH to prepend. No I/O,
+ *     byte-identical, and what the standing test asserts.
+ *   • `installScanners()` — IMPURE. Runs that plan. It FAILS CLOSED without
+ *     explicit consent (`opts.consent === true` / `--consent`) — silence-is-yes
+ *     never authorizes a network install (the 0.5.4 P0 class), and the gate is
+ *     re-asserted here at the engine boundary so a future skill that forgets the
+ *     preflight consent still cannot install. Raw-binary downloads are
+ *     sha256-verified against an author-pinned checksum BEFORE the file is ever
+ *     made executable or extracted; a mismatch aborts that tool (never execs an
+ *     unverified binary). pip/npm/git rely on the package manager's own integrity
+ *     (PyPI/npm/Git-over-TLS); the sha256 pin covers the raw downloads that have
+ *     no package-manager integrity layer.
+ *
+ * ── WHY ONE BASH CALL = ONE PROMPT (verified, do not "optimize" away) ─────────
+ * Claude Code's permission boundary is the TOOL CALL, not its child processes:
+ * one approved `Bash(node install-scanners.mjs --consent …)` covers every
+ * pip/curl/git/npm subprocess this Node process spawns — they run unprompted
+ * under that single approval (code.claude.com/docs/en/permissions.md,
+ * hooks-guide.md; verified 2026-06-19). That is the whole reason the installs are
+ * encapsulated in ONE node process: the operator approves once at the preflight
+ * gate, and downstream "just works". (OS-level sandbox mode, if the user enables
+ * it, can still gate descendants' network/fs — that's their boundary, not ours.)
+ *
+ * NEVER writes into the partner's source tree (only the tmp dir + the gitignored
+ * `.security-review/` machine-state pointer). NEVER removes a pre-existing tool.
+ *
+ * USAGE:
+ *   node install-scanners.mjs --target <repo> [--consent] [--dry-run] \
+ *        [--run-id <id>] [--tmp-root <dir>] [--only a,b] [--detect <file.json>] [--json]
+ *   --dry-run writes the manifest (status `planned`) and performs NO network I/O.
+ */
+import {
+  mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync,
+  renameSync, realpathSync, statSync,
+} from 'node:fs'
+import { join, delimiter, resolve, sep } from 'node:path'
+import { tmpdir, homedir } from 'node:os'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { detectTools } from './tool-detect.mjs'
+
+export const MANIFEST_SCHEMA = 'sf-srt-scanner-install/1'
+
+// ── Pinned binary releases (author-time trust anchors, verified 2026-06-19) ───
+// Raw downloads have no package-manager integrity layer, so each is sha256-pinned
+// here and verified before exec. A tool/platform with no pin FAILS CLOSED → it is
+// skipped (PENDING-OWNER-RUN), never installed unverified. Bump = re-pin both the
+// version and every per-platform sha256 from the release's published checksums.
+const BINARY_PINS = {
+  'osv-scanner': {
+    version: '2.4.0',
+    bin: 'osv-scanner',
+    urlBase: 'https://github.com/google/osv-scanner/releases/download/v2.4.0/',
+    assets: {
+      'linux-x64':    { file: 'osv-scanner_linux_amd64',  archive: 'none', sha256: '15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0' },
+      'linux-arm64':  { file: 'osv-scanner_linux_arm64',  archive: 'none', sha256: '44e580752910f0ff36ec99aff59af20f65df1e859aa31e5605a8f0d055b496e9' },
+      'darwin-x64':   { file: 'osv-scanner_darwin_amd64', archive: 'none', sha256: '088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66' },
+      'darwin-arm64': { file: 'osv-scanner_darwin_arm64', archive: 'none', sha256: '9ca3185ad63e9ab54f7cb90f46a7362be02d80e37f0123d095a54355ea202f5d' },
+    },
+  },
+  gitleaks: {
+    version: '8.30.1',
+    bin: 'gitleaks',
+    urlBase: 'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/',
+    assets: {
+      'linux-x64':    { file: 'gitleaks_8.30.1_linux_x64.tar.gz',   archive: 'tar.gz', sha256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' },
+      'linux-arm64':  { file: 'gitleaks_8.30.1_linux_arm64.tar.gz', archive: 'tar.gz', sha256: 'e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080' },
+      'darwin-x64':   { file: 'gitleaks_8.30.1_darwin_x64.tar.gz',  archive: 'tar.gz', sha256: 'dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709' },
+      'darwin-arm64': { file: 'gitleaks_8.30.1_darwin_arm64.tar.gz',archive: 'tar.gz', sha256: 'b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5' },
+    },
+  },
+  gosec: {
+    version: '2.27.1',
+    bin: 'gosec',
+    urlBase: 'https://github.com/securego/gosec/releases/download/v2.27.1/',
+    assets: {
+      'linux-x64':    { file: 'gosec_2.27.1_linux_amd64.tar.gz',  archive: 'tar.gz', sha256: 'a1cc5fba45fb51131ba05dee4029b364f62f4b6739b8f24236f93de82f40da40' },
+      'linux-arm64':  { file: 'gosec_2.27.1_linux_arm64.tar.gz',  archive: 'tar.gz', sha256: '33582a6ed6878e4a0456585a8c3b043eef74d989d606bef85afc1a0f9b12f475' },
+      'darwin-x64':   { file: 'gosec_2.27.1_darwin_amd64.tar.gz', archive: 'tar.gz', sha256: '117cf8dfe02b8746dad579f6ad01019e7c548bb36451e400993d662714dddcd9' },
+      'darwin-arm64': { file: 'gosec_2.27.1_darwin_arm64.tar.gz', archive: 'tar.gz', sha256: 'e2d31bb4572471f47489dd6d2f3c98e9261dc65b1889c2a01c48d73d4e40038b' },
+    },
+  },
+  trivy: {
+    version: '0.71.2',
+    bin: 'trivy',
+    urlBase: 'https://github.com/aquasecurity/trivy/releases/download/v0.71.2/',
+    assets: { // aquasec uses Linux-64bit / macOS-ARM64 naming, not linux_amd64
+      'linux-x64':    { file: 'trivy_0.71.2_Linux-64bit.tar.gz',  archive: 'tar.gz', sha256: '0510e71e2fd39bf863856d499c8dc19feb4e7336546394c502a8f5cc7ab27460' },
+      'linux-arm64':  { file: 'trivy_0.71.2_Linux-ARM64.tar.gz',  archive: 'tar.gz', sha256: 'fe1c7106e15a5365d485b098a8c338f91e3b7ba71cb0e4963b98a3a098763cfc' },
+      'darwin-x64':   { file: 'trivy_0.71.2_macOS-64bit.tar.gz',  archive: 'tar.gz', sha256: 'c27bcf4ddd281aecb7267eb5df804ec49ac0f8fa23fe018d33932e17f30a38bf' },
+      'darwin-arm64': { file: 'trivy_0.71.2_macOS-ARM64.tar.gz',  archive: 'tar.gz', sha256: 'a9f585cad53542a54ef286b5fa4199d081e5a061f8894635bdf3ce2608ece7a9' },
+    },
+  },
+  nuclei: {
+    version: '3.9.0',
+    bin: 'nuclei',
+    urlBase: 'https://github.com/projectdiscovery/nuclei/releases/download/v3.9.0/',
+    assets: { // nuclei ships zip archives (extracted via unzip, or a python3 -m zipfile fallback)
+      'linux-x64':    { file: 'nuclei_3.9.0_linux_amd64.zip', archive: 'zip', sha256: '05357e07886d9670e9c54325ec8afd362d03610c87e2aa1455886ad3f7b58519' },
+      'linux-arm64':  { file: 'nuclei_3.9.0_linux_arm64.zip', archive: 'zip', sha256: '733ceb77896fc5a9cafb70d07cabdd43fd9f186c28cbc335eec5b78d5c35d850' },
+      'darwin-x64':   { file: 'nuclei_3.9.0_macOS_amd64.zip', archive: 'zip', sha256: 'dd5f97d6c45349c7998af0d4bf461eed958a2755f812708b6c668bdf59a92c94' },
+      'darwin-arm64': { file: 'nuclei_3.9.0_macOS_arm64.zip', archive: 'zip', sha256: '62f6bd1d554688e4c0fdd96f6dbbd7ec46fe1b4506a361fc01ef525425b0f060' },
+    },
+  },
+}
+
+// pip tools: the install token equals the tool name and the produced bin equals
+// the tool name (semgrep→venv/bin/semgrep, …). Floating-latest is intentional —
+// the tmp install is ephemeral + removed at cleanup, and PyPI-over-TLS is the
+// integrity layer for the package path (the sha256 pin is for raw binaries).
+const PIP_TOOLS = new Set(['semgrep', 'checkov', 'detect-secrets', 'bandit', 'njsscan', 'sslyze', 'schemathesis'])
+// npm tools: `npm i --prefix <dir> <pkg>` → <dir>/node_modules/.bin/<bin>
+const NPM_TOOLS = { retire: { pkg: 'retire', bin: 'retire' } }
+// git tools: shallow clone; the runnable lives at <clone>/<bin>
+const GIT_TOOLS = { testssl: { repo: 'https://github.com/testssl/testssl.sh.git', dir: 'testssl.sh', bin: 'testssl.sh' } }
+
+const HEX64 = /^[0-9a-f]{64}$/
+
+/** The only roots a tmp dir may live under (cleanup will rm -rf it — keep it boxed).
+ *  Both the resolved and realpath'd forms, so a symlinked tmpdir (/tmp→/private/tmp) passes. */
+function allowedBases() {
+  const cache = join('.cache', 'sf-srt')
+  const set = new Set([
+    realOr(tmpdir()), resolve(tmpdir()),
+    join(realOr(homedir()), cache), join(resolve(homedir()), cache),
+  ])
+  return [...set]
+}
+function realOr(p) { try { return realpathSync(p) } catch { return resolve(p) } }
+
+/**
+ * Guard the tmp root before anything is created OR removed. It MUST be a
+ * non-trivial sub-path under the OS temp dir (or ~/.cache/sf-srt) AND carry an
+ * `sf-srt` path segment — so a malformed/empty/'/'/$HOME/repo-root value can
+ * never become an `rm -rf` target. Throws on violation (fail closed).
+ */
+export function assertSafeTmpRoot(tmpRoot) {
+  const p = resolve(String(tmpRoot || ''))
+  if (!p || p === sep || p === '/') throw new Error(`unsafe tmp root: '${tmpRoot}'`)
+  const segs = p.split(sep).filter(Boolean)
+  if (!segs.some((s) => /^sf-srt/.test(s))) {
+    throw new Error(`unsafe tmp root (no sf-srt segment): '${p}' — refusing to use a path cleanup could rm -rf`)
+  }
+  const bases = allowedBases()
+  const under = bases.some((b) => p === b || p.startsWith(b + sep))
+  if (!under) throw new Error(`unsafe tmp root (outside ${bases.join(' / ')}): '${p}'`)
+  if (bases.includes(p)) throw new Error(`unsafe tmp root (is a base dir, not a sub-path): '${p}'`)
+  return p
+}
+
+/** Human-readable, deterministic command list — drives BOTH the gate display and (pip/npm/git) the executor. */
+export function installCommands(inst) {
+  switch (inst.method) {
+    case 'pip':
+      return [`python3 -m venv ${inst.venvDir}`, `${join(inst.venvDir, 'bin', 'pip')} install --no-input --disable-pip-version-check ${inst.pkg}`]
+    case 'npm':
+      return [`npm install --prefix ${inst.targetDir} ${inst.pkg}`]
+    case 'git':
+      return [`git clone --depth 1 ${inst.source} ${inst.cloneDir}`]
+    case 'binary':
+      return [
+        `curl -fsSL -o ${inst.download} ${inst.source}`,
+        `verify sha256(${inst.download}) == ${inst.checksum}`,
+        inst.archive === 'tar.gz' ? `tar -xzf ${inst.download} -C ${inst.targetDir}`
+          : inst.archive === 'zip' ? `unzip ${inst.download} -d ${inst.targetDir} (or python3 -m zipfile)`
+            : `install ${inst.expectedBin} (chmod +x)`,
+      ]
+    default:
+      return []
+  }
+}
+
+/** Resolve one installable tool → a concrete install plan, or a skip reason. PURE. */
+function resolveTool(t, tmpRoot, platKey) {
+  const name = t.name
+  const family = t.family
+  const targetDir = join(tmpRoot, name)
+  const base = { name, family, method: t.install, targetDir }
+  if (t.install === 'pip') {
+    if (!PIP_TOOLS.has(name)) return { skip: { name, family, method: t.install, reason: `unknown pip tool '${name}'` } }
+    const venvDir = join(targetDir, 'venv')
+    const binDir = join(venvDir, 'bin')
+    return { install: { ...base, pkg: name, venvDir, binDir, expectedBin: join(binDir, name), source: `pypi:${name}`, version: null, checksum: null, archive: null } }
+  }
+  if (t.install === 'npm') {
+    const m = NPM_TOOLS[name]
+    if (!m) return { skip: { name, family, method: t.install, reason: `unknown npm tool '${name}'` } }
+    const binDir = join(targetDir, 'node_modules', '.bin')
+    return { install: { ...base, pkg: m.pkg, binDir, expectedBin: join(binDir, m.bin), source: `npm:${m.pkg}`, version: null, checksum: null, archive: null } }
+  }
+  if (t.install === 'git') {
+    const m = GIT_TOOLS[name]
+    if (!m) return { skip: { name, family, method: t.install, reason: `unknown git tool '${name}'` } }
+    const cloneDir = join(targetDir, m.dir)
+    return { install: { ...base, source: m.repo, cloneDir, binDir: cloneDir, expectedBin: join(cloneDir, m.bin), version: null, checksum: null, archive: null } }
+  }
+  if (t.install === 'binary') {
+    const pin = BINARY_PINS[name]
+    if (!pin) return { skip: { name, family, method: t.install, reason: `no pinned release for '${name}' (binary integrity unverifiable) — PENDING-OWNER-RUN` } }
+    const asset = pin.assets[platKey]
+    if (!asset) return { skip: { name, family, method: t.install, reason: `no pinned ${name} v${pin.version} release for ${platKey} — PENDING-OWNER-RUN` } }
+    return {
+      install: {
+        ...base, version: pin.version, source: pin.urlBase + asset.file,
+        download: join(targetDir, asset.file), checksum: asset.sha256, archive: asset.archive,
+        binDir: targetDir, expectedBin: join(targetDir, pin.bin),
+      },
+    }
+  }
+  return { skip: { name, family, method: t.install, reason: `unsupported install method '${t.install}'` } }
+}
+
+/**
+ * PURE. Compute the full install plan from tool-detect's installable set.
+ * `installableMissing`: array of { name, family, install }. Byte-identical for a
+ * given (installableMissing, runId, tmpRoot, platform, arch, only).
+ */
+export function planInstalls(installableMissing, { runId, tmpRoot, platform, arch, only } = {}) {
+  if (!runId) throw new Error('planInstalls: runId is required')
+  assertSafeTmpRoot(tmpRoot)
+  const platKey = `${platform}-${arch}`
+  const want = Array.isArray(installableMissing) ? installableMissing : []
+  const onlySet = only && only.length ? new Set(only) : null
+  const installs = []
+  const skipped = []
+  const seen = new Set()
+  for (const t of want) {
+    if (!t || !t.name || seen.has(t.name)) continue
+    seen.add(t.name)
+    if (onlySet && !onlySet.has(t.name)) continue
+    const r = resolveTool(t, tmpRoot, platKey)
+    if (r.skip) skipped.push(r.skip)
+    else installs.push({ ...r.install, commands: installCommands(r.install) })
+  }
+  return {
+    schema: MANIFEST_SCHEMA, runId, tmpRoot, platform, arch,
+    manifestPath: join(tmpRoot, 'install-manifest.json'),
+    pointerRel: join('.security-review', 'scanner-install.json'),
+    installs, skipped,
+    pathPrepend: installs.map((i) => i.binDir),
+  }
+}
+
+const sha256File = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
+const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+
+/** Execute one install. Returns a manifest record. Throws nothing — failures are recorded. */
+function executeOne(inst) {
+  const rec = {
+    name: inst.name, family: inst.family, method: inst.method, version: inst.version || null,
+    targetDir: inst.targetDir, binDir: inst.binDir, expectedBin: inst.expectedBin,
+    source: inst.source, checksum: inst.checksum || null, commands: inst.commands,
+    status: 'planned', runnable: false, createdPaths: [inst.targetDir], log: '',
+  }
+  try {
+    mkdirSync(inst.targetDir, { recursive: true })
+    if (inst.method === 'pip') {
+      run('python3', ['-m', 'venv', inst.venvDir], inst.targetDir)
+      rec.log = run(join(inst.venvDir, 'bin', 'pip'), ['install', '--no-input', '--disable-pip-version-check', inst.pkg], inst.targetDir).slice(-2000)
+    } else if (inst.method === 'npm') {
+      rec.log = run('npm', ['install', '--prefix', inst.targetDir, '--no-audit', '--no-fund', inst.pkg], inst.targetDir).slice(-2000)
+    } else if (inst.method === 'git') {
+      rec.log = run('git', ['clone', '--depth', '1', inst.source, inst.cloneDir], inst.targetDir).slice(-2000)
+    } else if (inst.method === 'binary') {
+      // download → VERIFY (before any exec/extract) → place.
+      run('curl', ['-fsSL', '-o', inst.download, inst.source], inst.targetDir)
+      const got = sha256File(inst.download)
+      if (!HEX64.test(String(inst.checksum)) || got !== inst.checksum) {
+        rec.status = 'failed'
+        rec.log = `checksum mismatch: expected ${inst.checksum}, got ${got} — refusing to execute an unverified binary`
+        try { rmSync(inst.download, { force: true }) } catch {}
+        return rec
+      }
+      if (inst.archive === 'tar.gz') {
+        run('tar', ['-xzf', inst.download, '-C', inst.targetDir], inst.targetDir)
+      } else if (inst.archive === 'zip') {
+        extractZip(inst.download, inst.targetDir) // unzip, or a python3 -m zipfile fallback
+      } else { // raw binary: it IS the download
+        renameSync(inst.download, inst.expectedBin)
+      }
+      try { chmodSync(inst.expectedBin, 0o755) } catch {} // zip extraction drops the exec bit
+    } else {
+      rec.status = 'failed'; rec.log = `unsupported method '${inst.method}'`; return rec
+    }
+    // post-install reality check — runnable only if the expected bin now exists.
+    rec.runnable = isExecutable(inst.expectedBin)
+    rec.status = rec.runnable ? 'installed' : 'failed'
+    if (!rec.runnable && !rec.log) rec.log = `install ran but ${inst.expectedBin} is not present/executable`
+  } catch (e) {
+    rec.status = 'failed'
+    rec.log = `${rec.log}\n${String(e && e.message || e)}`.trim().slice(-2000)
+  }
+  return rec
+}
+
+function isExecutable(p) {
+  try { const s = statSync(p); return s.isFile() && (s.mode & 0o111) !== 0 } catch { return false }
+}
+
+function hasCmd(bin) { try { execFileSync('sh', ['-c', `command -v ${bin}`], { stdio: 'ignore' }); return true } catch { return false } }
+
+/** Extract a zip into dir — `unzip` if present, else python3's stdlib zipfile (no unzip on minimal hosts). */
+function extractZip(zip, dir) {
+  if (hasCmd('unzip')) run('unzip', ['-o', '-q', zip, '-d', dir], dir)
+  else run('python3', ['-m', 'zipfile', '-e', zip, dir], dir)
+}
+
+/**
+ * IMPURE executor. Runs `plan` against the network. FAILS CLOSED without consent.
+ * opts: { consent:boolean, dryRun:boolean, target?:string }
+ */
+export function installScanners(plan, { consent = false, dryRun = false, target } = {}) {
+  assertSafeTmpRoot(plan.tmpRoot)
+  if (!dryRun && consent !== true) {
+    throw new Error('install-scanners: refusing to install without explicit consent (a network install is the 0.5.4 P0 class; silence-is-yes never covers it). Pass --consent.')
+  }
+  mkdirSync(plan.tmpRoot, { recursive: true })
+  const records = []
+  for (const inst of plan.installs) {
+    if (dryRun) {
+      records.push({
+        name: inst.name, family: inst.family, method: inst.method, version: inst.version || null,
+        targetDir: inst.targetDir, binDir: inst.binDir, expectedBin: inst.expectedBin,
+        source: inst.source, checksum: inst.checksum || null, commands: inst.commands,
+        status: 'planned', runnable: false, createdPaths: [inst.targetDir], log: 'dry-run — no install performed',
+      })
+    } else {
+      records.push(executeOne(inst))
+    }
+  }
+  const installed = records.filter((r) => r.status === 'installed')
+  const manifest = {
+    schema: plan.schema, runId: plan.runId, tmpRoot: plan.tmpRoot,
+    platform: plan.platform, arch: plan.arch,
+    createdAt: new Date().toISOString(),
+    consent: { granted: consent === true, dryRun: !!dryRun },
+    target: target || null,
+    installs: records, skipped: plan.skipped,
+    // pathPrepend lists ONLY the dirs whose tool actually became runnable.
+    pathPrepend: installed.map((r) => r.binDir),
+    createdPaths: [plan.tmpRoot],
+  }
+  writeFileSync(plan.manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+  // Project pointer so cleanup can find the tmp dir from the repo later. Lives in
+  // gitignored machine-state — never the partner's source.
+  if (target) {
+    try {
+      const dir = join(target, '.security-review')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'scanner-install.json'), JSON.stringify({
+        schema: plan.schema, runId: plan.runId, tmpRoot: plan.tmpRoot,
+        manifestPath: plan.manifestPath, createdAt: manifest.createdAt,
+        installed: installed.map((r) => r.name), pathPrepend: manifest.pathPrepend,
+      }, null, 2) + '\n')
+    } catch (e) { manifest.pointerError = String(e && e.message || e) }
+  }
+  return manifest
+}
+
+// ── CLI ───────────────────────────────────────────────────────────────────────
+function main() {
+  const argv = process.argv
+  const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
+  const has = (f) => argv.includes(f)
+  const target = arg('--target', null)
+  const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}`)
+  const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-scanners', runId))
+  const only = (arg('--only', '') || '').split(',').map((s) => s.trim()).filter(Boolean)
+  const consent = has('--consent')
+  const dryRun = has('--dry-run')
+  const asJson = has('--json')
+
+  // Detect (or read a supplied detect JSON) → the installable set.
+  let detect
+  const detectFile = arg('--detect', null)
+  if (detectFile) detect = JSON.parse(readFileSync(detectFile, 'utf8'))
+  else detect = detectTools(process.env.PATH || '')
+  const installable = (detect.summary && detect.summary.installable_missing) || []
+
+  const plan = planInstalls(installable, { runId, tmpRoot, platform: process.platform, arch: process.arch, only })
+
+  if (!plan.installs.length) {
+    const msg = { note: 'nothing installable to install', skipped: plan.skipped, runId, tmpRoot }
+    process.stdout.write((asJson ? JSON.stringify(msg, null, 2) : '## install-scanners — nothing to install (all detected tools present, or none installable)') + '\n')
+    return
+  }
+
+  if (!dryRun && !consent) {
+    const lines = [
+      '## install-scanners — NOT INSTALLED (no consent)',
+      '',
+      'A network install needs an explicit yes (the 0.5.4 P0 class; silence-is-yes never covers it).',
+      `Would install ${plan.installs.length} tool(s) to ${plan.tmpRoot} (removed at cleanup; evidence kept):`,
+      ...plan.installs.map((i) => `  • ${i.name} (${i.method}${i.version ? ' v' + i.version : ''})`),
+      '',
+      're-run with --consent to install, or --dry-run to see the full plan.',
+    ]
+    process.stdout.write((asJson ? JSON.stringify({ status: 'no-consent', plan }, null, 2) : lines.join('\n')) + '\n')
+    process.exitCode = 3
+    return
+  }
+
+  const manifest = installScanners(plan, { consent, dryRun, target })
+
+  if (asJson) { process.stdout.write(JSON.stringify(manifest, null, 2) + '\n'); return }
+  const L = [`## install-scanners — ${dryRun ? 'DRY RUN (no install performed)' : (consent ? 'installed' : '')}`, '']
+  L.push(`run: ${manifest.runId}   tmp: ${manifest.tmpRoot}   (${manifest.platform}-${manifest.arch})`)
+  for (const r of manifest.installs) {
+    const mark = r.status === 'installed' ? '✓' : (r.status === 'planned' ? '·' : '✗')
+    L.push(`${mark} ${r.name} (${r.method}${r.version ? ' v' + r.version : ''}) → ${r.status}${r.runnable ? '' : (r.status === 'failed' ? '  [' + (r.log || '').split('\n').pop() + ']' : '')}`)
+  }
+  if (manifest.skipped.length) L.push('', 'Skipped (PENDING-OWNER-RUN): ' + manifest.skipped.map((s) => `${s.name} (${s.reason})`).join('; '))
+  if (manifest.pathPrepend.length) L.push('', `PATH to prepend for the scan run: ${manifest.pathPrepend.join(delimiter)}`)
+  L.push('', `manifest: ${manifest.installs.length ? plan.manifestPath : '(none)'}   cleanup: node harness/cleanup-scanners.mjs --target <repo>`)
+  process.stdout.write(L.join('\n') + '\n')
+}
+
+function invokedDirectly() {
+  if (!process.argv[1]) return false
+  try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) }
+  catch { return fileURLToPath(import.meta.url) === process.argv[1] }
+}
+if (invokedDirectly()) main()

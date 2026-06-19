@@ -82,13 +82,20 @@ check('T5 determinism: same PATH → byte-identical JSON', () => {
   assert.equal(JSON.stringify(detectTools(d)), JSON.stringify(detectTools(d)))
 })
 
-check('T6 owner vs installable split: sf=owner (never auto-installed), semgrep=pip (installable)', () => {
+check('T6 owner vs installable split: sf+zap=owner (never auto-installed), semgrep+nuclei=installable', () => {
   const r = detectTools('')
   const sf = fam(r, 'code-analyzer').tools.find((t) => t.name === 'sf')
   assert.equal(sf.install, 'owner')
   assert.ok(!missingNames(r).includes('sf'), 'sf is owner-installed → never in installable-on-consent')
   assert.ok(r.summary.owner_missing.some((x) => x.name === 'sf'))
   assert.ok(missingNames(r).includes('semgrep'))
+  // ZAP is owner-run by nature (Java GUI app) → owner, never installable-on-consent.
+  const zap = fam(r, 'dast').tools.find((t) => t.name === 'zap')
+  assert.equal(zap.install, 'owner')
+  assert.ok(!missingNames(r).includes('zap'), 'zap is owner-run → never offered for tmp install')
+  assert.ok(r.summary.owner_missing.some((x) => x.name === 'zap'))
+  // nuclei IS a pinnable static binary → installable-on-consent.
+  assert.ok(missingNames(r).includes('nuclei'))
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

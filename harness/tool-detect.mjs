@@ -71,7 +71,9 @@ const FAMILIES = [
   {
     key: 'dast', label: 'Authenticated DAST',
     tools: [
-      { name: 'zap', bins: ['zap.sh', 'zaproxy'], install: 'binary', hint: 'download OWASP ZAP' },
+      // ZAP is owner-run by nature — a ~hundreds-of-MB Java GUI app needing a JRE, not a
+      // single pinnable static binary; run-scans Family 3 already treats it as owner-executed.
+      { name: 'zap', bins: ['zap.sh', 'zaproxy'], install: 'owner', hint: 'install OWASP ZAP (Java app + JRE) yourself — it is not a tmp-installable static binary; nuclei + schemathesis cover the automatable DAST surface' },
       { name: 'nuclei', bins: ['nuclei'], install: 'binary', hint: 'download the nuclei release binary' },
       { name: 'schemathesis', bins: ['schemathesis'], install: 'pip', hint: 'pip install schemathesis (OpenAPI fuzzing)' },
     ],

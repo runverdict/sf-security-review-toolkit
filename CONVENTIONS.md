@@ -141,6 +141,21 @@ Skills write into the PARTNER's repo, never into the plugin:
   but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
   a high-stakes prose layer is a candidate for promotion to an engine + a
   PreToolUse hook (runtime-independent enforcement).
+- **The ONE network-touching engine is `install-scanners.mjs`, and it is split to
+  keep the no-network rule intact (0.6.0).** Every other `harness/*.mjs` is pure,
+  no-network, byte-identical. `install-scanners.mjs` installs missing scan tools, so
+  its EXECUTOR must reach the network — the documented exception. It is split so the
+  honesty model still holds: `planInstalls()` is the PURE, byte-identical, test-backed
+  half (the plan — per-tool dir, literal commands, pinned URL+sha256, PATH-prepend);
+  `installScanners()` is the impure executor and **fails closed without explicit
+  `consent` at the engine boundary** (a network install is the 0.5.4 P0 class —
+  silence-is-yes never covers it, and the gate is re-asserted in code so a forgetful
+  caller still cannot install). Raw binary downloads are **sha256-verified against an
+  author-pinned checksum before the file is ever made executable or extracted**; no pin
+  ⇒ skipped → PENDING-OWNER-RUN, never run unverified. Bumping a pinned tool means
+  re-pinning the version AND every per-platform sha256 from the release's published
+  checksums. `cleanup-scanners.mjs` (the asymmetric remover) is manifest-driven and
+  likewise reads/removes only what the executor recorded.
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -175,7 +190,7 @@ sf-security-review-toolkit/
 │   ├── hosting-architecture.md.tmpl          ├── prior-pentest-attestation.md.tmpl  # WI-19 owner-completed pack
 │   ├── audit-ledger.schema.json     # ledger shape (+ per-pass audited_commit fingerprint)
 │   └── evidence-index.schema.json   # WI-20 typed evidence model
-├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed
+├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed (one network exception: install-scanners.mjs — §7)
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
@@ -183,6 +198,7 @@ sf-security-review-toolkit/
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
+│   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); the ONE network-touching engine (§7)
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
@@ -196,7 +212,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 15 dependency-free standing tests (140 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 16 dependency-free standing tests (152 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

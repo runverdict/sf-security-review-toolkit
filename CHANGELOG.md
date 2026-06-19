@@ -11,6 +11,34 @@ follow semantic versioning.
   scan-tool detector: per scan family, which local tools are PRESENT vs
   installable-on-consent vs owner / owner-portal. Detection only — it never installs or
   fetches. The foundation for the 0.6.0 preflight auto-gate.
+- **`harness/install-scanners.mjs`** (+ `test-install-scanners.mjs`, 13 checks) — the
+  consented, tmp-scoped scanner installer (0.6.0 build step 1). Installs tool-detect's
+  `installable_missing` set into `/tmp/sf-srt-scanners/<runid>/` (OUTSIDE the partner's
+  repo), records an install manifest, and writes a gitignored project pointer
+  (`.security-review/scanner-install.json`) so cleanup can later remove exactly those
+  paths while keeping the evidence. Split so the honesty model holds: **`planInstalls()`
+  is PURE** (byte-identical plan: per-tool dir, literal commands, pinned URL+sha256, the
+  PATH to prepend — what the standing test asserts), **`installScanners()` is the ONE
+  harness engine that touches the network** and **fails closed without explicit consent**
+  (`--consent`; silence-is-yes never authorizes a network install — the 0.5.4 P0 class —
+  and the gate is re-asserted at the engine boundary so a forgetful caller still can't
+  install). Per method: `pip`→tmp venv, `npm`→`--prefix`, `git`→shallow clone, `binary`→
+  pinned download that is **sha256-verified before it is ever made executable or extracted**
+  (a mismatch aborts that tool — an unverified binary is never run). pip/npm/git rest on
+  the package manager's own integrity (PyPI/npm/Git-over-TLS); the sha256 pin covers the
+  raw binary downloads that have none. Binaries pinned (version + per-platform sha256,
+  verified 2026-06-19): **osv-scanner 2.4.0, gitleaks 8.30.1, gosec 2.27.1, trivy 0.71.2,
+  nuclei 3.9.0** (raw / tar.gz / zip — zip via `unzip` or a `python3 -m zipfile` fallback
+  on hosts without `unzip`); a tool/platform with no pin is **skipped → PENDING-OWNER-RUN**,
+  never installed unverified. ZAP is reclassified **owner-run** (a ~hundreds-of-MB Java/JRE
+  GUI app, not a pinnable static binary — run-scans Family 3 already treats it as owner-
+  executed; nuclei + schemathesis cover the automatable DAST surface). Validated both
+  hermetically (git clone from a local repo + `file://` checksum good/bad, zero network)
+  and with real network smokes (osv-scanner raw, detect-secrets pip venv, nuclei zip,
+  gosec tar.gz — all install + run + checksum-verify on the dev host). The CC permission
+  boundary is the outer Bash call, so one approved `node install-scanners.mjs --consent`
+  covers every pip/curl/git/npm subprocess unprompted (verified vs the CC permissions/hooks
+  docs 2026-06-19) — the mechanism behind "one gate → prompt-free installs".
 
 ### Roadmap — 0.6.0 preflight auto-gate + consent-gated scanner install (owner-pitched)
 - Specced in **`docs/roadmap-0.6.0-preflight-autogate.md`**. Startup quick-scan (scope +
@@ -21,6 +49,11 @@ follow semantic versioning.
   test-backed + cold-validated before it ships. Honest constraint recorded: the toolkit
   cannot flip Claude Code's permission mode (shift+tab stays the user's), so it only
   consolidates its OWN confirmations into the single gate.
+- **Build progress:** step 1 (`install-scanners.mjs`) **done** (above). Remaining:
+  (2) `cleanup-scanners.mjs` (manifest-driven, asymmetric — remove tools, keep evidence);
+  (3) wire the single two-consent gate into the `security-review-journey` preflight;
+  (4) `run-scans` consumes the tmp-installed tools (else PENDING-OWNER-RUN, unchanged);
+  (5) cold-validate the gate+install+suite+cleanup → tag.
 
 ## [0.5.5] — 2026-06-18
 
