@@ -19,7 +19,7 @@
  * Dependency-free: `node acceptance/test-cleanup-scanners.mjs` (exit 0 = pass).
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { planCleanup, cleanupScanners } from '../harness/cleanup-scanners.mjs'
@@ -133,6 +133,18 @@ check('C7 resolves via --manifest and --tmp-root', () => {
   assert.equal(r2.status, 'cleaned')
   assert.ok(!existsSync(f2.tmpRoot))
   assert.ok(existsSync(f2.evidenceFile))
+})
+
+check('C8 SAFETY: a SYMLINK tmpRoot is REFUSED, its target is untouched (audit #6)', () => {
+  const box = sandbox('sf-srt-clean-')
+  // a real dir with a file, and a symlink (under a safe sf-srt path) pointing at it
+  const realDir = join(box, 'real-target'); mkdirSync(realDir, { recursive: true })
+  writeFileSync(join(realDir, 'precious.txt'), 'must survive')
+  const link = join(box, 'sf-srt-link'); symlinkSync(realDir, link)
+  const r = cleanupScanners({ tmpRoot: link })
+  assert.equal(r.status, 'refused', JSON.stringify(r))
+  assert.deepEqual(r.removed, [])
+  assert.ok(existsSync(join(realDir, 'precious.txt')), 'the symlink target must be untouched')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

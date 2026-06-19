@@ -16,10 +16,11 @@
  * Every other harness/*.mjs is pure, dependency-free, no-network, byte-identical
  * (CONVENTIONS §7). This one is the documented exception: its EXECUTOR fetches and
  * installs software. It is split so the honesty model still holds:
- *   • `planInstalls()` — PURE. From the installable set + (runId, tmpRoot, platform,
- *     arch) it computes the exact plan: per-tool target dir, the literal install
- *     commands, the pinned download URL + sha256, the PATH to prepend. No I/O,
- *     byte-identical, and what the standing test asserts.
+ *   • `planInstalls()` — DETERMINISTIC. From the installable set + (runId, tmpRoot,
+ *     platform, arch) it computes the exact plan: per-tool target dir, the literal
+ *     install commands, the pinned download URL + sha256, the PATH to prepend.
+ *     Byte-identical, no mutation, no network (one read-only realpath of the temp
+ *     base inside the safety check) — and what the standing test asserts.
  *   • `installScanners()` — IMPURE. Runs that plan. It FAILS CLOSED without
  *     explicit consent (`opts.consent === true` / `--consent`) — silence-is-yes
  *     never authorizes a network install (the 0.5.4 P0 class), and the gate is
@@ -51,14 +52,14 @@
  */
 import {
   mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync,
-  renameSync, realpathSync, statSync,
+  renameSync, realpathSync, statSync, copyFileSync,
 } from 'node:fs'
 import { join, delimiter, resolve, sep } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { detectTools } from './tool-detect.mjs'
+import { detectTools, whichOn } from './tool-detect.mjs'
 
 export const MANIFEST_SCHEMA = 'sf-srt-scanner-install/1'
 
@@ -136,24 +137,26 @@ const NPM_TOOLS = { retire: { pkg: 'retire', bin: 'retire' } }
 const GIT_TOOLS = { testssl: { repo: 'https://github.com/testssl/testssl.sh.git', dir: 'testssl.sh', bin: 'testssl.sh' } }
 
 const HEX64 = /^[0-9a-f]{64}$/
+const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/ // a non-trivial run-id token (never '', '.', '..', or a path)
+export const GROUP_DIR = 'sf-srt-scanners'        // the per-run grouping container under the temp base
 
-/** The only roots a tmp dir may live under (cleanup will rm -rf it — keep it boxed).
- *  Both the resolved and realpath'd forms, so a symlinked tmpdir (/tmp→/private/tmp) passes. */
-function allowedBases() {
+const realOr = (p) => { try { return realpathSync(p) } catch { return resolve(p) } }
+// The only roots a tmp dir may live under (cleanup rm -rf's it — keep it boxed). Snapshotted
+// ONCE at trusted module load (both resolved + realpath'd, so a symlinked /tmp→/private/tmp
+// passes) so a later TMPDIR/HOME mutation can't widen the allowed deletion base. (audit #5)
+const ALLOWED_BASES = (() => {
   const cache = join('.cache', 'sf-srt')
-  const set = new Set([
-    realOr(tmpdir()), resolve(tmpdir()),
-    join(realOr(homedir()), cache), join(resolve(homedir()), cache),
-  ])
-  return [...set]
-}
-function realOr(p) { try { return realpathSync(p) } catch { return resolve(p) } }
+  return [...new Set([realOr(tmpdir()), resolve(tmpdir()), join(realOr(homedir()), cache), join(resolve(homedir()), cache)])]
+})()
 
 /**
  * Guard the tmp root before anything is created OR removed. It MUST be a
- * non-trivial sub-path under the OS temp dir (or ~/.cache/sf-srt) AND carry an
- * `sf-srt` path segment — so a malformed/empty/'/'/$HOME/repo-root value can
- * never become an `rm -rf` target. Throws on violation (fail closed).
+ * non-trivial sub-path under the OS temp dir (or ~/.cache/sf-srt), carry an
+ * `sf-srt` path segment, AND sit strictly BELOW the per-run grouping container —
+ * so a malformed/empty/'/'/$HOME/repo-root value, or a degenerate run-id that
+ * collapses the path onto the SHARED grouping dir, can never become an `rm -rf`
+ * target (the latter would nuke every concurrent run — audit #8). Throws on
+ * violation (fail closed).
  */
 export function assertSafeTmpRoot(tmpRoot) {
   const p = resolve(String(tmpRoot || ''))
@@ -162,10 +165,14 @@ export function assertSafeTmpRoot(tmpRoot) {
   if (!segs.some((s) => /^sf-srt/.test(s))) {
     throw new Error(`unsafe tmp root (no sf-srt segment): '${p}' — refusing to use a path cleanup could rm -rf`)
   }
-  const bases = allowedBases()
-  const under = bases.some((b) => p === b || p.startsWith(b + sep))
-  if (!under) throw new Error(`unsafe tmp root (outside ${bases.join(' / ')}): '${p}'`)
-  if (bases.includes(p)) throw new Error(`unsafe tmp root (is a base dir, not a sub-path): '${p}'`)
+  const under = ALLOWED_BASES.some((b) => p === b || p.startsWith(b + sep))
+  if (!under) throw new Error(`unsafe tmp root (outside ${ALLOWED_BASES.join(' / ')}): '${p}'`)
+  if (ALLOWED_BASES.includes(p)) throw new Error(`unsafe tmp root (is a base dir, not a sub-path): '${p}'`)
+  // Reject the bare grouping container itself — a real per-run root always has a
+  // run-id segment AFTER it; targeting the group dir would remove sibling runs.
+  if (segs[segs.length - 1] === GROUP_DIR) {
+    throw new Error(`unsafe tmp root (is the shared '${GROUP_DIR}' grouping dir, not a per-run sub-path): '${p}'`)
+  }
   return p
 }
 
@@ -182,9 +189,9 @@ export function installCommands(inst) {
       return [
         `curl -fsSL -o ${inst.download} ${inst.source}`,
         `verify sha256(${inst.download}) == ${inst.checksum}`,
-        inst.archive === 'tar.gz' ? `tar -xzf ${inst.download} -C ${inst.targetDir}`
-          : inst.archive === 'zip' ? `unzip ${inst.download} -d ${inst.targetDir} (or python3 -m zipfile)`
-            : `install ${inst.expectedBin} (chmod +x)`,
+        inst.archive === 'tar.gz' || inst.archive === 'zip'
+          ? `extract '${inst.archiveBin}' from ${inst.download} → ${inst.expectedBin} (scratch _pkg/, aux files discarded)`
+          : `install ${inst.expectedBin} (chmod +x)`,
       ]
     default:
       return []
@@ -224,7 +231,10 @@ function resolveTool(t, tmpRoot, platKey) {
       install: {
         ...base, version: pin.version, source: pin.urlBase + asset.file,
         download: join(targetDir, asset.file), checksum: asset.sha256, archive: asset.archive,
-        binDir: targetDir, expectedBin: join(targetDir, pin.bin),
+        // binDir holds ONLY the verified binary: archives extract to a scratch _pkg/
+        // dir and just `archiveBin` is copied out, so the scan PATH never carries the
+        // archive's LICENSE/README/second-executables (audit #1).
+        binDir: targetDir, expectedBin: join(targetDir, pin.bin), archiveBin: pin.bin,
       },
     }
   }
@@ -232,12 +242,16 @@ function resolveTool(t, tmpRoot, platKey) {
 }
 
 /**
- * PURE. Compute the full install plan from tool-detect's installable set.
- * `installableMissing`: array of { name, family, install }. Byte-identical for a
- * given (installableMissing, runId, tmpRoot, platform, arch, only).
+ * Compute the full install plan from tool-detect's installable set.
+ * `installableMissing`: array of { name, family, install }. Deterministic +
+ * byte-identical for a given (installableMissing, runId, tmpRoot, platform, arch,
+ * only): no mutation, no network. (It does one read-only `realpath` of the temp/
+ * home base inside the tmp-root safety check — not "no I/O", but no writes. audit #12)
  */
 export function planInstalls(installableMissing, { runId, tmpRoot, platform, arch, only } = {}) {
-  if (!runId) throw new Error('planInstalls: runId is required')
+  if (!runId || !RUN_ID_OK.test(String(runId))) {
+    throw new Error(`planInstalls: run-id must be a non-trivial [A-Za-z0-9._-] token, got '${runId}' (an empty/'.'/path run-id would collapse the tmp dir onto the shared base)`)
+  }
   assertSafeTmpRoot(tmpRoot)
   const platKey = `${platform}-${arch}`
   const want = Array.isArray(installableMissing) ? installableMissing : []
@@ -274,7 +288,7 @@ function executeOne(inst) {
     status: 'planned', runnable: false, createdPaths: [inst.targetDir], log: '',
   }
   try {
-    mkdirSync(inst.targetDir, { recursive: true })
+    mkdirSync(inst.targetDir, { recursive: true, mode: 0o700 }) // 0700: not world-readable (audit #2)
     if (inst.method === 'pip') {
       run('python3', ['-m', 'venv', inst.venvDir], inst.targetDir)
       rec.log = run(join(inst.venvDir, 'bin', 'pip'), ['install', '--no-input', '--disable-pip-version-check', inst.pkg], inst.targetDir).slice(-2000)
@@ -283,7 +297,7 @@ function executeOne(inst) {
     } else if (inst.method === 'git') {
       rec.log = run('git', ['clone', '--depth', '1', inst.source, inst.cloneDir], inst.targetDir).slice(-2000)
     } else if (inst.method === 'binary') {
-      // download → VERIFY (before any exec/extract) → place.
+      // download → VERIFY (before any exec/extract) → place ONLY the verified binary.
       run('curl', ['-fsSL', '-o', inst.download, inst.source], inst.targetDir)
       const got = sha256File(inst.download)
       if (!HEX64.test(String(inst.checksum)) || got !== inst.checksum) {
@@ -292,18 +306,30 @@ function executeOne(inst) {
         try { rmSync(inst.download, { force: true }) } catch {}
         return rec
       }
-      if (inst.archive === 'tar.gz') {
-        run('tar', ['-xzf', inst.download, '-C', inst.targetDir], inst.targetDir)
-      } else if (inst.archive === 'zip') {
-        extractZip(inst.download, inst.targetDir) // unzip, or a python3 -m zipfile fallback
-      } else { // raw binary: it IS the download
+      if (inst.archive === 'tar.gz' || inst.archive === 'zip') {
+        // Extract into a scratch dir, then copy ONLY the intended binary up to binDir,
+        // and discard the rest — the scan PATH carries exactly the verified executable,
+        // never the archive's docs/aux files/second executables (audit #1).
+        const pkg = join(inst.targetDir, '_pkg')
+        mkdirSync(pkg, { recursive: true, mode: 0o700 })
+        if (inst.archive === 'tar.gz') run('tar', ['-xzf', inst.download, '-C', pkg], inst.targetDir)
+        else extractZip(inst.download, pkg) // unzip, or a python3 -m zipfile fallback
+        const src = join(pkg, inst.archiveBin)
+        if (!existsSync(src)) { rec.status = 'failed'; rec.log = `archive did not contain expected '${inst.archiveBin}'`; rmSync(pkg, { recursive: true, force: true }); return rec }
+        copyFileSync(src, inst.expectedBin)
+        rmSync(pkg, { recursive: true, force: true })
+        rmSync(inst.download, { force: true })
+      } else { // raw binary: the verified download IS the binary
         renameSync(inst.download, inst.expectedBin)
       }
-      try { chmodSync(inst.expectedBin, 0o755) } catch {} // zip extraction drops the exec bit
+      try { chmodSync(inst.expectedBin, 0o755) } catch {} // archive extraction can drop the exec bit
     } else {
       rec.status = 'failed'; rec.log = `unsupported method '${inst.method}'`; return rec
     }
-    // post-install reality check — runnable only if the expected bin now exists.
+    // post-install presence check — the expected bin is present + has the exec bit.
+    // (This is a placement check, not a full run-smoke; a tool that installs but
+    // can't actually execute — e.g. a missing runtime dep — would still read
+    // `installed`. The downstream scan invocation is the real proof. audit #9)
     rec.runnable = isExecutable(inst.expectedBin)
     rec.status = rec.runnable ? 'installed' : 'failed'
     if (!rec.runnable && !rec.log) rec.log = `install ran but ${inst.expectedBin} is not present/executable`
@@ -318,7 +344,8 @@ function isExecutable(p) {
   try { const s = statSync(p); return s.isFile() && (s.mode & 0o111) !== 0 } catch { return false }
 }
 
-function hasCmd(bin) { try { execFileSync('sh', ['-c', `command -v ${bin}`], { stdio: 'ignore' }); return true } catch { return false } }
+// Shell-free PATH probe (no `sh -c` string interpolation — audit #3).
+function hasCmd(bin) { return whichOn(bin, process.env.PATH || '') !== null }
 
 /** Extract a zip into dir — `unzip` if present, else python3's stdlib zipfile (no unzip on minimal hosts). */
 function extractZip(zip, dir) {
@@ -335,7 +362,7 @@ export function installScanners(plan, { consent = false, dryRun = false, target 
   if (!dryRun && consent !== true) {
     throw new Error('install-scanners: refusing to install without explicit consent (a network install is the 0.5.4 P0 class; silence-is-yes never covers it). Pass --consent.')
   }
-  mkdirSync(plan.tmpRoot, { recursive: true })
+  mkdirSync(plan.tmpRoot, { recursive: true, mode: 0o700 })
   const records = []
   for (const inst of plan.installs) {
     if (dryRun) {
@@ -384,8 +411,9 @@ function main() {
   const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
   const has = (f) => argv.includes(f)
   const target = arg('--target', null)
-  const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}`)
-  const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-scanners', runId))
+  // random suffix so the tmp path isn't predictable in world-writable /tmp (audit #2).
+  const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(4).toString('hex')}`)
+  const tmpRoot = arg('--tmp-root', join(tmpdir(), GROUP_DIR, runId))
   const only = (arg('--only', '') || '').split(',').map((s) => s.trim()).filter(Boolean)
   const consent = has('--consent')
   const dryRun = has('--dry-run')

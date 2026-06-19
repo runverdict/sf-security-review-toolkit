@@ -131,14 +131,25 @@ check('P4 only-filter, de-dup, pathPrepend = per-tool bin dirs', () => {
   assert.deepEqual(p.pathPrepend, p.installs.map((i) => i.binDir))
 })
 
-check('P5 assertSafeTmpRoot rejects dangerous roots, accepts a boxed sf-srt sub-path', () => {
+check('P5 assertSafeTmpRoot rejects dangerous roots (incl. the shared group dir), accepts a boxed sub-path', () => {
   for (const bad of ['', '/', sep, process.cwd(), homedir(), join(homedir(), 'projects', 'app'), join(tmpdir(), 'not-ours', 'x')]) {
     assert.throws(() => assertSafeTmpRoot(bad), new RegExp('unsafe tmp root'), `should reject ${bad}`)
   }
   // the temp dir base itself is rejected (must be a sub-path, not the base)
   assert.throws(() => assertSafeTmpRoot(tmpdir()), /unsafe tmp root/)
-  // a boxed path is accepted
+  // the SHARED grouping dir is rejected — a degenerate run-id collapsing onto it must
+  // not become an rm -rf target that nukes concurrent runs (audit #8)
+  assert.throws(() => assertSafeTmpRoot(join(tmpdir(), 'sf-srt-scanners')), /grouping dir/)
+  // a boxed per-run path is accepted
   assert.equal(assertSafeTmpRoot(join(tmpdir(), 'sf-srt-scanners', 'abc')), join(tmpdir(), 'sf-srt-scanners', 'abc'))
+})
+
+check('P5b planInstalls rejects a degenerate run-id (empty / . / .. / path / space)', () => {
+  for (const bad of ['', '.', '..', 'a/b', 'a b', '../x']) {
+    assert.throws(() => planInstalls(MISSING, { runId: bad, tmpRoot: ROOT0, platform: 'linux', arch: 'x64' }), /run-id/, `should reject run-id '${bad}'`)
+  }
+  // a normal token is fine
+  assert.ok(planInstalls(MISSING, { runId: 'ok-Run_1.2', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' }).installs.length)
 })
 
 check('P6 installCommands per method', () => {
@@ -244,6 +255,38 @@ check('E5 binary checksum BAD (file:// URL) → failed, bin NEVER created', () =
   assert.match(m.installs[0].log, /checksum mismatch/)
   assert.ok(!existsSync(join(target, 'osv-scanner')), 'an unverified binary must NEVER be placed/executed')
   assert.deepEqual(m.pathPrepend, [], 'a failed install contributes no PATH entry')
+})
+
+check('E6 extract-to-scratch (tar.gz): ONLY the verified binary lands on PATH, not the archive aux files', () => {
+  const base = mkroot()
+  // build a tar.gz carrying [mytool, LICENSE, evil] — only mytool may end up on PATH
+  const stage = join(base, 'stage'); mkdirSync(stage, { recursive: true })
+  writeFileSync(join(stage, 'mytool'), '#!/bin/sh\necho mytool\n'); chmodSync(join(stage, 'mytool'), 0o755)
+  writeFileSync(join(stage, 'LICENSE'), 'license text')
+  writeFileSync(join(stage, 'evil'), '#!/bin/sh\necho evil\n'); chmodSync(join(stage, 'evil'), 0o755)
+  const tgz = join(base, 'mytool.tar.gz')
+  execFileSync('tar', ['-czf', tgz, '-C', stage, '.'])
+  const sum = sha256(readFileSync(tgz))
+  const root = join(base, 'sf-srt-scanners', 'e6')
+  const target = join(root, 'mytool')
+  const plan = {
+    schema: MANIFEST_SCHEMA, runId: 'e6', tmpRoot: root, platform: 'linux', arch: 'x64',
+    manifestPath: join(root, 'install-manifest.json'), pointerRel: join('.security-review', 'scanner-install.json'),
+    skipped: [], pathPrepend: [target],
+    installs: [{
+      name: 'mytool', family: 'external-sast', method: 'binary', version: '1.0.0',
+      targetDir: target, binDir: target, expectedBin: join(target, 'mytool'), archiveBin: 'mytool',
+      source: `file://${tgz}`, download: join(target, 'mytool.tar.gz'), checksum: sum, archive: 'tar.gz',
+      commands: ['(hermetic)'],
+    }],
+  }
+  const m = installScanners(plan, { consent: true })
+  assert.equal(m.installs[0].status, 'installed', m.installs[0].log)
+  assert.ok(isExec(join(target, 'mytool')), 'the verified binary is placed + executable')
+  assert.ok(!existsSync(join(target, 'LICENSE')), 'archive LICENSE must NOT land on PATH')
+  assert.ok(!existsSync(join(target, 'evil')), 'a second archive executable must NOT land on PATH')
+  assert.ok(!existsSync(join(target, '_pkg')), 'the extraction scratch dir is removed')
+  assert.ok(!existsSync(join(target, 'mytool.tar.gz')), 'the downloaded archive is removed')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

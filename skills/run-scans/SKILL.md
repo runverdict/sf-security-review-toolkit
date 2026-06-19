@@ -119,7 +119,10 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    subprocess** — those are the scanners the operator consented to install for this
    run; with them on the PATH, the external-SAST/SCA/secret/TLS/DAST families that
    would otherwise be `PENDING-OWNER-RUN` now resolve to real tools and real evidence.
-   Re-detect availability with the PATH in place (a tool both present-on-PATH and in
+   **Verify each `pathPrepend` dir still EXISTS before trusting it** — the tmp dir
+   lives under `/tmp`, which a reboot wipes, so a stale pointer can outlive its tools;
+   a missing dir means treat that family as `PENDING-OWNER-RUN`, not present. Re-detect
+   availability with the (surviving) PATH in place (a tool both present-on-PATH and in
    the pointer is just present). Warn when any `scan-*`/`dast-*`/`endpoint-*` entry
    this run uses has `last_verified` older than 90 days (CONVENTIONS §4). Surface every
    `conflicting` entry with its `conflicts` text — never silently pick a

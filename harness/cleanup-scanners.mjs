@@ -29,7 +29,7 @@
  *
  * USAGE: node cleanup-scanners.mjs [--target <repo>] [--manifest <file>] [--tmp-root <dir>] [--json]
  */
-import { readFileSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, rmSync, lstatSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { realpathSync } from 'node:fs'
@@ -102,6 +102,14 @@ export function cleanupScanners(opts = {}) {
   let plan
   try { plan = planCleanup(src) }
   catch (e) { return { status: 'refused', tmpRoot: src.tmpRoot, error: String(e && e.message || e), removed: [] } }
+
+  // A legitimate install always creates a real directory tmp root. A SYMLINK there is
+  // never something we made — refuse rather than touch it (defense-in-depth; rmSync
+  // would unlink the link, but reporting it 'cleaned' would misstate what happened, and
+  // a symlink is a red flag worth surfacing, not silently unlinking — audit #6).
+  let symlink = false
+  try { symlink = lstatSync(plan.tmpRoot).isSymbolicLink() } catch { /* absent → handled below */ }
+  if (symlink) return { status: 'refused', tmpRoot: plan.tmpRoot, error: 'tmp root is a symlink (a real install never produces one) — refusing', removed: [] }
 
   const existed = existsSync(plan.tmpRoot)
   if (existed) rmSync(plan.tmpRoot, { recursive: true, force: true })

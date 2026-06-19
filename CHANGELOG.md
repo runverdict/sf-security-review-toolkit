@@ -11,7 +11,7 @@ follow semantic versioning.
   scan-tool detector: per scan family, which local tools are PRESENT vs
   installable-on-consent vs owner / owner-portal. Detection only — it never installs or
   fetches. The foundation for the 0.6.0 preflight auto-gate.
-- **`harness/install-scanners.mjs`** (+ `test-install-scanners.mjs`, 13 checks) — the
+- **`harness/install-scanners.mjs`** (+ `test-install-scanners.mjs`, 14 checks) — the
   consented, tmp-scoped scanner installer (0.6.0 build step 1). Installs tool-detect's
   `installable_missing` set into `/tmp/sf-srt-scanners/<runid>/` (OUTSIDE the partner's
   repo), records an install manifest, and writes a gitignored project pointer
@@ -39,7 +39,7 @@ follow semantic versioning.
   boundary is the outer Bash call, so one approved `node install-scanners.mjs --consent`
   covers every pip/curl/git/npm subprocess unprompted (verified vs the CC permissions/hooks
   docs 2026-06-19) — the mechanism behind "one gate → prompt-free installs".
-- **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 6 checks) — the
+- **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 7 checks) — the
   ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
   the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —
   and the asymmetry is structural, not a careful filter: the tools live under the tmp root,
@@ -54,6 +54,33 @@ follow semantic versioning.
   the tmp tools are gone. Validated hermetically (6 checks: asymmetry, refusal, idempotency,
   nothing-to-clean) + a live install→evidence→cleanup roundtrip (tmp removed, a 75-byte
   evidence file survived byte-for-byte).
+
+### Hardened (post-build adversarial audit of the 0.6.0 install/cleanup engines)
+A 4-lens adversarial Workflow (supply-chain, rm-safety, honesty, wiring) over the new
+engines surfaced 13 LOW latent findings (none exploitable today — all pin-/consent-gated);
+the real ones are now fixed + test-backed:
+- **Degenerate `--run-id` no longer collapses the tmp dir onto the SHARED grouping base.**
+  An empty / `.` / path run-id would have made `tmpRoot` = `<tmp>/sf-srt-scanners` (the
+  container that holds every run), which cleanup's `rm -rf` would then nuke across
+  concurrent runs. `planInstalls` now rejects a non-token run-id, and `assertSafeTmpRoot`
+  rejects the bare grouping dir (must be a per-run sub-path). (audit #8 — the one real bug)
+- **Only the verified binary lands on the scan PATH.** Archive tools (tar.gz/zip) now
+  extract to a scratch `_pkg/` dir; just the intended binary is copied out and the rest
+  (LICENSE/README/any second executable) discarded — so a future pin-bump can't silently
+  put an extra executable on the scan PATH where it could shadow a system tool. (audit #1)
+- **Smaller TOCTOU surface in `/tmp`:** the default run-id gets a `crypto.randomBytes`
+  suffix (unpredictable path) and all tmp dirs are created `0700`. (audit #2)
+- **`cleanup-scanners` refuses a symlink tmp root** (a real install never makes one) and
+  the allowed-deletion bases are snapshotted at module load (a late `TMPDIR`/`HOME` change
+  can't widen them). (audit #5/#6)
+- `hasCmd` is now a shell-free PATH probe (no `sh -c` string). (audit #3)
+- Honesty wording corrected: `planInstalls` is "deterministic / no mutation / no network"
+  (it does one read-only realpath, so not literally "no I/O"); the post-install check is a
+  "presence + exec-bit" check, not a full run-smoke; `run-scans` verifies each `pathPrepend`
+  dir still exists (a reboot wipes `/tmp`) before trusting the pointer. (audit #7/#9/#12)
+- Doc counts corrected (`test-install-scanners` is 14 checks, not 13). (audit #4/#10/#11)
+- New standing tests lock the safety fixes: degenerate-run-id rejection, grouping-dir
+  rejection, extract-to-scratch (only-the-bin-on-PATH), and the cleanup symlink refusal.
 
 ### Changed
 - **`skills/security-review-journey/SKILL.md` — the single up-front consent gate wired in
