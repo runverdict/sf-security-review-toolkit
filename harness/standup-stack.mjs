@@ -49,12 +49,15 @@ export function stackNames(runId) {
  * PURE. From a stack-detect result, compute the throwaway stand-up spec.
  * Deterministic given (stack, runId, tmpRoot, port). Throws on an unrunnable stack.
  */
-export function planStandup(stack, { runId, target, tmpRoot, port } = {}) {
+export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {}) {
   if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`planStandup: invalid run-id '${runId}'`)
   if (!target) throw new Error('planStandup: target repo required')
   assertSafeTmpRoot(tmpRoot)
-  if (!stack || stack.status !== 'runnable') {
-    throw new Error(`planStandup: stack is '${stack && stack.status}', not 'runnable' — resolve recipe/secrets first (the gate handles needs-*)`)
+  // 'runnable' stands up directly; a 'needs-secrets' stack stands up only once an
+  // operator-filled env-file satisfies the external creds (the scaffold-env loop).
+  const ok = stack && (stack.status === 'runnable' || (stack.status === 'needs-secrets' && envFile))
+  if (!ok) {
+    throw new Error(`planStandup: stack is '${stack && stack.status}', not standable — resolve recipe/secrets first (needs-secrets needs a filled --env-file via scaffold-env)`)
   }
   const recipe = stack.recipe || {}
   const names = stackNames(runId)
@@ -77,6 +80,9 @@ export function planStandup(stack, { runId, target, tmpRoot, port } = {}) {
     sourceDir, entry, workdir: '/app',
     command: `npm install --no-audit --no-fund --loglevel=error && node ${entry}`,
     synthEnvNames: [...synthNames], benignEnv: benign,
+    // operator-filled external creds (from scaffold-env) loaded via docker --env-file →
+    // the VALUES go straight into the container, never into argv or the manifest.
+    envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
     tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
     pointerRel: join('.security-review', 'stack-standup.json'),
   }
@@ -130,9 +136,11 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   for (const n of plan.synthEnvNames) envArgs.push('-e', `${n}=${randomBytes(24).toString('hex')}`)
   try {
     quiet('docker', ['rm', '-f', plan.container]) // clear any stale same-name container
+    // operator-filled external creds: docker reads the file directly (values never in argv).
+    const fileArgs = plan.envFile && existsSync(plan.envFile) ? ['--env-file', plan.envFile] : []
     // COPY-IN, not bind-mount: create → cp source → start (working tree stays in the container).
     run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
-      ...envArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
+      ...envArgs, ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
     // manifest is written NOW (container exists) so even a crashed start is teardown-able.
     writeManifest(plan, rec, target)
     run('docker', ['cp', `${plan.sourceDir}/.`, `${plan.container}:${plan.workdir}`])
@@ -165,12 +173,13 @@ function main() {
   const consent = argv.includes('--consent')
   const asJson = argv.includes('--json')
   const portArg = arg('--port', null)
+  const envFile = arg('--env-file', null) // operator-filled externals (scaffold-env)
 
   // stack-detect's CLI already returns the classified result — use it directly.
   const stackDetect = fileURLToPath(new URL('./stack-detect.mjs', import.meta.url))
   const stack = JSON.parse(run('node', [stackDetect, '--target', target, '--json']))
   let plan
-  try { plan = planStandup(stack, { runId, target, tmpRoot, port: portArg }) }
+  try { plan = planStandup(stack, { runId, target, tmpRoot, port: portArg, envFile }) }
   catch (e) {
     const msg = { status: 'not-runnable', stackStatus: stack.status, error: String(e.message) }
     process.stdout.write((asJson ? JSON.stringify(msg, null, 2) : `## standup-stack — cannot stand up: ${msg.error}`) + '\n')

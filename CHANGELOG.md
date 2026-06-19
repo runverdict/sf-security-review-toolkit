@@ -80,6 +80,19 @@ follow semantic versioning.
   CSP missing, X-Powered-By leak, …), host-owned, kept through teardown, fixture pristine.
   Unauthenticated baseline this slice; the authenticated, endpoint-fed AF-plan pass (using a
   token minted from the throwaway's own synthesized secret) is the depth refinement (slice 5b).
+- **`harness/scaffold-env.mjs`** (+ `test-scaffold-env.mjs`, 3) — the 0.7.0 slice-6
+  credential scaffold-and-guide loop for a `needs-secrets` stack (one the toolkit can't
+  fully synthesize — a real DATABASE_URL, a third-party key). It writes an env STUB naming
+  the required external keys, the operator fills it, and a **deterministic re-check**
+  (`envStatus`: a key counts filled only with a non-empty, non-placeholder value; `ready`
+  iff all filled) lets the autonomous loop resume. The credential contract (CONVENTIONS §6)
+  is load-bearing: the stub lives in the throwaway's **tmp dir, never the repo / not
+  `.security-review/`**; `standup-stack` now takes `--env-file` and loads it via docker's
+  `--env-file` so the **VALUES go straight into the container — never into argv, the
+  manifest, or any state file** — and the tmp dir (values and all) is destroyed at teardown.
+  `planStandup` now accepts a `needs-secrets` stack ONLY once a filled env-file satisfies it.
+  Validated hermetically (4 checks across scaffold-env + standup) + a real loop smoke
+  (needs-secrets repo → stub → WAITING → fill → READY).
 - **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 7 checks) — the
   ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
   the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —

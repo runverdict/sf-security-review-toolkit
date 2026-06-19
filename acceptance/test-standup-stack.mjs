@@ -42,9 +42,9 @@ check('U1 planStandup: runnable node stack → container, baseUrl, synth env, co
   assert.equal(p.benignEnv.PORT, '8080')
 })
 
-check('U2 planStandup throws on a non-runnable stack', () => {
-  assert.throws(() => planStandup({ status: 'needs-secrets' }, { runId: 'u2', target: TARGET, tmpRoot: TMP }), /not 'runnable'/)
-  assert.throws(() => planStandup({ status: 'needs-recipe' }, { runId: 'u2', target: TARGET, tmpRoot: TMP }), /not 'runnable'/)
+check('U2 planStandup throws on a non-standable stack', () => {
+  assert.throws(() => planStandup({ status: 'needs-secrets' }, { runId: 'u2', target: TARGET, tmpRoot: TMP }), /not standable/)
+  assert.throws(() => planStandup({ status: 'needs-recipe' }, { runId: 'u2', target: TARGET, tmpRoot: TMP }), /not standable/)
 })
 
 check('U3 planStandup: a non-node recipe → unsupported (honest, later slice)', () => {
@@ -72,6 +72,21 @@ check('U6 the plan carries only synth env NAMES, never secret values', () => {
   // names present, but no generated 48-hex secret value anywhere in the plan
   assert.ok(blob.includes('ATLAS_JWT_SECRET'))
   assert.ok(!/[0-9a-f]{48}/.test(blob), 'no synthesized secret value should be in the plan')
+})
+
+check('U7 needs-secrets stands up ONLY with a filled --env-file (the scaffold-env loop)', () => {
+  const needsSecrets = {
+    status: 'needs-secrets', recipe: { kind: 'node', root: 'api', entry: 'index.js' },
+    webTier: { port: 3000 }, env: { synthesizable: ['SESSION_SECRET'], external: ['DATABASE_URL'], benign: ['PORT'], unknown: [] },
+  }
+  const tmp = join(tmpdir(), 'sf-srt-stack', 'u7')
+  // without an env-file → refused
+  assert.throws(() => planStandup(needsSecrets, { runId: 'u7', target: TARGET, tmpRoot: tmp }), /not standable/)
+  // with a filled env-file → standable; the plan references the env-file + records the external NAMES (not values)
+  const p = planStandup(needsSecrets, { runId: 'u7', target: TARGET, tmpRoot: tmp, envFile: '/tmp/sf-srt-stack/u7/throwaway.env' })
+  assert.equal(p.envFile, '/tmp/sf-srt-stack/u7/throwaway.env')
+  assert.deepEqual(p.externalEnvNames, ['DATABASE_URL'])
+  assert.ok(!JSON.stringify(p).includes('postgres'), 'the plan never carries the external secret VALUE')
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

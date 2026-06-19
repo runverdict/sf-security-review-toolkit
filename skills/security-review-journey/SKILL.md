@@ -373,10 +373,15 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    throwaway, keep the evidence). **ALWAYS run teardown, even on failure/abort** — never
    leave a stack (with secrets in its env) up. Label the evidence as **local-throwaway**
    (corroborating + a de-risking dry run), NOT the production-equivalent submission scan.
-   If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first (write the env
-   stub, name the keys, wait for the operator to fill + confirm, then stand up). If
-   `needs-recipe`/`n/a`, or the consent was declined, DAST stays owner-run — emit the ZAP
-   plan into `PENDING-OWNER-RUN.md`, no stand-up.
+   If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/scaffold-env.mjs --target <target> --run-id <id>`
+   writes an env STUB in the throwaway's tmp dir (NEVER the repo) naming the external
+   creds; tell the operator to fill it, then re-check with `--check` (deterministic — a
+   key counts filled only with a non-empty, non-placeholder value); on `ready`, stand up
+   with `standup-stack.mjs … --env-file <stub>` (docker loads the values straight into the
+   container — they never touch argv, the manifest, or `.security-review/`, and the tmp dir
+   is destroyed at teardown). If `needs-recipe`/`n/a`, or the consent was declined, DAST
+   stays owner-run — emit the ZAP plan into `PENDING-OWNER-RUN.md`, no stand-up.
 
 6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
    Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce

@@ -169,24 +169,23 @@ malformed manifest, and "keep the evidence" as a structural invariant.
 
 ## Build order (slices — each test-backed + committed, off the 0.6.0 base)
 
-1. **Endpoint-discovery autofill** — populate the DAST/TLS plan targets from the authed
-   org + routes + OpenAPI (cheap, pure win; no stand-up needed).
-2. **`stack-detect.mjs`** — deterministic: run recipe present? web tier + ports? required
-   env-var *names*? → `runnable | needs-recipe | needs-secrets | n/a`. (mirrors
-   `tool-detect`/`package-readiness`.) + test.
-3. **`standup-stack.mjs` + `teardown-stack.mjs`** — the scratch-org analogue for the
-   server: consented, isolated stand-up with a created-resource manifest; guaranteed
-   asymmetric teardown. + tests (hermetic: a trivial compose stack stood up + torn down,
-   evidence-dir survives, unrecorded resources untouched).
-4. **Gate third-consent + the toolkit-vs-owner marking** wired into the journey preflight.
-5. **DAST against the throwaway** — ZAP (Docker digest) + nuclei + schemathesis driven
-   from the autofilled plan against the stand-up; evidence under
-   `.security-review/evidence/dast/`, labelled with the throwaway's fidelity.
-6. **The credential scaffold-and-guide-and-resume loop** — the §"Credentials" contract,
-   with the deterministic "keys now non-empty?" re-check that resumes the loop. + test.
-7. **Cold-validate against `~/srt-coldstart-full` (Atlas)** — its external Node/Python API
-   stood up as a throwaway → real ZAP/nuclei/schemathesis evidence on disk → torn down,
-   evidence kept. Pre-committed pass condition; grade cold off disk → tag.
+1. **Endpoint-discovery autofill** — DAST/TLS plan targets from the authed org + routes +
+   OpenAPI. *(deferred — the baseline ZAP scan works without it; folds into slice 5b.)*
+2. ✅ **`stack-detect.mjs`** — `runnable | needs-recipe | needs-secrets | n/a` + env class.
+3. ✅ **`standup-stack.mjs` + `teardown-stack.mjs`** — consented isolated stand-up (copy-in,
+   synth secrets, resource manifest) + asymmetric name-scoped guaranteed teardown.
+4. ✅ **Gate third-consent + toolkit-vs-owner marking** wired into the journey preflight + run.
+5. ✅ **DAST against the throwaway** — `run-dast.mjs`: digest-pinned ZAP → host-owned
+   evidence under `evidence/dast/`, labelled local-throwaway. *(5b: authenticated,
+   endpoint-fed AF-plan pass with a minted token — depth refinement, still to do.)*
+6. ✅ **The credential scaffold-and-guide-and-resume loop** — `scaffold-env.mjs` (env stub
+   in tmp, deterministic filled-check) + `standup-stack --env-file`.
+7. **Cold-validate against `~/srt-coldstart-full` (Atlas)** — the full
+   `standup → run-dast → teardown` through the journey gate → real evidence → torn down,
+   evidence kept. Pre-committed pass condition; grade cold off disk → tag. **← next.**
+
+**Slices 2–6 built + committed + validated (the engine chain is real and Atlas-smoked
+end-to-end). Remaining: the cold-validation (slice 7) + the slice-5b authenticated depth.**
 
 ## Open questions to settle during the build
 
