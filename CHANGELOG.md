@@ -49,6 +49,24 @@ follow semantic versioning.
   the owner must supply → the scaffold-and-guide path), or **benign** (safe default). Pure
   `classifyStack`/`classifyEnvName` core + a dependency-free CLI fact-gather. Smoke-true on
   Atlas (Node forecast API, port 8080, `ATLAS_JWT_SECRET` synthesizable → `runnable`).
+- **`harness/standup-stack.mjs`** (+ `test-standup-stack.mjs`, 6) + **`harness/teardown-stack.mjs`**
+  (+ `test-teardown-stack.mjs`, 6) — the 0.7.0 slice-3 pair: the server-tier analogue of
+  install-scanners/cleanup-scanners. `standup-stack` stands a runnable stack up as an
+  ISOLATED throwaway container — encoding the prototype's lessons: **COPY the source into
+  the container** (`docker create → cp → start`), never bind-mount it (so the working tree
+  is ephemeral inside the container, never root-owned host files); **synthesize the
+  self-contained secrets** (random values set on the throwaway → the toolkit can mint its
+  own auth tokens for an authenticated scan) with the **values living only in the container
+  env and the manifest recording NAMES only**; publish on `127.0.0.1` only; record a
+  manifest of exactly the resources created. Fails closed without consent; pure
+  `planStandup` + impure executor. `teardown-stack` is the asymmetric, manifest-driven
+  remover: it deletes EXACTLY the recorded resources (container/image/network/tmp) and
+  keeps the evidence, **name-scoped** so a non-`sf-srt-stack-` docker name is REFUSED (the
+  docker analogue of assertSafeTmpRoot — a tampered manifest can never `docker rm` an
+  unrelated container), idempotent + guaranteed (works from the manifest alone). Validated
+  hermetically (12 checks) + a real Atlas smoke: the engines autonomously stood the Node
+  API up (synth secret, `/healthz` 200), then tore it down (container + tmp gone, evidence
+  kept, fixture left pristine). This makes the prototype's manual loop real engines.
 - **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 7 checks) — the
   ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
   the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —

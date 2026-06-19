@@ -208,13 +208,15 @@ sf-security-review-toolkit/
 │   ├── injection-check.mjs          # audit-engine pre-launch check: decoy-anchored INJECTED-object validate (G5)
 │   ├── package-readiness.mjs        # preflight power-up precondition: deep-audit install-readiness (installable|needs-build|n/a) from sfdx-project.json
 │   ├── stack-detect.mjs             # 0.7.0 foundation: throwaway-DAST-target detector (runnable|needs-recipe|needs-secrets|n/a) + env class (synthesizable|external|benign)
+│   ├── standup-stack.mjs            # 0.7.0 slice 3: consented stand-up of an isolated throwaway container (copy-in, synth secrets, manifest); fails closed w/o consent
+│   ├── teardown-stack.mjs           # 0.7.0 slice 3: asymmetric manifest-driven teardown — remove the container/image/tmp, KEEP evidence; name-scoped (refuses a non-sf-srt-stack resource)
 │   └── zap/{README.md, zap-plan-template.yaml}   # authenticated DAST plan generator assets
 ├── acceptance/                      # the acceptance + standing-test harness
 │   ├── generate-fixture.mjs         # builds the synthetic "Helios" fixture on demand (never committed)
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 18 dependency-free standing tests (167 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 20 dependency-free standing tests (179 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook
