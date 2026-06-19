@@ -199,6 +199,7 @@ sf-security-review-toolkit/
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
 │   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); the ONE network-touching engine (§7)
+│   ├── cleanup-scanners.mjs         # 0.6.0 step 2: asymmetric manifest-driven teardown — remove the tmp tool dir, KEEP the evidence; reuses assertSafeTmpRoot (refuses an unsafe root)
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
@@ -212,7 +213,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 16 dependency-free standing tests (152 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 17 dependency-free standing tests (158 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

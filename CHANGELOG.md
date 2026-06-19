@@ -39,6 +39,21 @@ follow semantic versioning.
   boundary is the outer Bash call, so one approved `node install-scanners.mjs --consent`
   covers every pip/curl/git/npm subprocess unprompted (verified vs the CC permissions/hooks
   docs 2026-06-19) — the mechanism behind "one gate → prompt-free installs".
+- **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 6 checks) — the
+  ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
+  the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —
+  and the asymmetry is structural, not a careful filter: the tools live under the tmp root,
+  the evidence lives under `<repo>/.security-review/evidence/` (a different tree), so a
+  single `rm -rf <tmpRoot>` can never reach the evidence (the SCI's on-disk proof). It
+  never touches a pre-existing tool (it only knows the paths the manifest recorded). Reuses
+  the installer's `assertSafeTmpRoot` as the single safety source: a tampered/garbled
+  manifest whose `tmpRoot` is `/`, `$HOME`, or the repo root is **REFUSED — nothing
+  removed** (a bad manifest can never become an `rm -rf` disaster). Idempotent
+  (`already-clean` on a second run), resolves from the project pointer / `--manifest` /
+  `--tmp-root`, and marks the pointer `cleaned` (with `pathPrepend: []`) so run-scans knows
+  the tmp tools are gone. Validated hermetically (6 checks: asymmetry, refusal, idempotency,
+  nothing-to-clean) + a live install→evidence→cleanup roundtrip (tmp removed, a 75-byte
+  evidence file survived byte-for-byte).
 
 ### Roadmap — 0.6.0 preflight auto-gate + consent-gated scanner install (owner-pitched)
 - Specced in **`docs/roadmap-0.6.0-preflight-autogate.md`**. Startup quick-scan (scope +
@@ -49,11 +64,10 @@ follow semantic versioning.
   test-backed + cold-validated before it ships. Honest constraint recorded: the toolkit
   cannot flip Claude Code's permission mode (shift+tab stays the user's), so it only
   consolidates its OWN confirmations into the single gate.
-- **Build progress:** step 1 (`install-scanners.mjs`) **done** (above). Remaining:
-  (2) `cleanup-scanners.mjs` (manifest-driven, asymmetric — remove tools, keep evidence);
-  (3) wire the single two-consent gate into the `security-review-journey` preflight;
-  (4) `run-scans` consumes the tmp-installed tools (else PENDING-OWNER-RUN, unchanged);
-  (5) cold-validate the gate+install+suite+cleanup → tag.
+- **Build progress:** steps 1 (`install-scanners.mjs`) + 2 (`cleanup-scanners.mjs`)
+  **done** (above). Remaining: (3) wire the single two-consent gate into the
+  `security-review-journey` preflight; (4) `run-scans` consumes the tmp-installed tools
+  (else PENDING-OWNER-RUN, unchanged); (5) cold-validate the gate+install+suite+cleanup → tag.
 
 ## [0.5.5] — 2026-06-18
 
