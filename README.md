@@ -101,9 +101,11 @@ permission prompts for an autonomous run:
   auto-accept **on for the duration of the run** — then turn it back off, and
   don't use it casually on a repo you don't trust.
 
-Either way, the optional `sf`-CLI deployed-org deep audit and any live-endpoint
-probe **always pause for explicit consent** — those touch live systems, and no
-allowlist or auto-accept silences them.
+Either way, the up-front gate's live/network steps — installing the missing scanners
+to a tmp dir (a network fetch), standing up a **throwaway** backend + active-scanning
+it, the optional `sf`-CLI deployed-org deep audit, and any live-endpoint probe —
+**always require an explicit yes** — those touch live systems or mutate the host, and
+no allowlist or auto-accept silences them.
 
 ### Optional enforcement hook (disclosed in full)
 
@@ -169,19 +171,47 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**0.5.2–0.5.4 (in development) — the triage gate is now audit-only: it auto-proceeds to the full
-NOT-READY report (no fix-first, no human election), withholding only the AuthN/AuthZ doc over a
-live auth hole (now incl. session-token egress + JWT verification), and failing SAFE on a malformed
-ledger; the deployed-org-deep-audit power-up offer is accurate up front (install-readiness sensed in
-the preflight). 0.5.4 hardens from the 0.5.2 cold run: scans NEVER self-install or auto-fetch rule
-packs (an absent scanner is PENDING-OWNER-RUN — installs/network egress need explicit consent), plus
-a batch of cold-run + truth-audit fixes. 0.5.1 (tagged) proved C1 staleness live + the fix-first
-gate's positive side.**
+**v0.7.0 (tagged, cold-validated 2026-06-19) — the toolkit now installs the scan tooling and
+runs the DAST itself, end to end, behind one up-front consent gate.** A single preflight gate
+carries the run's only confirmations: (1) full-auto vs guided, (2) install the missing scanners to
+a tmp dir for the run, and (3) stand up your external backend as an isolated **throwaway** and
+active-scan it. On yes, the run produces real Semgrep/OSV/Checkov/secret evidence **plus** a real
+digest-pinned ZAP scan against a disposable mirror it stands up — then tears it all down keeping the
+evidence, the **credential contract** holding throughout (synthetic secrets live only in the
+container; state files record names only; loopback-only scan target). `main` carries 0.7.1 (Docker
+prerequisite detection + graceful degradation) and 0.7.2 (deep-audit build-feasibility check). The
+v0.7.0 cold run — one full autonomous journey on a 0-context seeded fixture, graded off disk —
+re-confirmed the 0.5.x triage/withhold/SCI honesty properties firing live.
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
 engines in `harness/` guarded by 24 standing test files (195 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
+  DAST runs in containers, so `harness/docker-check.mjs` detects Docker (`available | absent |
+  daemon-down`) and the gate offers it only when it can actually run — else an honest "install
+  Docker once, or DAST stays owner-run" (Docker is a *guided* prerequisite, never tmp-installed:
+  it's a privileged daemon, unlike the userland scanners). `harness/namespace-check.mjs` confirms
+  the package's namespace is registered to the authed Dev Hub before the deep-audit gate offers a
+  managed-2GP build — so it never offers a build that would fail at `sf package version create`
+  and mutate your repo first.
+- **New in 0.7.0 — the autonomous throwaway-DAST harness (cold-validated, tagged).** The server-
+  tier analogue of the deployed-org deep audit: `stack-detect` classifies whether your external
+  backend can stand up; `standup-stack` runs it as an **isolated throwaway container** (copy-in,
+  synthetic secrets, manifest of names not values, `127.0.0.1`-only); `run-dast` runs a
+  **digest-pinned ZAP** against that disposable mirror and writes host-owned, self-labelled
+  *local-throwaway* evidence; `teardown-stack` destroys it (name-scoped, guaranteed, evidence
+  kept); `scaffold-env` handles a `needs-secrets` stack (an env stub in tmp, never the repo, with
+  a deterministic filled-check). The active scan only ever hits a mirror the toolkit built — never
+  live prod, Salesforce infra, or a third party. 12 adversarial-audit findings (several HIGH —
+  a credential leak, the loopback boundary, guaranteed teardown) were fixed before the tag.
+- **New in 0.6.0 — consented, tmp-scoped scanner install.** `tool-detect` reports which scan
+  tools are present vs installable-on-consent; `install-scanners` (the one network-touching engine,
+  fail-closed without explicit consent) installs the missing ones to a tmp dir — pip→venv,
+  binary→**sha256-pinned download verified before exec**, npm→`--prefix`, git→clone — turning the
+  external-SAST/SCA/secret/TLS families from `PENDING-OWNER-RUN` into real evidence; `cleanup-
+  scanners` removes the binaries while keeping the evidence (asymmetric, name-scoped). 13
+  adversarial-audit findings fixed before validation.
 - **New in 0.5.3 — accurate, proactive power-up offers.** The preflight now settles
   deployed-org-deep-audit **install-readiness up front** (`harness/package-readiness.mjs`:
   `installable` / `needs-build` / `n/a` from `sfdx-project.json`) instead of announcing "deep

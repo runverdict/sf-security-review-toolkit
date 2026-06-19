@@ -1,9 +1,12 @@
 # 0.6.0 — Preflight auto-gate + consent-gated scanner install
 
-**Status: SPEC + foundation landed.** `harness/tool-detect.mjs` (the deterministic
-tool detector) is shipped and test-backed. The consent gate + the tmp-install + the
-asymmetric cleanup are the remaining build. This is an **owner-pitched priority**
-(Aiden), repeatedly deferred; it lives here in the repo so it stays picked up.
+**Status: BUILT + COLD-VALIDATED (shipped in `v0.7.0`, 2026-06-19).** All of it landed:
+`tool-detect` (detector) + `install-scanners` (consented tmp install, sha256-pinned binaries,
+fail-closed without consent) + `cleanup-scanners` (asymmetric teardown) + the single up-front
+consent gate wired into the journey (now a multi-consent gate alongside the 0.7.0 throwaway
+DAST). 13 adversarial-audit findings fixed; cold-validated on the Atlas fixture (14 real
+scanner-evidence files → cleanup kept the evidence). This was an **owner-pitched priority**
+(Aiden); the spec + design below are retained as the record.
 
 ## The vision (owner, verbatim intent)
 

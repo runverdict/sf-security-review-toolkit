@@ -6,6 +6,15 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+> **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
+> journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
+> consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
+> adversarial-audit hardening passes, all detailed below. `main` is ahead at **0.7.2** with two
+> environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
+> test-backed but not yet in a tagged cold run. The **Roadmap** entries (middle-band judgment
+> fixture · coverage-gap map · throwaway-DAST spec) are planned/specced, not built. Suite: 24
+> files / 195 checks, green. Earlier checkpoints tagged through v0.5.5.
+
 ### Added
 - **`harness/namespace-check.mjs`** (+ `test-namespace-check.mjs`, 3 checks) — the 0.7.2
   deployed-org deep-audit BUILD precondition (a real cold run surfaced the gap; Aiden caught

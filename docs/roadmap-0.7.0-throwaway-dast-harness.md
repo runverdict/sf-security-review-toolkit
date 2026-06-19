@@ -1,9 +1,12 @@
 # 0.7.0 — Throwaway prod-equivalent DAST harness (autonomous, consented)
 
-**Status: vision captured + the core loop PROTOTYPED end-to-end (2026-06-19). Engines
-not yet built.** This is the server-tier analogue of the deployed-org deep audit, and it
-reuses the 0.6.0 install/cleanup machinery wholesale. Owner-pitched (Aiden); committed
-here so it stays picked up. Build in slices off the 0.6.0 engines.
+**Status: BUILT + adversarial-audited + hardened + COLD-VALIDATED → `v0.7.0` tagged
+(2026-06-19).** All engines shipped (`stack-detect`, `standup-stack`, `teardown-stack`,
+`run-dast`, `scaffold-env`) + wired into the journey's third gate consent; 12 adversarial-
+audit findings fixed; cold-validated on the Atlas fixture, graded off disk. Remaining:
+slice-5b (authenticated, endpoint-fed AF-plan DAST depth — see the build order below). This
+is the server-tier analogue of the deployed-org deep audit, reusing the 0.6.0 install/cleanup
+machinery wholesale. Owner-pitched (Aiden). The design + prototype record below is retained.
 
 ## Prototype validation (2026-06-19) — the loop WORKS
 
