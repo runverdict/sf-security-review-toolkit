@@ -171,6 +171,13 @@ the real ones are now fixed + test-backed:
   rejection, extract-to-scratch (only-the-bin-on-PATH), and the cleanup symlink refusal.
 
 ### Changed
+- **`plugin.json` → 0.7.0.** The version is the `claude plugin update` trigger, NOT
+  cosmetic: the updater compares the installed version to the marketplace's `plugin.json`
+  version and is a no-op when they match — so building on `main` without bumping left the
+  installed plugin stuck at 0.5.5 and a cold run would have tested the OLD code. Bumping to
+  0.7.0 (the unified 0.6.0 + 0.7.0 build) makes the update pull the new code. **Lesson:
+  bump `plugin.json` before a cold-validation run** (`marketplace update` + `plugin update`
+  then pulls it); the git TAG is still the cold-validated release marker.
 - **`skills/security-review-journey/SKILL.md` + `skills/run-scans/SKILL.md` — the
   throwaway-DAST engine chain wired into the journey (0.7.0 slice 4).** The preflight
   quick-scan now also runs `stack-detect`; the single gate gains a **THIRD distinct
