@@ -171,6 +171,15 @@ missing or a key piece of the architecture was misread.
    "…after you drop these creds where I scaffold them"; `needs-recipe`/`n/a` → DAST stays
    owner-run. Detection only; it stands up nothing here.
 
+   **And check the containerized-throwaway prerequisite:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/docker-check.mjs --json`** — the throwaway DAST
+   runs in containers, so it needs Docker. `available` → offer it; `absent`/`daemon-down`
+   → DON'T offer the autonomous throwaway-DAST; instead surface the engine's honest hint
+   ("Docker is required … install it once system-wide, or your DAST stays owner-run").
+   Docker is a documented prerequisite, NOT something the toolkit tmp-installs — unlike the
+   userland scanners, it's a privileged daemon needing root-level setup, so the honest move
+   is to GUIDE the install, never auto-provision it.
+
 5. **Classify every needed input into exactly one tier, and per applicable
    dimension assign GREEN/YELLOW/RED audit-readiness.** The classification rule
    is the whole reason this can be autonomous: block **only** on
@@ -225,16 +234,19 @@ missing or a key piece of the architecture was misread.
      outer tool call, so its pip/curl/git/npm subprocesses run unprompted under it),
      and tears them down with `cleanup-scanners.mjs` at the end (tools removed, evidence
      kept). On no / silence, install nothing — `run-scans` keeps its hard boundary.
-   - **`stack-detect` = `runnable` → the throwaway-DAST consent (the gate's third
-     distinct consent).** Also explicit-yes-only — standing up a container + running an
-     ACTIVE scan is a live op. The active scan only ever hits a **disposable mirror the
-     toolkit stands up** (never live prod, never Salesforce infra, never anyone else's),
-     so there's no boundary to cross — but it's a live op + resource use, so it needs a
-     real yes. Offer it once: "stand up your external backend as an isolated throwaway
-     (synthetic secrets I generate), run a real DAST against it, keep the evidence, and
-     destroy it? Local-throwaway evidence is the toolkit's corroborating DAST + a
-     de-risking dry run — NOT a substitute for the production-equivalent scan the
-     submission ultimately needs." On yes, the run invokes the engine chain
+   - **`stack-detect` = `runnable` AND `docker-check` = `available` → the throwaway-DAST
+     consent (the gate's third distinct consent).** Also explicit-yes-only — standing up a
+     container + running an ACTIVE scan is a live op. The active scan only ever hits a
+     **disposable mirror the toolkit stands up** (never live prod, never Salesforce infra,
+     never anyone else's), so there's no boundary to cross — but it's a live op + resource
+     use, so it needs a real yes. Offer it once: "stand up your external backend as an
+     isolated throwaway (synthetic secrets I generate), run a real DAST against it, keep
+     the evidence, and destroy it? This uses Docker and, the first time, pulls a
+     digest-pinned ZAP image (~3.6 GB, one-time). Local-throwaway evidence is the toolkit's
+     corroborating DAST + a de-risking dry run — NOT a substitute for the
+     production-equivalent scan the submission ultimately needs." If `docker-check` is
+     `absent`/`daemon-down`, do NOT offer this — surface the honest hint (install Docker
+     once, or DAST stays owner-run). On yes, the run invokes the engine chain
      `standup-stack.mjs --consent` → `run-dast.mjs --consent` → `teardown-stack.mjs`
      (the evidence lands in `evidence/dast/`). If `stack-detect` = `needs-secrets`,
      offer the scaffold-and-guide path (the toolkit writes an env stub, names the keys,
@@ -276,10 +288,12 @@ missing or a key piece of the architecture was misread.
        <N installable scanners: name (method), … → "install to /tmp/sf-srt-scanners/<run>
         for this run, removed at cleanup, evidence kept? (real SAST/SCA/DAST/TLS evidence
         vs PENDING-OWNER-RUN)"  |  "none — all present"  |  "none installable">
-   (3) Throwaway DAST (live op — explicit yes only, silence = skip):
-       <stack-detect=runnable → "stand up <backend> as an isolated throwaway + active-scan
-        it (digest-pinned ZAP), keep evidence, destroy it?"  |  needs-secrets → "…after you
-        fill the scaffolded creds"  |  needs-recipe/n-a → "DAST stays owner-run (plan generated)">
+   (3) Throwaway DAST (live op — explicit yes only, silence = skip; needs Docker):
+       <stack-detect=runnable AND docker=available → "stand up <backend> as an isolated
+        throwaway + active-scan it (digest-pinned ZAP; first run pulls ~3.6GB), keep
+        evidence, destroy it?"  |  docker absent/down → "Docker required — install once, or
+        owner-run"  |  needs-secrets → "…after you fill the scaffolded creds"  |
+        needs-recipe/n-a → "DAST stays owner-run (plan generated)">
    ```
 
    - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed to
@@ -363,8 +377,11 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    absent scanners stay `PENDING-OWNER-RUN` (run-scans' hard boundary is unchanged).
 
    **If the throwaway-DAST consent was given at preflight** (the gate's third consent;
-   `stack-detect` = `runnable`), run the engine chain so the active DAST hits a
-   disposable mirror — never a live or third-party target:
+   `stack-detect` = `runnable` AND `docker-check` = `available`), run the engine chain so
+   the active DAST hits a disposable mirror — never a live or third-party target. (The
+   engines also self-guard: `standup-stack`/`run-dast` return `status:"no-docker"` with the
+   install hint if Docker vanished since the preflight — surface it, don't crash; DAST
+   falls back to owner-run.)
    `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-stack.mjs --consent --target <target> --json`
    (isolated container, synthetic secrets, manifest of created resources) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --base-url <baseUrl from

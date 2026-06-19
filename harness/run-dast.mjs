@@ -30,6 +30,7 @@ import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
+import { dockerStatus } from './docker-check.mjs'
 
 // ZAP pinned by image digest (verified 2026-06-19, the 0.7.0 prototype). Bump = re-pin.
 export const ZAP_IMAGE = 'zaproxy/zap-stable'
@@ -94,6 +95,9 @@ const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }
 export function runDast(plan, { consent = false } = {}) {
   assertSafeTmpRoot(plan.wrkDir)
   if (consent !== true) throw new Error('run-dast: refusing to run an active scan without explicit consent (a live op). Pass --consent.')
+  // Docker runs the digest-pinned ZAP — fail with an honest hint if it's unavailable.
+  const dock = dockerStatus()
+  if (!dock.runnable) return { status: 'no-docker', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, log: dock.hint }
   const rec = { status: 'scanning', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, log: '' }
   try {
     mkdirSync(plan.wrkDir, { recursive: true, mode: 0o777 }) // ZAP's container user must write here

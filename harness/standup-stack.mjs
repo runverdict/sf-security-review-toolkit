@@ -34,6 +34,7 @@ import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { envStatus } from './scaffold-env.mjs'
+import { dockerStatus } from './docker-check.mjs'
 
 export const STACK_SCHEMA = 'sf-srt-stack/1'
 export const NAME_PREFIX = 'sf-srt-stack'
@@ -132,6 +133,10 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   if (consent !== true) {
     throw new Error('standup-stack: refusing to stand up a live container without explicit consent (a live op + active scan). Pass --consent.')
   }
+  // Docker is the containerized-throwaway prerequisite — fail with an honest hint, not a
+  // raw `docker: not found` (audit/portability: a docker-less user gets graceful guidance).
+  const dock = dockerStatus()
+  if (!dock.runnable) return { status: 'no-docker', reason: dock.hint, resources: { container: plan.container, image: null, network: null } }
   // needs-secrets: the supplied env-file must actually be FILLED (deterministic re-check),
   // not merely present — else we'd stand up with empty externals (audit: unfilled-env-file).
   if (plan.envFile) {

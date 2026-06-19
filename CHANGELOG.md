@@ -7,6 +7,19 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **`harness/docker-check.mjs`** (+ `test-docker-check.mjs`, 2 checks) — the 0.7.1
+  throwaway-DAST environment prerequisite. The containerized throwaway (standup-stack +
+  run-dast) needs Docker; this reports `available | absent | daemon-down` so the gate
+  offers the throwaway-DAST **only when it can actually run**, and the engines now return
+  `status:"no-docker"` with an honest install hint instead of a raw `docker: not found`.
+  **Docker is a documented prerequisite, NOT something the toolkit tmp-installs** — unlike
+  the userland scanners, it's a privileged daemon needing root-level setup (setuid uidmap
+  binaries, subuid/subgid, kernel user-namespace settings) that can't be dropped into a tmp
+  dir, so the honest move is to GUIDE the one-time system install and fall back to owner-run
+  DAST when it's absent. Pure `classifyDocker` + impure `dockerStatus`. The journey gate's
+  third consent now also **discloses the one-time ~3.6 GB digest-pinned ZAP image pull**
+  (validated this session: a fresh-machine `run-dast` pulls the pinned image, 2m29s, then
+  scans). `plugin.json` → 0.7.1.
 - **`harness/tool-detect.mjs`** (+ `test-tool-detect.mjs`, 6 checks) — deterministic
   scan-tool detector: per scan family, which local tools are PRESENT vs
   installable-on-consent vs owner / owner-portal. Detection only — it never installs or
