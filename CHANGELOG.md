@@ -255,6 +255,20 @@ the real ones are now fixed + test-backed:
   (above). Remaining: (5) cold-validate the gate fires once with two distinct consents +
   real Semgrep/OSV/DAST evidence on disk + cleanup removes binaries and keeps evidence → tag.
 
+### Roadmap — the middle-band "judgment" fixture (post-v0.7.0-validation)
+- Specced in **`docs/roadmap-middle-band-judgment-fixture.md`**. The v0.7.0 cold run landed
+  at SCI 6% (catastrophe-tier) — a strong recall + honesty-gate proof, but the catastrophe
+  and clean cases bracket the *easy* end. The differentiating value lives in the contestable
+  middle band (~65–75% SCI): the *almost-ready* package where blocker-vs-hardening is
+  arguable, path-to-green is 3 subtle items, and the toolkit must make the call a consultant
+  gets paid for. Design: a mostly-compliant fixture + 4–6 contestable issues (severity-
+  boundary, tempting-FP, fix-vs-document, partial/stale evidence, near-ready deploy) each with
+  a sealed adjudication; grade the cold run on severity calls + subtle-FP precision + the SCI
+  band + the path-to-green shape. Honest ceiling: still self-authored (tests judgment-on-
+  anticipated, not coverage-of-novel — only a real external review closes that), but precision/
+  calibration on the *subtle* case is far more authorship-independent than recall. Also tracked
+  there: a large-target scale stress test (the fan-out scales with surface) + slice-5b.
+
 ### Roadmap — 0.7.0 throwaway prod-equivalent DAST harness (owner-pitched)
 - Specced in **`docs/roadmap-0.7.0-throwaway-dast-harness.md`**. The server-tier analogue
   of the deployed-org deep audit, reusing the 0.6.0 install/cleanup machinery: a third
