@@ -39,6 +39,16 @@ follow semantic versioning.
   boundary is the outer Bash call, so one approved `node install-scanners.mjs --consent`
   covers every pip/curl/git/npm subprocess unprompted (verified vs the CC permissions/hooks
   docs 2026-06-19) — the mechanism behind "one gate → prompt-free installs".
+- **`harness/stack-detect.mjs`** (+ `test-stack-detect.mjs`, 6 checks) — the 0.7.0
+  foundation: the deterministic throwaway-DAST-target detector (the server-tier analogue
+  of `package-readiness`/`tool-detect`). From a repo it classifies whether the external
+  backend can be stood up as a disposable prod-equivalent for an active DAST —
+  `runnable | needs-recipe | needs-secrets | n/a` — and classifies each required env var
+  as **synthesizable** (a self-contained secret the toolkit generates itself, e.g. a JWT
+  signing key — exactly what the prototype did), **external** (a real outside dependency
+  the owner must supply → the scaffold-and-guide path), or **benign** (safe default). Pure
+  `classifyStack`/`classifyEnvName` core + a dependency-free CLI fact-gather. Smoke-true on
+  Atlas (Node forecast API, port 8080, `ATLAS_JWT_SECRET` synthesizable → `runnable`).
 - **`harness/cleanup-scanners.mjs`** (+ `test-cleanup-scanners.mjs`, 7 checks) — the
   ASYMMETRIC, manifest-driven teardown (0.6.0 build step 2). Removes ONLY the tmp tool dir
   the install created (`/tmp/sf-srt-scanners/<runid>/`) and keeps every evidence file —
