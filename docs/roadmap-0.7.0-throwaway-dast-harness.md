@@ -1,9 +1,43 @@
 # 0.7.0 — Throwaway prod-equivalent DAST harness (autonomous, consented)
 
-**Status: vision captured, not yet built.** This is the server-tier analogue of the
-deployed-org deep audit, and it reuses the 0.6.0 install/cleanup machinery wholesale.
-Owner-pitched (Aiden); committed here so it stays picked up. Build in slices off the
-0.6.0 engines.
+**Status: vision captured + the core loop PROTOTYPED end-to-end (2026-06-19). Engines
+not yet built.** This is the server-tier analogue of the deployed-org deep audit, and it
+reuses the 0.6.0 install/cleanup machinery wholesale. Owner-pitched (Aiden); committed
+here so it stays picked up. Build in slices off the 0.6.0 engines.
+
+## Prototype validation (2026-06-19) — the loop WORKS
+
+Proven manually against the Atlas cold fixture (`~/srt-coldstart-full`, its Node
+`server/` external API), de-risking the whole design:
+1. **Stand up** — the Atlas Express API stood up as an isolated throwaway Docker
+   container (`node:18-alpine`, a **synthetic** `ATLAS_JWT_SECRET`, published on
+   `127.0.0.1:8080`); `/healthz` → 200 in ~6s.
+2. **Discover + reach** — `/healthz` and the auth'd `POST /v1/forecast` both reachable;
+   the unauthenticated probe reproduced the planted **stack-trace leak on 401**.
+3. **The credential contract, working** — because the toolkit *provisioned* the
+   throwaway's secret, it **minted its own JWT** with that secret → authenticated
+   `POST /v1/forecast` → 200. No real partner secret needed for an authenticated scan.
+4. **Real DAST** — **ZAP, digest-pinned** (`zaproxy/zap-stable@sha256:7c2f8afc893e4e4000be8ad3fd22013fc36e5cce59359349f5a2d45626e2ccb9`),
+   run via `--network host` against the throwaway → a real 14.5 KB JSON report, **6
+   alerts** (CSP missing, X-Powered-By info leak, X-Content-Type-Options missing, …) +
+   61 passive checks passed. Confirms the **Docker-digest ZAP** path (strongest pin +
+   bundles the JRE) is the right acquisition choice.
+5. **Asymmetric teardown** — throwaway container + stack dir destroyed, port dead, **the
+   evidence kept**, zero docker residue.
+
+**Two design lessons the prototype surfaced (fold into the engine build):**
+- **Containerize, don't bind-mount the source.** A container writing `node_modules` to a
+  host-mounted volume writes them as **root**, so the host user can't clean them up
+  (teardown hit `Permission denied`). Fix: COPY the source INTO the container (image
+  layer / `docker cp`) so the throwaway's working tree is ephemeral *inside* the
+  container and dies with `docker rm`; only the EVIDENCE is extracted to the host. Run
+  `--user` as a backstop. (Cleaner isolation, and teardown never touches root-owned host
+  files.)
+- **Feed endpoints via the AF plan, not a hand-rolled OpenAPI.** ZAP's OpenAPI importer
+  rejected a hand-written spec (strict parser). Use the existing
+  `harness/zap/zap-plan-template.yaml` Automation Framework plan (filled from the
+  discovered endpoint inventory + the minted token) for the authenticated, endpoint-fed
+  active scan — the baseline scan proved the loop; the AF plan is the depth.
 
 ## The vision (owner intent)
 
