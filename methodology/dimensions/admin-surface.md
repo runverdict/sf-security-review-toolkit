@@ -36,7 +36,13 @@ The sub-classes, in descending order of blast radius:
 3. **Privilege escalation within the plane.** A role-change endpoint a
    non-admin can call, a self-elevation path, mass-assignment of a `role` /
    `is_admin` / `is_service_account` field, or a multi-role write that
-   contradicts the documented single-role model.
+   contradicts the documented single-role model. In a managed package the
+   platform analogue is **license-gate tampering**: runtime Apex calling
+   `FeatureManagement.changeProtection(...)` to *unprotect* a packaged Feature
+   Parameter — flipping off an entitlement gate so a subscriber gains
+   capability they did not license (baseline:
+   `violation-feature-management-change-protection`, the Critical PMD
+   AppExchange rule `AvoidFeatureManagementChangeProtection`).
 4. **The admin data path reaching tenant business data it shouldn't.** An admin
    console that can read raw tenant business records (rather than a redacted
    or aggregate view), or that runs under a database role with more than the
@@ -109,7 +115,7 @@ a separate hostname in config/nginx.
 | Node (Express/Nest) | A separate admin module/guard (`@UseGuards(AdminGuard)`/`@Roles('admin')`) and which controllers it decorates; the admin JWT strategy + secret; a separate Prisma/TypeORM connection for admin; role-mutation DTOs (does the body whitelist exclude `role`/`isAdmin`?); the admin SPA's token storage. |
 | Ruby (Rails) | A separate controller namespace (`Admin::`) + `before_action :require_admin`; `devise` admin scope or a separate model; Pundit/CanCanCan admin policies; `rails_admin`/`administrate`/ActiveAdmin mount point and its auth; strong-params permitting `role`/`admin` on a user update; impersonation gems (`pretender`, `switch_user`) and their audit. |
 | Java (Spring) | `SecurityFilterChain` for an admin path pattern with `hasRole('ADMIN')`/`hasAuthority`; method-level `@PreAuthorize`; the admin JWT decoder + audience validation (`JwtDecoder`/`JwtClaimValidator`); a separate `DataSource` for admin; actuator endpoints (`/actuator/**`) exposure and their auth; role-setting controllers and DTO field binding. |
-| Apex/LWC (where relevant) | Admin function via permission sets / custom perms rather than a separate plane; the probe is over-broad grants (`ModifyAllData`/`ViewAllData`/`AuthorApex`) on a permission set, custom-permission checks (`FeatureManagement.checkPermission`) actually enforced before privileged Apex, and any "run as / login as" support path. Cross-tenant doesn't apply within one org, but over-grant and missing-perm-check do. |
+| Apex/LWC (where relevant) | Admin function via permission sets / custom perms rather than a separate plane; the probe is over-broad grants (`ModifyAllData`/`ViewAllData`/`AuthorApex`) on a permission set, custom-permission checks (`FeatureManagement.checkPermission`) actually enforced before privileged Apex, any `FeatureManagement.changeProtection(` call that toggles a packaged feature's protection state from runtime code (license-gate tampering — the Critical PMD AppExchange rule `AvoidFeatureManagementChangeProtection`; baseline `violation-feature-management-change-protection`), and any "run as / login as" support path. Cross-tenant doesn't apply within one org, but over-grant, license-gate tampering, and missing-perm-check do. |
 
 Also locate: the network exposure of the admin surface (nginx/ingress config,
 hostname, any IP allowlist), and the audit-write call sites on role/permission
@@ -140,7 +146,10 @@ session reach admin endpoints? Find any admin route the MFA gate does not wrap.
 PRIVILEGE ESCALATION — can a non-admin call the role-change endpoint, elevate
 themselves, mass-assign a role/is_admin/is_service_account field on a
 create/update, or write a multi-role state that contradicts a documented
-single-role model? ADMIN DATA PATH — can the admin console read raw tenant
+single-role model? For a managed package, does any runtime Apex call
+FeatureManagement.changeProtection(...) to UNPROTECT a packaged Feature
+Parameter — flipping a license/entitlement gate off (license-gate tampering)?
+ADMIN DATA PATH — can the admin console read raw tenant
 business rows (vs a redacted/aggregate view), and what DB role does it connect
 as — does that role have more than the read-only/operational scope it needs (or
 worse, BYPASSRLS)? EXPOSURE & SESSION — is the admin surface reachable on the

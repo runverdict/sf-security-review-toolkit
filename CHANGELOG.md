@@ -11,11 +11,42 @@ follow semantic versioning.
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
 > adversarial-audit hardening passes, all detailed below. `main` is ahead at **0.7.2** with two
 > environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
-> test-backed but not yet in a tagged cold run. The **Roadmap** entries (middle-band judgment
-> fixture · coverage-gap map · throwaway-DAST spec) are planned/specced, not built. Suite: 24
-> files / 195 checks, green. Earlier checkpoints tagged through v0.5.5.
+> test-backed but not yet in a tagged cold run. **Coverage-gap map: in progress** — the two
+> default PMD AppExchange rules (the prediction quick wins) are now predicted in the baseline +
+> dimensions; the new dimensions remain pending. The other **Roadmap** entries (middle-band
+> judgment fixture · throwaway-DAST spec) are planned/specced, not built. Suite: 25
+> files / 204 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 ### Added
+- **Coverage-gap closure, quick wins (2026-06-20) — the two default PMD AppExchange rules we
+  scanned for but did not PREDICT.** A coverage audit (`docs/roadmap-coverage-gap-map.md`)
+  found that while `run-scans` invokes `--rule-selector AppExchange`, the baseline named the
+  rule *set* but not these two rules individually — so a partner running this toolkit then the
+  real review would get a Code Analyzer hit we never anticipated (the "no-surprises" failure
+  the Checkmarx-prediction exists to prevent). Both rule names + severity tiers re-verified
+  against the official PMD AppExchange rules reference 2026-06-20.
+  - **`violation-feature-management-change-protection`** (baseline, `verified_primary`) — the
+    Critical rule `AvoidFeatureManagementChangeProtection`: runtime Apex calling
+    `FeatureManagement.changeProtection(...)` to *unprotect* a packaged Feature Parameter =
+    license-gate / entitlement tampering. Threaded into the **admin-surface** dimension
+    (privilege escalation sub-class + the Apex detection row + the finder prompt) as the
+    platform analogue of role escalation.
+  - **`violation-getinstance-with-taint`** (baseline, `verified_primary`) — the Moderate rule
+    `AvoidGetInstanceWithTaint`: Custom Settings/Custom Metadata `getInstance(userId/profileId)`
+    with caller-influenceable Id = an IDOR cross-user config read. Threaded into the
+    **apex-exposed-surface** dimension's per-record (IDOR) detection + finder prompt; the safe
+    idiom (`getInstance()` / `getOrgDefaults()`) is named.
+  - The existing **`scan-pmd-appexchange-rules`** entry is promoted `web_research_unverified →
+    verified_primary` (the full ~37-rule set + Critical/High/Moderate tiering re-confirmed
+    against the official reference today) and now names both rules. `run-scans` Family 1 names
+    them in the load-bearing AppExchange-selector description.
+  - **`acceptance/test-baseline-integrity.mjs`** (9 checks, NEW) — a stricter-than-counts
+    standing test: every baseline entry's `applies_to` tokens, `severity_if_missing`, and the
+    per-entry `verified_primary ⟹ non-null last_verified` / `web_research_unverified ⟹ null`
+    implication (which the count-equality test could not catch), plus the two PMD-rule
+    predictions' presence (encode-don't-park: a coverage win must not silently regress out of
+    the data). Baseline now 157 entries (121 `verified_primary` / 35 `web_research_unverified` /
+    1 `conflicting`); suite 25 files / 204 checks. *(Test-backed; no cold run — deterministic.)*
 - **`harness/namespace-check.mjs`** (+ `test-namespace-check.mjs`, 3 checks) — the 0.7.2
   deployed-org deep-audit BUILD precondition (a real cold run surfaced the gap; Aiden caught
   it). When `package-readiness = needs-build`, the gate offered "build a managed 2GP first,

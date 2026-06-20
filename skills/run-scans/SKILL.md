@@ -160,8 +160,13 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    running — the last major-version transition changed the command shape
    once already. The **AppExchange selector is load-bearing**: it activates
    the review-specific PMD rule set (session-ID retrieval, hardcoded
-   credentials, install/uninstall-handler rules — baseline:
-   `scan-pmd-appexchange-rules`); a scan without it looks diligent and
+   credentials, install/uninstall-handler rules, the Critical
+   `FeatureManagement.changeProtection` license-gate-tampering rule
+   `AvoidFeatureManagementChangeProtection`, and the Moderate
+   `getInstance(userId/profileId)` taint rule `AvoidGetInstanceWithTaint` —
+   baseline: `scan-pmd-appexchange-rules`,
+   `violation-feature-management-change-protection`,
+   `violation-getinstance-with-taint`); a scan without it looks diligent and
    misses the rules the reviewer cares about. Emit HTML (the submission
    format) and JSON (machine triage) in the same pass. Run the Graph Engine
    too — its data-flow CRUD/FLS findings target the #1 review-failure cause;

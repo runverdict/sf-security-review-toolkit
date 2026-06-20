@@ -184,7 +184,7 @@ v0.7.0 cold run — one full autonomous journey on a 0-context seeded fixture, g
 re-confirmed the 0.5.x triage/withhold/SCI honesty properties firing live.
 The toolkit ships **14 skills**, **16 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 24 standing test files (195 checks)** that fail the build if a
+engines in `harness/` guarded by 25 standing test files (204 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
@@ -333,8 +333,9 @@ refactor breaks an enforced gate or its determinism. Component status, plainly:
   and [`acceptance/expected-findings.md`](acceptance/expected-findings.md).
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
-  delta, 118 of 155 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 36
+  delta (and the 2026-06-20 PMD AppExchange rule-set re-verification),
+  121 of 157 baseline entries are `verified_primary` (confirmed
+  against official Salesforce docs or partner-gated primary sources); 35
   remain `web_research_unverified` pending primary-source confirmation, and
   1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
   resolved through your Partner Account Manager or partner Slack, not trusted

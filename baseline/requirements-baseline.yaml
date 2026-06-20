@@ -658,23 +658,28 @@
 - id: scan-pmd-appexchange-rules
   requirement: The PMD AppExchange rule set carries the review-specific detectors, tiered Critical/High/Moderate.
   details: >
-    Roughly 32-40 rules reported. Critical tier includes hardcoded-password
-    and global install/uninstall-handler detectors; High tier includes
-    session-ID retrieval (Apex and Visualforce variants), hardcoded
-    credentials in Aura/VF attributes, unescaped HTML, and exposed Lightning
-    Message Channels; Moderate tier covers CRUD/FLS, HTTP security, and
+    ~37 rules (rule list re-confirmed against the official reference
+    2026-06-20). Critical tier includes hardcoded-password, global
+    install/uninstall-handler, FeatureManagement.changeProtection
+    (see violation-feature-management-change-protection), S-Controls,
+    javascript: URLs, setPassword, and Lightning-Locker-disabled detectors;
+    High tier includes session-ID retrieval (Apex and Visualforce variants),
+    hardcoded credentials in Aura/VF attributes, unescaped HTML, exposed
+    Lightning Message Channels, and static-resource JS/CSS hosting; Moderate
+    tier covers CRUD/FLS, HTTP security, getInstance(userId/profileId) taint
+    (see violation-getinstance-with-taint), connected-app full scope, and
     further hardcoded-credential patterns. Activated by the AppExchange rule
-    selector.
+    selector (--rule-selector AppExchange).
   applies_to: [managed-package]
   automation: fully
   automation_notes: Parse violations by rule name and severity; Critical/High findings feed the must-fix queue, Moderate feeds the review queue.
   severity_if_missing: informational
   sources:
     - url: https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html
-      date: "2025-2026"
+      date: "2026-06"
       kind: official
-  verification: web_research_unverified
-  last_verified: null
+  verification: verified_primary
+  last_verified: "2026-06-20"
 
 - id: scan-sfge-crud-fls-dataflow
   requirement: Run the Salesforce Graph Engine for data-flow CRUD/FLS analysis — it targets the single most common failure cause.
@@ -3791,6 +3796,66 @@
       kind: official
   verification: verified_primary
   last_verified: "2026-06-12"
+
+# 2026-06-20: the two default PMD AppExchange rules a coverage audit found we
+# named in the scanner family but did not PREDICT as their own violation class —
+# so a partner running this toolkit then the real review would get a Code
+# Analyzer hit we never anticipated (the "no-surprises" failure the Checkmarx-
+# prediction exists to prevent). Both rule names + tiers verified against the
+# official PMD AppExchange rules reference 2026-06-20.
+- id: violation-feature-management-change-protection
+  requirement: Calling FeatureManagement.changeProtection in packaged Apex is a named violation — a Critical PMD AppExchange rule (AvoidFeatureManagementChangeProtection).
+  details: >
+    FeatureManagement.changeProtection(name, type, value) flips whether a
+    packaged Feature Parameter (or the custom permission gating a feature) is
+    "Protected" or "Unprotected" in the subscriber org. A package path that
+    unprotects a license-gated feature — especially one reachable from a
+    subscriber-invocable entry point — is license-gate / entitlement
+    tampering: the subscriber (or an attacker who reaches that path) turns on
+    capability they did not license, or escalates privilege against the
+    package's own licensing model. The Code Analyzer AppExchange rule
+    AvoidFeatureManagementChangeProtection flags every call at the CRITICAL
+    tier because legitimate use is rare and confined — protection state is
+    normally set once at package design time, not toggled at runtime. The safe
+    posture: do not call changeProtection from packaged runtime code; manage
+    Feature Parameter protection through the packaging tooling. Maps to this
+    toolkit's admin-surface dimension (privileged feature gating).
+  applies_to: [managed-package]
+  automation: fully
+  automation_notes: Surfaced by the Code Analyzer PMD AppExchange selector (--rule-selector AppExchange) at the Critical tier; predicted here so the toolkit names it before the scan does. Confirm the call is reachable from subscriber-invocable code to set final severity.
+  severity_if_missing: blocker
+  sources:
+    - url: https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html
+      date: "2026-06"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-06-20"
+
+- id: violation-getinstance-with-taint
+  requirement: Custom Settings/Custom Metadata getInstance(userId/profileId) with attacker-influenceable input is a named violation — a Moderate PMD AppExchange rule (AvoidGetInstanceWithTaint).
+  details: >
+    Hierarchy Custom Settings (and Custom Metadata) expose
+    getInstance(Id userOrProfileId), which returns the settings row resolved
+    for THAT specific user or profile. When the Id is request-traceable
+    (a record reference, a parameter, a field the caller controls), the caller
+    reads another user's or profile's hierarchy-scoped configuration — an IDOR
+    / cross-user read of settings that may carry feature flags, limits, or
+    embedded secrets. The Code Analyzer AppExchange rule AvoidGetInstanceWithTaint
+    flags getInstance(userId)/getInstance(profileId) at the MODERATE tier. The
+    safe idiom is the no-argument getInstance() (resolves for the running user)
+    or getOrgDefaults() (the org-level row) — never a caller-supplied Id. Maps
+    to this toolkit's apex-exposed-surface dimension (per-record / IDOR
+    authorization on an exposed entry point).
+  applies_to: [managed-package]
+  automation: fully
+  automation_notes: Surfaced by the Code Analyzer PMD AppExchange selector at the Moderate tier; predicted here so the toolkit names it. The verifier traces the Id argument to its origin — a server-side constant or the running user's own Id refutes; request-traceable input confirms.
+  severity_if_missing: major
+  sources:
+    - url: https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html
+      date: "2026-06"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-06-20"
 
 # ----------------------------------------------------------------------------
 # agentforce — requirements for AppExchange-listed Agentforce solutions

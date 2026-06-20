@@ -228,7 +228,15 @@ caller-supplied sObject. The question is whether the surrounding context is
 sharing-enforced (the class is `with sharing` **and** the query/DML honors it)
 or whether an explicit instance-access check exists (`UserRecordAccess`,
 `hasReadAccess`/`HasEditAccess`, an ownership predicate). Object-level checks
-alone do not satisfy this.
+alone do not satisfy this. A specific Apex IDOR pattern to grep:
+**hierarchy Custom Settings / Custom Metadata `getInstance(<id>)` where the Id
+is caller-influenceable** (`getInstance(recordId)`, `getInstance(someUserId)`,
+`getInstance(profileId)`) — it returns the settings row resolved for THAT
+user/profile, leaking another user's hierarchy-scoped configuration (feature
+flags, limits, sometimes embedded secrets); the safe forms are the no-argument
+`getInstance()` (the running user) or `getOrgDefaults()` (the org row). Baseline:
+`violation-getinstance-with-taint`, the Moderate PMD AppExchange rule
+`AvoidGetInstanceWithTaint`.
 
 **Guest / unauthenticated reachability:** grep the project for the guest
 surface, then map guest-exposed classes:
@@ -306,7 +314,13 @@ tenant's Id and read or mutate it? Object-level CRUD/FLS does NOT satisfy this:
 user mode enforces the TYPE, never the INSTANCE, so an IDOR is unguarded even at
 API 67.0+ in user mode unless the context is sharing-enforced or an explicit
 instance check (`UserRecordAccess`, ownership predicate, sharing-respecting
-re-query that returns zero rows for unentitled records) exists; (4)
+re-query that returns zero rows for unentitled records) exists — and a specific
+Apex IDOR to grep is a hierarchy Custom Settings / Custom Metadata
+`getInstance(<id>)` whose Id traces to caller input
+(`getInstance(recordId)`/`getInstance(userId)`/`getInstance(profileId)`): it
+returns the settings row for THAT user/profile (a cross-user config read), where
+the safe idiom is the no-argument `getInstance()` or `getOrgDefaults()` (the
+Moderate PMD AppExchange rule `AvoidGetInstanceWithTaint`); (4)
 OVER-EXPOSURE — is the method `global`/`webservice`/`@AuraEnabled`/
 `@RestResource` when nothing outside the package needs it reachable (should it
 be `private`/`public`), and does it return MORE than the caller is entitled to
