@@ -1,29 +1,37 @@
 #!/usr/bin/env node
 /**
  * Standing band-check for the MIDDLE-BAND judgment fixture (Solano).
- * docs/roadmap-middle-band-judgment-fixture.md, build step 2: "Sanity-check the
- * band DETERMINISTICALLY first — hand-author a representative ledger →
- * compute-sci.mjs → confirm it lands ~65-75% before the expensive cold run.
- * Encode this as a standing check so it can't silently drift."
+ * docs/roadmap-middle-band-judgment-fixture.md.
  *
- * This IS that standing check. It hand-authors the representative
- * scope-manifest + audit-ledger + evidence-index that a Solano run would
- * produce — the 6 seeded contestable issues dispositioned per
- * acceptance/solano-adjudication-key.md, plus the realistic mid-prep materials
- * gaps — runs the REAL harness/compute-sci.mjs against the REAL shipped
- * baseline, and asserts the rollup lands in the band. If a future change to
- * compute-sci (or to a Solano-applicable requirement's severity) moves the
- * fixture out of band, THIS fails the build — the drift can't slip through.
+ * THE HONEST POST-PHASE-A STATE (rewritten after cold run #1). Cold run #1 taught
+ * the "9% lesson": the JUDGMENT (what the audit FINDS) and the SCI COMPLETENESS
+ * (what materials are reviewer-reproducibly evidenced) are SEPARATE measurements,
+ * and the fixture rebuild (Phase A) only fixes the first. This standing check
+ * therefore asserts the two axes separately:
+ *
+ *   1. THE JUDGMENT IS CLEAN — the rebuilt fixture's audit surfaces ONLY the six
+ *      contestable issues (C1-C6); ZERO open critical, ZERO open high. The block,
+ *      if any, comes from owner-completable REQUIREMENTS (blocker_findings EMPTY),
+ *      never from a code finding — the precise proof Phase A worked.
+ *   2. THE SCI STAYS LOW / BLOCKED until Phase B — the fixture is mostly-compliant
+ *      in CODE, but the SCI is dominated by owner-completable requirements (portal
+ *      Checkmarx, Apex test coverage, the reviewer test env, authenticated DAST,
+ *      the written-policy / security-program pack, post-approval attestations) that
+ *      no audit can satisfy. Only the toolkit's OWN automated, reviewer-reproducible
+ *      scans (Code Analyzer / SFGE / OSV / Checkov / gitleaks) count SATISFIED.
+ *
+ * This is NOT the old hand-authored 71% / MATERIALS COMPLETE — that number assumed
+ * owner prep the fixture does not carry. Phase B (deferred) pre-populates the owner
+ * artifacts and re-grounds this test to the 65-75% band.
  *
  * Two layers:
  *   PRIMARY     — a FIXED 126-id Solano manifest (so baseline GROWTH can't drift
  *                 the count) scored against the live baseline. Asserts the exact
- *                 71% / MATERIALS COMPLETE / not-blocked / no open critical-high.
- *   CORROBORATE — re-derives the applicable set from the LIVE baseline for
- *                 Solano's elements and re-scores. Catches a renamed/removed id
- *                 (subset check) and baseline drift large enough to break the
- *                 design (wider sanity band). This is the "can't silently drift"
- *                 guard against baseline edits the fixed manifest would mask.
+ *                 honest state (7% / BLOCKED-on-materials / empty blocker_findings /
+ *                 0 open critical-high).
+ *   CORROBORATE — re-derives the applicable set from the LIVE baseline and re-scores:
+ *                 catches a renamed/removed id (subset check) and confirms the honest
+ *                 low/BLOCKED shape survives baseline drift.
  *
  * Dependency-free: `node acceptance/test-solano-band.mjs`.
  */
@@ -48,7 +56,7 @@ const check = (name, fn) => {
   catch (e) { fail++; console.log(`  ✗ ${name}\n    ${e.message}`) }
 }
 
-console.log('solano middle-band standing test')
+console.log('solano middle-band standing test (honest post-Phase-A state)')
 
 // ---------------------------------------------------------------------------
 // The FIXED Solano applicable set (managed-package + agentforce +
@@ -101,42 +109,50 @@ const SOLANO_APPLICABLE = [
 ]
 
 // ---------------------------------------------------------------------------
-// The seeded disposition state. These three sets are the ONLY non-satisfied
-// requirements; everything else applicable is SATISFIED with reviewer-
-// reproducible evidence (scanner / owner-signed / structural). NONE of these are
-// blocker-severity (verified below) — a single unsatisfied blocker would
-// correctly flip the band to BLOCKED. 24 + 4 + 8 = 36 non-satisfied → 90/126.
+// The honest disposition state of a partner who has run the audit + the toolkit's
+// OWN automated scans, but has NOT done the owner-facing materials (Phase B).
+//
+// AUTOMATED_SATISFIED — requirements the toolkit satisfies with reviewer-reproducible
+//   evidence WITHOUT owner action: the scanners it runs (Code Analyzer / SFGE / OSV /
+//   Checkov / gitleaks). These are the ONLY SATISFIED entries.
+// PARTIAL — scan-external-sast (C4): the SAST covered server/, not the worker/ root.
+// STATIC_CLEARED — the code/threat classes the white-box audit examined + cleared,
+//   with no reviewer-reproducible owner/scanner evidence registered (never credited).
+// MISSING — everything else (owner artifacts, process, test env, DAST, portal scans,
+//   post-approval attestations) — the Phase B gap. Implicit: applicable minus the above.
 // ---------------------------------------------------------------------------
-
-// PARTIAL — evidence exists but is narrower than the architecture / drafted-unsigned.
-// scan-external-sast is C4 (covers server/, not the worker/ source root).
-const PARTIAL = [
-  'scan-external-sast', 'artifact-fp-documentation-format', 'scan-false-positive-documentation',
-  'artifact-required-materials-matrix',
+const AUTOMATED_SATISFIED = [
+  'scan-code-analyzer-v5-required', 'scan-code-analyzer-invocation', 'scan-code-analyzer-engines',
+  'scan-pmd-appexchange-rules', 'scan-sfge-crud-fls-dataflow', 'scan-external-sca', 'scan-iac-misconfig',
+  'scan-dependency-vulnerabilities', 'fail-hardcoded-secrets',
 ]
-
-// STATICALLY-CLEARED — newer threat-model classes the white-box audit reasons
-// clean, but with NO reviewer-reproducible scanner the reviewer re-runs.
+const PARTIAL = ['scan-external-sast']
 const STATIC_CLEARED = [
+  // fail-* code classes the audit cleared (not the process/materials fail-* ones)
+  'fail-crud-fls', 'fail-sharing-model', 'fail-soql-injection', 'fail-xss', 'fail-info-disclosure',
+  'fail-sessionid-egress', 'error-handling-fail-open', 'fail-js-not-static-resources',
+  'fail-lightning-component-hygiene',
+  // newer threat-model classes (no reviewer-reproducible scanner)
   'untrusted-deserialization', 'resource-consumption-abuse', 'mass-assignment-bopla', 'within-org-bola',
-  'outbound-callout-trust', 'cost-amplification-denial-of-wallet', 'error-handling-fail-open',
+  'outbound-callout-trust', 'cost-amplification-denial-of-wallet',
+  // violation-* code classes the audit cleared
+  'violation-third-party-js-css-hosting', 'violation-css-outside-components', 'violation-js-in-salesforce-domain',
+  'violation-secret-data-in-debug', 'violation-insecure-storage-sensitive-data', 'violation-known-vulnerable-software',
+  'violation-sample-code-in-production', 'violation-crud-fls-bypass', 'violation-sharing-rules-bypass',
+  'violation-soql-injection', 'violation-csrf-page-instantiation', 'violation-open-redirects',
+  'violation-lockerservice-disabled', 'violation-insufficient-escaping-components', 'violation-async-code-in-components',
+  'violation-secure-communication', 'violation-feature-management-change-protection', 'violation-getinstance-with-taint',
+  // agentforce code classes the audit cleared (incl. the blockers — audit clear ≠ reviewer-reproducible)
+  'agentforce-action-classification', 'agentforce-execution-identity-verifiedcustomerid',
+  'agentforce-no-user-controlled-record-references', 'agentforce-confirmation-required-sensitive-actions',
+  'agentforce-no-third-party-llm-in-package', 'agentforce-no-prompt-response-logging', 'agentforce-llm-output-untrusted',
+  'agentforce-prompt-hardening-design', 'agentforce-prompt-input-validation', 'agentforce-prompt-enclosure-sandwiching',
   'agentforce-system-prompt-leakage',
 ]
-
-// MISSING — owner-completed written-policy / security-program / post-approval /
-// test-environment-doc artifacts a mid-prep partner has not produced yet.
-const MISSING = [
-  'process-security-program-required', 'process-checklist-builder', 'artifact-incident-response-plan',
-  'artifact-data-retention-deletion', 'artifact-disaster-recovery-backup', 'artifact-vuln-remediation-sla',
-  'artifact-hosting-architecture', 'artifact-prior-pentest-attestation', 'post-incident-reporting-24h',
-  'post-periodic-rereview', 'post-version-attestation', 'post-pkce-refresh-rotation-mandate',
-  'post-test-environment-liveness', 'post-oauth-legacy-flow-retirements', 'testenv-test-personas-documented',
-  'testenv-realistic-test-data', 'testenv-usage-documentation', 'testenv-trialforce-template-content-policy',
-  'testenv-developer-edition-default-settings', 'testenv-trialforce-org-lifespan', 'testenv-locker-csp-enabled',
-  'dast-endpoints-production-mode', 'dast-screenshot-proof-of-scanned-url', 'artifact-user-documentation',
-]
-
-const nonSat = new Set([...PARTIAL, ...STATIC_CLEARED, ...MISSING])
+const satisfiedSet = new Set(AUTOMATED_SATISFIED)
+const partialSet = new Set(PARTIAL)
+const staticSet = new Set(STATIC_CLEARED)
+const MISSING = SOLANO_APPLICABLE.filter((id) => !satisfiedSet.has(id) && !partialSet.has(id) && !staticSet.has(id))
 
 // ---------------------------------------------------------------------------
 // The 5 seeded ledger findings (C4 is evidence-only). Dedup id is computed
@@ -156,7 +172,6 @@ function finding(o) {
     verdict_reasoning: o.verdict_reasoning,
     ...(o.accepted_risk_justification ? { accepted_risk_justification: o.accepted_risk_justification } : {}),
     ...(o.accepted_by ? { accepted_by: o.accepted_by } : {}),
-    ...(o.exploit_scenario ? { exploit_scenario: o.exploit_scenario } : {}),
     ...(o.recommendation ? { recommendation: o.recommendation } : {}),
   }
 }
@@ -181,16 +196,16 @@ const FINDINGS = [
     title: 'Strict-Transport-Security header not set on companion endpoint',
     file: 'server/index.js:14', severity: 'medium', adjusted_severity: 'medium',
     status: 'accepted_risk', verdict: 'confirmed_real',
-    verdict_reasoning: 'DAST medium. TLS terminates at the edge proxy which injects HSTS; the origin is never reached over plaintext. Acceptable-with-justification per the published bar; documented FP. Owner must confirm the edge HSTS claim.',
-    accepted_risk_justification: 'Edge proxy (TLS terminator) injects Strict-Transport-Security for every response; origin unreachable over plaintext. Defense-in-depth header optional. (Owner-confirmed edge config.)',
+    verdict_reasoning: 'DAST medium. TLS terminates at the edge proxy which injects HSTS for production traffic; /healthz is directly reachable so the claim is not airtight. Acceptable-with-justification per the published bar; documented FP. Owner must confirm the edge config.',
+    accepted_risk_justification: 'Edge proxy (TLS terminator) injects Strict-Transport-Security for production traffic; origin-level header is defense-in-depth. /healthz direct path is owner-confirmed low-risk. (Owner-confirmed edge config.)',
     accepted_by: 'security-owner (pending owner confirmation of edge config)',
   }),
-  finding({ // C5 — near-ready deployed artifact (open medium; deep-audit path)
+  finding({ // C5 — source-permset least-privilege (open medium)
     dimension: 'package-metadata',
     title: 'End-user permission set grants viewAllRecords on forecast snapshot object',
     file: 'force-app/main/default/permissionsets/Solano_Standard.permissionset-meta.xml:14',
     severity: 'medium', adjusted_severity: 'medium', status: 'confirmed', verdict: 'confirmed_real',
-    verdict_reasoning: 'Deployed-artifact finding: Solano_Standard grants viewAllRecords on Solano_Forecast_Snapshot__c — a within-org sharing bypass letting any assigned user read every rep snapshot. Non-catastrophic (derived data, no write bypass, modifyAllRecords=false) → medium least-privilege.',
+    verdict_reasoning: 'Source-permset finding (package is needs-build; no deployed artifact): Solano_Standard grants viewAllRecords on Solano_Forecast_Snapshot__c — a within-org sharing bypass letting any assigned user read every rep snapshot. Non-catastrophic (derived data, no write bypass, modifyAllRecords=false) → medium least-privilege.',
     recommendation: 'Drop viewAllRecords from the end-user permset; scope cross-rep reads to an admin/dashboard permset or sharing rules.',
   }),
   finding({ // C6 — prompt-hardening middle (open low; not over-fired)
@@ -204,38 +219,38 @@ const FINDINGS = [
 ]
 
 // ---------------------------------------------------------------------------
-// Evidence-index builder: satisfy every applicable id EXCEPT the non-satisfied
-// sets; mark PARTIAL / STATIC explicitly; OMIT MISSING (no entry → MISSING).
+// Evidence-index builder: SATISFIED only for the toolkit's automated reviewer-
+// reproducible scans; PARTIAL / STATIC explicit; OMIT everything else (→ MISSING).
 // ---------------------------------------------------------------------------
 function evidenceEntry(id) {
-  if (MISSING.includes(id)) return null
-  if (PARTIAL.includes(id)) {
+  if (satisfiedSet.has(id)) {
     return {
-      ref_type: 'requirement', ref_id: id, source: 'generate-artifacts:partial',
-      collected_by: id.startsWith('scan-') ? 'scanner' : 'owner',
-      verified: { value: false, how: 'drafted / scoped narrower than the architecture — owner to complete' },
+      ref_type: 'requirement', ref_id: id, source: 'run-scans:reviewer-reproducible',
+      collected_by: 'scanner',
+      verified: { value: true, how: 'scanner exit + parsed report on disk (Code Analyzer/SFGE/OSV/Checkov/gitleaks)' },
+      reviewer_reproducible: true, disposition: 'satisfied',
+      location: `.security-review/evidence/${id}.json`,
+    }
+  }
+  if (partialSet.has(id)) {
+    return {
+      ref_type: 'requirement', ref_id: id, source: 'run-scans:family-7:semgrep',
+      collected_by: 'scanner',
+      verified: { value: false, how: 'SAST covered server/ but not the worker/ source root — scoped narrower than the architecture' },
       reviewer_reproducible: false, disposition: 'partial',
       location: `.security-review/evidence/${id}.partial.json`,
     }
   }
-  if (STATIC_CLEARED.includes(id)) {
+  if (staticSet.has(id)) {
     return {
       ref_type: 'requirement', ref_id: id, source: 'audit-codebase:pass1',
-      collected_by: 'agent', verified: { value: true, how: 'white-box static audit only (no reviewer-reproducible scanner for this class)' },
+      collected_by: 'agent',
+      verified: { value: true, how: 'white-box static audit only (no reviewer-reproducible scanner/owner evidence for this class)' },
       reviewer_reproducible: false, disposition: 'statically-cleared',
       location: 'docs/security-review/audit-report-2026-06-20-pass1.md',
     }
   }
-  // SATISFIED — reviewer-reproducible (scanner report / owner-signed / structural).
-  const isScan = id.startsWith('scan-') || id.startsWith('dast-') || id.startsWith('endpoint-') || id.startsWith('violation-') || id.startsWith('fail-')
-  return {
-    ref_type: 'requirement', ref_id: id,
-    source: isScan ? 'run-scans:reviewer-reproducible' : 'generate-artifacts:owner-signed',
-    collected_by: isScan ? 'scanner' : 'owner',
-    verified: { value: true, how: isScan ? 'scanner exit + parsed report on disk' : 'owner-signed artifact / structural confirmation a reviewer can re-verify' },
-    reviewer_reproducible: true, disposition: 'satisfied',
-    location: `.security-review/evidence/${id}.json`,
-  }
+  return null // MISSING — owner-completable materials not done (the Phase B gap)
 }
 
 function buildState(dir, applicableIds) {
@@ -266,87 +281,66 @@ function fixture(applicableIds) {
 }
 
 // ---------------------------------------------------------------------------
-// Guard: none of the non-satisfied ids may be a blocker (else the design is
-// inconsistent — a missing/partial/static blocker would BLOCK, not mid-band).
+// Design invariants.
 // ---------------------------------------------------------------------------
-function baselineSeverityMap() {
-  const yaml = readFileSync(join(PLUGIN, 'baseline', 'requirements-baseline.yaml'), 'utf8')
-  const map = {}
-  let cur = null
-  for (const raw of yaml.split('\n')) {
-    const idm = raw.match(/^- id:\s*(\S+)/)
-    if (idm) { cur = idm[1]; continue }
-    if (!cur) continue
-    const s = raw.match(/^\s+severity_if_missing:\s*(\S+)/)
-    if (s) { map[cur] = s[1]; cur = null }
+check('design invariant: fixed applicable set is 126; satisfied/partial/static are disjoint subsets', () => {
+  assert.equal(SOLANO_APPLICABLE.length, 126, 'fixed Solano applicable set must be 126')
+  const all = new Set(SOLANO_APPLICABLE)
+  for (const id of [...AUTOMATED_SATISFIED, ...PARTIAL, ...STATIC_CLEARED]) {
+    assert.ok(all.has(id), `disposition id ${id} is not in the applicable set`)
   }
-  return map
-}
-
-check('design invariant: no non-satisfied requirement is blocker-severity', () => {
-  const sev = baselineSeverityMap()
-  const offenders = [...nonSat].filter((id) => sev[id] === 'blocker')
-  assert.deepEqual(offenders, [], `non-satisfied blocker(s) would force BLOCKED, not mid-band: ${offenders.join(', ')}`)
+  const seen = new Set()
+  for (const id of [...AUTOMATED_SATISFIED, ...PARTIAL, ...STATIC_CLEARED]) {
+    assert.ok(!seen.has(id), `id ${id} appears in more than one disposition set`)
+    seen.add(id)
+  }
+  // counts: 9 satisfied + 1 partial + 44 static + 72 missing = 126
+  assert.equal(AUTOMATED_SATISFIED.length, 9)
+  assert.equal(PARTIAL.length, 1)
+  assert.equal(STATIC_CLEARED.length, 44)
+  assert.equal(MISSING.length, 72)
 })
 
-check('design invariant: 126 applicable, 36 non-satisfied → 90 satisfied', () => {
-  assert.equal(SOLANO_APPLICABLE.length, 126, 'fixed Solano applicable set must be 126')
-  assert.equal(nonSat.size, 36, 'PARTIAL(4)+STATIC(8)+MISSING(24) must be 36 distinct ids')
-  assert.equal(PARTIAL.length, 4); assert.equal(STATIC_CLEARED.length, 8); assert.equal(MISSING.length, 24)
+check('design invariant: the seeded findings carry NO critical and NO high open severity', () => {
+  const open = FINDINGS.filter((f) => f.status === 'confirmed' || f.status === 'regressed')
+  const bad = open.filter((f) => f.adjusted_severity === 'critical' || f.adjusted_severity === 'high')
+  assert.deepEqual(bad.map((f) => f.title), [], 'an open finding is critical/high — the Phase A win is broken')
+  assert.equal(FINDINGS.length, 5, 'C1, C2, C3, C5, C6 (C4 is evidence-only)')
 })
 
 // ---------------------------------------------------------------------------
 // PRIMARY — fixed 126-id manifest scored against the live baseline.
 // ---------------------------------------------------------------------------
-check('PRIMARY: completeness lands in the 65-75% band (== 71%)', () => {
-  const j = runSci(fixture(SOLANO_APPLICABLE))
-  assert.ok(j.completeness_pct >= 65 && j.completeness_pct <= 75,
-    `completeness ${j.completeness_pct}% is outside the middle band 65-75%`)
-  assert.equal(j.completeness_pct, 71, 'exact deterministic completeness drifted from 71% — re-check the seeded sets')
-})
-
-check('PRIMARY: band is MATERIALS COMPLETE (close, here is the gap)', () => {
-  const j = runSci(fixture(SOLANO_APPLICABLE))
-  assert.equal(j.band, 'MATERIALS COMPLETE',
-    `band ${j.band} — expected MATERIALS COMPLETE (a BLOCKED here means an unsatisfied blocker; NOT READY means an open high or the currency floor fired)`)
-  assert.equal(j.blocked, false)
-})
-
-check('PRIMARY: coverage vector — 90 satisfied / 8 statically-cleared / 4 partial / 24 missing', () => {
-  const j = runSci(fixture(SOLANO_APPLICABLE))
-  assert.equal(j.coverage.applicable, 126)
-  assert.equal(j.coverage.satisfied, 90)
-  assert.equal(j.coverage.statically_cleared, 8)
-  assert.equal(j.coverage.partial, 4)
-  assert.equal(j.coverage.missing, 24)
-})
-
-check('PRIMARY: disposition — no open critical, no open high (the calibration result)', () => {
+check('PRIMARY: the JUDGMENT is clean — 0 open critical, 0 open high; block is NOT from findings', () => {
   const j = runSci(fixture(SOLANO_APPLICABLE))
   assert.equal(j.disposition.open_critical, 0, 'a contestable issue was mis-escalated to critical')
   assert.equal(j.disposition.open_high, 0, 'a contestable issue was mis-escalated to high')
-  assert.equal(j.disposition.dispositioned, 2, 'C2 (refuted) + C3 (accepted_risk) should be dispositioned')
+  assert.equal(j.disposition.dispositioned, 2, 'C2 (refuted) + C3 (accepted_risk) dispositioned')
+  assert.deepEqual(j.blocker_findings, [], 'NO code finding may block — the block is owner-materials-only (the Phase A win)')
 })
 
-check('PRIMARY: currency surfaces but the hard floor does NOT fire (materials incomplete)', () => {
+check('PRIMARY: the SCI is LOW / BLOCKED on owner materials (the Phase B gap, not the old 71%)', () => {
   const j = runSci(fixture(SOLANO_APPLICABLE))
-  assert.ok(j.freshness.caveated >= 1, 'unverified/stale baseline entries should surface as caveats')
-  assert.equal(j.freshness.hard_stale, 0, 'no entry is >180d stale at the pinned run date')
-  // The currency floor only fires when currency is the ONLY thing between the
-  // partner and ready; here materials are incomplete, so the band must NOT be
-  // flipped to NOT READY by it.
-  assert.equal(j.band, 'MATERIALS COMPLETE')
+  assert.equal(j.completeness_pct, 7, 'exact deterministic completeness drifted from 7% (9 automated-satisfied / 126)')
+  assert.ok(j.completeness_pct < 65, 'completeness must be BELOW the 65-75 band until Phase B pre-populates owner artifacts')
+  assert.equal(j.band, 'BLOCKED', `band ${j.band} — expected BLOCKED on unsatisfied owner blocker requirements`)
+  assert.equal(j.blocked, true)
+  assert.ok(j.blocker_requirements.length > 0, 'blocked on owner-completable blocker requirements')
+  assert.match(j.gate_reason, /unsatisfied blocker requirement/, 'the block must be on requirements, not findings')
 })
 
-check('PRIMARY: the seeded findings round-trips into the blocker list as empty', () => {
+check('PRIMARY: coverage vector — 9 satisfied / 44 statically-cleared / 1 partial / 72 missing', () => {
   const j = runSci(fixture(SOLANO_APPLICABLE))
-  assert.deepEqual(j.blocker_findings, [], 'no open critical findings expected')
-  assert.deepEqual(j.blocker_requirements, [], 'every blocker requirement must be satisfied')
+  assert.equal(j.coverage.applicable, 126)
+  assert.equal(j.coverage.satisfied, 9)
+  assert.equal(j.coverage.statically_cleared, 44)
+  assert.equal(j.coverage.partial, 1)
+  assert.equal(j.coverage.missing, 72)
 })
 
 // ---------------------------------------------------------------------------
 // CORROBORATE — re-derive the applicable set from the LIVE baseline and re-score.
-// Catches a renamed/removed id and baseline drift large enough to break the design.
+// Catches a renamed/removed id and confirms the honest low/BLOCKED shape holds.
 // ---------------------------------------------------------------------------
 const liveApplicable = computeApplicable(
   parseBaselineApplies(readFileSync(join(PLUGIN, 'baseline', 'requirements-baseline.yaml'), 'utf8')),
@@ -359,15 +353,12 @@ check('CORROBORATE: every fixed Solano id still exists in the live applicable se
   assert.deepEqual(gone, [], `Solano applicable id(s) no longer in the baseline — re-derive SOLANO_APPLICABLE: ${gone.join(', ')}`)
 })
 
-check('CORROBORATE: live-derived applicable scores in-band (band MATERIALS COMPLETE)', () => {
+check('CORROBORATE: live-derived state stays low / BLOCKED with empty blocker_findings', () => {
   const j = runSci(fixture(liveApplicable))
-  // Wider sanity band: the design survives moderate baseline growth; extreme
-  // drift (a flood of new applicable reqs auto-credited, or a non-satisfied id
-  // turned blocker) trips this loud so the fixture gets re-tuned.
-  assert.ok(j.completeness_pct >= 60 && j.completeness_pct <= 80,
-    `live-derived completeness ${j.completeness_pct}% drifted out of the [60,80] sanity band — re-tune the Solano fixture`)
-  assert.equal(j.band, 'MATERIALS COMPLETE', `live-derived band ${j.band} — a non-satisfied id may have become blocker-severity`)
-  assert.equal(j.blocked, false)
+  assert.ok(j.completeness_pct < 20, `live-derived completeness ${j.completeness_pct}% should stay low until Phase B`)
+  assert.equal(j.band, 'BLOCKED', `live-derived band ${j.band} — expected BLOCKED on owner materials`)
+  assert.equal(j.blocked, true)
+  assert.deepEqual(j.blocker_findings, [], 'no code finding may block — the block is owner-materials-only')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

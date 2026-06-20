@@ -9,15 +9,20 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.0**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.1**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
-> `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, and the **Solano
-> middle-band judgment fixture**. **The Solano cold run gates the v0.8.0 tag.** The 0.7.2→0.8.0
-> minor bump is load-bearing, not cosmetic: the installed plugin was last updated at 0.7.2,
-> BEFORE the coverage-gap work, so without it `claude plugin update` no-ops and a cold run would
+> `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
+> middle-band judgment fixture** (rebuilt in PHASE A below), and a journey-skill
+> **triage→blocker-gate relabel** (0.8.1). **The Solano cold RE-RUN gates the v0.8.1 tag.**
+> Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
+> FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
+> never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
+> identity, prompt-injection, denial-of-wallet, and a deploy-blocking field gap all fixed). The
+> 0.7.2→0.8.x bumps are load-bearing, not cosmetic: the installed plugin was last updated at 0.7.2,
+> BEFORE the coverage-gap work, so without them `claude plugin update` no-ops and a cold run would
 > audit the PRE-coverage plugin — missing the three new dimensions
 > (`error-handling-disclosure` / `untrusted-deserialization` / `resource-consumption-abuse`)
-> that Solano's calibration depends on (they are its 8 statically-cleared entries).
+> that Solano's calibration depends on (they are its statically-cleared entries).
 > **Coverage-gap map: closed** — the two
 > default PMD AppExchange rules (the prediction quick wins) are predicted in the baseline +
 > dimensions, and **all three new dimensions** shipped — **error-handling-disclosure**
@@ -30,23 +35,62 @@ follow semantic versioning.
 > crypto-internals, system-prompt-leakage + business-logic → agentforce-package. **The
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
-> (author + deterministic band check) is now BUILT** (the "Solano" fixture below); its cold
-> run (Phase 2) is the remaining gate, deferred to its own session. Other **Roadmap** specs not
+> (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.1) and the
+> DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
+> is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
+> 9% lesson). Other **Roadmap** specs not
 > yet built: the throwaway-DAST slice-5b, and **preconditions & guided remediation**
 > (`docs/roadmap-preconditions-guided-remediation.md`, NEW) — the "why-blocked, ask-don't-default"
 > contract prompted by the Solano preflight offering a deep audit for an uninstallable package
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 28 files / 238 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 28 files / 235 checks, green. Earlier checkpoints tagged through v0.5.5.
 
-> **Cold-run prep (2026-06-20).** For the Phase-2 Solano cold run, the sealed adjudication key
-> (`acceptance/solano-adjudication-key.md`) is **held off-repo** at `~/solano-adjudication-key.md`
-> and removed from `main` during the cold-run window, then restored after — so the cold session
-> (which works against a clone of `origin/main`) cannot stumble on the answer key in the plugin
-> dir while it audits Solano. This is stronger isolation than the Helios `expected-findings.md`
-> precedent, on purpose, because this run's whole value is measuring honest judgment. The key's
-> C4 live-repro note is preserved in history (committed before removal).
+> **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
+> (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
+> and removed from `main` for the run window — stronger isolation than the Helios
+> `expected-findings.md` precedent, on purpose, because the run's whole value is honest judgment.
+> PHASE A **restores the key to the repo and updates it to the corrected post-rebuild reality**
+> (the execution-identity bot + `SolanoSummarizeAction` are now clean controls; C5 is reframed as a
+> SOURCE-permset finding; the Expected-SCI section is rewritten honestly). Re-isolate the key the
+> same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
+
+### Fixed
+- **Solano fixture rebuild — PHASE A (2026-06-20).** Cold run #1 validated the toolkit (every
+  issue correctly caught) but surfaced that the FIXTURE carried four UNINTENDED real defects — all
+  author blind spots — so it landed BLOCKED and the middle-band judgment never ran. Rebuilt the
+  generator so a re-audit surfaces ONLY the six intended contestable issues (C1–C6), all
+  low/medium or dispositioned, ZERO open critical/high:
+  - **Execution-identity (was an auto-fail):** the bot was `ExternalCopilot` (a SERVICE agent),
+    making its `UserInfo.getUserId()` scoping the VerifiedCustomerId auto-fail. Retyped to
+    `EinsteinCopilot` (employee-facing, runs as the prompting user) → `getUserId()` is now correct
+    and the bot is a clean control. Action-classification doc updated to match.
+  - **Prompt-injection (`SolanoSummarizeAction`):** raw `req.context` flowed straight into
+    `ConnectApi.EinsteinLLM`. Now fenced in a per-inference cryptographically-random enclosure with
+    a data-cannot-override clause (the `Solano_SafeReply` design) → clean control.
+  - **Denial-of-wallet (`SolanoSummarizeAction`):** the metered `generateMessages` callout sat in
+    an unbounded per-element loop. Now the request count is capped and the per-call input is
+    truncated → bounded paid round-trips, clean control.
+  - **Deploy blocker:** `SolanoCoachingAction` referenced `Body__c`/`Opportunity__c` (and the
+    controller referenced `Opportunity.Forecast_System_Score__c`) with no field metadata → the
+    package would not deploy. Added all three custom-field definitions (the master-detail
+    `Opportunity__c` satisfies the object's `ControlledByParent` sharing). A build-time
+    deploy-cleanliness self-check now fails loud if an Apex-referenced custom field lacks metadata.
+- **Namespace honest-fix (PHASE B-adjacent).** Dropped the synthetic `04t` package-version alias
+  from the fixture's `sfdx-project.json`: the `04t` was fake AND namespace `solano` is unregistered,
+  so a deployed-org deep-audit install would fail. `package-readiness` now reads **`needs-build`**
+  and `namespace-check` declines the build offer; C5 is reframed as a SOURCE-permset finding. The
+  build-time self-check now asserts `needs-build` (catches a future fake-`04t` regression).
+
+### Changed
+- **Journey skill: triage→blocker-gate relabel (0.8.1).** The blocker policy has been automatic
+  (no election) since 0.5.2, but the journey step was still named "Triage gate". Renamed the step,
+  the AuthN/AuthZ-suppression cross-ref, and dropped the stale "triage" phase from the end-to-end
+  phase list (matching the README's canonical journey). Legitimate finding-triage uses
+  (quick-tier "a triage", machine-triage, SFGE triage, the informational `triage-decision.json`)
+  are unchanged. `plugin.json` → 0.8.1 so a cold re-run pulls the relabel.
 
 ### Added
 - **Middle-band judgment fixture — "Solano Pipeline Guardian" (Phase 1; 2026-06-20).** The next

@@ -1,12 +1,25 @@
 # Roadmap — the middle-band "judgment" fixture (the test that proves the differentiating value)
 
-**Status: PHASE 1 BUILT (2026-06-20) — author + deterministic band check. Phase 2 (the
-cold run) is the remaining gate, deferred to its own session.** This is the next
-high-value validation artifact after the v0.7.0 catastrophe cold run. Phase 1 shipped the
-"Solano Pipeline Guardian" fixture (`acceptance/generate-solano-fixture.mjs`), the sealed
-adjudications (`acceptance/solano-adjudication-key.md`), and the standing band check
-(`acceptance/test-solano-band.mjs`, asserting exactly 71% / `MATERIALS COMPLETE`). The
-design below is the spec it was built to.
+**Status: PHASE 1 BUILT + COLD RUN #1 DONE + PHASE A (fixture rebuild) BUILT (2026-06-20).**
+This is the next high-value validation artifact after the v0.7.0 catastrophe cold run.
+Phase 1 shipped the "Solano Pipeline Guardian" fixture, the sealed adjudications, and the
+band check. **Cold run #1 validated the TOOLKIT** (it correctly caught everything) but
+exposed FOUR unintended fixture defects (execution-identity / prompt-injection /
+denial-of-wallet / a deploy-blocking field gap) that landed Solano BLOCKED, so the
+middle-band JUDGMENT never actually ran. **PHASE A rebuilt the fixture** to be genuinely
+mostly-compliant in CODE — a re-audit now surfaces ONLY the six contestable issues (C1-C6),
+zero open critical/high — and did the namespace honest-fix (`needs-build`, C5 reframed as a
+source-permset finding).
+
+> **PHASE B — PENDING (deferred, separate cycle).** Phase A makes the JUDGMENT gradeable,
+> but the SCI completeness stays LOW / `BLOCKED` because it is dominated by owner-completable
+> requirements the fixture does not yet carry (the 9% lesson). Phase B pre-populates the owner
+> artifacts (signed attestations, completed policies, owner-run scan evidence) and re-grounds
+> the band test, so the SCI lands in the intended **65–75%** `MATERIALS COMPLETE` band. The
+> band check today asserts the honest post-Phase-A state (low completeness + `BLOCKED` on
+> materials + empty `blocker_findings` + 0 open critical/high), NOT the old 71%.
+
+The design below is the spec the fixture was built to.
 
 ## The gap this closes
 

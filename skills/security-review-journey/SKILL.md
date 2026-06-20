@@ -334,7 +334,7 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    ledger so confirmed/refuted findings are not re-reported. Declare the
    token-cost tier up front (`quick`/`standard`/`exhaustive`).
 
-3. **Triage gate (the blocker policy).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
+3. **Blocker-policy gate (automatic — no election since 0.5.2).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
    does NOT halt the run and does NOT offer a fix path — it **auto-proceeds** to
    the full NOT-READY report. It never pauses to fix, never drafts/suggests/writes
    code, and is read-only on the partner's source; if the partner wants to
@@ -367,7 +367,7 @@ pass the detected-state summary forward so no phase re-detects from scratch.
 
 4. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
    only the artifacts whose `applies_to` matched the manifest; honors the
-   triage-gate AuthN/AuthZ suppression. Each generated doc is labeled
+   blocker-gate AuthN/AuthZ suppression. Each generated doc is labeled
    automated-vs-owner-run; none is presented as reviewer-final.
 
 5. **Scans** → `/sf-security-review-toolkit:run-scans`. Code Analyzer (the
@@ -490,7 +490,7 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 Automated: the preflight (baseline-currency check, architecture detection, prior-
 state + drift scan, `sf`-authed sense and — only if opted in — DevHub auto-
 resolve), the tier classification + the single preflight report, and the
-end-to-end drive across scope → audit → triage → artifacts → scans →
+end-to-end drive across scope → audit → artifacts → scans →
 (opt-in deep audit) → compile, with every contradiction flagged inline.
 
 Manual: correcting a misread in the preflight; supplying any ⚠ NEED-FROM-YOU
