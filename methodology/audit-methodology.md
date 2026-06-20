@@ -298,6 +298,21 @@ behavior is intentional and spec-correct — e.g., loopback redirect URIs on a
 native-client OAuth flow are REQUIRED by RFC 8252; flagging them is itself an
 error. Only confirm if the exploit is genuinely reachable in the real code.
 
+Three directionality preconditions before any high/critical (a blind 30-judge
+calibration caught all three over-firing): (1) REACHABILITY IS A PRECONDITION — a
+function/route/handler defined or exported but with NO attacker-reachable caller
+(no wiring, grep finds zero call sites) cannot carry high/critical; downgrade to
+low/info or refute — EXCEPT a shipped artifact a third party can later
+bind/activate (packaged Salesforce metadata a subscriber admin wires), where
+unreachability downgrades severity but never refutes (agentforce-package §5). (2)
+AVAILABILITY != SECURITY — a non-security config value (a DB URL, an endpoint, a
+feature flag) whose absence CRASHES the process is fail-CLOSED; the fail-open
+finding requires a SECURITY control (authz/HMAC/signature/license/CSRF/tenant-
+binding) defaulting to ALLOW, not a config whose absence halts the app. (3) A
+MISSING GRANT IS FAIL-CLOSED — an un-granted permission/class/object/field is a
+functionality gap (info at most), never a security finding; the security finding
+is always an OVER-grant, never an under-grant.
+
 FINDING:
 - title: {{TITLE}}
 - severity: {{SEVERITY}}
@@ -483,7 +498,14 @@ with whitespace and punctuation collapsed. Rationale, learned the slow way:
 Near-misses (same defect, different title wording across dimensions) are merged
 at synthesis time in the *report*, but the ledger keeps both entries — a wrong
 automated merge in the ledger is worse than a cosmetic duplicate, because it
-silently drops one finding's audit trail.
+silently drops one finding's audit trail. When the report DOES merge a
+cross-dimension duplicate of one root cause, present it ONCE at the **single
+highest VERIFIED `adjusted_severity`** — never as two rows at different
+severities (a blind run surfaced `worker.js:3` at HIGH from `secrets-credentials`
+AND LOW from `error-handling-disclosure`; that is one issue at HIGH, not two).
+`harness/finding-clusters.mjs` already collapses this to `max_severity` per file
+for the triage headline; the report's per-finding list must reconcile the same
+way.
 
 ### 5.3 The digest
 

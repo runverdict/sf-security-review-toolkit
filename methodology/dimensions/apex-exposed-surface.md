@@ -430,6 +430,13 @@ mutate.
 - **Reachability first, always.** A violating method behind a permission set the
   package never assigns, on a class no exposed surface reaches, or in dead code
   is `low`/`info` with a note — not the headline severity.
+- **Directionality: a missing grant is fail-closed, not an exposure.** A class
+  absent from a permission set's `classAccesses`, a missing object/field
+  permission, or any un-granted access is fail-CLOSED — the method cannot be
+  reached by that user — so it is a functionality/packaging gap (`info` at most),
+  NEVER a finding. The exposure finding is always an OVER-grant (a class granted
+  to a GUEST profile, an over-broad object/field permission), never an
+  under-grant.
 
 ## 6. Known false-positive patterns
 
@@ -445,3 +452,4 @@ mutate.
 | A guest-reachable method that explicitly DENIES guest access or strictly gates it | Sanctioned bypass case 4 is guest *denial* — denying or gating the guest is the required control, not the vulnerability. The finding requires a guest path that READS or WRITES without gating. |
 | A method annotated `@AuraEnabled cacheable=true` flagged as a write risk | Cacheable methods cannot perform DML (the platform forbids it); treat them as read paths. The read-path CRUD/FLS, per-record, and over-return questions still apply, but not a write/IDOR-mutation claim. |
 | `webservice`/`@RestResource`/`@InvocableMethod` reachable only by an authenticated subscriber/integration user, flagged at the guest-breach (public-exposure) severity | Without a verified guest/unauthenticated path, this is the ordinary authenticated entry-point case at its own severity — not the anonymous-internet-visitor tier. Confirm the guest reachability before applying the higher severity. |
+| A permission set/profile that does NOT grant access to a class/object/field the feature uses | **A missing grant is fail-closed** (the feature can't run for that user) — a functionality/packaging gap (`info` at most), never an exposure finding. The finding is an OVER-grant (guest-profile class access, an over-broad permission), never an under-grant. |

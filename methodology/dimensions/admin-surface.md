@@ -206,6 +206,14 @@ consequential verdict the engine emits. Before confirming, read:
   change actually emits an audit event (read the call site), and that
   impersonation writes distinguish operator from target — absence is the
   finding.
+- **A missing privileged grant is fail-closed, not an escalation —
+  directionality.** An admin permission/grant that is ABSENT (a role or
+  permission not assigned, a class not granted) is fail-CLOSED — the privileged
+  path cannot be used at all — so it is a functionality/packaging gap (`info` at
+  most), never a finding. The admin-surface finding is always an OVER-grant or an
+  over-broad assignment (an admin permission reachable by a low-privilege role,
+  `BYPASSRLS`/`ModifyAllData` on a broadly-assigned permset), never an
+  under-grant.
 
 ## 6. Known false-positive patterns
 
@@ -219,3 +227,4 @@ consequential verdict the engine emits. Before confirming, read:
 | The admin surface on a separate hostname behind an IP allowlist / VPN | Constrained exposure is a control. "Admin endpoints exist" is not a finding; an *internet-open* admin plane is. Read the ingress config. |
 | Single-role enforcement (one role per user) flagged as "no multi-role support" | Single-role is a deliberate, defensible model (mirrors major platforms' profile model). Not a finding — the *opposite* (silent multi-role writes) would be. |
 | A `login_failed`/admin-action audit event that records the operator identity | Required telemetry, not disclosure. The finding is a *missing* audit on a privileged mutation, not the presence of one. |
+| A permission set/profile/role that does NOT grant a privileged permission or class the admin feature needs | **A missing grant is fail-closed** — the privileged path can't be used; a functionality/packaging gap (`info` at most), never an escalation finding. The finding is an OVER-grant / over-broad assignment, never an under-grant. |

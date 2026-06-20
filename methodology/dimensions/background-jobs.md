@@ -196,6 +196,14 @@ have read. Before confirming:
 - **Whether the failure is loud.** A "swallowed RLS failure" claim needs an
   actual bare `except`/rescue that continues; structured error handling that
   re-raises or alerts refutes it.
+- **Reachability is a precondition for severity.** A worker function, handler,
+  or task that is *defined or exported but never invoked* — no scheduler entry,
+  no queue consumer, no HTTP route, no `@InvocableMethod`/agent binding, and
+  grep finds zero call sites — has **no attacker-reachable caller** and cannot
+  carry `high`/`critical`. Downgrade to `low`/`info` (dead-code / packaging
+  hygiene) or refute; the finding requires an attacker-controllable path TO the
+  sink, not merely a sink. (Blind 30-judge calibration: an exported-but-uninvoked
+  `snapshot(orgId)` worker scored HIGH, 0/5 real.)
 
 ## 6. Known false-positive patterns
 
@@ -209,3 +217,4 @@ have read. Before confirming:
 | A `system`-actor audit write that passes an explicit resolved tenant id and binds the GUC for the insert | The correct pattern for context-less writes — this is what good looks like, not a finding. |
 | Worker logs a task id, org id, or job name | Operational telemetry. The finding is a secret/token/credential in the task log, not the identifiers. |
 | `BackgroundTasks`/`after_response` work that runs in the request's own context (and thus inherits its binding) | Still inside the request lifecycle — not the context-less class this dimension targets. |
+| A worker/task function that is exported or defined but has NO invocation — no scheduler/queue/route/`@InvocableMethod` wiring, grep confirms zero callers (e.g. an exported `snapshot(orgId)` no caller reaches) | **No attacker-reachable caller** → no severity. Reachability is a precondition: dead/library code is `low`/`info` hygiene at most, never `high`/`critical`; the finding needs an attacker-controllable path to the sink. |

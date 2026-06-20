@@ -9,11 +9,13 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.1**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.2**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
 > `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
-> middle-band judgment fixture** (rebuilt in PHASE A below), and a journey-skill
-> **triage→blocker-gate relabel** (0.8.1). **The Solano cold RE-RUN gates the v0.8.1 tag.**
+> middle-band judgment fixture** (rebuilt in PHASE A below), a journey-skill
+> **triage→blocker-gate relabel** (0.8.1), and the **calibration false-positive patterns**
+> (0.8.2 — three verifier-guidance rules from a blind 30-judge verification, below).
+> **The Solano cold RE-RUN gates the v0.8.2 tag.**
 > Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
 > FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
 > never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
@@ -36,7 +38,7 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
-> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.1) and the
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.2) and the
 > DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
 > is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
 > 9% lesson). Other **Roadmap** specs not
@@ -46,7 +48,7 @@ follow semantic versioning.
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 28 files / 235 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 29 files / 244 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 > **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
 > (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
@@ -85,6 +87,38 @@ follow semantic versioning.
   build-time self-check now asserts `needs-build` (catches a future fake-`04t` regression).
 
 ### Changed
+- **Calibration false-positive patterns — verifier-guidance (0.8.2; NOT-deterministically-test-backed
+  prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
+  findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
+  the verifier over-fired. Encoded each as a §5 verifier sentence + a §6 Known-false-positive row in
+  the dimensions where the adversarial verifier reads them, so it refutes/downgrades them next time.
+  These are LLM-verifier prose — **not** deterministically test-backed; the real proof is the next
+  Solano cold re-run no longer over-firing H1/H2/H4. (A presence test guards the rules from silently
+  regressing out — see `test-calibration-fp-patterns` — but does NOT test the judgment itself.)
+  - **Reachability is a precondition for severity** (blind H2, 0/5 real — an exported-but-uninvoked
+    `snapshot(orgId)` worker scored HIGH). A function/route/handler defined-or-exported with no
+    attacker-reachable caller (no wiring, grep finds zero call sites) cannot carry high/critical —
+    downgrade to low/info or refute. → `background-jobs`, `tenant-isolation` (§5 + §6) + a
+    cross-cutting directionality line in `audit-methodology.md`'s §3 verifier prompt (which preserves
+    the agentforce-package exception: a shipped packaged artifact a subscriber admin can bind
+    downgrades but never refutes).
+  - **Availability/robustness ≠ security severity** (blind H1, 0/5 real — "worker doesn't validate
+    `SOLANO_DB_URL` at init" scored HIGH). Failing to validate a non-security config (a DB URL,
+    endpoint, flag) at boot is fail-CLOSED on availability (it crashes, no security impact) — low/info.
+    Fail-open requires a SECURITY control defaulting to ALLOW. → `error-handling-disclosure` (§5 + §6,
+    plus sharpened §1.4 + §4 fail-open so config-validation is explicitly excluded), `secrets-credentials`
+    (§5 + §6).
+  - **A missing grant is fail-closed, not a vulnerability** (blind H4, 5/5 not-a-finding — "the permset
+    doesn't grant the agent-action Apex classes" scored HIGH). A missing permission/grant is
+    fail-CLOSED (the feature can't run for that user) — a functionality/packaging gap (info at most),
+    never a finding; the security finding is always an OVER-grant, never an under-grant. →
+    `agentforce-package`, `apex-exposed-surface`, `admin-surface` (§5 + §6).
+- **Cross-dimension single-severity reconciliation note (`audit-methodology.md` §5.2).** A blind run
+  surfaced one root cause (`worker.js:3`) at HIGH from `secrets-credentials` AND LOW from
+  `error-handling-disclosure`. Added a one-line note: a merged cross-dimension duplicate is presented
+  ONCE at the single highest VERIFIED `adjusted_severity` (`finding-clusters.mjs` already does this
+  per-file for the headline; the report's per-finding list must reconcile the same way). Prose note;
+  no engine change.
 - **Journey skill: triage→blocker-gate relabel (0.8.1).** The blocker policy has been automatic
   (no election) since 0.5.2, but the journey step was still named "Triage gate". Renamed the step,
   the AuthN/AuthZ-suppression cross-ref, and dropped the stale "triage" phase from the end-to-end

@@ -512,6 +512,15 @@ double-counted).
   note — **never** issue `false_positive` on a "dead packaged code / no execution
   path / not currently invoked" rationale. Confirm live-agent reachability before
   assigning a BLOCKER severity, never before assigning the finding at all.
+- **A missing grant is fail-closed, never a finding — directionality.** A
+  permission/grant that is ABSENT — an agent-action Apex class not listed in a
+  permission set's `classAccesses`, a missing object/field permission, an
+  un-granted action — is fail-CLOSED: the feature cannot run at all for that
+  user. That is a functionality/packaging gap (`info` at most), NEVER a security
+  finding. The security finding is always an OVER-grant (a class granted to a
+  guest profile, `viewAllRecords`/`ModifyAllData`, an over-broad action grant),
+  never an under-grant. (Blind 30-judge: "the permset doesn't grant the
+  agent-action Apex classes" scored HIGH, 5/5 not-a-finding.)
 
 ## 6. Known false-positive patterns
 
@@ -528,3 +537,4 @@ double-counted).
 | Plain packaged Apex with a CRUD/FLS gap that is NOT an agent action | Code Analyzer's Salesforce Graph Engine pass (`run-scans`), not this dimension. This dimension owns the agent-specific authz (which Apex is an action, VerifiedCustomerId scoping, self-authorization) — flag a cross-dimension lead in one line. |
 | LLM output validated to a strict schema / encoded before its sink | The correct handling of untrusted generated content (baseline: `agentforce-llm-output-untrusted`); the finding requires a MISSING constraint/encode between the generated value and the DML/SOQL/render sink. |
 | A non-secure enclosure randomness source where the enclosure IS present and per-inference | The presence/per-inference question is confirmed here; the randomness-source weakness (e.g. `Math.random()`/weak PRNG) is a `crypto-internals` finding — route it there rather than double-reporting under this dimension. |
+| A permission set/profile that does NOT grant an agent-action Apex class (or a missing object/field permission, an un-granted action) | **A missing grant is fail-closed** — the feature can't run for that user; a functionality/packaging gap (`info` at most), never a security finding. The security finding is an OVER-grant (guest-profile class access, `viewAllRecords`/`ModifyAllData`), never an under-grant. |

@@ -60,7 +60,14 @@ Sub-classes, in the order field audits rank them:
    on an explicit mismatch but `true`/`undefined` on the exception path; a guard
    that `continue`s past the check on error; a webhook signature check inside a
    `try` whose `catch` logs and proceeds; an Apex permission check whose
-   exception is swallowed by a bare `catch (Exception e) {}`.
+   exception is swallowed by a bare `catch (Exception e) {}`. **This is a
+   SECURITY-control class, not a config-validation class.** Failing to validate a
+   NON-security config value (a DB URL, a service endpoint, a feature flag) at
+   boot is fail-CLOSED on availability — the app crashes at use time, it does not
+   grant access — so it is a robustness nit (`low`/`info`), not fail-open. The
+   fail-open finding requires a security control (authz / HMAC / signature /
+   license / CSRF / tenant-binding) that DEFAULTS TO ALLOW on the exceptional
+   path, never a config whose absence halts the process.
 5. **Error-message oracles.** Distinguishable error responses that leak
    existence/structure: a login that says "no such user" vs "wrong password"
    (account enumeration), a record fetch that 404s for "not yours" but 403s for
@@ -163,7 +170,10 @@ malformed token, a thrown verifier, or an upstream error GRANTS access instead o
 denying it? Flag any verifier that returns false only on an explicit mismatch but
 true/undefined on the throw path; any guard that continues past the check on
 error; any bare catch (Exception e) {} / except: pass / catch(e){} around a
-permission or CRUD/FLS check. Also note error-message ORACLES on identity/
+permission or CRUD/FLS check. A config value whose absence merely CRASHES the
+worker/app (an unvalidated DB URL, endpoint, or feature flag at boot) is
+fail-CLOSED on availability, NOT fail-open — do not flag it; fail-open requires a
+SECURITY control that grants access on the error path. Also note error-message ORACLES on identity/
 per-record paths (no-such-user vs wrong-password, doesn't-exist vs not-yours) at
 lower severity. Cryptographic compare/algorithm mechanics belong to
 crypto-internals; the missing-tenant-binding fail-closed question to
@@ -219,6 +229,14 @@ grants, and to whom.
   admin-only internal tool; a fail-open authz on a public route is critical, the
   same on a path already gated upstream is lower — say which in
   `adjusted_severity`.
+- **Availability/robustness ≠ security severity.** A missing validation of a
+  NON-security config value (a DB URL, a service endpoint, a feature flag) at
+  init crashes the process at use time — that is **fail-closed on availability**,
+  not a security defect; it is `low`/`info` robustness hygiene, not fail-open.
+  Confirm a SECURITY control (authz / HMAC / signature / license / CSRF /
+  tenant-binding) actually defaults to ALLOW on the exception path before any
+  fail-open severity. (Blind 30-judge: "worker doesn't validate `SOLANO_DB_URL`
+  at init" scored HIGH, 0/5 real — it just crashes, no security impact.)
 
 ## 6. Known false-positive patterns
 
@@ -232,3 +250,4 @@ grants, and to whom.
 | A verifier returning `false` on both mismatch and exception (an explicit deny in the catch) | Fail-closed by construction. The finding is `return true`/`undefined`/empty-truthy on the throw path. |
 | Distinct error messages on a non-identity, non-record surface (a generic 400 with a field name on a public form) | Not every distinguishable error is an oracle — the class matters. Account-enumeration / per-record existence oracles are the finding; a form-validation hint usually is not. |
 | `System.debug` in test classes or `@isTest` code | Not the deployed surface. Note for hygiene at most; debug-log secret-leak is about runtime production code. |
+| A non-security config value (a DB URL, an endpoint, a feature flag) not validated at boot, where its absence CRASHES the process | **Fail-closed on availability** — the app stops at use time, it does not grant access. Robustness nit (`low`/`info`), never a fail-open security finding. Fail-open requires a SECURITY control defaulting to ALLOW, not a config whose absence halts the app. |

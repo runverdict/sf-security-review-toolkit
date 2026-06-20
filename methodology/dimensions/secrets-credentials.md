@@ -193,6 +193,14 @@ describe its shape; the engine redacts values in every output.
   principal with empty secret fields is the correct pattern, not a finding.
 - **Never reproduce a secret value in `evidence`** — cite the location and
   shape; the engine redacts, but don't make it have to (CONVENTIONS §6).
+- **A crashing config is fail-closed, not a secret finding.** A NON-secret
+  config value (a DB URL, a service endpoint, a feature flag) that is
+  unvalidated or absent and merely crashes the process at use time is an
+  availability/robustness nit (`low`/`info`) — **fail-closed on availability**,
+  not a credential finding — and a config value that is not itself a secret is
+  out of this dimension entirely. The secret finding requires a real secret
+  value (entropy / provider-prefix shape) at a readable sink, not a missing or
+  blank non-secret config.
 
 ## 6. Known false-positive patterns
 
@@ -206,3 +214,4 @@ describe its shape; the engine redacts values in every output.
 | Deterministic passwords in seed/demo/test tenant fixtures | Test plumbing — info at most, unless the seed runs against production data paths. |
 | A committed *encrypted* credentials file (e.g. Rails `credentials.yml.enc`) without its key | The design: ciphertext in git, key outside. The committed *key* would be the finding. |
 | Dev-only compose files with throwaway service passwords for local containers | Local-loopback infrastructure, not production credentials — unless the same file is the production deploy artifact; read the deploy path before flagging. |
+| An unvalidated or absent NON-secret config value (a DB URL, an endpoint, a feature flag) whose absence crashes the process | Not a secret and not a vulnerability — **fail-closed on availability** (robustness `low`/`info`). A config value is a secrets finding only if it IS a secret (entropy / provider-prefix shape) exposed at a readable sink. |

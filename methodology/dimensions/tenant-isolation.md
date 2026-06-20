@@ -201,6 +201,12 @@ emits — read all of the following before confirming:
   fails closed) from integrity/correctness impact (real but lower severity),
   unless the code reacts to the empty result by retrying on a privileged
   connection — read the error path before adjusting severity.
+- **Reachability gates severity, not just the missing filter.** A query or
+  handler with a tenant-scope gap that is *defined-or-exported but never
+  invoked* (no route, no job wiring, grep finds zero callers) has no
+  attacker-reachable caller and cannot be `critical`/`high` cross-tenant —
+  downgrade to `low`/`info` (dead code) or refute. A real cross-tenant finding
+  needs an attacker-controllable path that actually reaches the unscoped query.
 
 ## 6. Known false-positive patterns
 
@@ -213,3 +219,4 @@ emits — read all of the following before confirming:
 | Tenant id appears in a request payload on admin/system/webhook paths | Legitimate when the handler resolves-and-verifies it against the authenticated credential or a signed payload (e.g. a per-tenant webhook secret). The finding requires the value to be *trusted*, not merely present. |
 | Test fixtures/seeds creating multiple tenants in one session | Test plumbing, not a production path. |
 | Schema-per-tenant architectures "missing RLS" | Different isolation model — the probes shift to schema-switching correctness and shared-schema spillover; absence of row policies is expected. |
+| An unscoped / cross-tenant-looking query in code that is exported-but-uninvoked — no route, no job, grep finds zero callers (no attacker-reachable caller) | Unreachable code carries no cross-tenant severity. Dead-code hygiene (`low`/`info`) or refute — the cross-tenant finding requires an attacker-controllable path that reaches the unscoped query. |
