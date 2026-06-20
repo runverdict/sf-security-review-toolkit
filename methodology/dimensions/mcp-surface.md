@@ -159,7 +159,10 @@ check inside dispatch, or its absence; is the request bound to a USER identity
 before data access, and where); dispatch input trust (are tool arguments
 validated against the declared JSON schema before the handler runs; what
 happens on an unknown tool name — error, or dynamic lookup/reflection; type
-confusion and extra fields; flag parameters reaching dangerous sinks but
+confusion and extra fields; a permissive tool-param schema that lets the handler
+bind caller-supplied PRIVILEGED fields (status/owner/price/internal flags) into a
+record write — the MCP analogue of mass assignment (baseline:
+mass-assignment-bopla); flag parameters reaching dangerous sinks but
 leave query/command CONSTRUCTION to the injection dimension); inventory
 honesty (diff the tools/list source against the dispatch table — any tool
 callable but unlisted, debug/admin tools registered conditionally, metadata

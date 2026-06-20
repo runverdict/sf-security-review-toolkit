@@ -1358,6 +1358,101 @@
   verification: web_research_unverified
   last_verified: null
 
+# 2026-06-20: the coverage-gap map's P2 extensions — authz/trust classes that
+# existing dimensions partially covered (role -> admin-surface, tenant-id ->
+# tenant-isolation, inbound TLS -> endpoint-*), but whose GENERAL case had no
+# baseline owner. Added with the dimension-extension prose (coverage-gap map
+# P1.4 / P2.6 / P2.8).
+- id: mass-assignment-bopla
+  requirement: Exposed create/update operations must allowlist writable fields — never auto-bind privileged or internal fields (status, price, owner, approval flags, foreign keys) from a request body, tool parameters, or a deserialized payload.
+  details: >
+    OWASP API3:2023 (Broken Object Property Level Authorization) / mass
+    assignment (CWE-915). The GENERAL per-property write-authz class beyond the
+    cases already owned: role/is_admin (admin-surface), org_id/tenant_id
+    (tenant-isolation), and deserialize-into-sObject (untrusted-deserialization).
+    An @AuraEnabled/REST/MCP-tool create or update that copies a whole request
+    object into the record — or an Apex method that upserts a caller-supplied
+    sObject — lets the caller set fields they cannot legitimately write (OwnerId,
+    a status/IsApproved/Amount, a price, an internal flag, a parent relationship
+    Id). The control is an explicit writable-field allowlist: a DTO with only the
+    permitted fields, a serializer that drops unknown/privileged keys, or
+    Security.stripInaccessible(UPSERTABLE/CREATABLE) before DML. Owned by
+    apex-exposed-surface (exposed Apex entry points) + mcp-surface (permissive
+    tool-param schema field-binding).
+  applies_to: [external-endpoint, mcp-server, managed-package]
+  automation: partially
+  automation_notes: The write shape (a whole-object bind vs a field allowlist/DTO) is statically detectable; confirming a bound field is privileged and the caller unauthorized to set it needs the code + data model read.
+  severity_if_missing: major
+  sources:
+    - url: https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/
+      date: "2023"
+      kind: community
+    - url: https://cwe.mitre.org/data/definitions/915.html
+      date: unknown
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
+- id: within-org-bola
+  requirement: Within a single tenant, owner/subtree-scoped records must be filtered at the service layer — a list/detail/tool/action path must not return a peer's records to a peer, even though row-level security already scopes the org.
+  details: >
+    OWASP API1:2023 (Broken Object Level Authorization) at the WITHIN-org
+    granularity (CWE-639). Cross-org isolation (tenant-isolation) is the DB/RLS
+    boundary; within one org, "a rep sees own deals, a manager sees their
+    subtree" is hand-written application authorization on every list/detail/tool
+    path (the visible_user_ids pattern). A path that scopes by org but not by the
+    visible-user/owner set leaks a peer's owner-scoped records to a peer — a
+    same-tenant IDOR that RLS does NOT catch (both rows are in the same org). The
+    control is an explicit visible-user/owner/subtree filter on every owner-scoped
+    read, or a sharing-respecting query in Apex (with sharing + the running
+    user's record access). Distinct from tenant-isolation (cross-org) and
+    admin-surface (the privileged plane). Owned by tenant-isolation's within-org
+    sub-probe + apex-exposed-surface (per-record authz).
+  applies_to: [external-endpoint, mcp-server, managed-package]
+  automation: partially
+  automation_notes: The presence/absence of an owner/visible-user filter on an owner-scoped read is greppable; confirming the records are owner-partitioned within the org and the filter is missing needs the authorization model read.
+  severity_if_missing: major
+  sources:
+    - url: https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
+      date: "2023"
+      kind: community
+    - url: https://cwe.mitre.org/data/definitions/639.html
+      date: unknown
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
+- id: outbound-callout-trust
+  requirement: Outbound callouts must validate TLS certificates and must not blindly follow redirects that re-send credentials or payload to a different host.
+  details: >
+    CWE-295 (Improper Certificate Validation) / OWASP API10:2023 (Unsafe
+    Consumption of APIs). TLS grading (endpoint-ssl-labs-a-grade /
+    violation-secure-communication) is INBOUND-only; nothing audited the OUTBOUND
+    leg. The tells: verify=False (Python requests), rejectUnauthorized:false
+    (Node TLS/https), a trust-all TrustManager / NoopHostnameVerifier / disabled
+    hostname check (Java), CURLOPT_SSL_VERIFYPEER 0, and following a redirect that
+    re-sends the Authorization/bearer header or the request body to a new host
+    (credential/payload leakage to an attacker-controlled location). On the
+    Salesforce side, Named Credentials / External Credentials validate TLS by
+    construction (the platform manages the trust store), so the finding is
+    partner-server-side outbound code, not the Named-Credential path. The control
+    is default certificate validation, a CA/cert pin where warranted, and not
+    forwarding credentials across a cross-host redirect. Owned by the
+    crypto-internals transport-trust sub-probe.
+  applies_to: [external-endpoint, mcp-server, managed-package]
+  automation: partially
+  automation_notes: The disable-verification flags grep loudly; confirming the callout targets an untrusted/attacker-influenceable host and that a redirect re-sends credentials needs the code read.
+  severity_if_missing: major
+  sources:
+    - url: https://cwe.mitre.org/data/definitions/295.html
+      date: unknown
+      kind: community
+    - url: https://owasp.org/API-Security/editions/2023/en/0xaa-unsafe-consumption-of-apis/
+      date: "2023"
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
 - id: endpoint-csp-canvas-frame-ancestors
   requirement: Externally hosted surfaces framed inside Salesforce (Canvas) need a Content-Security-Policy whose frame-ancestors is scoped to Salesforce domains.
   details: >
@@ -4210,3 +4305,38 @@
       kind: official
   verification: verified_primary
   last_verified: "2026-06-12"
+
+# 2026-06-20: the prompt-CONTENT leakage class (coverage-gap map P2.10) — the
+# agentforce dimension covered prompt-INJECTION hardening + execution-identity,
+# not whether the packaged prompt itself leaks a secret or expresses a guardrail
+# the model is wrongly trusted to enforce.
+- id: agentforce-system-prompt-leakage
+  requirement: A packaged prompt template must not embed secrets or hardcoded credentials, and must not express an authorization/guardrail decision the model is trusted to enforce — the prompt is packaged metadata a subscriber can read and an attacker can leak.
+  details: >
+    OWASP LLM07:2025 (System Prompt Leakage). The agentforce-package dimension
+    covers prompt-INJECTION hardening (enclosure/sandwiching — see
+    agentforce-prompt-enclosure-sandwiching) and execution-identity scoping; it
+    does not cover whether the packaged prompt CONTENT itself carries a hardcoded
+    API key, a connection secret, an internal endpoint, or a security decision
+    ("only return data if the user is an admin") expressed in prompt text. A
+    genAiPromptTemplate is packaged metadata: a secret in it ships to every
+    subscriber org and is recoverable by a prompt-leak attack, and a guardrail
+    asserted only in the prompt is bypassable by injection. The control: no
+    secrets in prompt templates (source them from Named Credentials / protected
+    custom metadata), and authorization/guardrails enforced in the action's Apex
+    or flow, never asserted in prompt text the model "should" honor. Cross-
+    reference secrets-credentials (the secret's classification) and the
+    prompt-injection-hardening entries (the injection defense).
+  applies_to: [agentforce]
+  automation: partially
+  automation_notes: Prompt-template metadata (genAiPromptTemplate) is scannable for secret-shaped strings and authz-decision language; classifying a hit as a real secret vs benign instruction needs the prompt read in context, and feeds the FP dossier.
+  severity_if_missing: major
+  sources:
+    - url: https://genai.owasp.org/llmrisk/llm072025-system-prompt-leakage/
+      date: "2025"
+      kind: community
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_agentforce_prompt_injection.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: web_research_unverified
+  last_verified: null

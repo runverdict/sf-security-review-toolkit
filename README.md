@@ -334,8 +334,8 @@ refactor breaks an enforced gate or its determinism. Component status, plainly:
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
   delta (and the 2026-06-20 PMD AppExchange rule-set re-verification),
-  121 of 161 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 39
+  121 of 165 baseline entries are `verified_primary` (confirmed
+  against official Salesforce docs or partner-gated primary sources); 43
   remain `web_research_unverified` pending primary-source confirmation, and
   1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
   resolved through your Partner Account Manager or partner Slack, not trusted

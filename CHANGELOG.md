@@ -17,13 +17,45 @@ follow semantic versioning.
 > (verbose-error/secret-log disclosure + fail-open security logic), **untrusted-deserialization**
 > (native-object/pickle/prototype-pollution/Apex-sObject deserialize → RCE/priv-esc), and
 > **resource-consumption-abuse** (rate-limit/unbounded-read gaps + denial-of-wallet on metered
-> Agentforce/MCP/LLM round-trips + ReDoS — API4:2023/LLM10:2025). The P2 extensions
-> (mass-assignment, within-org BOLA, outbound-callout-trust, system-prompt-leakage) are next.
-> The other **Roadmap** entries (middle-band judgment fixture · throwaway-DAST spec) are
-> planned/specced, not built. Suite: 26 files / 224 checks, green. Earlier checkpoints tagged
-> through v0.5.5.
+> Agentforce/MCP/LLM round-trips + ReDoS — API4:2023/LLM10:2025). The **P2 extensions** are
+> now in as dimension prose + baseline entries: mass-assignment/BOPLA →
+> apex-exposed-surface/mcp-surface, within-org BOLA → tenant-isolation, outbound-callout-trust →
+> crypto-internals, system-prompt-leakage + business-logic → agentforce-package. **The
+> coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
+> (XXE / TOCTOU / exotic-MCP cluster) remains. The other **Roadmap** entries (middle-band
+> judgment fixture · throwaway-DAST spec) are planned/specced, not built. Suite: 26 files / 224
+> checks, green. Earlier checkpoints tagged through v0.5.5.
 
 ### Added
+- **Coverage-gap closure, P2 extensions (2026-06-20) — authz/trust classes whose GENERAL case
+  had no baseline owner, threaded into existing dimensions (no new dimension files).** Closes
+  the coverage-gap map's P1.4 + P2.6/P2.8/P2.9/P2.10. **With this, all P1 + P2 items are
+  closed** (only the intentionally-deferred P3 cluster remains).
+  - **mass-assignment / BOPLA (P1.4)** — `mass-assignment-bopla` baseline + a write-side probe
+    in `apex-exposed-surface` §4 (the cousin of the IDOR probe: does a create/update bind a
+    caller-supplied whole sObject, letting them set `OwnerId`/status/price/internal fields, vs
+    an allowlist/DTO/`stripInaccessible`) and in `mcp-surface` (a permissive tool-param schema
+    binding privileged fields). The general per-property write-authz beyond role
+    (admin-surface), tenant-id (tenant-isolation), and deserialize (untrusted-deserialization).
+  - **within-org BOLA (P2.8)** — `within-org-bola` baseline + a within-org owner/subtree
+    sub-probe in `tenant-isolation` §1 + §4, explicitly delineated as the lower-severity
+    intra-tenant layer (the `visible_user_ids` service-layer authz RLS does not catch), distinct
+    from the cross-org boundary the dimension owns.
+  - **outbound-callout-trust (P2.6)** — `outbound-callout-trust` baseline + a transport-trust
+    sub-class in `crypto-internals` §1/§3/§4: outbound TLS validation disabled
+    (`verify=False`/`rejectUnauthorized:false`/trust-all `TrustManager`) or a redirect re-sending
+    credentials to a new host (CWE-295). Inbound TLS grading never saw the outbound leg; Named/
+    External Credentials are excluded (TLS by construction).
+  - **system-prompt-leakage (P2.10) + business-logic (P2.9)** — `agentforce-system-prompt-leakage`
+    baseline + a prompt-CONTENT probe in `agentforce-package` §4 (a hardcoded secret in a
+    packaged `genAiPromptTemplate`, or a guardrail expressed only in prompt text the model is
+    trusted to enforce — OWASP LLM07:2025), plus a deliberately-modest out-of-order/abusive-flow
+    note (business logic is hard for any tool — kept to a one-line-lead probe).
+  - 4 new baseline entries (all `web_research_unverified`, OWASP API/LLM-Top-10 + CWE-derived);
+    no new dimension files (19 dimensions) and no new test files — `test-baseline-integrity` +
+    `test-dimension-extraction` cover them. Baseline now 165 entries (121 `verified_primary` /
+    43 `web_research_unverified` / 1 `conflicting`); suite 26 files / 224 checks.
+    *(Test-backed; no cold run — deterministic.)*
 - **Coverage-gap closure, new dimension (2026-06-20): `resource-consumption-abuse` (P1.5).**
   The third and last of the new dimensions — and the one for the failure mode a pen-tester hits
   at runtime that no static dimension owned: how much, and how fast. Three shapes:

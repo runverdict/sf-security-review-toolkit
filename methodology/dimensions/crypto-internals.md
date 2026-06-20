@@ -55,6 +55,17 @@ The highest-impact sub-classes, in the order a verifier should fear them:
   silently runs in production and collapses two trust domains into one secret.
 - **Wrong entropy source.** `random`/`Math.random`/`java.util.Random` minting
   anything an attacker would want to guess: tokens, codes, nonces.
+- **Outbound TLS trust disabled.** The partner's server-side code making
+  *outbound* callouts with certificate validation turned off — `verify=False`
+  (Python `requests`), `rejectUnauthorized: false` (Node TLS/https), a trust-all
+  `TrustManager` / `NoopHostnameVerifier` (Java), `CURLOPT_SSL_VERIFYPEER 0` — or
+  following a redirect that re-sends the `Authorization`/bearer header or the
+  request body to a *different* host. Inbound TLS grading
+  (`endpoint-ssl-labs-a-grade`, `violation-secure-communication`) never sees
+  this; it is the outbound leg, and it re-opens a man-in-the-middle on the
+  partner's own integrations (CWE-295; baseline: `outbound-callout-trust`).
+  Salesforce Named / External Credentials validate TLS by construction — the
+  finding is partner server-side outbound code, not the Named-Credential path.
 
 ## 2. What good looks like
 
@@ -119,7 +130,10 @@ you find — every read of a key variable is a crypto call site or a leak.
 | Apex/LWC (where relevant) | `Crypto.encryptWithManagedIV` (IV handled) vs `Crypto.encrypt` with a hand-supplied IV — trace the IV's provenance; `Crypto.generateMac` results compared with `==` on Strings (Apex String `==` is not constant-time, though exploitability in-platform is limited — report as low); `Crypto.getRandomInteger`/`getRandomLong` vs `Math.random`. Hardcoded key Blobs in Apex are routed to secrets-credentials. |
 
 Also locate: the startup/config validation (does a missing key abort prod
-boot?), and every `logger`/`print` within arm's reach of key material.
+boot?), every `logger`/`print` within arm's reach of key material, and every
+outbound HTTP/callout site's TLS-verification flag (`verify=`/
+`rejectUnauthorized`/a custom `TrustManager`/`CURLOPT_SSL_VERIFYPEER`) plus its
+redirect-following behavior — the outbound-callout-trust probe (CWE-295).
 
 ## 4. Finder prompt block
 
@@ -156,7 +170,15 @@ plaintext reaching logs/exceptions/audit rows. Entropy: every token, code,
 nonce, and secret minted with the CSPRNG (`secrets`/`randomBytes`/
 `SecureRandom`), never `random`/`Math.random`; bearer-token length ≥128 bits.
 Password hashing scheme and parameters. TOTP/2FA secret encryption at rest —
-same nonce-reuse probe as field crypto.
+same nonce-reuse probe as field crypto. OUTBOUND TLS TRUST: at every server-side
+outbound HTTP/callout site, is certificate validation ON (no verify=False /
+rejectUnauthorized:false / trust-all TrustManager / NoopHostnameVerifier /
+CURLOPT_SSL_VERIFYPEER 0), and does a followed redirect avoid re-sending the
+Authorization/bearer header or request body to a DIFFERENT host? Inbound TLS is
+graded by the scans; this is the OUTBOUND leg — disabled validation re-opens a
+MITM on the partner's integrations. Salesforce Named/External Credentials handle
+TLS by construction, so flag partner server-side outbound code, NOT the
+Named-Credential path (baseline: outbound-callout-trust).
 
 Known findings — do NOT re-report any of these:
 {{LEDGER}}

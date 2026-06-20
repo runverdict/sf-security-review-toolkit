@@ -325,7 +325,18 @@ OVER-EXPOSURE — is the method `global`/`webservice`/`@AuraEnabled`/
 `@RestResource` when nothing outside the package needs it reachable (should it
 be `private`/`public`), and does it return MORE than the caller is entitled to
 (returning all rows of a type and trusting the client to hide some, or
-serializing inaccessible fields without `stripInaccessible`). Then the
+serializing inaccessible fields without `stripInaccessible`). (5) MASS
+ASSIGNMENT (per-property write-authz, the write-side cousin of IDOR) — for a
+create/update/upsert entry point, does it bind a CALLER-SUPPLIED whole
+object/sObject into the record, letting the caller set fields they cannot
+legitimately write (`OwnerId`, a status/`IsApproved`/`Amount`, a price, an
+internal flag, a parent relationship Id), or does it allowlist the writable
+fields (a purpose-built DTO / field-by-field copy, or
+`Security.stripInaccessible(UPSERTABLE/CREATABLE, …)` before the DML)? IDOR is
+touching the wrong RECORD; mass assignment is writing the wrong FIELDS of a
+record you may touch — both are findings (baseline: `mass-assignment-bopla`; the
+`JSON.deserialize`-into-sObject variant is the untrusted-deserialization
+dimension). Then the
 GUEST-USER reachability probe (a top real-world breach class — sanctioned
 CRUD/FLS bypass case 4 is guest-user DENIAL, so anything a guest CAN reach must
 deny or strictly gate): find Apex reachable from a Salesforce Site or Experience

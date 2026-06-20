@@ -395,7 +395,20 @@ here as the root cause. No prompt/response logging: any System.debug or logging
 call whose argument is a prompt or response variable in an action path. Plain
 Apex CRUD/FLS dataflow unrelated to an agent action is Code Analyzer's Graph
 Engine pass, not this dimension — flag a cross-dimension lead in one line
-instead.
+instead. SYSTEM-PROMPT LEAKAGE (the prompt CONTENT, not its injection hardening):
+read every genAiPromptTemplate body for a HARDCODED SECRET (an API key, a
+connection/auth token, an internal endpoint URL) shipped as packaged metadata to
+every subscriber and recoverable by a prompt-leak attack, and for an
+AUTHORIZATION/GUARDRAIL DECISION expressed only in prompt text ("only return data
+if the user is an admin", "never reveal X") that the model is wrongly TRUSTED to
+enforce — a guardrail asserted in the prompt is bypassable by injection; the
+enforcement must live in the action's Apex/flow (baseline:
+agentforce-system-prompt-leakage; the secret's classification is
+secrets-credentials). BUSINESS-LOGIC / AUTHORIZED-FLOW abuse (keep modest — hard
+for any tool): note an action sequence invocable OUT OF ORDER to skip a step the
+design assumes ran first, or an authorized-but-abusive volume of a state-changing
+action with no guard — flag as a one-line lead where the flow makes it visible,
+do not over-claim.
 
 Known findings — do NOT re-report any of these:
 {{LEDGER}}

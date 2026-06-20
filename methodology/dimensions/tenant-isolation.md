@@ -36,6 +36,16 @@ Three sub-classes, in descending order of how often field audits confirmed them:
    `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/data-export.md` — this
    dimension establishes the boundary model those re-use.)
 
+**Within-org owner/subtree authorization is a related but distinct layer.** The
+three sub-classes above are the *cross-tenant* boundary (critical by definition).
+*Within* one org, "a rep sees own deals, a manager sees their subtree" is
+hand-written application authorization on every owner-scoped path (the
+`visible_user_ids` pattern), not RLS — a missing filter there leaks a *peer's*
+records to a *peer* (OWASP API1:2023, within-org BOLA; baseline:
+`within-org-bola`). It is `major`, not `critical` (intra-tenant), and its
+per-record half overlaps `apex-exposed-surface`'s IDOR probe — but the *list*
+path that returns every owner's rows in the org is flagged here.
+
 ## 2. What good looks like
 
 - **Enforcement below the app layer where the stack allows it.** The strongest
@@ -136,7 +146,16 @@ Tables/models with a tenant column missing a policy/scope, INCLUDING
 join-through tables whose tenancy is only via FK; check the newest migrations
 first. IDOR both directions: can a detail or mutation endpoint be fed another
 tenant's object id (UUID or sequential) and act on it; mass-assignment of
-tenant_id/org_id/owner fields in create/update payloads. Second-order
+tenant_id/org_id/owner fields in create/update payloads. WITHIN-ORG BOLA (a
+DISTINCT, lower-severity layer — major not critical, because it is intra-tenant,
+not cross-tenant): within one org, owner/subtree-scoped records (a rep sees own
+deals, a manager sees their subtree) are filtered by hand-written application
+authorization (the visible_user_ids pattern), NOT by RLS — does every
+owner-scoped LIST/DETAIL/tool path apply that visible-user/owner filter, or can a
+peer read a peer's rows (a same-tenant IDOR that RLS cannot catch because both
+rows share the org)? The per-record half overlaps apex-exposed-surface's IDOR
+probe; the LIST path returning every owner's rows in the org is this dimension's
+to flag (baseline: within-org-bola). Second-order
 surfaces: exports, webhook receivers, scheduled fan-outs, search indexers
 acting without tenant context (flag here; deep async coverage belongs to the
 background-jobs dimension — don't duplicate its findings). The DB role the app
