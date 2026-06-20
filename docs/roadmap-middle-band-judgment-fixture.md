@@ -1,8 +1,12 @@
 # Roadmap — the middle-band "judgment" fixture (the test that proves the differentiating value)
 
-**Status: design (a response to the 2026-06-19 cold validation + an external critique).
-Not yet built.** This is the next high-value validation artifact after the v0.7.0 cold
-run. Build + cold-validate it in its own session.
+**Status: PHASE 1 BUILT (2026-06-20) — author + deterministic band check. Phase 2 (the
+cold run) is the remaining gate, deferred to its own session.** This is the next
+high-value validation artifact after the v0.7.0 catastrophe cold run. Phase 1 shipped the
+"Solano Pipeline Guardian" fixture (`acceptance/generate-solano-fixture.mjs`), the sealed
+adjudications (`acceptance/solano-adjudication-key.md`), and the standing band check
+(`acceptance/test-solano-band.mjs`, asserting exactly 71% / `MATERIALS COMPLETE`). The
+design below is the spec it was built to.
 
 ## The gap this closes
 
@@ -101,18 +105,27 @@ safe pattern, and calibrates severity defensibly, is a real signal even on a sel
 target). It is a strictly better test of the differentiating capability than the catastrophe
 run — just not a coverage proof.
 
-## Build + validate (next session)
+## Build + validate
 
-1. Author the fixture (extend `acceptance/generate-fixture.mjs` or a new generator) — a
-   mostly-compliant package + the 4–6 contestable issues + the sealed adjudication key
-   (off-fixture, like `~/coldstart-full-grading-key.md`).
-2. Sanity-check the band **deterministically** first: hand-author a representative ledger →
-   `compute-sci.mjs` → confirm it lands ~65–75% before the expensive cold run.
-3. **Cold-run it** (fresh session, 0 context, the cold-start discipline) → grade off disk
-   vs the sealed adjudications: severity calls, the subtle-FP refutation, the near-control
-   precision, the SCI band, the path-to-green shape.
-4. Every miscalibration → sharpen the dimension's severity heuristics / the verifier's
-   refute rules (the fixture, like the others, drives engine hardening) → re-run.
+1. **[DONE 2026-06-20]** Author the fixture — a **NEW** generator
+   (`acceptance/generate-solano-fixture.mjs`, not an extension of the Helios one: the two
+   fixtures have opposite contracts — Helios = recall/every-probe/BLOCKED, Solano =
+   precision-calibration/mostly-clean/mid-band — and folding them would pollute both and make
+   the band ungovernable). A mostly-compliant package + **6** contestable issues + the sealed
+   adjudication key off-fixture (`acceptance/solano-adjudication-key.md`, mirroring the
+   `expected-findings.md` / `~/coldstart-full-grading-key.md` pattern).
+2. **[DONE 2026-06-20]** Sanity-check the band **deterministically** first: the standing
+   `acceptance/test-solano-band.mjs` hand-authors the representative ledger/manifest/evidence,
+   runs the REAL `compute-sci.mjs`, and asserts it lands at **exactly 71%** (in the 65–75%
+   band) / `MATERIALS COMPLETE` / no open critical-high / all 22 blockers satisfied / currency
+   floor silent — with a live-baseline corroboration layer so the design can't silently drift.
+3. **[PENDING — Phase 2, its own session]** **Cold-run it** (fresh session, 0 context, the
+   cold-start discipline) → grade off disk vs the sealed adjudications: severity calls, the
+   subtle-FP refutation, the near-control precision, the SCI band, the path-to-green shape.
+   (For stricter isolation, relocate the adjudication key out of the repo first — see the
+   key's *Cold-run isolation* note.)
+4. **[PENDING — Phase 2]** Every miscalibration → sharpen the dimension's severity heuristics /
+   the verifier's refute rules (the fixture, like the others, drives engine hardening) → re-run.
 
 ## Adjacent open items (separately tracked)
 - **Scale story** (a fair external question): the audit fan-out scales with surface

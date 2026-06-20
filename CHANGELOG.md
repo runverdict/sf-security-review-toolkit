@@ -22,12 +22,53 @@ follow semantic versioning.
 > apex-exposed-surface/mcp-surface, within-org BOLA → tenant-isolation, outbound-callout-trust →
 > crypto-internals, system-prompt-leakage + business-logic → agentforce-package. **The
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
-> (XXE / TOCTOU / exotic-MCP cluster) remains. The other **Roadmap** entries (middle-band
-> judgment fixture · throwaway-DAST spec) are planned/specced, not built. The coverage-gap
+> (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
+> (author + deterministic band check) is now BUILT** (the "Solano" fixture below); its cold
+> run (Phase 2) is the remaining gate, deferred to its own session. The other **Roadmap**
+> entry (throwaway-DAST spec) is still specced, not built. The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 27 files / 228 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 28 files / 238 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 ### Added
+- **Middle-band judgment fixture — "Solano Pipeline Guardian" (Phase 1; 2026-06-20).** The next
+  high-value validation artifact after the v0.7.0 catastrophe cold run, per
+  `docs/roadmap-middle-band-judgment-fixture.md`. A catastrophe scores near-0 the way a clean
+  package scores near-100 — neither needs fine judgment; the product lives in the *band between*,
+  where the call between "blocker" and "hardening item" is genuinely contestable. This builds the
+  target that forces that call.
+  - **`acceptance/generate-solano-fixture.mjs`** (NEW generator, not an extension of the Helios
+    one — kept separate so Helios's "every probe fires / scores BLOCKED" recall contract stays
+    clean and the band stays governable). Builds a **mostly-compliant** Agentforce managed 2GP +
+    companion endpoint on demand into `~/srt-solano` (never committed): `with sharing`, CRUD/FLS
+    in user mode, no injection, **no live secrets** (secret-scan-clean by construction, no deleted
+    blob), `installable` (a real-shaped non-placeholder `04t` version alias → the deep-audit path
+    is exercised; a build-time self-check fails loud if that regresses). Seeded with **6 genuinely
+    contestable issues**, each a distinct judgment axis, each with a clean negative near-control
+    beside it: C1 severity-boundary (owner-scoped PII read with no explicit FLS — low vs medium),
+    C2 tempting FP (a `without sharing` AuraEnabled that LOOKS like IDOR but routes every id
+    through a separate `SolanoAccessGuard` first — refute), C3 fix-vs-document (a DAST medium —
+    missing HSTS behind an edge TLS terminator — acceptable-with-justification), C4 partial
+    evidence (a second `worker/` source root the external SAST does not cover), C5 deployed
+    artifact (an installed permission set granting `viewAllRecords` on the snapshot object — a
+    real, non-catastrophic least-privilege finding), C6 prompt-hardening-middle (a template WITH
+    data/instruction separation but a static delimiter, not a per-inference enclosure).
+  - **`acceptance/solano-adjudication-key.md`** — the **sealed adjudications** (off-fixture, in the
+    repo, never readable from `~/srt-solano`). Per issue: the intended call + why + the
+    defensible-consistency bar for the genuinely-50/50 calls, with explicit FAIL modes
+    (over-escalation AND under-detection both fail — the point of the middle band). Mirrors the
+    `expected-findings.md` off-fixture pattern.
+  - **`acceptance/test-solano-band.mjs`** — the **standing deterministic band check** (the gate
+    before any cold run; "encode-don't-park"). Hand-authors the representative scope-manifest +
+    audit-ledger + evidence-index that a Solano run would produce (the 6 issues dispositioned per
+    the sealed key + the realistic mid-prep materials gaps), runs the REAL `compute-sci` against
+    the REAL baseline, and asserts the rollup lands at **exactly 71% / `MATERIALS COMPLETE`** —
+    90/126 SATISFIED, 8 statically-cleared, 4 PARTIAL, 24 MISSING, 0 open critical/high, all 22
+    blocker requirements satisfied, the currency floor correctly silent (materials incomplete).
+    A PRIMARY layer (fixed 126-id manifest) keeps the count stable against baseline growth; a
+    CORROBORATE layer re-derives the live applicable set and fails loud on a renamed/removed id or
+    drift out of a [60,80] sanity band — so the design "can't silently drift" (+10 checks).
+  - **NOT a tag / no `plugin.json` bump.** Phase 1 is author + band check only; the cold run that
+    would gate a tag is a separate, later session.
 - **Coverage-gap adversarial-audit hardening (2026-06-20).** After the coverage work landed, a
   5-lens read-only Workflow (honesty/sourcing · cross-dimension boundaries · technical accuracy ·
   genericization/voice · extraction-contract; hard-anchored to the repo, `/opt/verdict` forbidden)

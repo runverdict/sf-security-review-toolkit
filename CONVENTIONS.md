@@ -218,11 +218,13 @@ sf-security-review-toolkit/
 │   ├── namespace-check.mjs          # 0.7.2: deep-audit BUILD precondition (buildable iff an authed org carries the pkg namespacePrefix) — gate offers the build only when confirmed, else shows the prereq
 │   └── zap/{README.md, zap-plan-template.yaml}   # authenticated DAST plan generator assets
 ├── acceptance/                      # the acceptance + standing-test harness
-│   ├── generate-fixture.mjs         # builds the synthetic "Helios" fixture on demand (never committed)
-│   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
+│   ├── generate-fixture.mjs         # builds the synthetic "Helios" RECALL fixture on demand (never committed)
+│   ├── generate-solano-fixture.mjs  # builds the "Solano" MIDDLE-BAND judgment fixture on demand (never committed)
+│   ├── expected-findings.md         # Helios sealed ground-truth plant list (recall grading key)
+│   ├── solano-adjudication-key.md   # Solano sealed adjudications (calibration/precision grading key; off-fixture)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 27 dependency-free standing tests (228 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 28 dependency-free standing tests (238 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

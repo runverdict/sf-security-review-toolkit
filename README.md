@@ -184,7 +184,7 @@ v0.7.0 cold run — one full autonomous journey on a 0-context seeded fixture, g
 re-confirmed the 0.5.x triage/withhold/SCI honesty properties firing live.
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 27 standing test files (228 checks)** that fail the build if a
+engines in `harness/` guarded by 28 standing test files (238 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
