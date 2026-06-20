@@ -31,8 +31,12 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + deterministic band check) is now BUILT** (the "Solano" fixture below); its cold
-> run (Phase 2) is the remaining gate, deferred to its own session. The other **Roadmap**
-> entry (throwaway-DAST spec) is still specced, not built. The coverage-gap
+> run (Phase 2) is the remaining gate, deferred to its own session. Other **Roadmap** specs not
+> yet built: the throwaway-DAST slice-5b, and **preconditions & guided remediation**
+> (`docs/roadmap-preconditions-guided-remediation.md`, NEW) — the "why-blocked, ask-don't-default"
+> contract prompted by the Solano preflight offering a deep audit for an uninstallable package
+> (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
+> a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
 > fixed). Suite: 28 files / 238 checks, green. Earlier checkpoints tagged through v0.5.5.
 
