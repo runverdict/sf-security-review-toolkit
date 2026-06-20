@@ -1300,6 +1300,64 @@
   verification: verified_primary
   last_verified: "2026-06-12"
 
+# 2026-06-20: the general how-much/how-fast + cost probes that the per-surface
+# rate-limit entries (enumeration/email/export) leave uncovered. Added with the
+# resource-consumption-abuse dimension (coverage-gap map P1.5).
+- id: resource-consumption-abuse
+  requirement: Expensive, sensitive, and public endpoints must bound consumption — rate limits/quotas, enforced maximum page sizes, query LIMITs, size-capped uploads/decompression, and linear-time parsing of untrusted input.
+  details: >
+    OWASP API4:2023 (Unrestricted Resource Consumption) — the Salesforce
+    reviewer's DAST fuzzes at volume, so an unmetered or unbounded endpoint is a
+    standard finding. Covers the GENERAL case the per-surface entries leave
+    uncovered: a rate limit/quota (per-tenant and per-principal, not per-IP-only)
+    on auth/search/inference/export/job-submit endpoints; an enforced maximum
+    page size (a caller ?limit= must be clamped); a LIMIT on queries; ReDoS
+    (catastrophic-backtracking regex over untrusted input — CWE-1333); a
+    size/ratio cap before decompression (zip/parser bombs); bounded memory
+    (stream/paginate, never load-all); and bounded fan-out (no unbounded N+1).
+    Apex carries its own governor limits, so unbounded Apex throws — a
+    self-inflicted DoS, and an external trigger on a guest/@AuraEnabled path.
+    Owned by the resource-consumption-abuse dimension; login brute-force is
+    endpoint-enumeration-brute-force, export volume is data-export.
+  applies_to: [external-endpoint, mcp-server, managed-package]
+  automation: partially
+  automation_notes: Limiter config, pagination caps, LIMITs, body-size caps, and catastrophic regex patterns are statically detectable; confirming a route is uncovered and the trigger attacker-reachable needs the code read plus a DAST volume probe (owner-run).
+  severity_if_missing: major
+  sources:
+    - url: https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/
+      date: "2023"
+      kind: community
+    - url: https://cwe.mitre.org/data/definitions/1333.html
+      date: unknown
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
+- id: cost-amplification-denial-of-wallet
+  requirement: Each Agentforce inference, MCP tool call, prompt-template render, and third-party LLM/API callout is a metered, billable round-trip and must be quota'd, token-capped, and loop/recursion-guarded so one request cannot trigger unbounded paid work.
+  details: >
+    OWASP LLM10:2025 (Unbounded Consumption) / denial-of-wallet — distinct from
+    classic resource consumption because the exhausted resource is MONEY (and the
+    org's API limits) rather than availability. A public agent endpoint or MCP
+    tool with no per-tenant budget, an inference call inside an unbounded loop, an
+    agent-action/tool-dispatch chain with no step/recursion guard, or a missing
+    max_tokens (so each call is maximally expensive) lets an attacker run up the
+    bill. Controls: per-tenant inference/tool quotas, a max_tokens/length cap on
+    every model call, a loop/recursion/step guard on agent-action and tool
+    chains, and timeouts on model/API callouts so the per-request cost ceiling is
+    knowable and bounded. Owned by the resource-consumption-abuse dimension;
+    acute for Agentforce/MCP surfaces.
+  applies_to: [external-endpoint, mcp-server, agentforce]
+  automation: partially
+  automation_notes: max_tokens/timeout presence and inference-in-loop patterns are statically detectable; confirming the absence of a per-tenant budget and the attacker-drivability of the trigger needs the code read in context.
+  severity_if_missing: major
+  sources:
+    - url: https://genai.owasp.org/llmrisk/llm102025-unbounded-consumption/
+      date: "2025"
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
 - id: endpoint-csp-canvas-frame-ancestors
   requirement: Externally hosted surfaces framed inside Salesforce (Canvas) need a Content-Security-Policy whose frame-ancestors is scoped to Salesforce domains.
   details: >

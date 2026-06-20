@@ -130,7 +130,7 @@ source, never phones home, and is plain, readable source in `hooks/`.
 |---|---|---|
 | `/sf-security-review-toolkit:security-review-journey` | The autonomous driver: a preflight scan (+ Dev Hub auto-resolution when `sf` is authed), then runs the whole journey end to end, pausing only at the safety gates; also does state detection / routing / status | Autonomous (gated) |
 | `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, Agentforce agent, external endpoint, MCP server, Canvas, LWC/Aura, mobile), compiles which requirements apply, gates on partner-program prerequisites | Automated |
-| `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 18 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
+| `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 19 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
 | `/sf-security-review-toolkit:generate-artifacts` | Drafts the submission artifacts from your code: AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, exposed-tools inventory + OpenAPI, access-control documentation, credential-storage statement | Automated draft, human review |
 | `/sf-security-review-toolkit:run-scans` | Eight scan families: Code Analyzer v5, Checkmarx-portal check, authenticated DAST plan, TLS grade, dependency audit, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC); folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
 | `/sf-security-review-toolkit:reviewer-simulation` | Reframes everything the audit + scans found as **what Salesforce Product Security will see** — the challenge checklist ranked by the reviewer's own attack priority, headed by the first things they will hit | Automated synthesis |
@@ -182,9 +182,9 @@ container; state files record names only; loopback-only scan target). `main` car
 prerequisite detection + graceful degradation) and 0.7.2 (deep-audit build-feasibility check). The
 v0.7.0 cold run — one full autonomous journey on a 0-context seeded fixture, graded off disk —
 re-confirmed the 0.5.x triage/withhold/SCI honesty properties firing live.
-The toolkit ships **14 skills**, **18 audit dimensions**, **8 scan families**, a deterministic
+The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 26 standing test files (223 checks)** that fail the build if a
+engines in `harness/` guarded by 26 standing test files (224 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
@@ -334,8 +334,8 @@ refactor breaks an enforced gate or its determinism. Component status, plainly:
 - **Substantially verified, residual gaps flagged:** after the 2026-06-12
   primary-source reconciliation and the same-day partner-gated evidence
   delta (and the 2026-06-20 PMD AppExchange rule-set re-verification),
-  121 of 159 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 37
+  121 of 161 baseline entries are `verified_primary` (confirmed
+  against official Salesforce docs or partner-gated primary sources); 39
   remain `web_research_unverified` pending primary-source confirmation, and
   1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
   resolved through your Partner Account Manager or partner Slack, not trusted

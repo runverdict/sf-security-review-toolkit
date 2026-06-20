@@ -13,15 +13,40 @@ follow semantic versioning.
 > environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
 > test-backed but not yet in a tagged cold run. **Coverage-gap map: in progress** — the two
 > default PMD AppExchange rules (the prediction quick wins) are predicted in the baseline +
-> dimensions, and **two of the three new dimensions** shipped — **error-handling-disclosure**
-> (verbose-error/secret-log disclosure + fail-open security logic) and
-> **untrusted-deserialization** (native-object/pickle/prototype-pollution/Apex-sObject
-> deserialize → RCE/priv-esc); `resource-consumption-abuse` + the P2 extensions are pending.
+> dimensions, and **all three new dimensions** shipped — **error-handling-disclosure**
+> (verbose-error/secret-log disclosure + fail-open security logic), **untrusted-deserialization**
+> (native-object/pickle/prototype-pollution/Apex-sObject deserialize → RCE/priv-esc), and
+> **resource-consumption-abuse** (rate-limit/unbounded-read gaps + denial-of-wallet on metered
+> Agentforce/MCP/LLM round-trips + ReDoS — API4:2023/LLM10:2025). The P2 extensions
+> (mass-assignment, within-org BOLA, outbound-callout-trust, system-prompt-leakage) are next.
 > The other **Roadmap** entries (middle-band judgment fixture · throwaway-DAST spec) are
-> planned/specced, not built. Suite: 26 files / 223 checks, green. Earlier checkpoints tagged
+> planned/specced, not built. Suite: 26 files / 224 checks, green. Earlier checkpoints tagged
 > through v0.5.5.
 
 ### Added
+- **Coverage-gap closure, new dimension (2026-06-20): `resource-consumption-abuse` (P1.5).**
+  The third and last of the new dimensions — and the one for the failure mode a pen-tester hits
+  at runtime that no static dimension owned: how much, and how fast. Three shapes:
+  **unrestricted consumption** (no rate limit/quota, unbounded page size/read/memory — OWASP
+  API4:2023; the reviewer's DAST fuzzes at volume, so an unmetered endpoint is a standard
+  finding), **denial-of-wallet** (each Agentforce inference / MCP tool call / LLM callout is a
+  *metered, paid* round-trip — an attacker who drives them without a quota runs up the bill;
+  OWASP LLM10:2025), and **algorithmic amplification** (ReDoS, decompression/parser bombs,
+  unbounded N+1 fan-out, plus the Apex governor-limit self-DoS). Per-stack detection adds an
+  MCP/Agentforce row (per-tenant budget? loop/recursion guard? `max_tokens`? callout timeout?)
+  and an Apex row (SOQL without `LIMIT`, queries in loops, recursive async). Finder prompt +
+  verifier guidance pin the three decisive facts: attacker-reachable trigger, presence of a
+  cap/quota/guard, and the per-request *cost*.
+  - **`resource-consumption-abuse`** (baseline, `web_research_unverified`) — API4:2023 +
+    CWE-1333 (ReDoS); the general rate/quota/unbounded-read bar. Gated `[external-endpoint,
+    mcp-server, managed-package]`.
+  - **`cost-amplification-denial-of-wallet`** (baseline, `web_research_unverified`) — LLM10:2025;
+    metered inference must be quota'd + token-capped + loop-guarded. Gated `[external-endpoint,
+    mcp-server, agentforce]`.
+  - `audit-methodology.md` §1.2 roster + count: 18 → 19 dimensions; `test-dimension-extraction`
+    covers it automatically. **All three coverage-gap new dimensions are now in.**
+  - Baseline now 161 entries (121 `verified_primary` / 39 `web_research_unverified` / 1
+    `conflicting`); suite 26 files / 224 checks. *(Test-backed; no cold run — deterministic.)*
 - **Coverage-gap closure, new dimension (2026-06-20): `untrusted-deserialization` (P1.2).**
   The second of the three new dimensions. No dimension owned object reconstruction from
   untrusted bytes before this (`injection-xss` is query/template-only). It owns three sinks:

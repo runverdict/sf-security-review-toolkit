@@ -29,7 +29,7 @@ Every entry in the baseline sits on one of three rungs:
 
 1. `web_research_unverified` (`last_verified: null`) — found in public web
    research only. The fact may be right, but no primary channel has confirmed
-   it. 37 entries remain here (mostly the MCP-spec threat-model section, the
+   it. 39 entries remain here (mostly the MCP-spec threat-model section, the
    WI-19 written-policy artifact stubs, and a handful of endpoint/test-env
    hygiene items the 2026-06 evidence did not touch). Counts are emitted
    deterministically by `harness/baseline-counts.mjs` — do not hand-edit them.
