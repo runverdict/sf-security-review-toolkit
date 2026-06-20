@@ -178,7 +178,7 @@ All Summer '26 (doc v262.0), read 2026-06-12.
 |---|---|---|---|
 | https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/appexchange.html | undated (current) | v5 rule selectors (AppExchange + Recommended:Security), HTML report attached in the wizard, not-100%-passing posture, per-FP explanation document | 2026-06-12 |
 | https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/release-notes.html | 2025-2026 | v5 engine inventory (PMD/ESLint/RetireJS/SFGE/Flow Scanner/CPD) | 2026-06-12 |
-| https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html | 2025-2026 | PMD AppExchange rule tiers; Lightning hygiene rules | 2026-06-12 |
+| https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html | 2026-06 | PMD AppExchange rule tiers (Critical/High/Moderate) incl. AvoidFeatureManagementChangeProtection (Critical) + AvoidGetInstanceWithTaint (Moderate); Lightning hygiene rules | 2026-06-20 |
 | https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html | 2025-2026 | Graph Engine CRUD/FLS data-flow rules | 2026-06-12 |
 | https://security.my.salesforce-sites.com/sourcescanner/SourceScannerHelp | unknown | Source Scanner portal help/FAQs (portal confirmed operational 2026-06-12) | 2026-06-12 |
 | https://developer.salesforce.com/docs/atlas.en-us.pkg2_dev.meta/pkg2_dev/sfdx_dev_dev2gp_code_coverage.htm | 2024-2025 | 75% Apex coverage packaging gate | 2026-06-12 |

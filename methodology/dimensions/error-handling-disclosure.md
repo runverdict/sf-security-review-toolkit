@@ -54,7 +54,7 @@ Sub-classes, in the order field audits rank them:
    third-party log shipper) can read what that profile is not entitled to see.
 4. **Fail-open security logic.** A `try`/`catch` wrapping an authorization /
    HMAC / signature / license / CSRF / tenant-binding check whose `catch`
-   returns success, `true`, an empty-but-truthy result, or simply does not
+   returns success, `true`, an empty-but-truthy result, or does not
    re-raise — so a malformed token, a thrown verifier, or an upstream error
    *grants* access. Variants: a verification function that returns `false` only
    on an explicit mismatch but `true`/`undefined` on the exception path; a guard
@@ -158,7 +158,7 @@ production actually running in production mode (is the debug flag OFF and
 enforced, not just defaulted)? FAIL-OPEN: find every try/catch (except/rescue)
 that WRAPS a security decision — an authorization, HMAC/signature, license,
 CSRF, or tenant-binding check — and read the exceptional branch: does the catch
-return success / true / an empty-but-truthy value / simply not re-raise, so a
+return success / true / an empty-but-truthy value / does not re-raise, so a
 malformed token, a thrown verifier, or an upstream error GRANTS access instead of
 denying it? Flag any verifier that returns false only on an explicit mismatch but
 true/undefined on the throw path; any guard that continues past the check on

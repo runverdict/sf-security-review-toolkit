@@ -48,8 +48,11 @@ and by sink (baseline: `untrusted-deserialization`):
    object pollutes `Object.prototype`, and any later `if (obj.isAdmin)` /
    `options.shell` / template lookup inherits the planted property — escalating
    to auth bypass, denial of service, or RCE via a sink. Sources: `lodash.merge`/
-   `set`/`defaultsDeep` (the CVE family), hand-rolled deep-merge/`extend`/`clone`
-   utilities, query-string/`qs` parsers, `Object.assign` over recursive input.
+   `set`/`defaultsDeep` (the CVE family), hand-rolled recursive deep-merge/
+   `extend`/`clone` utilities, and query-string/`qs` parsers. (Native
+   `Object.assign` is NOT a source — it is shallow and copies only own
+   enumerable properties; the danger is a RECURSIVE merge or a path-set that
+   walks into a `__proto__`/`constructor` key.)
 3. **Apex `JSON.deserialize` into sObjects → privilege escalation / FLS
    bypass.** `JSON.deserialize(body, Account.class)` (or
    `deserializeUntyped` then cast) reconstructs an sObject whose *every field*

@@ -23,10 +23,38 @@ follow semantic versioning.
 > crypto-internals, system-prompt-leakage + business-logic → agentforce-package. **The
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. The other **Roadmap** entries (middle-band
-> judgment fixture · throwaway-DAST spec) are planned/specced, not built. Suite: 26 files / 224
-> checks, green. Earlier checkpoints tagged through v0.5.5.
+> judgment fixture · throwaway-DAST spec) are planned/specced, not built. The coverage-gap
+> changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
+> fixed). Suite: 27 files / 228 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 ### Added
+- **Coverage-gap adversarial-audit hardening (2026-06-20).** After the coverage work landed, a
+  5-lens read-only Workflow (honesty/sourcing · cross-dimension boundaries · technical accuracy ·
+  genericization/voice · extraction-contract; hard-anchored to the repo, `/opt/verdict` forbidden)
+  audited the whole changeset and adversarially verified each finding: **12 raw → 5 confirmed**
+  (7 rejected as nitpicks/false alarms). All 5 fixed:
+  - **`agentforce-system-prompt-leakage` cited a non-resolving SF URL** (the bare
+    `secure_agentforce_prompt_injection.htm`; the real pages are the umbrella
+    `secure_agentforce_prompts.htm` + the `_harden`/`_data`/`_enclosure`/`_resources` sub-pages).
+    Repointed to the umbrella; dropped the `(doc v262.0)` annotation I had not inspected. (The
+    requirement is independently carried by the resolving OWASP LLM07 source; the entry was
+    already honestly `web_research_unverified`.)
+  - **`Object.assign` was wrongly listed as a JS prototype-pollution source** in
+    `untrusted-deserialization` §1 — it is shallow/own-enumerable and not a sink (the file's §3
+    grep seeds, §4 finder prompt, and §5/§6 already excluded it). Corrected to name it as NOT a
+    source.
+  - **`visible_user_ids` (a partner-of-origin INTERNAL variable name) leaked** into the shipped
+    `within-org-bola` baseline entry + `tenant-isolation` as "the visible_user_ids pattern"
+    (CONVENTIONS §3). Genericized to "an explicit owner/visible-user/subtree filter" everywhere.
+  - **"simply" ×2** in the new `error-handling-disclosure` dimension (CONVENTIONS §9 bans the
+    word) — removed, plus a pre-existing one in `apex-exposed-surface`.
+  - **SOURCES.md registry row for the PMD reference was stale** (last-checked 2026-06-12) vs the
+    2026-06-20 `verified_primary` promotion — bumped to 2026-06-20 and now names the two rules.
+  - **`acceptance/test-prose-hygiene.mjs`** (4 checks, NEW) — encodes the two recurring-risk
+    rules the audit caught: the §9 "simply" ban (methodology prose) + the §3 partner-internal-
+    symbol ban (`visible_user_ids`/`app.current_org_id` must not ship in methodology/baseline).
+    So the voice/genericization slip class can't recur. Suite 26 → 27 files / 224 → 228 checks.
+    *(Test-backed; no cold run — deterministic.)*
 - **Coverage-gap closure, P2 extensions (2026-06-20) — authz/trust classes whose GENERAL case
   had no baseline owner, threaded into existing dimensions (no new dimension files).** Closes
   the coverage-gap map's P1.4 + P2.6/P2.8/P2.9/P2.10. **With this, all P1 + P2 items are
@@ -39,7 +67,7 @@ follow semantic versioning.
     (admin-surface), tenant-id (tenant-isolation), and deserialize (untrusted-deserialization).
   - **within-org BOLA (P2.8)** — `within-org-bola` baseline + a within-org owner/subtree
     sub-probe in `tenant-isolation` §1 + §4, explicitly delineated as the lower-severity
-    intra-tenant layer (the `visible_user_ids` service-layer authz RLS does not catch), distinct
+    intra-tenant layer (the service-layer owner/visible-user filter RLS does not catch), distinct
     from the cross-org boundary the dimension owns.
   - **outbound-callout-trust (P2.6)** — `outbound-callout-trust` baseline + a transport-trust
     sub-class in `crypto-internals` §1/§3/§4: outbound TLS validation disabled

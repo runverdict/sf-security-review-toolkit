@@ -1,11 +1,21 @@
 # Coverage-gap map — the known-unknowns (dimension-expansion roadmap)
 
-**Status: audited 2026-06-19, not yet closed.** A multi-source web research fan-out (6
-agents over OWASP ASVS 5.0 + Top 10, OWASP API Top 10:2023, OWASP LLM Top 10:2025 +
+**Status: audited 2026-06-19; P1 + P2 CLOSED 2026-06-20.** A multi-source web research fan-out
+(6 agents over OWASP ASVS 5.0 + Top 10, OWASP API Top 10:2023, OWASP LLM Top 10:2025 +
 Agentic Top 10:2026 + MCP literature, CWE Top 25:2025, the Salesforce AppExchange review
 criteria + PMD AppExchange ruleset, and the partner-hosted-backend surface) **audited our
 16 dimensions + 8 scanner families against the external vuln-class universe** — to find the
 classes the security literature names that we *don't* cover, before a real review does.
+
+> **CLOSED 2026-06-20 (commits 9b602da → 371a682, all test-backed + deterministic, no cold
+> run needed).** All P1 and P2 items below are now encoded. The toolkit went 16 → **19
+> dimensions** (the 3 new ones) plus 5 dimension extensions, and the baseline grew by 10
+> entries to 165 (the 2 PMD rules `verified_primary` against the official reference; the new
+> classes `web_research_unverified`, OWASP/CWE-sourced). Standing tests added:
+> `test-baseline-integrity` (per-entry well-formedness) + `test-dimension-extraction` (every
+> dimension is engine-extractable). The per-item closure mapping is in **"What shipped"** at
+> the bottom. Only the **P3** cluster is intentionally deferred (scanner-owned / low-likelihood
+> / out-of-arch).
 
 This addresses the **layer-1 coverage ceiling** (known-unknowns — classes that exist in the
 literature we simply haven't encoded). It does NOT touch layer-2 (unknown-unknowns / a
@@ -67,7 +77,7 @@ failure our Checkmarx-prediction exists to prevent).
    → verify our Code Analyzer `--rule-selector AppExchange` run surfaces it + cite it.
 8. **BOLA within a single tenant (same-org owner-scoped IDOR)** — `extend: tenant-isolation`
    (within-org owner/subtree sub-probe). We own *cross*-org reach; *within*-org owner/subtree
-   authz is hand-written app code on every list/detail/tool path (the `visible_user_ids` pattern).
+   authz is hand-written app code on every list/detail/tool path (an explicit owner/visible-user/subtree filter).
 9. **Business-logic integrity / authorized-flow abuse** — `extend: agentforce-package` +
    `apex-exposed-surface` (sequence note). Out-of-order step bypass + abusive-but-authorized
    volume. *(Lower tractability — business logic is hard for any tool; keep the probe modest.)*
@@ -81,21 +91,30 @@ deception (V14.2.5); prod-config hygiene + supply-chain-beyond-CVE (→ Checkov/
 XXE (CWE-611 → Semgrep rule); TOCTOU races (CWE-367/362); the exotic MCP cluster (rug-pull /
 shadowing / memory-poisoning / cascading-chains / agent-phishing — OWASP ASI06/08/09).
 
-## Build plan (next sessions — each is a normal dimension addition)
-- **3 new dimensions:** `untrusted-deserialization`, `error-handling-disclosure`,
-  `resource-consumption-abuse` — author per CONVENTIONS §5 (threat concept · what good looks
-  like · per-stack detection heuristics), add `baseline/requirements-baseline.yaml` entries,
-  re-gate `applies_to`, and (per the §7 discipline) any determinizable claim gets an engine.
-- **Extensions:** mass-assignment → `apex-exposed-surface`/`mcp-surface`; within-org BOLA →
-  `tenant-isolation`; system-prompt-leakage → `agentforce-package`; outbound-callout-trust →
-  new or `crypto-internals`/`oauth-identity`.
-- **2 PMD baseline rules:** `AvoidFeatureManagementChangeProtection`,
-  `AvoidGetInstanceWithTaint` — confirm the Code Analyzer AppExchange selector surfaces them
-  + add baseline entries so they're *predicted* (the Checkmarx-prediction completeness story).
-- **Validate** each new/extended dimension on a fixture seeded with one concrete instance
-  (the acceptance discipline) — and note: the **middle-band judgment fixture** is the natural
-  home for the contestable severity calls these new classes introduce.
+## What shipped (CLOSED 2026-06-20)
 
-**Net:** we went from "we think we cover the SF surface" to a *sourced* coverage map with a
-defensible ~85% and a ranked, citation-backed list of the 10 real holes — the honest pre-
-`known-escapes.md` position you pushed for.
+Each P1/P2 item below maps to what now encodes it (commits 9b602da → 371a682; all
+deterministic + test-backed; the per-instance fixture validation folds into the **middle-band
+judgment fixture**, the natural home for the contestable severity calls these classes introduce).
+
+| # | item | closed by |
+|---|---|---|
+| P1.1 | `FeatureManagement.changeProtection` (Critical PMD) | baseline `violation-feature-management-change-protection` (verified_primary) + `admin-surface` §1/§3/§4 + `run-scans` Family 1 |
+| P1.2 | insecure deserialization | NEW dimension `untrusted-deserialization` + baseline `untrusted-deserialization` |
+| P1.3 | error-handling / info-disclosure + fail-open | NEW dimension `error-handling-disclosure` + baseline `error-handling-fail-open` (consolidates `fail-info-disclosure`/`endpoint-error-hygiene-debug-off`/`violation-secret-data-in-debug`) |
+| P1.4 | mass assignment / BOPLA | baseline `mass-assignment-bopla` + `apex-exposed-surface` §4 (write-side probe) + `mcp-surface` (tool-param field-binding) |
+| P1.5 | resource / cost consumption (denial-of-wallet) | NEW dimension `resource-consumption-abuse` + baseline `resource-consumption-abuse` + `cost-amplification-denial-of-wallet` |
+| P2.6 | outbound-callout trust | baseline `outbound-callout-trust` + `crypto-internals` §1/§3/§4 (transport-trust sub-class) |
+| P2.7 | `getInstance(userId/profileId)` taint (Moderate PMD) | baseline `violation-getinstance-with-taint` (verified_primary) + `apex-exposed-surface` §3/§4 |
+| P2.8 | within-org BOLA | baseline `within-org-bola` + `tenant-isolation` §1/§4 (within-org sub-probe) |
+| P2.9 | business-logic / authorized-flow abuse | `agentforce-package` §4 (modest out-of-order/abusive-flow lead — kept modest by design) |
+| P2.10 | system-prompt leakage (LLM07) | baseline `agentforce-system-prompt-leakage` + `agentforce-package` §4 (prompt-CONTENT probe) |
+
+**P3 remains intentionally deferred** (scanner-owned / low-likelihood / out-of-architecture) —
+see the P3 section above. If a real Salesforce review surfaces one, it accrues to
+`methodology/known-escapes.md` (still seeded-empty by design).
+
+**Net:** the toolkit went from a *sourced* ~85% coverage map with 10 ranked holes to **19
+dimensions** with all P1+P2 holes encoded — each finding-class now has a named owner, a baseline
+entry, and a finder-prompt probe. The honest caveat survives: this closes *layer-1*
+(known-unknowns); *layer-2* (a novel class) is only closed by a real external review.

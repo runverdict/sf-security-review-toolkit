@@ -1400,7 +1400,7 @@
     granularity (CWE-639). Cross-org isolation (tenant-isolation) is the DB/RLS
     boundary; within one org, "a rep sees own deals, a manager sees their
     subtree" is hand-written application authorization on every list/detail/tool
-    path (the visible_user_ids pattern). A path that scopes by org but not by the
+    path (an explicit owner/visible-user/subtree filter). A path that scopes by org but not by the
     visible-user/owner set leaks a peer's owner-scoped records to a peer — a
     same-tenant IDOR that RLS does NOT catch (both rows are in the same org). The
     control is an explicit visible-user/owner/subtree filter on every owner-scoped
@@ -4335,8 +4335,8 @@
     - url: https://genai.owasp.org/llmrisk/llm072025-system-prompt-leakage/
       date: "2025"
       kind: community
-    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_agentforce_prompt_injection.htm
-      date: "Summer '26 (doc v262.0)"
+    - url: https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_agentforce_prompts.htm
+      date: "Summer '26"
       kind: official
   verification: web_research_unverified
   last_verified: null

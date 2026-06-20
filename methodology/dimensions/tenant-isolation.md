@@ -39,8 +39,8 @@ Three sub-classes, in descending order of how often field audits confirmed them:
 **Within-org owner/subtree authorization is a related but distinct layer.** The
 three sub-classes above are the *cross-tenant* boundary (critical by definition).
 *Within* one org, "a rep sees own deals, a manager sees their subtree" is
-hand-written application authorization on every owner-scoped path (the
-`visible_user_ids` pattern), not RLS — a missing filter there leaks a *peer's*
+hand-written application authorization on every owner-scoped path (an explicit
+owner/visible-user/subtree filter), not RLS — a missing filter there leaks a *peer's*
 records to a *peer* (OWASP API1:2023, within-org BOLA; baseline:
 `within-org-bola`). It is `major`, not `critical` (intra-tenant), and its
 per-record half overlaps `apex-exposed-surface`'s IDOR probe — but the *list*
@@ -150,7 +150,7 @@ tenant_id/org_id/owner fields in create/update payloads. WITHIN-ORG BOLA (a
 DISTINCT, lower-severity layer — major not critical, because it is intra-tenant,
 not cross-tenant): within one org, owner/subtree-scoped records (a rep sees own
 deals, a manager sees their subtree) are filtered by hand-written application
-authorization (the visible_user_ids pattern), NOT by RLS — does every
+authorization (an explicit owner/visible-user/subtree filter), NOT by RLS — does every
 owner-scoped LIST/DETAIL/tool path apply that visible-user/owner filter, or can a
 peer read a peer's rows (a same-tenant IDOR that RLS cannot catch because both
 rows share the org)? The per-record half overlaps apex-exposed-surface's IDOR
