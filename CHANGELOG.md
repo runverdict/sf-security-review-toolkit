@@ -36,6 +36,14 @@ follow semantic versioning.
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
 > fixed). Suite: 28 files / 238 checks, green. Earlier checkpoints tagged through v0.5.5.
 
+> **Cold-run prep (2026-06-20).** For the Phase-2 Solano cold run, the sealed adjudication key
+> (`acceptance/solano-adjudication-key.md`) is **held off-repo** at `~/solano-adjudication-key.md`
+> and removed from `main` during the cold-run window, then restored after — so the cold session
+> (which works against a clone of `origin/main`) cannot stumble on the answer key in the plugin
+> dir while it audits Solano. This is stronger isolation than the Helios `expected-findings.md`
+> precedent, on purpose, because this run's whole value is measuring honest judgment. The key's
+> C4 live-repro note is preserved in history (committed before removal).
+
 ### Added
 - **Middle-band judgment fixture — "Solano Pipeline Guardian" (Phase 1; 2026-06-20).** The next
   high-value validation artifact after the v0.7.0 catastrophe cold run, per
