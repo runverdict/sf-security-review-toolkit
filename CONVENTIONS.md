@@ -170,7 +170,7 @@ sf-security-review-toolkit/
 │   ├── audit-methodology.md         # engine spec: loop, severity, ledger, adapters
 │   ├── reviewer-challenges.md       # Product-Security challenge checklist (reviewer-simulation)
 │   ├── known-escapes.md             # seeded-empty recall log: real-review misses accrue here
-│   └── dimensions/                  # one file per audit dimension (17)
+│   └── dimensions/                  # one file per audit dimension (18)
 │       ├── oauth-identity.md        ├── tenant-isolation.md
 │       ├── sessionid-egress.md      ├── secrets-credentials.md
 │       ├── mcp-surface.md           ├── mcp-threat-model.md
@@ -179,7 +179,7 @@ sf-security-review-toolkit/
 │       ├── data-export.md           ├── email-outbound.md
 │       ├── admin-surface.md         ├── agentforce-package.md
 │       ├── package-metadata.md      ├── apex-exposed-surface.md
-│       └── error-handling-disclosure.md
+│       ├── error-handling-disclosure.md  └── untrusted-deserialization.md
 ├── templates/                       # 16 reviewer-facing artifact templates + 2 schemas
 │   ├── submission-checklist.md.tmpl # the required-artifacts table, per-row
 │   ├── authn-authz-flow.md.tmpl     ├── data-flow-diagram.md.tmpl
@@ -221,7 +221,7 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # sealed ground-truth plant list (grading key)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 26 dependency-free standing tests (222 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 26 dependency-free standing tests (223 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

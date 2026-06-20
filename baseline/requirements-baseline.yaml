@@ -1219,6 +1219,42 @@
   verification: verified_primary
   last_verified: "2026-06-12"
 
+# 2026-06-20: the deserializer-itself probe behind the OWASP "insecure
+# deserialization" line above — no dimension owned object reconstruction from
+# untrusted bytes before this. Added with the untrusted-deserialization
+# dimension (coverage-gap map P1.2).
+- id: untrusted-deserialization
+  requirement: Deserializing untrusted bytes into a language object must use plain-data formats only — never a native-object/code-bearing deserializer over attacker-reachable input, and Apex JSON.deserialize into an sObject must strip inaccessible fields before DML.
+  details: >
+    OWASP A08:2021 (Software and Data Integrity Failures) / CWE-502 — the rare
+    class whose default outcome is RCE. Three sinks: (1) native-object
+    deserializers execute on reconstruction — Python pickle/marshal/jsonpickle/
+    yaml.load-without-SafeLoader, Node node-serialize/funcster unserialize() (the
+    _$$ND_FUNC$$_ gadget), Ruby Marshal.load/YAML.load, Java
+    ObjectInputStream/XMLDecoder/default-typing Jackson — over a request body,
+    a poisonable cache/queue/session, a cookie, or an upload; (2) JavaScript
+    prototype pollution — __proto__/constructor keys deep-merged (lodash.merge/
+    set, hand-rolled merges) into an object a later property read trusts; (3)
+    Apex JSON.deserialize/deserializeUntyped into an sObject, where caller-
+    supplied privileged fields (OwnerId/RecordTypeId/status/parent Id) reach
+    insert/update/upsert unless Security.stripInaccessible(UPSERTABLE/CREATABLE)
+    or a field allowlist runs first. Owned by the untrusted-deserialization
+    dimension. The mass-assignment write-authz angle beyond deserialization is
+    apex-exposed-surface/mcp-surface; XXE is a scanner rule.
+  applies_to: [managed-package, external-endpoint, mcp-server]
+  automation: partially
+  automation_notes: Deserializer call sites grep loudly (pickle/yaml.load/unserialize/ObjectInputStream/JSON.deserialize/lodash.merge); the judgment — does the input cross a trust boundary, and is the format/sink dangerous — needs the code read in context. The dependency-CVE half (prototype-pollution libs) is cross-checked by the SCA scan.
+  severity_if_missing: major
+  sources:
+    - url: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures/
+      date: "2021"
+      kind: community
+    - url: https://cwe.mitre.org/data/definitions/502.html
+      date: unknown
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
 - id: endpoint-error-hygiene-debug-off
   requirement: External services must run in production mode with generic error pages — no stack traces, paths, schema, or framework debug output.
   details: >

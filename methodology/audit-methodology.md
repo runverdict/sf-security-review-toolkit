@@ -65,7 +65,7 @@ offer to re-scope before fanning out.
 
 ### 1.2 Dimension selection
 
-Seventeen dimensions live in `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/`.
+Eighteen dimensions live in `${CLAUDE_PLUGIN_ROOT}/methodology/dimensions/`.
 Each is **concept-stable, target-variable** (CONVENTIONS §7): the file defines
 the threat concept, what "good" looks like, and per-stack detection heuristics —
 never hard-coded paths. Applicability:
@@ -89,6 +89,7 @@ never hard-coded paths. Applicability:
 | `package-metadata.md` | a managed-package element — audits the package's **metadata/XML** surface (LWC/Aura/VF component config + apiVersion, message channels, weblinks/buttons, component CSS, RemoteSiteSettings/CspTrustedSites), the Top-20 violation class no code-AST dimension reads |
 | `apex-exposed-surface.md` | a managed-package element with Apex — the **exposed-entry-point authorization** surface (`@AuraEnabled`/`@RestResource`/`webservice`/`@InvocableMethod`/`global`/guest-reachable) that Code Analyzer path-traces but does not reason about (*should* this be exposed? per-record/IDOR authz?) |
 | `error-handling-disclosure.md` | always — every architecture has error/exception paths. Two halves: information **disclosure** (verbose errors, stack traces, secrets in logs — Top-20 #6/#13) and **fail-open** security logic (a `try`/`catch` around an authz/HMAC/license/CSRF/tenant-binding check that grants access on the exceptional path instead of denying) |
+| `untrusted-deserialization.md` | server code, an external endpoint, an MCP server, or Apex deserializes input — native-object deserializers (pickle/`yaml.load`/`Marshal`/`ObjectInputStream`/node-serialize → RCE), JavaScript prototype-pollution merges, and Apex `JSON.deserialize` into sObjects (caller-tampered privileged fields reaching DML without `stripInaccessible`) |
 
 Packaged Apex's **structured CRUD/FLS dataflow** stays Code Analyzer's job (the
 Graph Engine pass, orchestrated by `/sf-security-review-toolkit:run-scans`) — the

@@ -13,13 +13,36 @@ follow semantic versioning.
 > environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
 > test-backed but not yet in a tagged cold run. **Coverage-gap map: in progress** — the two
 > default PMD AppExchange rules (the prediction quick wins) are predicted in the baseline +
-> dimensions, and the **error-handling-disclosure** dimension shipped (the first of the new
-> dimensions: verbose-error/secret-log disclosure + fail-open security logic); the remaining
-> new dimensions are pending. The other **Roadmap** entries (middle-band judgment fixture ·
-> throwaway-DAST spec) are planned/specced, not built. Suite: 26
-> files / 222 checks, green. Earlier checkpoints tagged through v0.5.5.
+> dimensions, and **two of the three new dimensions** shipped — **error-handling-disclosure**
+> (verbose-error/secret-log disclosure + fail-open security logic) and
+> **untrusted-deserialization** (native-object/pickle/prototype-pollution/Apex-sObject
+> deserialize → RCE/priv-esc); `resource-consumption-abuse` + the P2 extensions are pending.
+> The other **Roadmap** entries (middle-band judgment fixture · throwaway-DAST spec) are
+> planned/specced, not built. Suite: 26 files / 223 checks, green. Earlier checkpoints tagged
+> through v0.5.5.
 
 ### Added
+- **Coverage-gap closure, new dimension (2026-06-20): `untrusted-deserialization` (P1.2).**
+  The second of the three new dimensions. No dimension owned object reconstruction from
+  untrusted bytes before this (`injection-xss` is query/template-only). It owns three sinks:
+  **native-object deserializers** (Python pickle/`yaml.load`, Node `node-serialize`'s
+  `_$$ND_FUNC$$_`, Ruby `Marshal`, Java `ObjectInputStream`/`XMLDecoder` → RCE on
+  reconstruction), **JavaScript prototype pollution** (`__proto__`/`constructor` deep-merged
+  via `lodash.merge`/hand-rolled merges → property injection), and **Apex `JSON.deserialize`
+  into sObjects** (caller-tampered `OwnerId`/`RecordTypeId`/status fields reaching DML without
+  `Security.stripInaccessible`). Per-stack detection (Python/Node/Ruby/Java/Apex), a finder
+  prompt that splits the three sinks and pins the trust-boundary question, verifier guidance
+  that pins "trace the input to a trust boundary" + "read for `stripInaccessible` before DML".
+  Boundaries: query/template injection → `injection-xss`; the write-authz angle →
+  `apex-exposed-surface`/`mcp-surface`; XXE → scanner rule.
+  - **`untrusted-deserialization`** (baseline, `web_research_unverified`) — OWASP A08:2021 /
+    CWE-502; plain-data formats only over untrusted input, and Apex sObject deserialize must
+    strip inaccessible fields before DML. Gated `[managed-package, external-endpoint,
+    mcp-server]`.
+  - `audit-methodology.md` §1.2 roster + count: 17 → 18 dimensions. The
+    `test-dimension-extraction` standing test now covers it automatically (no new test file).
+  - Baseline now 159 entries (121 `verified_primary` / 37 `web_research_unverified` / 1
+    `conflicting`); suite 26 files / 223 checks. *(Test-backed; no cold run — deterministic.)*
 - **Coverage-gap closure, new dimension (2026-06-20): `error-handling-disclosure` (P1.3).**
   The first of the coverage-gap map's three new dimensions — and the one with a live instance
   (a cold-fixture Node error handler that returned `err.stack` on a 401). It owns the
