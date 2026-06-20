@@ -9,9 +9,16 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is ahead at **0.7.2** with two
-> environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
-> test-backed but not yet in a tagged cold run. **Coverage-gap map: in progress** — the two
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.0**, UNTAGGED —
+> ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
+> `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, and the **Solano
+> middle-band judgment fixture**. **The Solano cold run gates the v0.8.0 tag.** The 0.7.2→0.8.0
+> minor bump is load-bearing, not cosmetic: the installed plugin was last updated at 0.7.2,
+> BEFORE the coverage-gap work, so without it `claude plugin update` no-ops and a cold run would
+> audit the PRE-coverage plugin — missing the three new dimensions
+> (`error-handling-disclosure` / `untrusted-deserialization` / `resource-consumption-abuse`)
+> that Solano's calibration depends on (they are its 8 statically-cleared entries).
+> **Coverage-gap map: closed** — the two
 > default PMD AppExchange rules (the prediction quick wins) are predicted in the baseline +
 > dimensions, and **all three new dimensions** shipped — **error-handling-disclosure**
 > (verbose-error/secret-log disclosure + fail-open security logic), **untrusted-deserialization**

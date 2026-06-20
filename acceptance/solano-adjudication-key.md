@@ -321,6 +321,16 @@ This is locked deterministically by `acceptance/test-solano-band.mjs`.
 - **Disposition (C3):** the gray-zone medium is dispositioned with a justification,
   not left open and not escalated.
 - **Partial-credit (C4):** `scan-external-sast` is PARTIAL, not over-credited.
+  **Hittability note:** C4 is **not** naturally reachable as an organic live
+  finding — run-scans Family 7 (External SAST) scans *every* detected non-package
+  source root, so a faithful cold run scans BOTH `server/` AND `worker/` (both
+  clean) and would honestly credit `scan-external-sast` SATISFIED. C4 therefore
+  tests the SCI **partial-credit math + scope-honesty**, validated by the
+  deterministic band check (`acceptance/test-solano-band.mjs`, which hand-authors
+  `scan-external-sast` = PARTIAL). To reproduce the contest LIVE, deliberately
+  scope the Family-7 SAST to `server/` only (omit the in-scope `worker/` root) so
+  the evidence index registers PARTIAL — then the honest call is "extend the scan
+  to `worker/` to reach SATISFIED," NOT crediting a one-root scan as complete.
 - **SCI shape:** completeness in 65–75%, band `MATERIALS COMPLETE`, a short
   ordered path-to-green, the verdict reading "close, here's the gap."
 
