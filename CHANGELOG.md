@@ -12,12 +12,38 @@ follow semantic versioning.
 > adversarial-audit hardening passes, all detailed below. `main` is ahead at **0.7.2** with two
 > environment preconditions — `docker-check` (0.7.1) + `namespace-check` (0.7.2) — that are
 > test-backed but not yet in a tagged cold run. **Coverage-gap map: in progress** — the two
-> default PMD AppExchange rules (the prediction quick wins) are now predicted in the baseline +
-> dimensions; the new dimensions remain pending. The other **Roadmap** entries (middle-band
-> judgment fixture · throwaway-DAST spec) are planned/specced, not built. Suite: 25
-> files / 204 checks, green. Earlier checkpoints tagged through v0.5.5.
+> default PMD AppExchange rules (the prediction quick wins) are predicted in the baseline +
+> dimensions, and the **error-handling-disclosure** dimension shipped (the first of the new
+> dimensions: verbose-error/secret-log disclosure + fail-open security logic); the remaining
+> new dimensions are pending. The other **Roadmap** entries (middle-band judgment fixture ·
+> throwaway-DAST spec) are planned/specced, not built. Suite: 26
+> files / 222 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 ### Added
+- **Coverage-gap closure, new dimension (2026-06-20): `error-handling-disclosure` (P1.3).**
+  The first of the coverage-gap map's three new dimensions — and the one with a live instance
+  (a cold-fixture Node error handler that returned `err.stack` on a 401). It owns the
+  error/exception path in two halves: **disclosure** (verbose errors, stack traces, framework
+  debug pages, secrets/PII in logs — consolidating the previously-scattered `fail-info-disclosure`
+  + `endpoint-error-hygiene-debug-off` + `violation-secret-data-in-debug` baseline coverage) and
+  **fail-open security logic** (a `try`/`catch` around an authz / HMAC / license / CSRF /
+  tenant-binding check whose exceptional branch *grants* access — CWE-636/755, which had no
+  baseline owner). Per-stack detection heuristics (Python/Node/Ruby/Java/Apex), a finder prompt
+  that prioritizes the stack-trace-on-401 case and reads the *catch body* for fail-open, and a
+  verifier-guidance section that pins "read the catch, not the try" and "confirm the throwing
+  input is attacker-reachable." Dimension roster + count updated in `audit-methodology.md` §1.2
+  (16 → 17 dimensions).
+  - **`error-handling-fail-open`** (baseline, `web_research_unverified`) — the new fail-closed
+    requirement: a security decision must DENY on any exceptional path, never fall through to
+    allow. Default-deny; access requires the check to affirmatively succeed.
+  - **`acceptance/test-dimension-extraction.mjs`** (18 checks, NEW) — drives the real
+    `build-audit-engine` over EVERY `methodology/dimensions/*.md`, asserting each file's §4/§5
+    extraction markers + non-empty finder/verifier prompts. Closes the gap that
+    `test-build-audit-engine` only exercised two hand-picked keys, so every current AND future
+    dimension is guarded the moment its file lands. (This is the coverage-gap map's standing-test
+    discipline made structural.)
+  - Baseline now 158 entries (121 `verified_primary` / 36 `web_research_unverified` / 1
+    `conflicting`); suite 26 files / 222 checks. *(Test-backed; no cold run — deterministic.)*
 - **Coverage-gap closure, quick wins (2026-06-20) — the two default PMD AppExchange rules we
   scanned for but did not PREDICT.** A coverage audit (`docs/roadmap-coverage-gap-map.md`)
   found that while `run-scans` invokes `--rule-selector AppExchange`, the baseline named the

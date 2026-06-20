@@ -3294,6 +3294,39 @@
   verification: verified_primary
   last_verified: "2026-06-12"
 
+# 2026-06-20: the fail-OPEN companion to fail-info-disclosure — the quiet half of
+# error handling that had no baseline owner. Added with the
+# error-handling-disclosure dimension (coverage-gap map P1.3).
+- id: error-handling-fail-open
+  requirement: Security decisions must fail CLOSED — an exception on an authorization, signature/HMAC, license, CSRF, or tenant-binding check must DENY, never fall through to allow.
+  details: >
+    The quiet companion to information disclosure (fail-info-disclosure): a
+    security control that is real on the happy path but evaporates under an
+    exception. A try/catch (except/rescue) wrapping a
+    verify/authorize/checkPermission/hmac/signature/license/csrf check whose
+    exceptional branch returns success, true, an empty-but-truthy value, or
+    simply omits a re-raise/deny GRANTS access to a caller who induces the error
+    (a malformed token, an oversized body, a forced upstream failure).
+    CWE-636 (Not Failing Securely) / CWE-755 (Improper Handling of Exceptional
+    Conditions); OWASP ASVS V7 error handling. The correct posture is
+    default-deny: access requires the check to AFFIRMATIVELY succeed, never
+    merely "not have failed yet." Owned by the error-handling-disclosure
+    dimension; the cryptographic compare mechanics are crypto-internals, the
+    missing-tenant-binding case is tenant-isolation.
+  applies_to: [all]
+  automation: partially
+  automation_notes: The catch/except body around a security call is greppable, but confirming the exceptional branch grants (vs denies) and that the throwing input is attacker-reachable needs the code read in context.
+  severity_if_missing: major
+  sources:
+    - url: https://cwe.mitre.org/data/definitions/636.html
+      date: unknown
+      kind: community
+    - url: https://owasp.org/www-project-application-security-verification-standard/
+      date: "2026"
+      kind: community
+  verification: web_research_unverified
+  last_verified: null
+
 - id: fail-js-not-static-resources
   requirement: JavaScript/CSS hotlinked from CDNs or inlined instead of served as static resources is a recurring platform-side failure cause.
   details: >
