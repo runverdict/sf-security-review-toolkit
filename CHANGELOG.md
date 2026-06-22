@@ -9,13 +9,13 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.2**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.3**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
 > `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
 > middle-band judgment fixture** (rebuilt in PHASE A below), a journey-skill
 > **triage→blocker-gate relabel** (0.8.1), and the **calibration false-positive patterns**
-> (0.8.2 — three verifier-guidance rules from a blind 30-judge verification, below).
-> **The Solano cold RE-RUN gates the v0.8.2 tag.**
+> (0.8.3 — three verifier-guidance rules from a blind 30-judge verification, below).
+> **The Solano cold RE-RUN gates the v0.8.3 tag.**
 > Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
 > FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
 > never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
@@ -38,7 +38,7 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
-> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.2) and the
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.3) and the
 > DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
 > is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
 > 9% lesson). Other **Roadmap** specs not
@@ -133,7 +133,7 @@ follow semantic versioning.
   EXPENSIVE (bcrypt/scrypt, a heavy unindexed query, an LLM/paid callout) AND unbounded AND
   attacker-triggerable pre-auth. Presence-guarded by `test-calibration-fp-patterns` (the §6 phrase
   can't regress out); the real proof is a future cold run no longer over-firing the webhook.
-- **Calibration false-positive patterns — verifier-guidance (0.8.2; NOT-deterministically-test-backed
+- **Calibration false-positive patterns — verifier-guidance (0.8.3; NOT-deterministically-test-backed
   prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
   findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
   the verifier over-fired. Encoded each as a §5 verifier sentence + a §6 Known-false-positive row in
