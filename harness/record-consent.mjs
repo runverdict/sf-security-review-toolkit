@@ -32,15 +32,17 @@ import { fileURLToPath } from 'node:url'
 // Gate ids: lowercase kebab only (no path traversal, no surprises in a filename).
 const GATE_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 
-// A clear YES vs a clear NO. Ambiguous or empty → NOT affirmative (fail closed):
-// a recorded "no"/"skip"/"" must never pass verifyConsent.
+// A clear YES vs a clear NO, with DENY PRECEDENCE — a "no" must NEVER record as a
+// "yes". ANY deny token fails closed regardless of any affirm token in the same
+// answer ("no, do not proceed" / "I do not consent" / "please don't go ahead" are
+// all FALSE even though they contain affirm-ish words). Empty/ambiguous → FALSE too.
 const AFFIRM = /\b(yes|y|yeah|yep|ok|okay|approve|approved|grant|granted|consent|consented|go|proceed|confirm|confirmed|allow|allowed|agree|agreed|do it|sounds good)\b/i
-const DENY = /\b(no|n|nope|deny|denied|decline|declined|skip|cancel|stop|abort|never|refuse|refused|don't|dont|do not)\b/i
+const DENY = /\b(no|n|nope|deny|denied|decline|declined|skip|cancel|stop|abort|never|refuse|refused|don't|dont|do not|do n't)\b/i
 
 export function isAffirmative(answer) {
   const s = String(answer == null ? '' : answer).trim()
   if (!s) return false
-  if (DENY.test(s) && !AFFIRM.test(s)) return false
+  if (DENY.test(s)) return false // deny precedence: any "no"/"don't"/"do not" → fail closed
   return AFFIRM.test(s)
 }
 

@@ -110,6 +110,26 @@ check('C8 GATE SHAPE: journey + audit-codebase use AskUserQuestion + record-cons
   assert.match(a, /record-consent\.mjs --gate audit-targetmap/, 'Step 3 records audit-targetmap')
 })
 
+check('C9 DENY precedence: any deny token fails closed regardless of an affirm token', () => {
+  for (const a of ['no, do not proceed', 'do not allow', 'I do not consent', "please don't go ahead", 'no, go ahead', "don't proceed"])
+    assert.equal(isAffirmative(a), false, `a "no" must never record as yes: ${a}`)
+  for (const a of ['yes', 'go ahead', 'approve the install'])
+    assert.equal(isAffirmative(a), true, `a clear yes must record: ${a}`)
+})
+
+check('C10 SUBSTRATE PARITY: sequential-fallback.md carries the verifyConsent/record-consent fail-closed gate', () => {
+  const sf = readFileSync(join(PLUGIN, 'harness', 'sequential-fallback.md'), 'utf8')
+  assert.match(sf, /record-consent\.mjs --gate audit-tier/, 'fallback records audit-tier')
+  assert.match(sf, /record-consent\.mjs --gate audit-targetmap/, 'fallback records audit-targetmap')
+  assert.match(sf, /--verify --gate audit-tier/, 'fallback verifyConsents audit-tier before the first finder')
+  assert.match(sf, /launch NO finder|fail closed/i, 'fallback FAILS CLOSED before the first finder Task')
+  // and the consent gate is in BOTH "survives either substrate" non-negotiable lists
+  assert.match(readFileSync(join(PLUGIN, 'skills', 'audit-codebase', 'SKILL.md'), 'utf8'),
+    /recorded consent gate \(`audit-tier` \+ `audit-targetmap`\)/, 'audit-codebase §5 substrate list includes consent')
+  assert.match(readFileSync(join(PLUGIN, 'methodology', 'audit-methodology.md'), 'utf8'),
+    /recorded consent gate \(`audit-tier` \+ `audit-targetmap`\)/, 'methodology §8.2 substrate list includes consent')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

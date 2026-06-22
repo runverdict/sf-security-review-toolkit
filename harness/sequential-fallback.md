@@ -35,6 +35,11 @@ method does not.
 - **The ledger merge stays mechanical.** The orchestrator merges verdicts by
   dedup key (normalized file + normalized title, §5.2) as a rote procedure —
   no subagent, no judgment, no rewording of entries.
+- **The recorded consent gate (`audit-tier` + `audit-targetmap`).** The fallback
+  asks Step 2/3 via `AskUserQuestion`, records each affirmative via
+  `record-consent.mjs`, and `verifyConsent`'s both — FAILING CLOSED (no finder Task)
+  if either is missing — exactly as `build-audit-engine.mjs` does on the Workflow
+  path (§3 step 1). Consent does not degrade with the substrate.
 
 ## 2. State layout (persistence is the resume mechanism)
 
@@ -60,8 +65,23 @@ time, not at report time.
 
 1. **Build the run args** exactly as the `workflow-template.mjs` header
    documents (scope manifest → dimension selection → stack-adapter target
-   resolution → ledger digest → context slots). Show the target map to the
-   user before launching anything. Write `pass-<N>/args.json`.
+   resolution → ledger digest → context slots). Write `pass-<N>/args.json`.
+
+   **THE CONSENT GATE BINDS HERE TOO.** The sequential fallback never calls
+   `build-audit-engine.mjs`, so it must run the SAME `record-consent` gate itself —
+   consent must not be skippable just because the Workflow tool is unavailable.
+   Before the first finder Task:
+   - **Step 2 (tier go-ahead) and Step 3 (show the target map) are MANDATORY
+     `AskUserQuestion` stops**, never silence-is-yes inputs. Show the resolved target
+     map, ask for the tier + go-ahead and the map approval, and RECORD each affirmative:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --answer "<the operator's yes>" --target <target>`
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --answer "<the operator's yes>" --target <target>`
+   - **Then verifyConsent and FAIL CLOSED.** Run
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --verify --gate audit-tier --target <target>`
+     and the same for `audit-targetmap`; if EITHER exits non-zero (NOT CONSENTED),
+     **launch NO finder Task — the audit does not start.** This is the exact gate
+     `build-audit-engine.mjs` enforces on the Workflow path; the method must not depend
+     on the substrate.
 
 2. **Per dimension, one at a time** — find, verify, persist, then move on:
 
@@ -137,7 +157,7 @@ On resume (interrupted run, new session, context exhaustion):
 
 | `pass-<N>/` state | Resume at |
 |---|---|
-| no `args.json` | the beginning — rebuild args (re-show the target map) |
+| no `args.json` | the beginning — rebuild args, re-show the target map, and re-run the consent gate (`verifyConsent` `audit-tier` + `audit-targetmap`; re-ask + re-record if either is NOT CONSENTED) before any finder Task |
 | `args.json` only | dimension 1 find |
 | `<dim>.findings.json` without `<dim>.verdicts.json` | that dimension's verification, finding by finding |
 | every dimension has `verdicts.json` | synthesis |

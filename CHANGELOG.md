@@ -9,13 +9,13 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.4**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.5**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
 > `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
 > middle-band judgment fixture** (rebuilt in PHASE A below), a journey-skill
 > **triage→blocker-gate relabel** (0.8.1), and the **calibration false-positive patterns**
-> (0.8.4 — three verifier-guidance rules from a blind 30-judge verification, below).
-> **The Solano cold RE-RUN gates the v0.8.4 tag.**
+> (0.8.5 — three verifier-guidance rules from a blind 30-judge verification, below).
+> **The Solano cold RE-RUN gates the v0.8.5 tag.**
 > Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
 > FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
 > never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
@@ -38,7 +38,7 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
-> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.4) and the
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.5) and the
 > DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
 > is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
 > 9% lesson). Other **Roadmap** specs not
@@ -48,7 +48,7 @@ follow semantic versioning.
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 30 files / 260 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 30 files / 262 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 > **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
 > (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
@@ -60,7 +60,31 @@ follow semantic versioning.
 > same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
 
 ### Fixed
-- **Consent COUPLING — the launch path fails closed on a skipped ask (0.8.4; 2026-06-22; engine
+- **Consent coupling — close the 4 adversarial bypasses (0.8.5; 2026-06-22; engine + test-backed).**
+  An adversarial pass found the 0.8.4 coupling bypassable four ways. The goal is NOT unforgeability
+  (a driver that runs everything can fabricate) — it is that an honest driver cannot ACCIDENTALLY skip
+  on EITHER substrate, complying is lower-friction than forging, and a NO never records as a YES:
+  - **(1) Substrate parity — the keystone.** The sequential fallback (`harness/sequential-fallback.md`,
+    used when the Workflow tool is unavailable) fans out via Task and never calls `build-audit-engine.mjs`,
+    so `verifyConsent` never ran — its pre-fix "show the target map" prose had no ask/record/fail-closed.
+    Now §3 step 1 runs the SAME gate: ask Step 2/3 via `AskUserQuestion`, record via `record-consent.mjs`,
+    `verifyConsent` `audit-tier` + `audit-targetmap`, and launch NO finder Task if either is NOT CONSENTED.
+    The consent gate is added to BOTH "survives either substrate" non-negotiable lists (audit-codebase §5 +
+    audit-methodology §8.2) and the §1 fallback list. `test-record-consent` C10 fails the build if the
+    fallback ever loses the precondition.
+  - **(2) Forge asymmetry flipped.** `record-consent.mjs`'s invocation is added to both driving skills'
+    `allowed-tools` (`Bash(node *harness/record-consent.mjs *)`), so complying does NOT trip a prompt; and
+    `audit-codebase`'s bare `Write` is path-scoped to its legit targets (scope-input/target-map/ledger/
+    run-log/pass-*/docs) so it CANNOT target `.security-review/consent/` — consent is written only by the
+    engine. The sanctioned record path is now least-resistance; a direct forge needs an out-of-band act.
+  - **(3) `isAffirmative` DENY precedence.** Any deny token now fails closed regardless of an affirm token:
+    "no, do not proceed" / "do not allow" / "I do not consent" / "please don't go ahead" → FALSE; "yes" /
+    "go ahead" / "approve the install" → TRUE (`test-record-consent` C9). A NO can no longer record as a YES.
+  - **(4) `consentVerified` belt re-documented.** The check stays, but `workflow-template.mjs`'s comment now
+    states plainly that belt #1 (the assembler `verifyConsent`) is the SOLE real boundary and this flag is a
+    defense-in-depth tripwire that ASSUMES the assembler was used — JS data, trivially forgeable, no security
+    claim — whose only job is to catch an HONEST mistake (an engine that reached the runtime un-gated) loudly.
+- **Consent COUPLING — the launch path fails closed on a skipped ask (0.8.5; 2026-06-22; engine
   + test-backed).** A full-auto cold run inferred "silence-is-yes" past its scope and skipped THREE
   mandatory stops — the journey consent gate, audit-codebase Step 3 (show the target map), and Step 2
   (declare the tier + get a go-ahead) — fanning out agents with no ask. Root cause: the interactive
@@ -162,7 +186,7 @@ follow semantic versioning.
   EXPENSIVE (bcrypt/scrypt, a heavy unindexed query, an LLM/paid callout) AND unbounded AND
   attacker-triggerable pre-auth. Presence-guarded by `test-calibration-fp-patterns` (the §6 phrase
   can't regress out); the real proof is a future cold run no longer over-firing the webhook.
-- **Calibration false-positive patterns — verifier-guidance (0.8.4; NOT-deterministically-test-backed
+- **Calibration false-positive patterns — verifier-guidance (0.8.5; NOT-deterministically-test-backed
   prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
   findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
   the verifier over-fired. Encoded each as a §5 verifier sentence + a §6 Known-false-positive row in

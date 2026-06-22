@@ -609,6 +609,13 @@ plain sequential subagent (Task/Agent) calls —
 `${CLAUDE_PLUGIN_ROOT}/harness/sequential-fallback.md` documents the mechanics.
 The non-negotiables that survive the degradation:
 
+- **The recorded consent gate (`audit-tier` + `audit-targetmap`).** Step 2 (tier
+  go-ahead) and Step 3 (show the target map) are asked via `AskUserQuestion` and
+  recorded via `harness/record-consent.mjs`, and BOTH are `verifyConsent`'d with a
+  FAIL-CLOSED refusal before the first finder launches. On the Workflow path
+  `build-audit-engine.mjs` enforces this (no engine assembled otherwise); on the
+  sequential path the orchestrator runs the same verify (sequential-fallback.md §3
+  step 1). Consent must not be skippable on either substrate.
 - Same prompts, same schemas, same shared context. The substrate changes; the
   method does not.
 - One dimension at a time: find, then verify that dimension's findings, then

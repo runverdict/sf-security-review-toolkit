@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/record-consent.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -77,7 +77,10 @@ regardless of anything this engine produces.
    `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --answer "<the operator's yes>" --target <target>`.
    The fan-out **physically cannot launch** without this recorded: `build-audit-engine.mjs`
    verifies `audit-tier` (and `audit-targetmap`, below) and refuses to assemble the engine —
-   exit non-zero, nothing written — when either is missing.
+   exit non-zero, nothing written — when either is missing. **Consent is written ONLY by
+   `record-consent.mjs`** (its grant is in `allowed-tools`, so recording a yes is the
+   least-friction path); the `Write` tool is path-scoped and CANNOT target
+   `.security-review/consent/` — never hand-author a consent file.
 
 3. **Resolve the target map** (audit-methodology §1.3). Select dimensions per
    the §1.2 applicability matrix × the manifest × the pass band (§6) — every
@@ -187,11 +190,14 @@ regardless of anything this engine produces.
    parallel batches, schema enforcement by instruct-validate-retry, resume
    from the last persisted dimension. Token cost is comparable; wall clock
    roughly doubles — say so when offering it. The non-negotiables that survive
-   either substrate: read-only finder/verifier agents (the audit never mutates
-   the repo it audits), fresh-context verifiers that never see the finder's
-   reasoning, and **findings that skip verification are never reported**
-   (§3.3) — a verifier that fails twice sends its finding to the run log as
-   `unverified — re-run`, not to the report.
+   either substrate: **the recorded consent gate (`audit-tier` + `audit-targetmap`),
+   `verifyConsent`'d + FAILED CLOSED before the first finder** — on the Workflow path
+   `build-audit-engine.mjs` enforces it, on the sequential path the orchestrator runs
+   the same `record-consent` verify (sequential-fallback.md §3 step 1); read-only
+   finder/verifier agents (the audit never mutates the repo it audits), fresh-context
+   verifiers that never see the finder's reasoning, and **findings that skip
+   verification are never reported** (§3.3) — a verifier that fails twice sends its
+   finding to the run log as `unverified — re-run`, not to the report.
 
 6. **Merge mechanically; let synthesis write the report.** The synthesis agent
    writes `<target>/docs/security-review/audit-report-<date>-pass<N>.md` from

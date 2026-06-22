@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, audit, artifacts, scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/record-consent.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey

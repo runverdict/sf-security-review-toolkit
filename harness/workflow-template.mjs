@@ -133,17 +133,20 @@ if (!ARGS || typeof ARGS.repoRoot !== 'string' || !Array.isArray(ARGS.dimensions
       'Required: repoRoot (string), dimensions (non-empty array). See the header comment for the full shape.'
   )
 }
-// CONSENT COUPLING (the durable part). build-audit-engine.mjs sets consentVerified=true
-// ONLY after verifyConsent('audit-tier') && verifyConsent('audit-targetmap') passed against
-// the recorded affirmative answers. The Workflow runtime has no filesystem access, so it
-// cannot re-read the consent files here — instead it REFUSES to fan out any agent unless the
-// gated assembler stamped this flag. A hand-built engine that skipped the Step 2/3 stops has
-// no flag and cannot launch.
+// CONSENT — defense-in-depth TRIPWIRE, not a security boundary. The SOLE real
+// boundary is belt #1: build-audit-engine.mjs verifyConsent('audit-tier') &&
+// verifyConsent('audit-targetmap') against the recorded affirmative answers, which
+// fails closed (exit 3, no engine assembled) and only then stamps consentVerified.
+// This check ASSUMES the gated assembler produced this engine; the Workflow runtime
+// has no filesystem access, so it cannot re-read the consent files and makes NO
+// security claim of its own (the flag is JS data — trivially forgeable by anyone who
+// hand-builds the engine). Its only job is to catch an HONEST mistake — an engine that
+// reached the runtime without going through the assembler — loudly, on either substrate.
 if (ARGS.consentVerified !== true) {
   throw new Error(
-    'workflow-template.mjs: refusing to fan out — consentVerified is not true. The audit launch is gated: ' +
-      'audit-codebase Step 2 (tier go-ahead) and Step 3 (show the target map) must be asked + recorded, and ' +
-      'build-audit-engine.mjs sets consentVerified only after verifying both. Do not hand-set this flag.'
+    'workflow-template.mjs: refusing to fan out — consentVerified is not set. This engine did not come ' +
+      'through build-audit-engine.mjs (the consent gate). Assemble via that engine, which asks + records ' +
+      'audit-codebase Step 2 (tier go-ahead) + Step 3 (show the target map) and verifies them. Do not hand-set this flag.'
   )
 }
 for (const d of ARGS.dimensions) {
