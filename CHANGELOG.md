@@ -48,7 +48,7 @@ follow semantic versioning.
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 29 files / 249 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 29 files / 252 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 > **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
 > (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
@@ -69,18 +69,31 @@ follow semantic versioning.
   highest verified severity", but only the per-FILE headline (`finding-clusters.mjs`) enforced it —
   not the ledger.
   - `harness/finding-clusters.mjs` gains an exported, pure, **idempotent** `collapseCrossDimension`:
-    two OPEN findings on the same normalized file AND the same code LOCATION (overlapping line span,
-    or a shared exact code-symbol in both titles) but DIFFERENT dimensions collapse into ONE entry at
-    the highest verified `adjusted_severity`, with every lens's reasoning/evidence preserved (a
-    structured `lenses[]` + a labelled `verdict_reasoning`). CONSERVATIVE — same file ALONE never
-    merges, so a genuine second bug at a different location stays separate.
+    two OPEN findings on the same normalized file AND an **OVERLAPPING LINE SPAN** (the ONLY key) but
+    DIFFERENT dimensions collapse into ONE entry at the highest verified `adjusted_severity`, with
+    every lens's reasoning/evidence preserved (a structured `lenses[]` + a labelled `verdict_reasoning`).
+    CONSERVATIVE — same file ALONE never merges, so a genuine second bug at a different location stays
+    separate.
+  - **Off-disk-grade hardening (2026-06-22): removed the title-symbol merge path.** The grade tested
+    `collapseCrossDimension` against the real Solano ledger (line-span path correctly collapsed the
+    triple-lens FLS, all at `:21-2x` → kept) and an adversarial case where a title-symbol path
+    OVER-MERGED two DISTINCT vulns — a high FLS gap and a critical SOQL injection in `Acct.getDetail`,
+    no line spans — into one entry because both titles said `getDetail`. That hides a finding (the
+    missed-finding failure), and it has zero upside (every real multi-lens Solano cluster carries line
+    spans). So `sameLocation` now merges on **file + overlapping line span ONLY**; `codeSymbols` is
+    deleted. Deliberate posture: when two lenses of one issue have non-overlapping/absent spans the
+    engine UNDER-merges (noisier headline) rather than risk hiding a second bug — under-merge is the
+    safe failure.
   - `harness/merge-ledger.mjs` EXPLODES any prior merged entry back to per-dimension lenses, runs the
     normal per-id merge, then re-collapses — so an incremental re-run that re-finds only one dimension
     never drops the others' audit trail, and one root cause is COUNTED ONCE in the pass stats.
   - `templates/audit-ledger.schema.json`: new optional `merged_dimensions` + `lenses` (a `$defs/lens`)
-    on the finding; `methodology/audit-methodology.md` §5.2 updated (collapse is now IN the ledger).
-  - Tests: `test-merge-ledger` M6–M9 (collapse to one entry at max severity + both reasonings;
-    different-location-stays-separate; incremental keeps first_seen; pure idempotency).
+    on the finding; `methodology/audit-methodology.md` §5.2 updated (collapse is now IN the ledger, on
+    overlapping line span only).
+  - Tests: `test-merge-ledger` M6–M12 (collapse to one entry at max severity + both reasonings;
+    different-location-stays-separate; incremental keeps first_seen; pure idempotency; the **over-merge
+    regression guard** M10/M11 — same file + same method in both titles, no/non-overlapping spans →
+    stays TWO entries; M12 the 3-dimension real-Solano overlapping-span shape → one entry).
 - **Solano fixture rebuild — PHASE A (2026-06-20).** Cold run #1 validated the toolkit (every
   issue correctly caught) but surfaced that the FIXTURE carried four UNINTENDED real defects — all
   author blind spots — so it landed BLOCKED and the middle-band judgment never ran. Rebuilt the

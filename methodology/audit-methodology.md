@@ -507,17 +507,25 @@ severities.
 **Track-1b — this is now enforced IN the ledger, not just the report.**
 `merge-ledger.mjs` runs `collapseCrossDimension` (exported from
 `harness/finding-clusters.mjs`) on every merge: two OPEN findings on the same
-normalized file AND the same code LOCATION (overlapping line span, or a shared
-exact code-symbol in both titles) but DIFFERENT dimensions collapse into one
-entry — top-level `dimension`/`title`/`id` from the highest-severity lens,
-`adjusted_severity` = the max, every lens's reasoning/evidence preserved in a
-structured `lenses[]` plus a labelled `verdict_reasoning` (`▸ <dim> [<sev>]: …`).
-It is CONSERVATIVE — same file ALONE never merges, so a genuine second bug at a
-different location stays a separate entry — and IDEMPOTENT (the engine explodes
-prior merged entries back to their lenses before each per-id merge, then
-re-collapses, so an incremental re-run that re-finds only one dimension never
-drops the others' audit trail). The triage headline's per-file `max_severity`
-(`clusterFindings`) is the coarser, file-level view of the same principle.
+normalized file AND an **OVERLAPPING LINE SPAN** — that is the ONLY key — but
+DIFFERENT dimensions collapse into one entry: top-level `dimension`/`title`/`id`
+from the highest-severity lens, `adjusted_severity` = the max, every lens's
+reasoning/evidence preserved in a structured `lenses[]` plus a labelled
+`verdict_reasoning` (`▸ <dim> [<sev>]: …`). It is CONSERVATIVE — same file ALONE
+never merges, and a **title's method/symbol name is deliberately NOT a merge
+signal**: the off-disk grade caught a symbol-name path OVER-MERGING two DISTINCT
+vulns (a high FLS gap + a critical SOQL injection in `Acct.getDetail`, no line
+spans) into one entry because both titles said `getDetail` — conflating two bugs
+that need two fixes, the missed-finding failure the engine must never produce. So
+when two lenses of the SAME issue carry non-overlapping or absent spans, the
+engine **UNDER-merges** (keeps them separate — a noisier headline) rather than
+risk merging two DIFFERENT issues: under-merge is the safe failure, over-merge
+hides a finding. This costs nothing — every real multi-lens cluster carries
+overlapping spans (the cold-at-standard FLS lenses were all at `:21-2x`). It is
+IDEMPOTENT (the engine explodes prior merged entries back to their lenses before
+each per-id merge, then re-collapses, so an incremental re-run that re-finds only
+one dimension never drops the others' audit trail). The triage headline's
+per-file `max_severity` (`clusterFindings`) is the coarser, file-level view.
 
 ### 5.3 The digest
 

@@ -15,10 +15,12 @@
  * hashes distinct and never merges by id — the cold-at-standard run carried one missing-FLS
  * root cause as TWO HIGH entries (apex-exposed-surface + web-client). On every merge the
  * engine EXPLODES any prior merged entry back to per-dimension lenses, runs the normal per-id
- * merge, then `collapseCrossDimension` (finding-clusters.mjs) re-collapses same-file +
- * same-location + different-dimension OPEN findings into ONE entry at the highest verified
- * adjusted_severity, preserving each lens's reasoning/evidence (`lenses[]` + labelled
- * `verdict_reasoning`). Conservative: a second bug at a DIFFERENT location stays separate.
+ * merge, then `collapseCrossDimension` (finding-clusters.mjs) re-collapses OPEN findings
+ * on the same file + an OVERLAPPING LINE SPAN (the only key) across different dimensions
+ * into ONE entry at the highest verified adjusted_severity, preserving each lens's
+ * reasoning/evidence (`lenses[]` + labelled `verdict_reasoning`). Conservative: a second
+ * bug at a different location stays separate; a title's symbol name is NOT a merge signal
+ * (it OVER-merged two distinct vulns in the off-disk grade) — under-merge is the safe failure.
  *
  * Read-only on partner source; writes only <target>/.security-review/{audit-ledger.json,run-log.md}.
  *

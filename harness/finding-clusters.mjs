@@ -25,16 +25,20 @@
  * Track-1b — `collapseCrossDimension(findings)` (exported, used by merge-ledger.mjs):
  * the per-FILE headline view above is a lower bound; this is the per-LOCATION ledger
  * merge that the §5.2 note now mandates IN the ledger, not just the report. Two OPEN
- * findings on the SAME normalized file AND the SAME code location (overlapping line
- * span, or a shared exact code-symbol in both titles) but DIFFERENT dimensions
- * collapse into ONE entry at the highest verified `adjusted_severity`, with every
- * lens's reasoning/evidence preserved (labelled `verdict_reasoning`/`evidence` for
- * the human view + a structured `lenses[]` for incremental re-merge). CONSERVATIVE:
- * same-file alone never merges (a real second bug at a different location stays
- * separate); only same-file + same-location does. The cold-at-standard run carried
- * one root cause ("Missing FLS in getOpportunityDetail") as TWO HIGH entries under
- * apex-exposed-surface + web-client because the dedup key is file+TITLE and the
- * titles differed — this collapses that to one.
+ * findings on the SAME normalized file AND an OVERLAPPING LINE SPAN — that is the ONLY
+ * key — but DIFFERENT dimensions collapse into ONE entry at the highest verified
+ * `adjusted_severity`, with every lens's reasoning/evidence preserved (labelled
+ * `verdict_reasoning`/`evidence` for the human view + a structured `lenses[]` for
+ * incremental re-merge). CONSERVATIVE by design: same file alone never merges, and a
+ * title's method/symbol name is NOT a merge signal — the off-disk grade caught a
+ * symbol-name path OVER-MERGING two DISTINCT vulns (a high FLS gap + a critical SOQL
+ * injection in `Acct.getDetail`, no line spans) into one entry, hiding a finding. So
+ * when two lenses of the SAME issue carry non-overlapping/absent spans the engine
+ * UNDER-merges (separate entries, a noisier headline) rather than risk hiding a real
+ * second bug — under-merge is the safe failure. It costs nothing: every real multi-lens
+ * cluster carries overlapping spans (the cold-at-standard run carried one missing-FLS
+ * root cause, all lenses at :21-2x, as multiple entries because the dedup key is
+ * file+TITLE and the titles differed — this collapses that to one).
  *
  * PURE: no LLM, no deps, no network. IDEMPOTENT: collapse(collapse(x)) === collapse(x).
  *
@@ -65,28 +69,21 @@ function lineSpan(file) {
 }
 const spansOverlap = (a, b) => !!a && !!b && a.lo <= b.hi && b.lo <= a.hi
 
-// Extract SPECIFIC code symbols from a title — dotted identifiers (Class.method)
-// or lowercase-start camelCase (getOpportunityDetail). NOT bare ClassNames or
-// English words, so two DIFFERENT methods (different camelCase tokens) never match
-// and a class name shared by two distinct bugs never forces a merge.
-function codeSymbols(title) {
-  const out = new Set()
-  const re = /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+|[a-z][a-z0-9]*[A-Z][\w$]*)\b/g
-  let m
-  while ((m = re.exec(String(title || '')))) out.add(m[1])
-  return out
-}
-
-// Same code LOCATION: same normalized file AND (overlapping line span OR a shared
-// exact code-symbol in both titles). Same file ALONE is never enough.
+// Same code LOCATION: same normalized file AND OVERLAPPING LINE SPAN. That is the
+// ONLY signal. Same file alone is never enough, and a title's method/symbol name is
+// deliberately NOT used: the off-disk grade caught the symbol path OVER-MERGING two
+// DISTINCT vulns (a high FLS gap and a critical SOQL injection, both in `Acct.getDetail`,
+// no line spans) into one entry because both titles said `getDetail` — conflating two
+// bugs that need two fixes, the exact missed-finding failure the toolkit must not produce.
+// When two lenses of the SAME issue carry non-overlapping or absent spans, the engine
+// UNDER-merges (keeps them separate — a noisier headline) rather than risk merging two
+// DIFFERENT issues: under-merge is the safe failure, over-merge hides a finding. It costs
+// nothing here — every real multi-lens cluster (e.g. the Solano triple-lens FLS, all at
+// :21-2x) carries overlapping line spans, so the line-span path already covers them.
 function sameLocation(a, b) {
   const fa = normFile(a.file), fb = normFile(b.file)
   if (fa === '(unattributed)' || fa !== fb) return false
-  if (spansOverlap(lineSpan(a.file), lineSpan(b.file))) return true
-  const sa = codeSymbols(a.title)
-  if (!sa.size) return false
-  for (const s of codeSymbols(b.title)) if (sa.has(s)) return true
-  return false
+  return spansOverlap(lineSpan(a.file), lineSpan(b.file))
 }
 
 const flat1 = (s) => String(s || '').replace(/\s+/g, ' ').trim()

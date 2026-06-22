@@ -16,6 +16,11 @@
  *   M7 — Track-1b conservative: same file, DIFFERENT location stays two entries.
  *   M8 — Track-1b incremental: re-running the dupes keeps ONE entry (first_seen=1, last_seen=2).
  *   M9 — collapseCrossDimension is pure + idempotent (collapse(collapse(x)) === collapse(x)).
+ *   M10/M11 — OVER-MERGE GUARD (the off-disk-grade regression): same file + same method named in
+ *        both titles but NO line spans (M10) / NON-overlapping spans (M11) + different dimensions +
+ *        different vulns (high FLS / critical SOQLi) → MUST stay TWO entries, both severities kept.
+ *        Fails the build if a same-file-alone / title-symbol merge ever returns.
+ *   M12 — real-Solano shape: 3 dimensions, overlapping line spans (:21-2x) → ONE entry, 3 lenses.
  *
  * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
  */
@@ -191,6 +196,43 @@ check('M9 collapseCrossDimension is pure + idempotent', () => {
   assert.deepEqual(merged.merged_dimensions, ['apex-exposed-surface', 'web-client'])
   assert.match(merged.verdict_reasoning, /r1/)
   assert.match(merged.verdict_reasoning, /r2/)
+})
+
+check('M10 OVER-MERGE GUARD: same file + same method in both titles, NO line spans → stays TWO entries', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'classes/Acct.cls', title: 'FLS gap in Acct.getDetail', dimension: 'apex-exposed-surface', finder_severity: 'high', adjusted_severity: 'high', verdict_reasoning: 'no FLS on the read' }),
+    u({ file: 'classes/Acct.cls', title: 'SOQL injection in Acct.getDetail', dimension: 'injection-xss', finder_severity: 'critical', adjusted_severity: 'critical', verdict_reasoning: 'string-built WHERE clause' }),
+  ], dimensions_run: ['apex-exposed-surface', 'injection-xss'], total_candidates: 2 })
+  assert.equal(l.findings.length, 2, 'two DISTINCT vulns sharing a method name (no spans) must NOT merge')
+  const sevs = l.findings.map((f) => f.adjusted_severity).sort()
+  assert.deepEqual(sevs, ['critical', 'high'], 'both severities preserved (no max-collapse)')
+  assert.ok(l.findings.every((f) => !f.merged_dimensions), 'no entry may be a cross-dimension merge')
+})
+
+check('M11 OVER-MERGE GUARD: same file + same method in both titles, NON-overlapping spans → stays TWO entries', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'classes/Acct.cls:10-15', title: 'FLS gap in Acct.getDetail', dimension: 'apex-exposed-surface', finder_severity: 'high', adjusted_severity: 'high' }),
+    u({ file: 'classes/Acct.cls:40-45', title: 'SOQL injection in Acct.getDetail', dimension: 'injection-xss', finder_severity: 'critical', adjusted_severity: 'critical' }),
+  ], dimensions_run: ['apex-exposed-surface', 'injection-xss'], total_candidates: 2 })
+  assert.equal(l.findings.length, 2, ':10-15 vs :40-45 do not overlap → must stay separate')
+  assert.deepEqual(l.findings.map((f) => f.adjusted_severity).sort(), ['critical', 'high'])
+})
+
+check('M12 real-Solano shape: 3 dimensions at overlapping spans (:21-2x) → ONE entry, 3 lenses, max severity', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'classes/SolanoCtl.cls:21-25', title: 'Missing FLS on the SELECT', dimension: 'apex-exposed-surface', finder_severity: 'high', adjusted_severity: 'high', verdict_reasoning: 'no WITH USER_MODE' }),
+    u({ file: 'classes/SolanoCtl.cls:21-23', title: 'PII fields returned to the LWC unredacted', dimension: 'web-client', finder_severity: 'medium', adjusted_severity: 'medium', verdict_reasoning: 'fields reach the component' }),
+    u({ file: 'classes/SolanoCtl.cls:22-24', title: 'Contact fields exported without FLS', dimension: 'data-export', finder_severity: 'low', adjusted_severity: 'low', verdict_reasoning: 'export path lacks the check' }),
+  ], dimensions_run: ['apex-exposed-surface', 'web-client', 'data-export'], total_candidates: 3 })
+  assert.equal(l.findings.length, 1, 'three lenses of one root cause at overlapping spans → one entry')
+  const f = l.findings[0]
+  assert.equal(f.adjusted_severity, 'high', 'highest verified severity across the three lenses')
+  assert.deepEqual(f.merged_dimensions, ['apex-exposed-surface', 'data-export', 'web-client'])
+  assert.equal(f.lenses.length, 3)
+  assert.equal(l.passes[0].confirmed, 1, 'one root cause counted once, not three times')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
