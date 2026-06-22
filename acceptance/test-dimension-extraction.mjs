@@ -22,6 +22,7 @@ import { readdirSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSyn
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { recordConsent } from '../harness/record-consent.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const BUILD = join(PLUGIN, 'harness', 'build-audit-engine.mjs')
@@ -70,6 +71,8 @@ check('build-audit-engine extracts ALL dimensions with non-empty prompts', () =>
     na: [],
   }
   writeFileSync(join(dir, '.security-review', 'scope-input.json'), JSON.stringify(input))
+  recordConsent('audit-tier', 'yes', { target: dir })
+  recordConsent('audit-targetmap', 'yes', { target: dir })
   // throws (non-zero) if ANY dimension file is malformed — the engine names the key
   execFileSync('node', [BUILD, '--plugin', PLUGIN, '--repo', dir], { encoding: 'utf8', stdio: 'pipe' })
 

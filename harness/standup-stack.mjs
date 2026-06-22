@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { envStatus } from './scaffold-env.mjs'
 import { dockerStatus } from './docker-check.mjs'
+import { verifyConsent } from './record-consent.mjs'
 
 export const STACK_SCHEMA = 'sf-srt-stack/1'
 export const NAME_PREFIX = 'sf-srt-stack'
@@ -210,7 +211,11 @@ function main() {
   const target = arg('--target', process.cwd())
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(3).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-stack', runId))
-  const consent = argv.includes('--consent')
+  // --consent alone is insufficient: a recorded affirmative 'throwaway-dast' consent
+  // (the journey's third gate, asked via AskUserQuestion) is also required.
+  const consentFlag = argv.includes('--consent')
+  const consentRecorded = verifyConsent('throwaway-dast', { target })
+  const consent = consentFlag && consentRecorded
   const asJson = argv.includes('--json')
   const portArg = arg('--port', null)
   const envFile = arg('--env-file', null) // operator-filled externals (scaffold-env)
@@ -226,7 +231,12 @@ function main() {
     process.exitCode = 3; return
   }
   if (plan.unsupported) { process.stdout.write((asJson ? JSON.stringify({ status: 'unsupported', plan }, null, 2) : `## standup-stack — ${plan.reason}`) + '\n'); process.exitCode = 3; return }
-  if (!consent) { process.stdout.write(`## standup-stack — NOT STARTED (no consent)\nWould stand up ${plan.container} (${plan.kind}) on ${plan.baseUrl}; synth env: ${plan.synthEnvNames.join(', ') || 'none'}.\nre-run with --consent.\n`); process.exitCode = 3; return }
+  if (!consent) {
+    const why = consentFlag && !consentRecorded
+      ? `--consent is set but no affirmative consent is recorded for gate 'throwaway-dast' (the flag alone is not enough). Ask + record it first via record-consent.mjs.`
+      : `re-run with --consent (and the recorded consent).`
+    process.stdout.write(`## standup-stack — NOT STARTED (no consent)\nWould stand up ${plan.container} (${plan.kind}) on ${plan.baseUrl}; synth env: ${plan.synthEnvNames.join(', ') || 'none'}.\n${why}\n`); process.exitCode = 3; return
+  }
 
   const m = standupStack(plan, { consent, target })
   if (asJson) { process.stdout.write(JSON.stringify(m, null, 2) + '\n'); if (m.status !== 'up') process.exitCode = 1; return }

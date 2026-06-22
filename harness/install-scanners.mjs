@@ -60,6 +60,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { detectTools, whichOn } from './tool-detect.mjs'
+import { verifyConsent } from './record-consent.mjs'
 
 export const MANIFEST_SCHEMA = 'sf-srt-scanner-install/1'
 
@@ -417,7 +418,12 @@ function main() {
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(4).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), GROUP_DIR, runId))
   const only = (arg('--only', '') || '').split(',').map((s) => s.trim()).filter(Boolean)
-  const consent = has('--consent')
+  // The --consent flag alone is NO LONGER sufficient (a driver can set it with the ask
+  // skipped). It must be paired with a RECORDED affirmative consent for the 'scanner-install'
+  // gate (the journey asks via AskUserQuestion, then records via record-consent.mjs).
+  const consentFlag = has('--consent')
+  const consentRecorded = verifyConsent('scanner-install', { target: target || process.cwd() })
+  const consent = consentFlag && consentRecorded
   const dryRun = has('--dry-run')
   const asJson = has('--json')
 
@@ -437,14 +443,18 @@ function main() {
   }
 
   if (!dryRun && !consent) {
+    const tokenMissing = consentFlag && !consentRecorded
     const lines = [
       '## install-scanners — NOT INSTALLED (no consent)',
       '',
       'A network install needs an explicit yes (the 0.5.4 P0 class; silence-is-yes never covers it).',
+      ...(tokenMissing
+        ? [`The --consent flag is set but NO affirmative consent is recorded for gate 'scanner-install' — the flag alone is not enough. Ask via AskUserQuestion, then: node ${fileURLToPath(new URL('./record-consent.mjs', import.meta.url))} --gate scanner-install --answer "<yes>" --target ${target || process.cwd()}`]
+        : []),
       `Would install ${plan.installs.length} tool(s) to ${plan.tmpRoot} (removed at cleanup; evidence kept):`,
       ...plan.installs.map((i) => `  • ${i.name} (${i.method}${i.version ? ' v' + i.version : ''})`),
       '',
-      're-run with --consent to install, or --dry-run to see the full plan.',
+      're-run with --consent (and the recorded consent) to install, or --dry-run to see the full plan.',
     ]
     process.stdout.write((asJson ? JSON.stringify({ status: 'no-consent', plan }, null, 2) : lines.join('\n')) + '\n')
     process.exitCode = 3

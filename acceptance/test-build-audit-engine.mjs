@@ -21,6 +21,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { recordConsent } from '../harness/record-consent.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const BUILD = join(PLUGIN, 'harness', 'build-audit-engine.mjs')
@@ -45,6 +46,10 @@ function makeRepo(input) {
   const dir = mkdtempSync(join(tmpdir(), 'bae-test-'))
   mkdirSync(join(dir, '.security-review'), { recursive: true })
   writeFileSync(join(dir, '.security-review', 'scope-input.json'), JSON.stringify(input))
+  // The assembler fails closed without the Step 2/3 consents — record them so these
+  // positive tests reach the extraction/injection logic they exercise.
+  recordConsent('audit-tier', 'yes, standard', { target: dir })
+  recordConsent('audit-targetmap', 'yes, the map is correct', { target: dir })
   return dir
 }
 const goodInput = {

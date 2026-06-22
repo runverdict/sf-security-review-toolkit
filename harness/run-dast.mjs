@@ -31,6 +31,7 @@ import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { dockerStatus } from './docker-check.mjs'
+import { verifyConsent } from './record-consent.mjs'
 
 // ZAP pinned by image digest (verified 2026-06-19, the 0.7.0 prototype). Bump = re-pin.
 export const ZAP_IMAGE = 'zaproxy/zap-stable'
@@ -140,13 +141,22 @@ function main() {
   const target = arg('--target', process.cwd())
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(3).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-dast', runId))
-  const consent = argv.includes('--consent')
+  // --consent alone is insufficient: a recorded affirmative 'throwaway-dast' consent
+  // (the journey's third gate, asked via AskUserQuestion) is also required.
+  const consentFlag = argv.includes('--consent')
+  const consentRecorded = verifyConsent('throwaway-dast', { target })
+  const consent = consentFlag && consentRecorded
   const asJson = argv.includes('--json')
 
   let plan
   try { plan = planDast(baseUrl, { target, runId, tmpRoot }) }
   catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
-  if (!consent) { process.stdout.write(`## run-dast — NOT RUN (no consent)\nWould run digest-pinned ZAP (${plan.image}) against ${plan.baseUrl} → ${plan.evidencePath}\nre-run with --consent.\n`); process.exitCode = 3; return }
+  if (!consent) {
+    const why = consentFlag && !consentRecorded
+      ? `--consent is set but no affirmative consent is recorded for gate 'throwaway-dast' (the flag alone is not enough). Ask + record it first via record-consent.mjs.`
+      : `re-run with --consent (and the recorded consent).`
+    process.stdout.write(`## run-dast — NOT RUN (no consent)\nWould run digest-pinned ZAP (${plan.image}) against ${plan.baseUrl} → ${plan.evidencePath}\n${why}\n`); process.exitCode = 3; return
+  }
 
   const r = runDast(plan, { consent })
   if (asJson) { process.stdout.write(JSON.stringify(r, null, 2) + '\n'); if (r.status !== 'done') process.exitCode = 1; return }

@@ -28,6 +28,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { verifyConsent } from './record-consent.mjs'
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag)
@@ -45,6 +46,26 @@ if (!input) { console.error(`build-audit-engine: cannot read scope input ${INPUT
 const APPLICABLE = Array.isArray(input.applicable) ? input.applicable : []
 const NA = Array.isArray(input.na) ? input.na : []
 if (!APPLICABLE.length) { console.error('build-audit-engine: scope-input.applicable is empty — nothing to audit'); process.exit(2) }
+
+// ---- THE DURABLE CONSENT GATE — fail closed before assembling anything ----
+// The audit fan-out PHYSICALLY CANNOT launch without the two recorded affirmative
+// consents from audit-codebase Step 2 (declare the tier + get a go-ahead → gate
+// 'audit-tier') and Step 3 (show the target map → gate 'audit-targetmap'). A
+// skipped stop = no recorded consent = NO engine assembled = nothing for the
+// Workflow tool to run. The Workflow runtime has no filesystem access, so this is
+// the only place the recorded ask can be verified — and it is the load-bearing one.
+const REQUIRED_GATES = ['audit-tier', 'audit-targetmap']
+const missingConsent = REQUIRED_GATES.filter((g) => !verifyConsent(g, { target: REPO }))
+if (missingConsent.length) {
+  console.error(
+    `build-audit-engine: REFUSING to assemble the audit engine — no recorded affirmative consent for: ${missingConsent.join(', ')}.\n` +
+      `audit-codebase Step 2 (token tier + go-ahead) and Step 3 (show the target map) are MANDATORY stops. ` +
+      `Ask via AskUserQuestion, then record each affirmative answer:\n` +
+      `  node ${join(PLUGIN, 'harness', 'record-consent.mjs')} --gate <gate> --answer "<the operator's yes>" --target ${REPO}\n` +
+      `Nothing is written; the fan-out cannot start until both gates are recorded.`
+  )
+  process.exit(3)
+}
 const RUN_DATE = input.runDate || new Date().toISOString().slice(0, 10)
 const TIER = input.tier || 'standard'
 const PASS = Number.isInteger(input.passNumber) ? input.passNumber : 1
@@ -88,6 +109,8 @@ const dimensions = APPLICABLE.map((d) => {
 // ---- run-args object ----
 const injected = {
   repoRoot: REPO,
+  // Set ONLY after the gate above passed — the template refuses to fan out without it.
+  consentVerified: true,
   scopeManifestPath: join(REPO, '.security-review', 'scope-manifest.json'),
   tier: TIER,
   passNumber: PASS,

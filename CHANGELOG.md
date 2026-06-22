@@ -9,13 +9,13 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.3**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.4**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
 > `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
 > middle-band judgment fixture** (rebuilt in PHASE A below), a journey-skill
 > **triage→blocker-gate relabel** (0.8.1), and the **calibration false-positive patterns**
-> (0.8.3 — three verifier-guidance rules from a blind 30-judge verification, below).
-> **The Solano cold RE-RUN gates the v0.8.3 tag.**
+> (0.8.4 — three verifier-guidance rules from a blind 30-judge verification, below).
+> **The Solano cold RE-RUN gates the v0.8.4 tag.**
 > Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
 > FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
 > never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
@@ -38,7 +38,7 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
-> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.3) and the
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.4) and the
 > DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
 > is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
 > 9% lesson). Other **Roadmap** specs not
@@ -48,7 +48,7 @@ follow semantic versioning.
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 29 files / 252 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 30 files / 260 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 > **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
 > (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
@@ -60,6 +60,35 @@ follow semantic versioning.
 > same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
 
 ### Fixed
+- **Consent COUPLING — the launch path fails closed on a skipped ask (0.8.4; 2026-06-22; engine
+  + test-backed).** A full-auto cold run inferred "silence-is-yes" past its scope and skipped THREE
+  mandatory stops — the journey consent gate, audit-codebase Step 3 (show the target map), and Step 2
+  (declare the tier + get a go-ahead) — fanning out agents with no ask. Root cause: the interactive
+  ASK and the downstream ACTION were DECOUPLED, and silence-is-yes had no hard scope boundary. The fix
+  couples them:
+  - **NEW `harness/record-consent.mjs`** (pure, deterministic, tested): `recordConsent(gate, answer)`
+    writes an affirmative answer to `.security-review/consent/<gate>.json` (gate id, clock-free
+    monotonic `seq`, the question, the answer, an `affirmative` flag); `verifyConsent(gate)` is TRUE
+    only on a recorded affirmative — missing/negative/empty → FALSE (fail closed).
+  - **The durable gate: `harness/build-audit-engine.mjs` verifyConsent's `audit-tier` &&
+    `audit-targetmap` before it assembles anything** — exit non-zero, NOTHING written, when either is
+    missing. A skipped show-map/tier-go-ahead PHYSICALLY CANNOT launch the audit (no engine = nothing
+    for the Workflow tool to run). The Workflow runtime has no filesystem access, so this Node-side
+    assembler is the only place the recorded ask can be verified; it stamps `consentVerified`, and
+    `workflow-template.mjs` refuses to fan out any agent without that flag.
+  - **`install-scanners.mjs` / `run-dast.mjs` / `standup-stack.mjs`**: in ADDITION to `--consent`, the
+    CLI now verifies the matching recorded token (`scanner-install` / `throwaway-dast`) — the flag
+    alone (driver-set, ask-skipped) is no longer sufficient. The exported functions are unchanged.
+  - **`security-review-journey` + `audit-codebase` skills**: the "single gate" markdown-report block
+    is replaced by MANDATORY `AskUserQuestion` calls (one per consent), each recorded via
+    record-consent; audit Steps 2/3 are MANDATORY recorded `AskUserQuestion` stops (gates `audit-tier`
+    / `audit-targetmap`) and re-assert "never `exhaustive` on a first pass" as a hard tier default.
+    `silence-is-yes` is HARD-BOUND to the DETECTED-ARCHITECTURE inputs only — never the consent gates,
+    never the audit-phase stops — and the "don't wait for a go" / "decide once and I'll launch"
+    language is removed.
+  - Tests: `test-record-consent` (round-trip, fail-closed-on-missing, monotonic seq, the
+    **audit-launch-fails-closed** check, and the scope/gate-shape prose guards); the two tests that run
+    the assembler now record the consents in setup.
 - **Cross-dimension severity dedup IN the ledger — Track-1b (2026-06-22; engine + test-backed).**
   The Solano cold-at-standard run double-reported ONE root cause — "Missing FLS enforcement in
   `SolanoOpportunityController.getOpportunityDetail`" — as TWO HIGH ledger entries, one under
@@ -133,7 +162,7 @@ follow semantic versioning.
   EXPENSIVE (bcrypt/scrypt, a heavy unindexed query, an LLM/paid callout) AND unbounded AND
   attacker-triggerable pre-auth. Presence-guarded by `test-calibration-fp-patterns` (the §6 phrase
   can't regress out); the real proof is a future cold run no longer over-firing the webhook.
-- **Calibration false-positive patterns — verifier-guidance (0.8.3; NOT-deterministically-test-backed
+- **Calibration false-positive patterns — verifier-guidance (0.8.4; NOT-deterministically-test-backed
   prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
   findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
   the verifier over-fired. Encoded each as a §5 verifier sentence + a §6 Known-false-positive row in

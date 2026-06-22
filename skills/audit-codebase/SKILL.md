@@ -70,6 +70,15 @@ regardless of anything this engine produces.
    re-walk code that is about to change. Field sequence that works: `standard`
    → fix → re-run (step 8) → `exhaustive` once the ledger is quiet.
 
+   **This is a MANDATORY `AskUserQuestion` stop — not a printed line, and never a
+   silence-is-yes inference.** Ask the operator to confirm the tier + give the go-ahead
+   via `AskUserQuestion` (the tier gate ENFORCES the hard default: `standard` on a first
+   pass — never pre-select or auto-run `exhaustive`). On their affirmative answer, RECORD it:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --answer "<the operator's yes>" --target <target>`.
+   The fan-out **physically cannot launch** without this recorded: `build-audit-engine.mjs`
+   verifies `audit-tier` (and `audit-targetmap`, below) and refuses to assemble the engine —
+   exit non-zero, nothing written — when either is missing.
+
 3. **Resolve the target map** (audit-methodology §1.3). Select dimensions per
    the §1.2 applicability matrix × the manifest × the pass band (§6) — every
    inapplicable dimension gets an explicit `na_reason`, never a silent skip.
@@ -77,10 +86,16 @@ regardless of anything this engine produces.
    against the real repo and write
    `<target>/.security-review/target-map.json`. Three rules with teeth:
 
-   - **Show the map to the user BEFORE any agent launches.** This is the one
-     cheap moment to correct course — let them edit paths, add the module the
-     heuristics missed, or veto a dimension. A wrong target map silently
-     audits the wrong code for the entire run.
+   - **Show the map to the user BEFORE any agent launches — a MANDATORY
+     `AskUserQuestion` stop.** This is the one cheap moment to correct course — let
+     them edit paths, add the module the heuristics missed, or veto a dimension. A
+     wrong target map silently audits the wrong code for the entire run. Present the
+     resolved `target-map.json` and ask for approval/corrections via `AskUserQuestion`;
+     on approval, RECORD it:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --answer "<the operator's yes>" --target <target>`.
+     `build-audit-engine.mjs` verifies BOTH `audit-tier` and `audit-targetmap` before it
+     will assemble the engine — a skipped show-map physically cannot fan out (it is not a
+     silence-is-yes input; the architecture was detected, but the MAP is a stop you record).
    - **`applicable: true` with no targets = `unresolved: true`**, surfaced as
      "couldn't map dimension X — point me at the code or confirm N/A." A
      skipped dimension is false coverage, worse than no audit.
@@ -129,7 +144,11 @@ regardless of anything this engine produces.
       header.
    2. Run the assembler:
       `node ${CLAUDE_PLUGIN_ROOT}/harness/build-audit-engine.mjs --plugin ${CLAUDE_PLUGIN_ROOT} --repo <target> --input <target>/.security-review/scope-input.json`.
-      It DETERMINISTICALLY extracts, per dimension, the §4 threat-focus paragraph
+      **It FAILS CLOSED (exit 3, nothing written) unless both `audit-tier` (Step 2) and
+      `audit-targetmap` (Step 3) consents are recorded** — the durable coupling: a skipped
+      stop = no engine = nothing for the Workflow tool to run, and the assembled engine
+      itself refuses to fan out unless this gate stamped `consentVerified`. It then
+      DETERMINISTICALLY extracts, per dimension, the §4 threat-focus paragraph
       (`finderPrompt`) AND the §5/§6 Verifier-guidance + false-positive-patterns block
       (`verifierNotes`) from the dimension file — **both load-bearing**: the verifier
       only sees generic skepticism unless it gets `verifierNotes`, and without the

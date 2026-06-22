@@ -13,8 +13,11 @@ package — pausing only when an input would actually degrade the audit, or when
 an action reaches **outside read-only-local**: touching something live (a
 read-only probe, a scratch org) OR mutating the host / egressing to the network
 (installing a scanner, fetching third-party rule packs). Those all need
-explicit consent — `silence-is-yes` / full-auto authorizes only the inputs the
-preflight already DETECTED, never an install or a network fetch. It
+explicit consent — `silence-is-yes` / full-auto authorizes ONLY the inputs the
+preflight already DETECTED (elements, endpoints, package facts, resume state),
+never an install, a network fetch, a live op, the consent gates, or the
+audit-phase stops (the tier go-ahead and the show-the-target-map step) — every
+one of those is asked via `AskUserQuestion` and recorded. It
 never says "will pass": the strongest verdict it can reach is "first-attempt-
 ready / no known blockers in what we can verify — Salesforce pen-tests
 regardless." It is read-only on the partner's source, and never installs
@@ -291,29 +294,46 @@ missing or a key piece of the architecture was misread.
        (no yes/no)  |  N/A (no installable package / no sf auth)>
      • <live probe / install-sf — generated from what was sensed>
 
-   ── THE SINGLE GATE (distinct consents — decide once, up front) ──
-   (1) Ask-tolerance: <full-auto | guided>   →  say "go" to run, or correct anything above.
-   (2) Scan-tool install (network — explicit yes only, silence = skip):
-       <N installable scanners: name (method), … → "install to /tmp/sf-srt-scanners/<run>
-        for this run, removed at cleanup, evidence kept? (real SAST/SCA/DAST/TLS evidence
-        vs PENDING-OWNER-RUN)"  |  "none — all present"  |  "none installable">
-   (3) Throwaway DAST (live op — explicit yes only, silence = skip; needs Docker):
-       <stack-detect=runnable AND docker=available → "stand up <backend> as an isolated
-        throwaway + active-scan it (digest-pinned ZAP; first run pulls ~3.6GB), keep
-        evidence, destroy it?"  |  docker absent/down → "Docker required — install once, or
-        owner-run"  |  needs-secrets → "…after you fill the scaffolded creds"  |
-        needs-recipe/n-a → "DAST stays owner-run (plan generated)">
    ```
 
-   - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed to
-     the autonomous run immediately under the silence-is-yes contract. Don't wait
-     for "go" you don't need — though a misread correction is always honored.
-   - **If ⚠ NEED-FROM-YOU is non-empty**: this is the only hard-stop. Ask the
-     minimum (use `AskUserQuestion`), or, if the operator can't supply it, narrow
-     scope and proceed with that surface honestly flagged as unaudited — never
-     fabricate the missing input.
-   - **Status-only / one-step requests stop here** in router mode: report the
-     state and the single recommended next skill with its reason, and run nothing.
+   ── CONSENT GATES — MANDATORY `AskUserQuestion` calls, recorded, NEVER inferred ──
+   These are NOT report lines to print and skim past. After emitting the report above,
+   for each consent that applies you MUST call **`AskUserQuestion`** and, on an
+   affirmative answer, RECORD it — the downstream engine verifies the recorded token
+   and a skipped ask physically cannot proceed (the launch path fails closed on it):
+
+   - **(1) Ask-tolerance + tier** — `AskUserQuestion`: full-auto vs guided, and the audit
+     tier (default `standard`; **never `exhaustive` on a first pass**). This sets how much
+     you ASK during the run; it does NOT authorize the per-action consents (2)/(3).
+   - **(2) Scan-tool install (network fetch)** — only if ≥1 scanner is installable.
+     `AskUserQuestion`: install to a per-run tmp dir (removed at cleanup, evidence kept)?
+     On **yes**, record then install:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --answer "<the yes>" --target <target>`
+     → `install-scanners.mjs --consent` (which now ALSO verifies the recorded token; the
+     flag alone no longer installs).
+   - **(3) Throwaway DAST (live op)** — only if stack-detect=runnable AND docker=available.
+     `AskUserQuestion`: stand up an isolated throwaway, active-scan it, then destroy it?
+     On **yes**, record then run:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --answer "<the yes>" --target <target>`
+     → `standup-stack.mjs --consent` → `run-dast.mjs --consent` (both verify the token).
+
+   **`silence-is-yes` IS HARD-BOUND — read this exactly.** It authorizes ONLY the
+   DETECTED-ARCHITECTURE inputs the preflight already sensed — the elements, endpoints,
+   package facts, and resume state ("don't re-confirm what I detected"). It NEVER
+   authorizes the consent gates (1)/(2)/(3), and it NEVER authorizes the audit-phase stops
+   (audit-codebase **Step 2** tier go-ahead + **Step 3** show-the-target-map). Those are
+   always ASKED via `AskUserQuestion` and RECORDED — in full-auto and guided alike.
+   Full-auto does NOT collapse any gate or audit stop into a skip-the-ask shortcut: each
+   one is asked and recorded on every run, and the engines fail closed without the token.
+
+   - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed with the
+     DETECTED inputs under silence-is-yes — but STILL ask + record gate (1) before the
+     audit, and gates (2)/(3) at their phase. A misread correction is always honored.
+   - **If ⚠ NEED-FROM-YOU is non-empty**: ask the minimum (use `AskUserQuestion`), or, if
+     the operator can't supply it, narrow scope and proceed with that surface honestly
+     flagged as unaudited — never fabricate the missing input.
+   - **Status-only / one-step requests stop here** in router mode: report the state and
+     the single recommended next skill with its reason, and run nothing.
 
 ### AUTONOMOUS RUN (no further questions beyond NEED-FROM-YOU + consent)
 
@@ -375,7 +395,9 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    and Checkmarx are owner-run (creds + the live target are the human's) — those
    become tasks in `PENDING-OWNER-RUN.md`, not blockers. A scan is only "done"
    with a verified evidence file; a plan with no report is not (CONVENTIONS §2).
-   **If the scanner-install consent was given at preflight**, run
+   **If the scanner-install consent was asked + RECORDED at the gate** (gate
+   `scanner-install`; `--consent` alone no longer installs — the engine verifies the
+   recorded token), run
    `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
    <target> --json` BEFORE this phase so `run-scans` finds the tmp-installed tools
    on the PATH it prepends (from `.security-review/scanner-install.json`) and emits
@@ -385,8 +407,9 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    keep the evidence. **If it was declined / never offered**, install nothing —
    absent scanners stay `PENDING-OWNER-RUN` (run-scans' hard boundary is unchanged).
 
-   **If the throwaway-DAST consent was given at preflight** (the gate's third consent;
-   `stack-detect` = `runnable` AND `docker-check` = `available`), run the engine chain so
+   **If the throwaway-DAST consent was asked + RECORDED at the gate** (gate `throwaway-dast`,
+   the gate's third consent; `stack-detect` = `runnable` AND `docker-check` = `available`;
+   `--consent` alone no longer runs — both engines verify the recorded token), run the chain so
    the active DAST hits a disposable mirror — never a live or third-party target. (The
    engines also self-guard: `standup-stack`/`run-dast` return `status:"no-docker"` with the
    install hint if Docker vanished since the preflight — surface it, don't crash; DAST

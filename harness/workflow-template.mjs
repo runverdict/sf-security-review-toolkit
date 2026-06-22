@@ -133,6 +133,19 @@ if (!ARGS || typeof ARGS.repoRoot !== 'string' || !Array.isArray(ARGS.dimensions
       'Required: repoRoot (string), dimensions (non-empty array). See the header comment for the full shape.'
   )
 }
+// CONSENT COUPLING (the durable part). build-audit-engine.mjs sets consentVerified=true
+// ONLY after verifyConsent('audit-tier') && verifyConsent('audit-targetmap') passed against
+// the recorded affirmative answers. The Workflow runtime has no filesystem access, so it
+// cannot re-read the consent files here — instead it REFUSES to fan out any agent unless the
+// gated assembler stamped this flag. A hand-built engine that skipped the Step 2/3 stops has
+// no flag and cannot launch.
+if (ARGS.consentVerified !== true) {
+  throw new Error(
+    'workflow-template.mjs: refusing to fan out — consentVerified is not true. The audit launch is gated: ' +
+      'audit-codebase Step 2 (tier go-ahead) and Step 3 (show the target map) must be asked + recorded, and ' +
+      'build-audit-engine.mjs sets consentVerified only after verifying both. Do not hand-set this flag.'
+  )
+}
 for (const d of ARGS.dimensions) {
   if (!d.key || !d.targets || !d.finderPrompt) {
     throw new Error(
