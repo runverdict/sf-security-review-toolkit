@@ -9,13 +9,13 @@ follow semantic versioning.
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two
-> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.5**, UNTAGGED —
+> adversarial-audit hardening passes, all detailed below. `main` is now at **0.8.6**, UNTAGGED —
 > ahead of the v0.7.0 tag by the two environment preconditions (`docker-check` 0.7.1 +
 > `namespace-check` 0.7.2), the **coverage-gap dimensions (16→19)**, the **Solano
 > middle-band judgment fixture** (rebuilt in PHASE A below), a journey-skill
 > **triage→blocker-gate relabel** (0.8.1), and the **calibration false-positive patterns**
-> (0.8.5 — three verifier-guidance rules from a blind 30-judge verification, below).
-> **The Solano cold RE-RUN gates the v0.8.5 tag.**
+> (0.8.6 — three verifier-guidance rules from a blind 30-judge verification, below).
+> **The Solano cold RE-RUN gates the v0.8.6 tag.**
 > Cold run #1 (2026-06-20) validated the TOOLKIT — it correctly caught everything — but exposed
 > FOUR unintended fixture defects that landed Solano BLOCKED, so the middle-band JUDGMENT test
 > never actually ran; **PHASE A rebuilt the fixture to be genuinely mostly-compliant** (execution-
@@ -38,7 +38,7 @@ follow semantic versioning.
 > coverage-gap map's P1 + P2 items are all closed** — only the intentionally-deferred P3
 > (XXE / TOCTOU / exotic-MCP cluster) remains. **The middle-band judgment fixture — PHASE 1
 > (author + band check) BUILT; cold run #1 done (toolkit validated, fixture had 4 unintended
-> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.5) and the
+> defects); PHASE A (fixture rebuild) BUILT.** Remaining: the cold RE-RUN (gates v0.8.6) and the
 > DEFERRED **Phase B** — owner-artifact pre-population so the SCI lands 65–75% (today the fixture
 > is mostly-compliant in CODE but the SCI stays low/BLOCKED on owner-completable materials — the
 > 9% lesson). Other **Roadmap** specs not
@@ -60,7 +60,21 @@ follow semantic versioning.
 > same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
 
 ### Fixed
-- **Consent coupling — close the 4 adversarial bypasses (0.8.5; 2026-06-22; engine + test-backed).**
+- **`isAffirmative` — catch general negation so natural declines never record as consent
+  (0.8.6; engine + test-backed).** DENY-precedence landed in 0.8.5, but DENY lacked bare `not`
+  and the n't contractions, so (verified at f446559) "not ok" / "I would not approve this" /
+  "we should not proceed" leaked as affirmative, and "won't approve" / "can't allow" /
+  "wouldn't consent" would too. DENY now also matches **bare `\bnot\b`** and the **n't
+  contractions** (`\b\w+n['’]t\b` — won't/can't/wouldn't/shouldn't/isn't/…), keeping
+  deny-precedence (any negation → false). The contraction rule REQUIRES the apostrophe ON
+  PURPOSE: the optional-apostrophe form `\w+n['’]?t` would also match `grant`/`consent` —
+  both AFFIRM tokens that merely END in "nt" — and false-NEGATIVE a real "I consent" /
+  "I grant approval"; apostrophe-less negations ("do not", "dont") are caught explicitly. A
+  short comment flags the durable next-hardening (record the SELECTED AskUserQuestion option
+  as a controlled `affirm|deny` token instead of scanning free text) — not implemented here.
+  `test-record-consent` C9's decline set is extended to lock it, plus the grant/consent
+  stay-affirmative guard.
+- **Consent coupling — close the 4 adversarial bypasses (0.8.6; 2026-06-22; engine + test-backed).**
   An adversarial pass found the 0.8.4 coupling bypassable four ways. The goal is NOT unforgeability
   (a driver that runs everything can fabricate) — it is that an honest driver cannot ACCIDENTALLY skip
   on EITHER substrate, complying is lower-friction than forging, and a NO never records as a YES:
@@ -84,7 +98,7 @@ follow semantic versioning.
     states plainly that belt #1 (the assembler `verifyConsent`) is the SOLE real boundary and this flag is a
     defense-in-depth tripwire that ASSUMES the assembler was used — JS data, trivially forgeable, no security
     claim — whose only job is to catch an HONEST mistake (an engine that reached the runtime un-gated) loudly.
-- **Consent COUPLING — the launch path fails closed on a skipped ask (0.8.5; 2026-06-22; engine
+- **Consent COUPLING — the launch path fails closed on a skipped ask (0.8.6; 2026-06-22; engine
   + test-backed).** A full-auto cold run inferred "silence-is-yes" past its scope and skipped THREE
   mandatory stops — the journey consent gate, audit-codebase Step 3 (show the target map), and Step 2
   (declare the tier + get a go-ahead) — fanning out agents with no ask. Root cause: the interactive
@@ -186,7 +200,7 @@ follow semantic versioning.
   EXPENSIVE (bcrypt/scrypt, a heavy unindexed query, an LLM/paid callout) AND unbounded AND
   attacker-triggerable pre-auth. Presence-guarded by `test-calibration-fp-patterns` (the §6 phrase
   can't regress out); the real proof is a future cold run no longer over-firing the webhook.
-- **Calibration false-positive patterns — verifier-guidance (0.8.5; NOT-deterministically-test-backed
+- **Calibration false-positive patterns — verifier-guidance (0.8.6; NOT-deterministically-test-backed
   prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
   findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
   the verifier over-fired. Encoded each as a §5 verifier sentence + a §6 Known-false-positive row in

@@ -110,11 +110,21 @@ check('C8 GATE SHAPE: journey + audit-codebase use AskUserQuestion + record-cons
   assert.match(a, /record-consent\.mjs --gate audit-targetmap/, 'Step 3 records audit-targetmap')
 })
 
-check('C9 DENY precedence: any deny token fails closed regardless of an affirm token', () => {
-  for (const a of ['no, do not proceed', 'do not allow', 'I do not consent', "please don't go ahead", 'no, go ahead', "don't proceed"])
-    assert.equal(isAffirmative(a), false, `a "no" must never record as yes: ${a}`)
-  for (const a of ['yes', 'go ahead', 'approve the install'])
-    assert.equal(isAffirmative(a), true, `a clear yes must record: ${a}`)
+check('C9 DENY precedence: natural declines (bare "not" + n\'t contractions) fail closed', () => {
+  const declines = [
+    'no, do not proceed', 'do not allow', 'I do not consent', "please don't go ahead", 'no, go ahead',
+    "don't proceed",
+    // general negation that the pre-fix DENY leaked as affirmative:
+    'not ok', 'I would not approve this', 'we should not proceed',
+    "won't approve", "can't allow this", "wouldn't consent",
+    'no', 'skip', 'do not proceed',
+  ]
+  for (const a of declines) assert.equal(isAffirmative(a), false, `a decline must never record as yes: ${JSON.stringify(a)}`)
+  const yeses = ['yes', 'y', 'go ahead', 'approve the install', 'ok do it', 'yes standard']
+  for (const a of yeses) assert.equal(isAffirmative(a), true, `a clear yes must record: ${JSON.stringify(a)}`)
+  // and the apostrophe-mandatory contraction rule must NOT false-negate AFFIRM tokens
+  // that merely END in "nt" — "grant"/"consent":
+  for (const a of ['I consent', 'I grant approval']) assert.equal(isAffirmative(a), true, `must stay affirmative: ${a}`)
 })
 
 check('C10 SUBSTRATE PARITY: sequential-fallback.md carries the verifyConsent/record-consent fail-closed gate', () => {

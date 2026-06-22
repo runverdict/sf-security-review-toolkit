@@ -32,17 +32,30 @@ import { fileURLToPath } from 'node:url'
 // Gate ids: lowercase kebab only (no path traversal, no surprises in a filename).
 const GATE_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 
-// A clear YES vs a clear NO, with DENY PRECEDENCE — a "no" must NEVER record as a
-// "yes". ANY deny token fails closed regardless of any affirm token in the same
-// answer ("no, do not proceed" / "I do not consent" / "please don't go ahead" are
-// all FALSE even though they contain affirm-ish words). Empty/ambiguous → FALSE too.
+// A clear YES vs a clear NO, with DENY PRECEDENCE — a decline must NEVER record as a
+// "yes". ANY deny token fails closed regardless of any affirm word in the same answer.
+// DENY catches GENERAL negation, which natural declines use: bare `not` ("not ok",
+// "we should not proceed", "I would not approve this") and the n't contractions
+// ("won't"/"can't"/"wouldn't"/"shouldn't"/"isn't"/…).
+//
+// The contraction rule REQUIRES the apostrophe (`\b\w+n['’]t\b`) — deliberately, NOT
+// the optional-apostrophe form. A bare `\w+nt` would false-NEGATIVE real affirmatives
+// that merely END in "nt": `grant`/`granted` and `consent`/`consented` are AFFIRM
+// tokens, so "I consent" / "I grant approval" must stay TRUE. A negation contraction
+// in practice always carries the apostrophe; the apostrophe-less forms ("do not",
+// "dont") are caught explicitly below. (No AFFIRM token contains bare "not" or an
+// apostrophe, so this cannot false-negative a real yes.) Empty/ambiguous → FALSE too.
+//
+// DURABLE DIRECTION (next hardening, NOT this change): the truly robust fix is to
+// record the SELECTED AskUserQuestion option as a controlled token (affirm|deny)
+// rather than scanning free text — then no regex can mis-read intent at all.
 const AFFIRM = /\b(yes|y|yeah|yep|ok|okay|approve|approved|grant|granted|consent|consented|go|proceed|confirm|confirmed|allow|allowed|agree|agreed|do it|sounds good)\b/i
-const DENY = /\b(no|n|nope|deny|denied|decline|declined|skip|cancel|stop|abort|never|refuse|refused|don't|dont|do not|do n't)\b/i
+const DENY = /\b(?:no|n|nope|not|deny|denied|decline|declined|skip|cancel|stop|abort|never|refuse|refused|dont|do not)\b|\b\w+n['’]t\b/i
 
 export function isAffirmative(answer) {
   const s = String(answer == null ? '' : answer).trim()
   if (!s) return false
-  if (DENY.test(s)) return false // deny precedence: any "no"/"don't"/"do not" → fail closed
+  if (DENY.test(s)) return false // deny precedence: any negation token → fail closed
   return AFFIRM.test(s)
 }
 
