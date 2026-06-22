@@ -215,6 +215,17 @@ memory, money, API limits) it exhausts.
   unquota'd > internal/admin. A paid-inference amplification on a public endpoint
   is the top case; the same behind a per-tenant quota is hardening. Say which in
   `adjusted_severity`.
+- **App-level rate-limiting on a webhook/endpoint, and an "HMAC-compute /
+  signature-verify DoS", is `low`/`info` — NOT `high`/`medium` — when the
+  per-request work is CHEAP.** HMAC-SHA256 / signature verification is
+  microseconds, and rate-limiting a webhook is typically the gateway/infra
+  layer's responsibility, not the app's — so a constant-time HMAC verify with no
+  app-level rate limit is a hardening note at most. It rises to a real finding
+  ONLY when the per-request work is genuinely EXPENSIVE (bcrypt/scrypt/argon2, a
+  heavy unindexed query, an LLM or other paid callout) AND unbounded AND
+  attacker-triggerable PRE-auth. (Blind 15-judge multi-vote on the Solano
+  "/webhook lacks rate limiting → HMAC-compute DoS": not-a-finding(9)/low(6),
+  modal NOT-A-FINDING, zero high/medium.)
 
 ## 6. Known false-positive patterns
 
@@ -228,3 +239,4 @@ memory, money, API limits) it exhausts.
 | Apex SOQL without `LIMIT` that is structurally bounded (a unique-key lookup, a single-record query, a parent-of-one relationship) | Bounded by the data model. The finding is a caller-influenced or tenant-growable unbounded scan, or a query in a loop. |
 | A rate limit that returns 429 and the test "fails" because it was hit | The limiter working is the control, not a finding. The finding is its absence or per-IP-only scope. |
 | An upload endpoint with a `MAX_CONTENT_LENGTH`/`max-file-size` and a bounded decompression ratio | Size-capped intake. The finding is decompression with no output/ratio cap (a bomb), not the presence of uploads. |
+| A webhook/endpoint with no APP-LEVEL rate limit whose per-request work is CHEAP (an HMAC-SHA256 / signature verify, a single indexed lookup) — flagged as an "HMAC-compute DoS" / "signature-verify DoS" | Microsecond work; rate-limiting a webhook is the gateway/infra layer's job, not the app's. `low`/`info` hardening at most, NOT `high`/`medium`. A real cost finding needs EXPENSIVE per-request work (bcrypt/scrypt/argon2, a heavy unindexed query, an LLM/paid callout) that is unbounded AND attacker-triggerable pre-auth. |

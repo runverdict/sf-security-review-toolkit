@@ -11,6 +11,11 @@
  *   M3 — regression: a `fixed` entry re-found flips to confirmed + regression:true.
  *   M4 — dedup: same file+title at a different line collapses to one entry.
  *   M5 — wrapper: accepts both the bare result and the tool wrapper ({result, agentCount}).
+ *   M6 — Track-1b: cross-dimension same-location dupes (different titles) collapse to ONE
+ *        entry at the max verified severity, both reasonings retained, counted once.
+ *   M7 — Track-1b conservative: same file, DIFFERENT location stays two entries.
+ *   M8 — Track-1b incremental: re-running the dupes keeps ONE entry (first_seen=1, last_seen=2).
+ *   M9 — collapseCrossDimension is pure + idempotent (collapse(collapse(x)) === collapse(x)).
  *
  * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
  */
@@ -20,6 +25,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { collapseCrossDimension } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const MERGE = join(PLUGIN, 'harness', 'merge-ledger.mjs')
@@ -126,6 +132,65 @@ check('M5 wrapper: accepts the tool wrapper {result, agentCount}', () => {
   const l = runMerge(d, { result: { ledger_updates: [u({ file: 'x.js:1', title: 'a finding' })], dimensions_run: ['crypto-internals'], total_candidates: 1 }, agentCount: 7 })
   assert.equal(l.findings.length, 1)
   assert.equal(l.findings[0].status, 'confirmed')
+})
+
+check('M6 Track-1b: cross-dimension same-location dupes collapse to ONE entry at the max severity', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'classes/SolanoOpportunityController.cls:25', title: 'Missing FLS enforcement on getOpportunityDetail', dimension: 'apex-exposed-surface', finder_severity: 'high', adjusted_severity: 'high', verdict_reasoning: 'no WITH USER_MODE on the SELECT', evidence: 'SELECT Id, Amount FROM Opportunity (no FLS)' }),
+    u({ file: 'classes/SolanoOpportunityController.cls:25', title: 'Opportunity fields returned to the LWC without field-level security', dimension: 'web-client', finder_severity: 'low', adjusted_severity: 'low', verdict_reasoning: 'fields reach the component unredacted', evidence: 'return new OpportunityView(o)' }),
+  ], dimensions_run: ['apex-exposed-surface', 'web-client'], total_candidates: 2 })
+  assert.equal(l.findings.length, 1, 'one root cause → one ledger entry')
+  const f = l.findings[0]
+  assert.equal(f.adjusted_severity, 'high', 'highest verified severity wins')
+  assert.deepEqual(f.merged_dimensions, ['apex-exposed-surface', 'web-client'])
+  assert.equal(f.dimension, 'apex-exposed-surface', 'base = highest-severity lens')
+  assert.equal(Array.isArray(f.lenses) && f.lenses.length, 2)
+  assert.match(f.verdict_reasoning, /WITH USER_MODE/, 'apex lens reasoning retained')
+  assert.match(f.verdict_reasoning, /unredacted/, 'web-client lens reasoning retained')
+  assert.equal(l.passes[0].confirmed, 1, 'one root cause counted once, not twice')
+})
+
+check('M7 Track-1b conservative: same file, DIFFERENT location → stays two entries', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'classes/Foo.cls:25', title: 'Missing FLS on the read path', dimension: 'apex-exposed-surface', adjusted_severity: 'high' }),
+    u({ file: 'classes/Foo.cls:200', title: 'Open redirect in the save handler', dimension: 'web-client', adjusted_severity: 'medium' }),
+  ], dimensions_run: ['apex-exposed-surface', 'web-client'], total_candidates: 2 })
+  assert.equal(l.findings.length, 2, 'non-overlapping lines + no shared symbol must stay separate')
+})
+
+check('M8 Track-1b incremental: re-running the dupes keeps ONE entry, first_seen=1/last_seen=2', () => {
+  const d = gitRepo(); dirs.push(d)
+  const up = [
+    u({ file: 'x.cls:10', title: 'A: missing FLS in loadThing', dimension: 'apex-exposed-surface', adjusted_severity: 'high', verdict_reasoning: 'apex reason' }),
+    u({ file: 'x.cls:10', title: 'B: field exposure in loadThing', dimension: 'web-client', adjusted_severity: 'low', verdict_reasoning: 'web reason' }),
+  ]
+  runMerge(d, { ledger_updates: up, dimensions_run: ['apex-exposed-surface', 'web-client'], total_candidates: 2 }, 1)
+  const l = runMerge(d, { ledger_updates: up, dimensions_run: ['apex-exposed-surface', 'web-client'], total_candidates: 2 }, 2)
+  assert.equal(l.findings.length, 1, 'still one merged entry after re-run')
+  const f = l.findings[0]
+  assert.equal(f.first_seen, 1, 'earliest first_seen preserved')
+  assert.equal(f.last_seen, 2)
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.lenses.length, 2, 'both lenses survive the incremental re-run')
+})
+
+check('M9 collapseCrossDimension is pure + idempotent', () => {
+  const F = [
+    { id: 'a'.repeat(16), dimension: 'apex-exposed-surface', title: 'X getFoo', file: 'p.cls:5', adjusted_severity: 'high', status: 'confirmed', verdict: 'confirmed_real', verdict_reasoning: 'r1', evidence: 'e1', first_seen: 1, last_seen: 1 },
+    { id: 'b'.repeat(16), dimension: 'web-client', title: 'Y getFoo', file: 'p.cls:5', adjusted_severity: 'low', status: 'confirmed', verdict: 'confirmed_real', verdict_reasoning: 'r2', evidence: 'e2', first_seen: 1, last_seen: 1 },
+    { id: 'c'.repeat(16), dimension: 'crypto-internals', title: 'unrelated bug', file: 'q.js:9', adjusted_severity: 'medium', status: 'confirmed', verdict: 'confirmed_real', verdict_reasoning: 'r3', evidence: 'e3', first_seen: 1, last_seen: 1 },
+  ]
+  const once = collapseCrossDimension(F)
+  const twice = collapseCrossDimension(once)
+  assert.equal(once.length, 2, 'two location-dupes merge; the unrelated stays')
+  assert.equal(JSON.stringify(twice), JSON.stringify(once), 'collapse(collapse(x)) === collapse(x)')
+  const merged = once.find((f) => f.merged_dimensions)
+  assert.equal(merged.adjusted_severity, 'high')
+  assert.deepEqual(merged.merged_dimensions, ['apex-exposed-surface', 'web-client'])
+  assert.match(merged.verdict_reasoning, /r1/)
+  assert.match(merged.verdict_reasoning, /r2/)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

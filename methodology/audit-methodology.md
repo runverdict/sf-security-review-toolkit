@@ -495,17 +495,29 @@ with whitespace and punctuation collapsed. Rationale, learned the slow way:
 - File + title is what independent agents actually converge on for the same
   defect, and it is deterministic, inspectable, and diff-able in review.
 
-Near-misses (same defect, different title wording across dimensions) are merged
-at synthesis time in the *report*, but the ledger keeps both entries — a wrong
-automated merge in the ledger is worse than a cosmetic duplicate, because it
-silently drops one finding's audit trail. When the report DOES merge a
-cross-dimension duplicate of one root cause, present it ONCE at the **single
-highest VERIFIED `adjusted_severity`** — never as two rows at different
-severities (a blind run surfaced `worker.js:3` at HIGH from `secrets-credentials`
-AND LOW from `error-handling-disclosure`; that is one issue at HIGH, not two).
-`harness/finding-clusters.mjs` already collapses this to `max_severity` per file
-for the triage headline; the report's per-finding list must reconcile the same
-way.
+Near-misses (same defect, different title wording across dimensions) hash to
+DIFFERENT ids (the key is file+title), so per-id dedup alone never merges them —
+a blind run surfaced `worker.js:3` at HIGH from `secrets-credentials` AND LOW
+from `error-handling-disclosure`, and a cold-at-standard run carried one
+missing-FLS root cause in `getOpportunityDetail` as TWO HIGH entries
+(apex-exposed-surface + web-client). One root cause must be ONE entry at the
+**single highest VERIFIED `adjusted_severity`**, never two rows at different
+severities.
+
+**Track-1b — this is now enforced IN the ledger, not just the report.**
+`merge-ledger.mjs` runs `collapseCrossDimension` (exported from
+`harness/finding-clusters.mjs`) on every merge: two OPEN findings on the same
+normalized file AND the same code LOCATION (overlapping line span, or a shared
+exact code-symbol in both titles) but DIFFERENT dimensions collapse into one
+entry — top-level `dimension`/`title`/`id` from the highest-severity lens,
+`adjusted_severity` = the max, every lens's reasoning/evidence preserved in a
+structured `lenses[]` plus a labelled `verdict_reasoning` (`▸ <dim> [<sev>]: …`).
+It is CONSERVATIVE — same file ALONE never merges, so a genuine second bug at a
+different location stays a separate entry — and IDEMPOTENT (the engine explodes
+prior merged entries back to their lenses before each per-id merge, then
+re-collapses, so an incremental re-run that re-finds only one dimension never
+drops the others' audit trail). The triage headline's per-file `max_severity`
+(`clusterFindings`) is the coarser, file-level view of the same principle.
 
 ### 5.3 The digest
 

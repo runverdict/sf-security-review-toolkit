@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Standing PRESENCE test for the three calibration false-positive patterns that a
- * blind 30-judge calibration verification (5 independent judges × 6 findings,
- * reading only the fixture source) found over-firing — H1/H2/H4, each
- * blind-converged. The patterns are LLM verifier-guidance prose (CONVENTIONS §7
+ * Standing PRESENCE test for the calibration false-positive patterns that blind
+ * multi-judge verifications found the verifier over-firing: three from a blind
+ * 30-judge run (5 judges × 6 findings — H1/H2/H4) and a fourth from a blind
+ * 15-judge multi-vote (3 rounds × 5) on the Solano webhook "HMAC-compute DoS"
+ * (modal NOT-A-FINDING). The patterns are LLM verifier-guidance prose (CONVENTIONS §7
  * "prose layer", NOT-deterministically-test-backed — the real proof is the next
  * Solano cold re-run no longer over-firing). This test does NOT try to test the
  * LLM judgment; it guards against the rules SILENTLY REGRESSING OUT of the
@@ -46,6 +47,7 @@ const PATTERNS = [
   { id: '1 reachability-is-a-precondition', phrase: 'no attacker-reachable caller', dims: ['background-jobs', 'tenant-isolation'] },
   { id: '2 availability-is-not-security', phrase: 'fail-closed on availability', dims: ['error-handling-disclosure', 'secrets-credentials'] },
   { id: '3 a-missing-grant-is-fail-closed', phrase: 'a missing grant is fail-closed', dims: ['agentforce-package', 'apex-exposed-surface', 'admin-surface'] },
+  { id: '4 webhook-hmac-rate-limit-cheap-work', phrase: 'hmac-compute', dims: ['resource-consumption-abuse'] },
 ]
 
 for (const p of PATTERNS) {

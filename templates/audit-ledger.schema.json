@@ -31,6 +31,28 @@
       "type": "integer",
       "minimum": 1
     },
+    "lens": {
+      "description": "Track-1b: one dimension's view of a cross-dimension merged finding (audit-methodology.md §5.2). Carries that dimension's own severity/verdict/reasoning/evidence so an incremental re-run can refresh a single lens.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "adjusted_severity", "verdict_reasoning"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "dimension": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "title": { "type": "string" },
+        "file": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "adjusted_severity": { "$ref": "#/$defs/severity" },
+        "verdict": { "type": "string", "enum": ["confirmed_real", "false_positive", "partially_real"] },
+        "status": { "type": "string", "enum": ["confirmed", "refuted", "fixed", "accepted_risk"] },
+        "verdict_reasoning": { "type": "string" },
+        "evidence": { "type": "string" },
+        "exploit_scenario": { "type": "string" },
+        "recommendation": { "type": "string" },
+        "first_seen": { "$ref": "#/$defs/pass_id" },
+        "last_seen": { "$ref": "#/$defs/pass_id" }
+      }
+    },
     "finding": {
       "type": "object",
       "additionalProperties": false,
@@ -131,6 +153,18 @@
         "regression": {
           "description": "True when a fixed entry was re-matched by a later pass's candidate and flipped back to confirmed (audit-methodology.md §5.1). Cleared when re-fixed.",
           "type": "boolean"
+        },
+        "merged_dimensions": {
+          "description": "Track-1b (audit-methodology.md §5.2). When ONE root cause is independently found under multiple dimensions at the SAME file+location, merge-ledger collapses them into ONE entry at the highest verified adjusted_severity. This is the sorted list (length >= 2) of every dimension whose lens contributes. Absent on ordinary single-dimension findings. The top-level `dimension`/`title`/`id` are the highest-severity lens's; `adjusted_severity` is the max; per-lens detail lives in `lenses` and the labelled `verdict_reasoning`/`evidence`. Maintained mechanically (explode → per-id merge → collapseCrossDimension); do not hand-edit.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+          "minItems": 2
+        },
+        "lenses": {
+          "description": "Track-1b: the per-dimension detail of a cross-dimension merged entry (one object per contributing dimension), so an incremental re-run can update one lens without losing the others' reasoning. Present iff `merged_dimensions` is. Engine-maintained; do not hand-edit.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/lens" },
+          "minItems": 2
         }
       },
       "allOf": [

@@ -10,6 +10,16 @@
  * flips a re-found `fixed` entry back to confirmed+regression, tracks first/last-seen,
  * redacts credential material, stamps the pass `audited_commit`, and appends run-log.md.
  *
+ * Track-1b: it also COLLAPSES cross-dimension duplicates of ONE root cause. The dedup
+ * id is file+TITLE, so the same defect found under two dimensions with different titles
+ * hashes distinct and never merges by id — the cold-at-standard run carried one missing-FLS
+ * root cause as TWO HIGH entries (apex-exposed-surface + web-client). On every merge the
+ * engine EXPLODES any prior merged entry back to per-dimension lenses, runs the normal per-id
+ * merge, then `collapseCrossDimension` (finding-clusters.mjs) re-collapses same-file +
+ * same-location + different-dimension OPEN findings into ONE entry at the highest verified
+ * adjusted_severity, preserving each lens's reasoning/evidence (`lenses[]` + labelled
+ * `verdict_reasoning`). Conservative: a second bug at a DIFFERENT location stays separate.
+ *
  * Read-only on partner source; writes only <target>/.security-review/{audit-ledger.json,run-log.md}.
  *
  * Usage:
@@ -24,6 +34,7 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
+import { collapseCrossDimension } from './finding-clusters.mjs' // Track-1b cross-dimension same-location collapse
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag)
@@ -79,6 +90,32 @@ const oneLine = (s, n = 200) => {
 const ledger = readJSON(LEDGER_PATH, { schema_version: '1', findings: [], passes: [] })
 if (!Array.isArray(ledger.findings)) ledger.findings = []
 if (!Array.isArray(ledger.passes)) ledger.passes = []
+
+// Track-1b: EXPLODE any prior cross-dimension merged entry back into its per-dimension
+// plain lenses (each with its own stable dedup id), so the per-id merge below updates
+// ONE lens cleanly on an incremental re-run; collapseCrossDimension re-merges them at
+// the end. A ledger with no merged entries is unchanged (no `lenses` ⇒ pass-through).
+function explodeForMerge(findings) {
+  const out = []
+  for (const f of findings) {
+    if (Array.isArray(f.lenses) && f.lenses.length) {
+      for (const l of f.lenses) {
+        out.push({
+          id: l.id || dedupId(l.file || f.file, l.title || f.title),
+          dimension: l.dimension, title: l.title || f.title,
+          severity: l.severity, adjusted_severity: l.adjusted_severity,
+          file: l.file || f.file, status: l.status || 'confirmed',
+          first_seen: l.first_seen ?? f.first_seen, last_seen: l.last_seen ?? f.last_seen,
+          verdict: l.verdict, verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
+          exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
+          resolution_note: f.resolution_note,
+        })
+      }
+    } else out.push(f)
+  }
+  return out
+}
+ledger.findings = explodeForMerge(ledger.findings)
 const byId = new Map(ledger.findings.map((f) => [f.id, f]))
 
 let collisions = 0
@@ -136,6 +173,11 @@ for (const u of R.ledger_updates) {
   ledger.findings.push(entry)
   byId.set(id, entry)
 }
+
+// ---- Track-1b: collapse cross-dimension same-location duplicates into ONE entry
+// at the highest verified adjusted_severity (per-lens detail preserved). Done BEFORE
+// the pass stats so one root cause found under N dimensions counts ONCE, not N times.
+ledger.findings = collapseCrossDimension(ledger.findings)
 
 // ---- pass stats, computed from the merged findings (dedup-correct) ----
 const touched = ledger.findings.filter((f) => f.last_seen === PASS)

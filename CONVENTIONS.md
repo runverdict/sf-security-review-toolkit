@@ -224,7 +224,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 29 dependency-free standing tests (244 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 29 dependency-free standing tests (249 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

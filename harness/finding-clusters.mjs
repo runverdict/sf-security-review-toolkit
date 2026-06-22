@@ -22,7 +22,21 @@
  * distinct issues, never as an exact root-cause count. The triage decision does
  * not change (any open critical/high still halts); only the headline gets honest.
  *
- * PURE: no LLM, no deps, no network.
+ * Track-1b — `collapseCrossDimension(findings)` (exported, used by merge-ledger.mjs):
+ * the per-FILE headline view above is a lower bound; this is the per-LOCATION ledger
+ * merge that the §5.2 note now mandates IN the ledger, not just the report. Two OPEN
+ * findings on the SAME normalized file AND the SAME code location (overlapping line
+ * span, or a shared exact code-symbol in both titles) but DIFFERENT dimensions
+ * collapse into ONE entry at the highest verified `adjusted_severity`, with every
+ * lens's reasoning/evidence preserved (labelled `verdict_reasoning`/`evidence` for
+ * the human view + a structured `lenses[]` for incremental re-merge). CONSERVATIVE:
+ * same-file alone never merges (a real second bug at a different location stays
+ * separate); only same-file + same-location does. The cold-at-standard run carried
+ * one root cause ("Missing FLS in getOpportunityDetail") as TWO HIGH entries under
+ * apex-exposed-surface + web-client because the dedup key is file+TITLE and the
+ * titles differed — this collapses that to one.
+ *
+ * PURE: no LLM, no deps, no network. IDEMPOTENT: collapse(collapse(x)) === collapse(x).
  *
  * USAGE: node finding-clusters.mjs --target <repo> [--json]
  */
@@ -38,6 +52,150 @@ const sevOf = (f) => String(f.adjusted_severity || f.severity || '').toLowerCase
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
 const normFile = (f) => String(f || '').replace(/:[0-9]+(?:[:-][0-9]+)?\s*$/, '').trim() || '(unattributed)'
 
+// ---------------------------------------------------------------------------
+// Track-1b — cross-dimension, same-location ledger collapse.
+// ---------------------------------------------------------------------------
+
+// Parse a trailing :N / :N-M / :N:M / :N,M line span from a file ref → {lo,hi} | null.
+function lineSpan(file) {
+  const m = String(file || '').match(/:(\d+)(?:[-:,](\d+))?\s*$/)
+  if (!m) return null
+  const a = parseInt(m[1], 10), b = m[2] ? parseInt(m[2], 10) : a
+  return { lo: Math.min(a, b), hi: Math.max(a, b) }
+}
+const spansOverlap = (a, b) => !!a && !!b && a.lo <= b.hi && b.lo <= a.hi
+
+// Extract SPECIFIC code symbols from a title — dotted identifiers (Class.method)
+// or lowercase-start camelCase (getOpportunityDetail). NOT bare ClassNames or
+// English words, so two DIFFERENT methods (different camelCase tokens) never match
+// and a class name shared by two distinct bugs never forces a merge.
+function codeSymbols(title) {
+  const out = new Set()
+  const re = /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+|[a-z][a-z0-9]*[A-Z][\w$]*)\b/g
+  let m
+  while ((m = re.exec(String(title || '')))) out.add(m[1])
+  return out
+}
+
+// Same code LOCATION: same normalized file AND (overlapping line span OR a shared
+// exact code-symbol in both titles). Same file ALONE is never enough.
+function sameLocation(a, b) {
+  const fa = normFile(a.file), fb = normFile(b.file)
+  if (fa === '(unattributed)' || fa !== fb) return false
+  if (spansOverlap(lineSpan(a.file), lineSpan(b.file))) return true
+  const sa = codeSymbols(a.title)
+  if (!sa.size) return false
+  for (const s of codeSymbols(b.title)) if (sa.has(s)) return true
+  return false
+}
+
+const flat1 = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+
+// A finding is one or more lenses: a prior merged entry carries `lenses[]`; a plain
+// entry is a single lens. Expanding lets collapse stay IDEMPOTENT + incremental.
+function asLenses(f) {
+  if (Array.isArray(f.lenses) && f.lenses.length) {
+    return f.lenses.map((l) => ({
+      id: l.id, dimension: l.dimension, title: l.title ?? f.title, file: l.file ?? f.file,
+      severity: l.severity, adjusted_severity: l.adjusted_severity, verdict: l.verdict,
+      status: l.status ?? f.status, verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
+      exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
+      first_seen: l.first_seen ?? f.first_seen, last_seen: l.last_seen ?? f.last_seen,
+    }))
+  }
+  return [{
+    id: f.id, dimension: f.dimension, title: f.title, file: f.file, severity: f.severity,
+    adjusted_severity: sevOf(f), verdict: f.verdict, status: f.status, verdict_reasoning: f.verdict_reasoning,
+    evidence: f.evidence, exploit_scenario: f.exploit_scenario, recommendation: f.recommendation,
+    first_seen: f.first_seen, last_seen: f.last_seen,
+  }]
+}
+
+// Merge a set of lenses (≥2 distinct dimensions) at one location into ONE entry.
+function mergeLensCluster(lenses) {
+  // one lens per dimension — freshest (max last_seen, then highest severity) wins
+  const byDim = new Map()
+  for (const l of lenses) {
+    const ex = byDim.get(l.dimension)
+    const better = !ex ||
+      (l.last_seen || 0) > (ex.last_seen || 0) ||
+      ((l.last_seen || 0) === (ex.last_seen || 0) && (SEV_RANK[l.adjusted_severity] ?? 9) < (SEV_RANK[ex.adjusted_severity] ?? 9))
+    if (better) byDim.set(l.dimension, l)
+  }
+  const ls = [...byDim.values()].sort((a, b) => (a.dimension < b.dimension ? -1 : a.dimension > b.dimension ? 1 : 0))
+  // base = highest verified severity (tie: dimension asc) — donates id/title/dimension
+  const base = [...ls].sort((a, b) =>
+    (SEV_RANK[a.adjusted_severity] ?? 9) - (SEV_RANK[b.adjusted_severity] ?? 9) || (a.dimension < b.dimension ? -1 : 1))[0]
+  const maxSev = ls.reduce((m, l) => ((SEV_RANK[l.adjusted_severity] ?? 9) < (SEV_RANK[m] ?? 9) ? l.adjusted_severity : m), 'info')
+  const label = (field) => ls.map((l) => `▸ ${l.dimension} [${l.adjusted_severity}]: ${flat1(l[field]) || '(none)'}`).join('\n')
+  const out = {
+    id: base.id, dimension: base.dimension, title: base.title,
+    severity: base.severity || base.adjusted_severity, adjusted_severity: maxSev,
+    file: base.file, status: 'confirmed',
+    first_seen: Math.min(...ls.map((l) => l.first_seen || 1)),
+    last_seen: Math.max(...ls.map((l) => l.last_seen || 1)),
+    verdict: base.verdict || 'confirmed_real',
+    verdict_reasoning: label('verdict_reasoning'),
+    evidence: label('evidence'),
+    exploit_scenario: base.exploit_scenario,
+    recommendation: base.recommendation,
+    resolution_note: flat1(base.recommendation).slice(0, 200) || undefined,
+    merged_dimensions: ls.map((l) => l.dimension),
+    lenses: ls.map((l) => ({
+      id: l.id, dimension: l.dimension, title: l.title, file: l.file,
+      severity: l.severity, adjusted_severity: l.adjusted_severity, verdict: l.verdict, status: l.status,
+      verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
+      exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
+      first_seen: l.first_seen, last_seen: l.last_seen,
+    })),
+  }
+  return out
+}
+
+const lineLo = (f) => { const s = lineSpan(f.file); return s ? s.lo : 0 }
+const sortKey = (a, b) =>
+  (normFile(a.file) < normFile(b.file) ? -1 : normFile(a.file) > normFile(b.file) ? 1 : 0) ||
+  lineLo(a) - lineLo(b) ||
+  (String(a.dimension) < String(b.dimension) ? -1 : String(a.dimension) > String(b.dimension) ? 1 : 0) ||
+  (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0)
+
+/**
+ * Collapse OPEN findings that share the same file + same location across DIFFERENT
+ * dimensions into ONE entry at the highest verified adjusted_severity. Non-open
+ * findings (refuted/fixed/accepted_risk) pass through untouched. Pure + idempotent.
+ */
+export function collapseCrossDimension(findings) {
+  const arr = Array.isArray(findings) ? findings : []
+  const open = arr.filter(isOpen)
+  const out = arr.filter((f) => !isOpen(f)) // non-open pass through
+  const used = new Array(open.length).fill(false)
+  for (let i = 0; i < open.length; i++) {
+    if (used[i]) continue
+    const cluster = [open[i]]
+    used[i] = true
+    let grew = true
+    while (grew) {
+      grew = false
+      for (let j = 0; j < open.length; j++) {
+        if (used[j]) continue
+        if (cluster.some((c) => sameLocation(c, open[j]))) { cluster.push(open[j]); used[j] = true; grew = true }
+      }
+    }
+    const lenses = cluster.flatMap(asLenses)
+    const dims = new Set(lenses.map((l) => l.dimension))
+    if (dims.size >= 2) out.push(mergeLensCluster(lenses))
+    else out.push(...cluster)
+  }
+  return out.sort(sortKey)
+}
+
+// All dimensions a finding represents — a Track-1b merged entry stands for every
+// lens in `merged_dimensions`, not just its top-level (base) `dimension`.
+const dimsOf = (f) =>
+  Array.isArray(f.merged_dimensions) && f.merged_dimensions.length
+    ? f.merged_dimensions
+    : (f.dimension ? [String(f.dimension)] : [])
+
 export function clusterFindings(findings) {
   const open = (Array.isArray(findings) ? findings : []).filter(isOpen)
   const by_severity = {}
@@ -49,7 +207,7 @@ export function clusterFindings(findings) {
     if (!fileMap.has(key)) fileMap.set(key, { file: key, count: 0, dimensions: new Set(), severities: [] })
     const c = fileMap.get(key)
     c.count++
-    if (f.dimension) c.dimensions.add(String(f.dimension))
+    for (const d of dimsOf(f)) c.dimensions.add(d)
     c.severities.push(sevOf(f))
   }
   const files = [...fileMap.values()]
@@ -67,16 +225,17 @@ export function clusterFindings(findings) {
   const distinct_critical = files.filter((f) => f.max_severity === 'critical').length
   const distinct_high = files.filter((f) => f.max_severity === 'high').length
 
+  const allDims = [...new Set(open.flatMap(dimsOf))].sort()
   return {
     confirmed_count: open.length,
     by_severity,
-    dimensions_touched: [...new Set(open.map((f) => f.dimension).filter(Boolean))].sort(),
+    dimensions_touched: allDims,
     distinct_files: files.length,
     distinct_critical_files: distinct_critical,
     distinct_high_files: distinct_high,
     multi_dimension_overlap: multi_dimension_files.map((f) => ({ file: f.file, dimensions: f.dimensions })),
     files,
-    headline: `${open.length} confirmed findings across ${[...new Set(open.map((f) => f.dimension).filter(Boolean))].length} dimensions → ${files.length} distinct affected file(s) (${distinct_critical} critical, ${distinct_high} high at file level); ${multi_dimension_files.length} file(s) carry cross-dimension overlap (LIKELY the same root cause seen through multiple lenses, though distinct co-located defects are possible — see each file's dimension list). The distinct-file count is a lower bound on distinct issues, not an exact root-cause merge; the per-file max severity can also under-count two genuinely-separate criticals in one file, so treat it as a floor.`,
+    headline: `${open.length} confirmed findings across ${allDims.length} dimensions → ${files.length} distinct affected file(s) (${distinct_critical} critical, ${distinct_high} high at file level); ${multi_dimension_files.length} file(s) carry cross-dimension overlap (LIKELY the same root cause seen through multiple lenses, though distinct co-located defects are possible — see each file's dimension list). The distinct-file count is a lower bound on distinct issues, not an exact root-cause merge; the per-file max severity can also under-count two genuinely-separate criticals in one file, so treat it as a floor.`,
   }
 }
 

@@ -48,7 +48,7 @@ follow semantic versioning.
 > (a §2 honesty gap: capabilities must resolve to ready | blocked+remediation | needs-input, never
 > a silent owner-run). The coverage-gap
 > changeset was adversarially audited (5-lens read-only Workflow → 12 raw → 5 confirmed → all
-> fixed). Suite: 29 files / 244 checks, green. Earlier checkpoints tagged through v0.5.5.
+> fixed). Suite: 29 files / 249 checks, green. Earlier checkpoints tagged through v0.5.5.
 
 > **Cold-run key isolation (2026-06-20).** For cold run #1 the sealed adjudication key
 > (`acceptance/solano-adjudication-key.md`) was **held off-repo** at `~/solano-adjudication-key.md`
@@ -60,6 +60,27 @@ follow semantic versioning.
 > same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
 
 ### Fixed
+- **Cross-dimension severity dedup IN the ledger — Track-1b (2026-06-22; engine + test-backed).**
+  The Solano cold-at-standard run double-reported ONE root cause — "Missing FLS enforcement in
+  `SolanoOpportunityController.getOpportunityDetail`" — as TWO HIGH ledger entries, one under
+  `apex-exposed-surface` and one under `web-client`. The dedup id is `SHA-256(normalized_file +
+  "\n" + normalized_title)`, so two dimensions giving the SAME file but DIFFERENT titles hash
+  distinct and never merge. The §5.2 note already said "one root cause → one row at the single
+  highest verified severity", but only the per-FILE headline (`finding-clusters.mjs`) enforced it —
+  not the ledger.
+  - `harness/finding-clusters.mjs` gains an exported, pure, **idempotent** `collapseCrossDimension`:
+    two OPEN findings on the same normalized file AND the same code LOCATION (overlapping line span,
+    or a shared exact code-symbol in both titles) but DIFFERENT dimensions collapse into ONE entry at
+    the highest verified `adjusted_severity`, with every lens's reasoning/evidence preserved (a
+    structured `lenses[]` + a labelled `verdict_reasoning`). CONSERVATIVE — same file ALONE never
+    merges, so a genuine second bug at a different location stays separate.
+  - `harness/merge-ledger.mjs` EXPLODES any prior merged entry back to per-dimension lenses, runs the
+    normal per-id merge, then re-collapses — so an incremental re-run that re-finds only one dimension
+    never drops the others' audit trail, and one root cause is COUNTED ONCE in the pass stats.
+  - `templates/audit-ledger.schema.json`: new optional `merged_dimensions` + `lenses` (a `$defs/lens`)
+    on the finding; `methodology/audit-methodology.md` §5.2 updated (collapse is now IN the ledger).
+  - Tests: `test-merge-ledger` M6–M9 (collapse to one entry at max severity + both reasonings;
+    different-location-stays-separate; incremental keeps first_seen; pure idempotency).
 - **Solano fixture rebuild — PHASE A (2026-06-20).** Cold run #1 validated the toolkit (every
   issue correctly caught) but surfaced that the FIXTURE carried four UNINTENDED real defects — all
   author blind spots — so it landed BLOCKED and the middle-band judgment never ran. Rebuilt the
@@ -87,6 +108,18 @@ follow semantic versioning.
   build-time self-check now asserts `needs-build` (catches a future fake-`04t` regression).
 
 ### Changed
+- **Webhook / rate-limit resource-consumption calibration — verifier-guidance (2026-06-22;
+  NOT-deterministically-test-backed prose, CONVENTIONS §7).** A blind 15-judge multi-vote (3 rounds ×
+  5) on the Solano "/webhook lacks rate limiting → HMAC-compute DoS" finding returned
+  not-a-finding(9)/low(6) — modal NOT-A-FINDING, ZERO high/medium — while the cold run called it
+  HIGH (the same over-fire shape as the three Track-1 patterns). Encoded a §5 verifier sentence +
+  a §6 Known-false-positive row in `resource-consumption-abuse`: app-level rate-limiting on a
+  webhook/endpoint, and an "HMAC-compute / signature-verify DoS", is `low`/`info` (not `high`/
+  `medium`) when the per-request work is cheap (HMAC-SHA256 is microseconds; rate-limiting is the
+  gateway/infra layer's job) — it rises to a real finding ONLY when the per-request work is
+  EXPENSIVE (bcrypt/scrypt, a heavy unindexed query, an LLM/paid callout) AND unbounded AND
+  attacker-triggerable pre-auth. Presence-guarded by `test-calibration-fp-patterns` (the §6 phrase
+  can't regress out); the real proof is a future cold run no longer over-firing the webhook.
 - **Calibration false-positive patterns — verifier-guidance (0.8.2; NOT-deterministically-test-backed
   prose, CONVENTIONS §7).** A blind 30-judge calibration verification (5 independent judges × 6
   findings, reading only the fixture source) found three CONSISTENT, blind-converged severity bugs
