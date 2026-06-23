@@ -1,7 +1,7 @@
 ---
 name: audit-deployed-package
 description: The opt-in deep audit of the INSTALLED package, run against the throwaway org it was installed into — the thin dynamic pass that previews what the Salesforce reviewer actually does (install your package, then test it). Verifies the subscriber-effective permission grants (including the install-time UEC grant drop), the post-install handler's real granted scope, Code Analyzer Graph Engine CRUD/FLS data-flow on the installed source, that Named/External-Credential callouts resolve with org-entered secrets, and install + uninstall integrity. Use only after sf is authed and /sf-security-review-toolkit:install-and-verify-package has stood the package up in a clean org. Augments — never replaces — the source audit-codebase pass.
-allowed-tools: Bash(sf *) Read Write Grep
+allowed-tools: Bash(sf *) Bash(node *harness/record-consent.mjs *) Read Write Grep AskUserQuestion
 ---
 
 # Audit Deployed Package
@@ -100,6 +100,15 @@ let us verify."
   it from the baseline, not from this prose.
 
 ## Steps
+
+**Consent gate (fail-closed) — record before the uninstall step.** Most of this audit is
+read-only SOQL/scan, but the install+uninstall-integrity step (step 7) runs
+`sf package uninstall`, which mutates the throwaway org. Before that step, ask the operator
+ONCE with `AskUserQuestion` (name the uninstall against the throwaway org), and on a yes
+record it: `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --answer "<operator's exact yes>" --target <repo>`.
+The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop: without that
+recorded consent `sf package uninstall` is **DENIED**, so a skipped ask means the op is
+denied, not silently run.
 
 Every step writes its raw query/scan output to
 `.security-review/evidence/deployed-package/<step>-<date>.json|html|txt` **before**

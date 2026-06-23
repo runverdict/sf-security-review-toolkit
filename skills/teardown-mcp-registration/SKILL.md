@@ -1,7 +1,7 @@
 ---
 name: teardown-mcp-registration
 description: Provision a clean throwaway org and leave zero residue after the deployed-package audit — remove an MCP server registration (agent references, tool actions, the MCP Servers registry row, ESR/Named Credential/External Credential, and the permission set) in the dependency order that works. Used by the deep audit to clean a contaminated org before install, and to tear the package down to nothing after the audit.
-allowed-tools: Bash(sf *) Bash(grep *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Read Write AskUserQuestion
 ---
 
 # Teardown MCP Registration
@@ -38,6 +38,16 @@ This skill bookends the deployed-org deep audit on **both** sides, and is **opt-
 - This skill targets **hand-created (no-namespace) registrations**. Managed components cannot be destructive-deployed — if the registration came from a package, remove it with `sf package uninstall` instead (steps 1–3 still apply first — expect the uninstall to be blocked while agents and the registry row still reference the components).
 
 ## Steps
+
+0. **Consent gate (fail-closed) — record before the destructive teardown.** This skill
+   removes registry rows and metadata (`sf data delete`, `sf package uninstall`, and
+   destructive `sf project deploy` of post-destructive changes) — all irreversible against
+   the org. Before the first destructive op, ask the operator ONCE with `AskUserQuestion`
+   (name the org being torn down and that the deletes are irreversible), and on a yes record
+   it: `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --answer "<operator's exact yes>" --target <repo>`.
+   The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop: without
+   that recorded consent `sf data delete`, `sf package uninstall`, and `sf project deploy`
+   are **DENIED**, so a skipped ask means the op is denied, not silently run.
 
 1. **Remove tool-action references from EVERY agent — including agents you forgot about.** Find them headlessly via the Tooling API. Execute all three sweeps:
 

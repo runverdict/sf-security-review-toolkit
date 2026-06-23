@@ -1,7 +1,7 @@
 ---
 name: install-and-verify-package
 description: Stand up the partner's EXISTING released managed package in a throwaway scratch/trial org and audit the deployed artifact — exactly what the Salesforce reviewer does when they install your package. Pre-install contamination check, headless permission-chain verification (the install-time UEC grant drop), Connect API credential configuration, Manage Tools sync, install+uninstall integrity, and an Apex smoke test through the installed Named Credential. The core of the CLI-gated deployed-org deep audit.
-allowed-tools: Bash(sf *) Bash(rm *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(rm *) Bash(node *harness/record-consent.mjs *) Read Write AskUserQuestion
 ---
 
 # Install and Verify Package
@@ -29,6 +29,17 @@ This is the **core** of the deployed-org deep audit — the step the whole CLI-g
 - The MCP server's OAuth client id + secret on hand (for step 5)
 
 ## Steps
+
+0. **Consent gate (fail-closed) — record before install/uninstall.** This skill installs
+   the package into a throwaway org (step 3) and uninstalls it (step 8) — both mutate the
+   org. Before the install, ask the operator ONCE with `AskUserQuestion` (name the throwaway
+   org and that install + uninstall mutate it), and on a yes record it:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --answer "<operator's exact yes>" --target <repo>`.
+   The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop: without
+   that recorded consent `sf package install` / `sf package uninstall` are **DENIED**, so a
+   skipped ask means the op is denied, not silently run. (If this skill ever has to promote
+   a version, that is a SEPARATE `sf-package-promote` permanence ask — see
+   `/sf-security-review-toolkit:build-managed-package` step 10.)
 
 1. **Pre-install contamination check — one MCP registration per server per org. Ever.** Installing the package into an org that still has a hand-created registration of the same server (same label, same tool names — every PoC org has one) breaks a previously-working agent instantly with `tool validation failed while setting up the external MCP connection`, and leaves registry state that keeps poisoning runtime enablement even after cleanup. Detect it headlessly — look for any existing row registering the same server:
 

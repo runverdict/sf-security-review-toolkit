@@ -353,6 +353,17 @@ check('12 by_file: 2 loci in fileA + 1 in fileB → 2 entries; fileA locus_count
   // the rollup does not change the per-locus source of truth
   assert.equal(out.loci.length, 3)
 })
+check('12b by_file: a file whose loci are ALL review/investigate → has_reliable_blocker=false', () => {
+  // C flips confirmed(high)→refuted → all_runs but status-unstable → confidence review,
+  // confirmed_count 1 of 2 → NOT a reliable blocker. Regression-locks the false branch.
+  const out = classifyRecurrence([
+    led(conf('force-app/classes/C.cls:1-5', 'high', 'C')),
+    led(ref('force-app/classes/C.cls:1-5', 'info', 'C')),
+  ])
+  const c = out.summary.by_file.find((e) => e.file === 'force-app/classes/C.cls')
+  assert.equal(c.confidences.high, 0, 'no high-confidence locus on C')
+  assert.equal(c.has_reliable_blocker, false, 'all review/investigate → not a reliable blocker')
+})
 
 // --- 13. --repo-root display relativization (matching unaffected) ----------
 check('13a repoRoot strips the prefix from emitted paths; a path NOT under root is left intact', () => {

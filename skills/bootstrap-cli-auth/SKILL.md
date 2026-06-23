@@ -1,7 +1,7 @@
 ---
 name: bootstrap-cli-auth
 description: Install the Salesforce CLI and authenticate the orgs the deployed-org deep audit needs — from a machine that may have no local browser (CI box, remote server, devcontainer). The CLI-gated entry step the autonomous orchestrator invokes only when the operator opts into auditing the deployed package; read-only on the partner's source.
-allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Write AskUserQuestion
+allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Bash(node *harness/record-consent.mjs *) Write AskUserQuestion
 ---
 
 # Bootstrap CLI Auth
@@ -45,6 +45,16 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
 `/sf-security-review-toolkit:build-managed-package` consumes `devhub` and `ns-holder` (only when a version must be built); `/sf-security-review-toolkit:install-and-verify-package` consumes the `test-*` orgs and `golden`.
 
 ## Steps
+
+0. **Consent gate (fail-closed) — record before installing the CLI or logging in any
+   org.** This skill installs the CLI globally (`npm install -g`) and writes org
+   credentials (`sf org login`) — both modify the host or store secrets. Before either,
+   ask the operator ONCE with `AskUserQuestion` (name that it installs `@salesforce/cli`
+   globally and captures org auth on this machine), and on an affirmative yes record it:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-cli-setup --answer "<operator's exact yes>" --target <repo>`.
+   The shipped PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop:
+   without that recorded consent it **DENIES** `npm install -g` and `sf org login`, so a
+   skipped ask means the op is denied, not silently run. A decline → stop; do not install.
 
 1. **Check Node.js.** Execute:
 

@@ -146,6 +146,20 @@ Skills write into the PARTNER's repo, never into the plugin:
   but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
   a high-stakes prose layer is a candidate for promotion to an engine + a
   PreToolUse hook (runtime-independent enforcement).
+- **Irreversible sf/host ops are consent-gated, fail-closed (0.8.11).** The
+  deployed-package deep-audit skills run live, irreversible Salesforce / host ops
+  (`sf package version promote` — a PERMANENT release — plus package install/uninstall,
+  scratch-org create/delete, `sf data delete`, destructive deploy, `sf org login`,
+  `npm install -g`) as prose-only Bash. Three consent gates back them —
+  `sf-package-promote` (its own, for the permanent release), `sf-deep-audit-ops`, and
+  `sf-cli-setup` — recorded via `harness/record-consent.mjs` under
+  `.security-review/consent/`. The shipped PreToolUse hook `hooks/sf-ops-gate-hook.mjs`
+  (matcher `Bash`) classifies the command on its ACTION VERB and **DENIES** a gated op,
+  inside a managed audit repo, unless an affirmative consent is recorded — so a skipped
+  ask cannot run the op. Scoped to a `.security-review/` tree (never blocks arbitrary
+  Bash) and verb-based (read-only verbs always pass). Honest residual: a deliberately
+  obfuscated op can still evade the classifier — the same limit the consent belt
+  documents (see `docs/sf-ops-safety-gate.md`).
 - **The ONE network-touching engine is `install-scanners.mjs`, and it is split to
   keep the no-network rule intact (0.6.0).** Every other `harness/*.mjs` is pure,
   no-network, byte-identical. `install-scanners.mjs` installs missing scan tools, so
@@ -231,11 +245,12 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 31 dependency-free standing tests (286 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 32 dependency-free standing tests (309 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
-├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
-│   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook
-│   └── authz-gate-hook.mjs          # NO-OP unless armed (.security-review/hook-armed) + writing authn-authz-flow.md → consults the gate, denies on a live authz hole (fail-closed)
+├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
+│   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
+│   ├── authz-gate-hook.mjs          # NO-OP unless armed (.security-review/hook-armed) + writing authn-authz-flow.md → consults the gate, denies on a live authz hole (fail-closed)
+│   └── sf-ops-gate-hook.mjs         # 0.8.11: fail-closed consent gate for IRREVERSIBLE sf/host ops (sf-package-promote / sf-deep-audit-ops / sf-cli-setup) — DENIES a classified op in a managed repo unless verifyConsent passes; scoped to a .security-review/ tree, verb-based, never blocks arbitrary Bash (docs/sf-ops-safety-gate.md)
 └── skills/                          # 14 skills
     ├── security-review-journey/     # orchestrator: state detection + routing
     ├── scope-submission/            # Phase 0: architecture detection + preflight gates

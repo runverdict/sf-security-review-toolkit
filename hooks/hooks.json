@@ -10,6 +10,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/authz-gate-hook.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sf-ops-gate-hook.mjs\""
+          }
+        ]
       }
     ]
   }

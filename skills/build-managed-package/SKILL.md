@@ -1,7 +1,7 @@
 ---
 name: build-managed-package
 description: Cut a released managed 2GP from the partner's source — ONLY when the deployed-org deep audit finds no released version to audit yet. The common case is the partner already has a release; this is the fallback that produces an installable artifact so the deep audit has something to stand up. It does not modify the partner's application logic, but it DOES generate packaging scaffolding (a post-install handler, a CspTrustedSite) into force-app/ and edit sfdx-project.json — and only on the no-existing-release path.
-allowed-tools: Bash(sf *) Bash(git diff*) Bash(cat *) Bash(grep *) Read Write Edit AskUserQuestion
+allowed-tools: Bash(sf *) Bash(git diff*) Bash(cat *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Read Write Edit AskUserQuestion
 ---
 
 # Build Managed Package
@@ -32,6 +32,16 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
 - The project is a git repo — step 4's guard depends on `git diff`
 
 ## Steps
+
+0. **Consent gate (fail-closed) — record before the first irreversible build op.** This
+   skill creates scratch orgs, deploys metadata, and creates a package version (steps 9)
+   — all mutate orgs / build artifacts. Before the first such op, ask the operator ONCE
+   with `AskUserQuestion` (name the scratch-org create + version create), and on a yes
+   record it: `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --answer "<operator's exact yes>" --target <repo>`.
+   The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop: without
+   it, `sf org create scratch`, `sf project deploy`, and `sf package version create` are
+   **DENIED**. **Promotion (step 10) is a SEPARATE, distinctly-worded ask** — this consent
+   does NOT cover it. A skipped ask means the op is denied, not silently run.
 
 1. **Verify the namespace prerequisites.** A managed 2GP requires a registered namespace LINKED to the Dev Hub. The namespace lives in a plain signup Developer Edition org (the "namespace holder" — don't use the Dev Hub itself, it can't be linked). Verify headlessly:
 
@@ -167,7 +177,15 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
 
    `--code-coverage` is required for promotion. Then run the step 4 guard again: a new `packageAliases` entry is expected; a vanished `postInstallScript` is not.
 
-10. **Promote the version to released.** Beta versions cannot install into the Trialforce-template test orgs the MCP Client Partner Technical Guide prescribes — exact error: `Unable to install beta package ... only in sandbox or Developer Edition organizations` (yes, even though those orgs are nominally Developer Edition). Promotion requires ≥75% Apex coverage (the template test class lands well above it), and security review needs a released version anyway. Execute:
+10. **Promote the version to released — SEPARATE PERMANENCE CONSENT (fail-closed).**
+    `sf package version promote` PERMANENTLY releases a 2GP version: it can never be
+    deleted, un-promoted, or hidden. Before running it, ask the operator a SECOND,
+    distinctly-worded `AskUserQuestion` that spells out this irreversibility (this is NOT
+    covered by the step-0 deep-audit consent), and only on an affirmative yes record it:
+    `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-package-promote --answer "<operator's exact yes>" --target <repo>`.
+    The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) **DENIES** `sf package version promote`
+    until that `sf-package-promote` consent is recorded — a skipped ask means the promote is
+    denied, not silently run. Beta versions cannot install into the Trialforce-template test orgs the MCP Client Partner Technical Guide prescribes — exact error: `Unable to install beta package ... only in sandbox or Developer Edition organizations` (yes, even though those orgs are nominally Developer Edition). Promotion requires ≥75% Apex coverage (the template test class lands well above it), and security review needs a released version anyway. Execute:
 
     ```bash
     sf package version promote --package "{MCP_NAME}@0.1.0-1" -v {DEVHUB_ALIAS}

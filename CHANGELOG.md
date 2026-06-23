@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.10`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.11`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -94,6 +94,30 @@ follow semantic versioning.
 >   (confirmed-per-run 8/6/7; controller-FLS the one reliably-recurring blocker; Jaccard 0.40/0.67/0.44);
 >   `commit_consistency` reports `consistent` (all three at one commit). Docs: `docs/recurrence-confidence.md`
 >   §7 "Wiring & usage". Tag stays **HELD**.
+> - **0.8.11** — **the SF-ops safety gate: fail-closed consent enforcement for IRREVERSIBLE Salesforce /
+>   host operations.** The deployed-package deep-audit skills run live, irreversible ops as prose-only
+>   Bash (worst: `sf package version promote`, which PERMANENTLY releases a 2GP version that can never be
+>   removed); a prior full-auto run skipped the consent asks and fanned out anyway. New PreToolUse hook
+>   `hooks/sf-ops-gate-hook.mjs` (matcher `Bash`, the 2nd hook in `hooks.json`) classifies each command on
+>   its ACTION VERB and **DENIES** a gated op — inside a `.security-review/`-managed repo — unless an
+>   affirmative consent for its gate is recorded (`harness/record-consent.mjs`, Phase-1 substrate). **Three
+>   gates:** `sf-package-promote` (its OWN gate, for the permanent release, with a permanence-emphasizing
+>   deny), `sf-deep-audit-ops` (version create / install / uninstall, scratch|sandbox create, org delete,
+>   data delete, deploy), `sf-cli-setup` (`sf org login`, `npm install -g`). **Robust normalization** (the
+>   adversarial surface): splits on `&& || ; |` + newlines and gates a chain on ANY segment; strips leading
+>   env-assignments + `sudo`/`npx`; accepts `sf`/`sfdx`, space-verb + colon + `force:*` legacy forms;
+>   verb-based so read-only verbs (`… version list`, `org list`, `config get`, `--help`) and all non-sf Bash
+>   pass. **Fail-to-ALLOW** on a malformed/absent payload or out-of-scope cwd — it never blocks arbitrary
+>   Bash. **Wired into the 6 gated skills** (`bootstrap-cli-auth`, `build-managed-package` [+ a SEPARATE
+>   permanence ask before promote], `install-and-verify-package`, `audit-deployed-package`,
+>   `teardown-mcp-registration`, `run-scans`): each couples a mandatory operator `AskUserQuestion` to a
+>   `record-consent` call and narrows `allowed-tools` to permit it — a skipped ask means the op is denied,
+>   not silently run. **Honest residual** (documented): a deliberately obfuscated op (base64-eval, `$(…)`,
+>   variable indirection) can still evade the classifier — "an honest driver running the documented ops is
+>   gated," not "impossible to bypass." New standing test `acceptance/test-sf-ops-gate-hook.mjs` (22 checks,
+>   inline payloads, no live sf) + one carried-over recurrence nit (by_file `has_reliable_blocker` false
+>   branch) → suite **32 files / 309 checks**. Docs: `docs/sf-ops-safety-gate.md`; CONVENTIONS §7/§8. Tag
+>   stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -107,7 +131,7 @@ follow semantic versioning.
 > output, and (0.8.10) its **end-to-end wiring** — audit-codebase step 9 archives independent runs and
 > produces the artifact; compile-submission renders it informational-only (never touching the SCI gate).
 > Not yet built: the adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations,
-> reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 31 files / 286 checks, green.
+> reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 32 files / 309 checks, green.
 > **Doc-debt note:** the detailed 2026-06-19 note below is the
 > prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
 > versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops

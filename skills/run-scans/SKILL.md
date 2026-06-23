@@ -88,6 +88,14 @@ undispositioned findings — each of those bounces at the materials check
 > within scope** — the gate's install-yes covers installing AND running them for this
 > run, since the fetch is inseparable from producing the evidence. Absent the consent,
 > the no-remote-fetch rule above holds in full.
+>
+> **The tmp-scoped `install-scanners.mjs` path above is the PREFERRED install route** (it
+> never touches the host's global state). A **global `npm install -g`** is only ever a
+> gated fallback — and the shipped PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`)
+> **DENIES** `npm install -g` unless an affirmative `sf-cli-setup` consent is recorded
+> (`node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-cli-setup --answer "<operator's yes>" --target <repo>`,
+> coupled to a mandatory `AskUserQuestion`). A skipped ask means the global install is
+> denied, not silently run — so the tmp-scoped path stays the default.
 
 ## The eight families
 
