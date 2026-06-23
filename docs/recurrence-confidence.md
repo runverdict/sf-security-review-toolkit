@@ -110,10 +110,12 @@ The engine matches over **all** findings, including refuted ones, so the
 confirmed→refuted **flip** is captured — that flip *is* the contestable-band signal. But
 a single transitive pass over all findings lets a **broad refuted finding** bridge two
 narrow, mutually-disjoint **confirmed** defects into one locus by interval transitivity.
-A real example: a refuted "no caller authentication at the worker entry point" cited
-`worker.js:1-14` overlaps both a confirmed DB-URL-validation finding at `:3` **and** a
-confirmed missing-`LIMIT` finding at `:6-10`, fusing two genuinely separate defects and
-hiding one.
+A real example: a service file carries two disjoint confirmed defects — a
+credential-validation gap at one line and a missing query bound a few lines below — and a
+broad refuted finding (a "no caller authentication at the entry point" claim) whose cited
+span covers **both**. A single transitive pass lets that broad refuted span bridge the two
+confirmed defects into one locus by interval transitivity, fusing two genuinely separate
+defects and hiding one.
 
 The engine therefore clusters in **two phases**:
 

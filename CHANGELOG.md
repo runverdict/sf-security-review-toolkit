@@ -6,176 +6,282 @@ follow semantic versioning.
 
 ## [Unreleased]
 
-> **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.14`, UNTAGGED**. The 0.8.x arc since v0.7.0:
-> - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
->   journey "triage → blocker-policy gate" relabel.
-> - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
->   blind 30-judge verification (reachability-is-a-precondition-for-severity; availability ≠
->   security; a missing grant is fail-closed, not a vuln); **Track-1b** cross-dimension ledger dedup
->   (collapse same-file + overlapping-line-span multi-lens findings into one entry); and a
->   **webhook / HMAC-compute-DoS** resource-consumption recalibration.
-> - **0.8.3** — version bump so a cold run pulls the current code (the `plugin update` trigger).
-> - **0.8.4–0.8.6** — the **durable consent coupling**: `record-consent.mjs` + a fail-closed
->   audit-launch gate (a skipped consent ask physically cannot launch the audit); the journey +
->   audit-codebase gates made mandatory `AskUserQuestion` stops; **four adversarial bypasses closed**
->   (second-substrate, forge-asymmetry, isAffirmative-leaks-declines, forgeable belt); and
->   `isAffirmative` deny-precedence so a natural "no" never records as consent.
-> - **0.8.7** — the **recurrence-confidence engine** (`harness/recurrence-confidence.mjs`), the first
->   build off the Solano refutation: a pure, deterministic, dependency-free engine that takes **N
->   independent run-ledgers of the same codebase** and classifies each finding by how reliably it
->   recurred — `all_runs` / `some_runs` / `single_run`, with `confidence=high` reserved for the
->   `all_runs` + confirmed-every-run + severity-stable set (the **reliably-recurring blocker** set),
->   everything else `review` / `investigate` (the contestable band the human owns). Cross-run matching
->   is **locus-based** (reusing the now-exported `normFile` / `lineSpan` / `spansOverlap` primitives
->   from `finding-clusters.mjs`; `finding.id` is unusable across runs because finder titles drift),
->   with path-suffix reconciliation for absolute-vs-relative file cites and **confirmed-anchored
->   clustering** so a broad refuted finding can't fuse two disjoint confirmed defects. Per-run
->   confirmed counts + pairwise Jaccard are reported as **metrics only** (they gate nothing); the
->   standing honesty caveat is embedded (no fixed run-count = complete; SF pen-tests regardless). Run
->   against the three real Solano ledgers it reproduces the ground truth — the controller-FLS high
->   recurs 3/3 (`confidence=high`), `viewAllRecords` / prompt-delimiter are `all_runs` but
->   severity-unstable, the Contact-PII high flips confirmed→refuted→confirmed, pairwise Jaccard
->   **0.40 / 0.67 / 0.44** (consistent with the 0.44–0.67 refutation). Standing test
->   `acceptance/test-recurrence-confidence.mjs` (15 checks, inline synthetic fixtures); spec in
->   `docs/recurrence-confidence.md`. Skill wiring + cold validation pending; the tag stays **HELD**.
-> - **0.8.8** — off-disk audit fix-up of the 0.8.7 slice. **(P0 bug) bare-basename over-merge in
->   `fileSuffixMatch`**: a single-segment file cite (a bare basename) was treated as a valid suffix of
->   any deeper path with the same basename, so `package.json` matched BOTH `frontend/package.json` and
->   `backend/package.json` and single-linkage clustering fused three different files into one
->   `all_runs` / `confidence=high` locus — false confidence, the forbidden direction (over-merge can
->   hide a distinct finding; the M10/M11 lesson). Latent on the Solano data (its basenames are unique
->   multi-segment paths) but fixed in the load-bearing matcher: **exact** path equality always matches
->   (a root-level `Dockerfile` cited identically still merges), but at **differing depth** the shorter
->   segment list must be **≥ 2** (basename + a parent dir) before it counts as a tail — a bare basename
->   can no longer bridge. **Two new invariant tests** lock it: the bare-basename non-over-merge (three
->   same-basename files in different dirs → three `single_run` loci, plus the identical-`Dockerfile`
->   positive) and the **two-phase anti-bridge** (a broad refuted finding overlapping two disjoint
->   confirmed defects attaches to one without fusing them — the confirmed-anchored clustering had no
->   test). Plus **§3 genericization** of `docs/recurrence-confidence.md` §6 (real fixture class names →
->   role descriptions; one provenance line). Re-run on the three real ledgers: load-bearing facts
->   **unchanged** (confirmed-per-run 8/6/7; pairwise Jaccard 0.40/0.67/0.44; the controller-FLS the one
->   reliably-recurring blocker) — the stricter matcher is a no-op on that data, confirming the bug was
->   latent. Suite now **31 files / 280 checks**. Tag stays **HELD**.
-> - **0.8.9** — **public-readiness scrub** (the repo is heading open-source as a portfolio piece; file-
->   level only, no git-history rewrite). Portable defaults in `acceptance/build-run-args.mjs` (plugin
->   root resolves from the file's own location via `import.meta.url`; the fixture repo defaults under
->   `os.homedir()` — no machine-specific droplet path baked into shipped code). `.gitignore` hardened so
->   a contributor can never commit a partner's run-state or findings (`.security-review/`,
->   `docs/security-review/`, `.claude/`, `*.jsonl`; verified none are currently tracked). Author droplet
->   paths used as **test data** genericized to neutral roots (`/abs/repo`, `/home/user/project`) in
->   `test-ledger-staleness-adversary.mjs` — input, repoRoot, and expected tokens changed together, both
->   staleness tests re-run green — and the residual prose mention neutralized to "the host product repo".
->   New OSS community files in the toolkit's voice: **`SECURITY.md`** (vuln-disclosure policy — honest
->   scope: prepares submissions, not a hosted service, no guarantee about your package; report via GitHub
->   private reporting or `dev@runverdict.com`), **`CONTRIBUTING.md`** (the green-suite bar, the §2/§3/§4/§9
->   rules, conventional commits, Node 18+), and **`CODE_OF_CONDUCT.md`** (Contributor Covenant v2.1). Plus
->   **CI**: `.github/workflows/test.yml` runs the full acceptance suite on push/PR (Node 20), a status
->   badge on the README, and the Node 18+ prerequisite documented. No code/engine behavior changed; suite
->   unchanged at **31 files / 280 checks**. Tag stays **HELD**.
-> - **0.8.10** — **recurrence-confidence wired in end-to-end** (it was built at 0.8.7 but inert — nothing
->   produced or surfaced its artifact). Three engine refinements (still pure/deterministic/byte-identical):
->   (a) a **commit-consistency honesty guard** — each run's commit = its last pass's `audited_commit`;
->   output adds `generated_from.runs` + `summary.commit_consistency` (`consistent`/`mixed`/`unknown`), and
->   on `mixed` the caveat warns that an appear/disappear may be a CODE CHANGE (a fix between runs) rather
->   than instability — so the fix→re-run loop's output is never misread as drift (descriptive, never gates);
->   (b) a **`summary.by_file` rollup** — one row per file with `locus_count`, a `{high,review,investigate}`
->   tally, and `has_reliable_blocker`, a presentation view over the per-locus classification (which stays the
->   source of truth); (c) an optional **`--repo-root`** display relativization (strip the prefix from emitted
->   paths, segment-aware, matching unaffected). **Skill wiring:** `audit-codebase` gains **step 9** — archive
->   each independent run's ledger to `.security-review/runs/run-<k>/`, and (≥2 snapshots at the SAME commit)
->   run the engine to `recurrence-confidence.json`; sharply distinguished from the fix→re-run step 8, never
->   auto-orchestrated, with the honest contract stated (no fixed run-count is complete; the human adjudicates
->   the contestable band; SF pen-tests regardless). `compile-submission` step 8 renders an **informational**
->   "Finding Stability (N-run consensus)" section from that artifact (or one honest line in the single-run
->   common case) that **MUST NOT** change the SCI computation, invocation, or gate — finding-stability never
->   inflates readiness or clears a blocker. Three new standing checks (commit-consistency, by_file, repo-root)
->   → suite **31 files / 286 checks**. Re-run on the three real ledgers: load-bearing facts unchanged
->   (confirmed-per-run 8/6/7; controller-FLS the one reliably-recurring blocker; Jaccard 0.40/0.67/0.44);
->   `commit_consistency` reports `consistent` (all three at one commit). Docs: `docs/recurrence-confidence.md`
->   §7 "Wiring & usage". Tag stays **HELD**.
-> - **0.8.11** — **the SF-ops safety gate: fail-closed consent enforcement for IRREVERSIBLE Salesforce /
->   host operations.** The deployed-package deep-audit skills run live, irreversible ops as prose-only
->   Bash (worst: `sf package version promote`, which PERMANENTLY releases a 2GP version that can never be
->   removed); a prior full-auto run skipped the consent asks and fanned out anyway. New PreToolUse hook
->   `hooks/sf-ops-gate-hook.mjs` (matcher `Bash`, the 2nd hook in `hooks.json`) classifies each command on
->   its ACTION VERB and **DENIES** a gated op — inside a `.security-review/`-managed repo — unless an
->   affirmative consent for its gate is recorded (`harness/record-consent.mjs`, Phase-1 substrate). **Three
->   gates:** `sf-package-promote` (its OWN gate, for the permanent release, with a permanence-emphasizing
->   deny), `sf-deep-audit-ops` (version create / install / uninstall, scratch|sandbox create, org delete,
->   data delete, deploy), `sf-cli-setup` (`sf org login`, `npm install -g`). **Robust normalization** (the
->   adversarial surface): splits on `&& || ; |` + newlines and gates a chain on ANY segment; strips leading
->   env-assignments + `sudo`/`npx`; accepts `sf`/`sfdx`, space-verb + colon + `force:*` legacy forms;
->   verb-based so read-only verbs (`… version list`, `org list`, `config get`, `--help`) and all non-sf Bash
->   pass. **Fail-to-ALLOW** on a malformed/absent payload or out-of-scope cwd — it never blocks arbitrary
->   Bash. **Wired into the 6 gated skills** (`bootstrap-cli-auth`, `build-managed-package` [+ a SEPARATE
->   permanence ask before promote], `install-and-verify-package`, `audit-deployed-package`,
->   `teardown-mcp-registration`, `run-scans`): each couples a mandatory operator `AskUserQuestion` to a
->   `record-consent` call and narrows `allowed-tools` to permit it — a skipped ask means the op is denied,
->   not silently run. **Honest residual** (documented): a deliberately obfuscated op (base64-eval, `$(…)`,
->   variable indirection) can still evade the classifier — "an honest driver running the documented ops is
->   gated," not "impossible to bypass." New standing test `acceptance/test-sf-ops-gate-hook.mjs` (22 checks,
->   inline payloads, no live sf) + one carried-over recurrence nit (by_file `has_reliable_blocker` false
->   branch) → suite **32 files / 309 checks**. Docs: `docs/sf-ops-safety-gate.md`; CONVENTIONS §7/§8. Tag
->   stays **HELD**.
-> - **0.8.12** — **sf-ops-gate classifier hardening** (off-disk 6-skeptic adversarial-bypass grade). The
->   hook's architecture was verified sound (consent coupling, managed-repo scope, gate separation,
->   fail-closed, no fail-open — all UNCHANGED), but the COMMAND CLASSIFIER leaked ~15 irreversible-op
->   bypasses in the forbidden direction (op → ALLOW without consent), several reachable by an honest driver.
->   Closed: **CLI identification** (basename + unquote/unescape — `/usr/local/bin/sf`, `./sf`, `"sf"`, `\sf`);
->   **wrapper + grouping stripping** (`command`/`exec`/`time`/`nice`/`nohup`/`watch` added; `sudo -u nobody`
->   value-flags; `(sf …)`/`{ sf …; }`/`((sf …))`); **`sh -c`/`eval` unwrapping** (best-effort, incl. a
->   separator inside the quoted inner command + a chained `… && bash -c "…"`); **separator split** (added
->   single `&` + `|&`); **flag-robust verb scan** (skip interspersed flags throughout + match the gated verb
->   as a CONTIGUOUS run, so `sf --json … promote` / `sf -o foo package install` / `--json sf …` /
->   `sf -- … promote` classify); and **gated-op completeness** (`sf package delete`, `sf package version
->   delete`, `sf sandbox create`/`delete`, `npm uninstall -g`/`un`/`rm`). The honest residual TIGHTENS from
->   "deliberate obfuscation can evade" to "only EXOTIC runtime/shell-eval forms evade" (`$(…)`/backticks,
->   `$CMD`/`${CMD}`, `source <(…)`, base64-decode-eval) — these require running the shell, which a static
->   classifier cannot, and stay ALLOW BY DESIGN. A standing **adversarial bypass battery** regression-locks
->   ~36 bypass forms (must DENY), a benign no-false-denies set, and the exotic residual (stays ALLOW). +3
->   checks → suite **32 files / 312 checks**. Docs: `docs/sf-ops-safety-gate.md`; hook header. Tag stays
->   **HELD**.
-> - **0.8.13** — **sf-ops-gate honesty recalibration + a cheap wrapper gap** (final calibration of the
->   0.8.12 hardening). The defect: `timeout` was omitted from the wrapper strip-list, yet the HONEST
->   RESIDUAL claimed "only EXOTIC runtime/shell-eval forms still evade" — FALSE (a plain `timeout` wrapper
->   is not exotic eval and it evaded). For a fail-closed safety gate whose value IS honesty, the shipped
->   claim must be true. **Recalibrated** the residual (hook header + `docs/sf-ops-safety-gate.md`): the
->   wrapper list is **best-effort, not a complete shell parser** — an UNCOMMON process wrapper can still
->   front a gated op, alongside the exotic eval/substitution forms; dropped the false "only exotic evades."
->   **Closed the easy gap**: added `doas` / `stdbuf` / `xargs` / `timeout` / `ionice` / `setsid` to the
->   wrappers, with `timeout`'s POSITIONAL duration consumed (`timeout [flags] 60 sf …`, `1m`/`5s`). Tests:
->   DENY for `timeout 60` / `doas` / `stdbuf -oL` / `xargs` / `ionice` / `setsid` sf-promote, plus an
->   explicit ALLOW + comment for an UNCOMMON wrapper (`chrt`) that stays a documented residual — so the
->   honest scope is regression-locked exactly like the exotic-eval locks. +1 check → suite **32 files /
->   313 checks**. Consent/scope/deny machinery untouched. Tag stays **HELD**.
-> - **0.8.14** — **published the ceiling test** (`docs/ceiling-test.md`) — the experiment that REFUTED
->   the toolkit's strongest claim, written up as a falsification test rather than buried (the honesty IS
->   the value, CONVENTIONS §2). The doc carries: the **hypothesis** ("at exhaustive the full
->   generate→verify→synthesize pipeline reliably calls the contestable-severity band"), named distinct
->   from the separately-proven "multi-vote stabilizes an ISOLATED pre-identified finding" — the variance
->   lives in the pipeline's GENERATION step, not in adjudicating a fixed input; the **method** (N=3 cold
->   exhaustive runs over identical Solano-fixture code; a two-axis pass/fail bar committed BEFORE run #1
->   and held off-repo so the plugin cache couldn't read it; graded off disk, axes reported separately);
->   the **pre-committed bar** ported generically (Axis 1 generation-set stability — every crit/high
->   recurs in all 3 AND pairwise Jaccard ≥ 0.70; Axis 2 severity stability + correctness vs blind truth;
->   the self-interpreting verdict table) with the findings **role-described**, not named; and the
->   **result — both axes FAILED.** As-graded (issue-class key) pairwise Jaccard **0.56 / 0.67 / 0.44**,
->   the shipped locus-key engine **0.40 / 0.67 / 0.44** — every pair below 0.70; only **one** high
->   (the without-sharing-controller FLS gap) recurs in all 3 runs; the contestable anchors are unstable
->   (the view-all over-grant medium/high/medium and mis-called MEDIUM in 2/3 vs blind HIGH; the prompt
->   delimiter info/high/low; a real contact-PII high confirmed→refuted→confirmed). Verified mechanism:
->   genuine generation churn + a reachability-vs-exposed-surface contestability + severity instability —
->   **not** a single false claim. **Verdict:** Axis-2 FAIL → the hard ceiling: exhaustive does NOT
->   reliably call the contestable band even at max rigor; the scoped true claim (finds the unambiguous
->   blockers + builds the evidence pack; the contestable band needs repeated runs + human adjudication;
->   no fixed run-count is complete; SF pen-tests regardless) is why the tag is HELD. Cross-links:
->   `README.md` honest-scope section → `docs/ceiling-test.md`; `docs/recurrence-confidence.md` →
->   ceiling-test as its motivating result; the doc points back to recurrence-confidence (the product
->   response that makes the variance visible) and distinguishes it from `methodology/known-escapes.md`
->   (novel-CLASS coverage gaps, not contestable-band stability). **Docs-only**; suite unchanged at
->   **32 files / 313 checks**. Tag stays **HELD**.
->
+_Nothing pending — the next change starts a new section here._
+
+---
+
+> **Unreleased on `main` (untagged).** The last published tag is **`v0.7.0`** (cold-validated
+> 2026-06-19). Every version from **`0.7.1`** upward in the sections below is merged to `main`
+> but **not tagged** — they are unreleased-on-`main` checkpoints, not published releases, and
+> the dates are their commit dates on `main`. Each section is a per-version summary; the full
+> change-typed detail for the `0.6.0`–`0.8.x` arc (the `Fixed` / `Changed` / `Added` /
+> `Hardened` / `Roadmap` record and the program-note checkpoints those summaries draw on) is
+> preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
+> above `## [0.5.5]`.
+
+## [0.8.15] — 2026-06-23
+
+- **Pre-public file-level polish — docs genericization + CHANGELOG restructure (docs-only).**
+  The repo is heading public as a portfolio piece; this is the last file-level pass before the
+  separate, operator-run history rewrite. Three changes, no engine or behavior touched:
+  (1) genericized the worked example in `docs/recurrence-confidence.md` §3.2 to a role-neutral
+  illustration (a service file with two disjoint confirmed defects plus a broad refuted span),
+  preserving the interval-transitivity point exactly; (2) genericized the remaining
+  synthetic-fixture class/component names in this CHANGELOG to role descriptions (a
+  without-sharing controller's detail method, an Einstein summarize/coaching action, an
+  access-guard class, a safe-reply enclosure) — the bare `Solano` / `Helios` / `Atlas` fixture
+  **umbrella** names stay, since their generators ship in `acceptance/`; (3) restructured the
+  single large `[Unreleased]` blockquote into Keep-a-Changelog versioned sections with an
+  honest untagged-on-`main` banner, preserving the original change-typed detail verbatim under
+  a **Detailed record** section. Suite unchanged at **32 files / 313 checks**. Tag stays **HELD**.
+
+## [0.8.14] — 2026-06-23
+
+- **published the ceiling test** (`docs/ceiling-test.md`) — the experiment that REFUTED
+  the toolkit's strongest claim, written up as a falsification test rather than buried (the honesty IS
+  the value, CONVENTIONS §2). The doc carries: the **hypothesis** ("at exhaustive the full
+  generate→verify→synthesize pipeline reliably calls the contestable-severity band"), named distinct
+  from the separately-proven "multi-vote stabilizes an ISOLATED pre-identified finding" — the variance
+  lives in the pipeline's GENERATION step, not in adjudicating a fixed input; the **method** (N=3 cold
+  exhaustive runs over identical Solano-fixture code; a two-axis pass/fail bar committed BEFORE run #1
+  and held off-repo so the plugin cache couldn't read it; graded off disk, axes reported separately);
+  the **pre-committed bar** ported generically (Axis 1 generation-set stability — every crit/high
+  recurs in all 3 AND pairwise Jaccard ≥ 0.70; Axis 2 severity stability + correctness vs blind truth;
+  the self-interpreting verdict table) with the findings **role-described**, not named; and the
+  **result — both axes FAILED.** As-graded (issue-class key) pairwise Jaccard **0.56 / 0.67 / 0.44**,
+  the shipped locus-key engine **0.40 / 0.67 / 0.44** — every pair below 0.70; only **one** high
+  (the without-sharing-controller FLS gap) recurs in all 3 runs; the contestable anchors are unstable
+  (the view-all over-grant medium/high/medium and mis-called MEDIUM in 2/3 vs blind HIGH; the prompt
+  delimiter info/high/low; a real contact-PII high confirmed→refuted→confirmed). Verified mechanism:
+  genuine generation churn + a reachability-vs-exposed-surface contestability + severity instability —
+  **not** a single false claim. **Verdict:** Axis-2 FAIL → the hard ceiling: exhaustive does NOT
+  reliably call the contestable band even at max rigor; the scoped true claim (finds the unambiguous
+  blockers + builds the evidence pack; the contestable band needs repeated runs + human adjudication;
+  no fixed run-count is complete; SF pen-tests regardless) is why the tag is HELD. Cross-links:
+  `README.md` honest-scope section → `docs/ceiling-test.md`; `docs/recurrence-confidence.md` →
+  ceiling-test as its motivating result; the doc points back to recurrence-confidence (the product
+  response that makes the variance visible) and distinguishes it from `methodology/known-escapes.md`
+  (novel-CLASS coverage gaps, not contestable-band stability). **Docs-only**; suite unchanged at
+  **32 files / 313 checks**. Tag stays **HELD**.
+
+
+## [0.8.13] — 2026-06-23
+
+- **sf-ops-gate honesty recalibration + a cheap wrapper gap** (final calibration of the
+  0.8.12 hardening). The defect: `timeout` was omitted from the wrapper strip-list, yet the HONEST
+  RESIDUAL claimed "only EXOTIC runtime/shell-eval forms still evade" — FALSE (a plain `timeout` wrapper
+  is not exotic eval and it evaded). For a fail-closed safety gate whose value IS honesty, the shipped
+  claim must be true. **Recalibrated** the residual (hook header + `docs/sf-ops-safety-gate.md`): the
+  wrapper list is **best-effort, not a complete shell parser** — an UNCOMMON process wrapper can still
+  front a gated op, alongside the exotic eval/substitution forms; dropped the false "only exotic evades."
+  **Closed the easy gap**: added `doas` / `stdbuf` / `xargs` / `timeout` / `ionice` / `setsid` to the
+  wrappers, with `timeout`'s POSITIONAL duration consumed (`timeout [flags] 60 sf …`, `1m`/`5s`). Tests:
+  DENY for `timeout 60` / `doas` / `stdbuf -oL` / `xargs` / `ionice` / `setsid` sf-promote, plus an
+  explicit ALLOW + comment for an UNCOMMON wrapper (`chrt`) that stays a documented residual — so the
+  honest scope is regression-locked exactly like the exotic-eval locks. +1 check → suite **32 files /
+  313 checks**. Consent/scope/deny machinery untouched. Tag stays **HELD**.
+
+## [0.8.12] — 2026-06-23
+
+- **sf-ops-gate classifier hardening** (off-disk 6-skeptic adversarial-bypass grade). The
+  hook's architecture was verified sound (consent coupling, managed-repo scope, gate separation,
+  fail-closed, no fail-open — all UNCHANGED), but the COMMAND CLASSIFIER leaked ~15 irreversible-op
+  bypasses in the forbidden direction (op → ALLOW without consent), several reachable by an honest driver.
+  Closed: **CLI identification** (basename + unquote/unescape — `/usr/local/bin/sf`, `./sf`, `"sf"`, `\sf`);
+  **wrapper + grouping stripping** (`command`/`exec`/`time`/`nice`/`nohup`/`watch` added; `sudo -u nobody`
+  value-flags; `(sf …)`/`{ sf …; }`/`((sf …))`); **`sh -c`/`eval` unwrapping** (best-effort, incl. a
+  separator inside the quoted inner command + a chained `… && bash -c "…"`); **separator split** (added
+  single `&` + `|&`); **flag-robust verb scan** (skip interspersed flags throughout + match the gated verb
+  as a CONTIGUOUS run, so `sf --json … promote` / `sf -o foo package install` / `--json sf …` /
+  `sf -- … promote` classify); and **gated-op completeness** (`sf package delete`, `sf package version
+  delete`, `sf sandbox create`/`delete`, `npm uninstall -g`/`un`/`rm`). The honest residual TIGHTENS from
+  "deliberate obfuscation can evade" to "only EXOTIC runtime/shell-eval forms evade" (`$(…)`/backticks,
+  `$CMD`/`${CMD}`, `source <(…)`, base64-decode-eval) — these require running the shell, which a static
+  classifier cannot, and stay ALLOW BY DESIGN. A standing **adversarial bypass battery** regression-locks
+  ~36 bypass forms (must DENY), a benign no-false-denies set, and the exotic residual (stays ALLOW). +3
+  checks → suite **32 files / 312 checks**. Docs: `docs/sf-ops-safety-gate.md`; hook header. Tag stays
+  **HELD**.
+
+## [0.8.11] — 2026-06-23
+
+- **the SF-ops safety gate: fail-closed consent enforcement for IRREVERSIBLE Salesforce /
+  host operations.** The deployed-package deep-audit skills run live, irreversible ops as prose-only
+  Bash (worst: `sf package version promote`, which PERMANENTLY releases a 2GP version that can never be
+  removed); a prior full-auto run skipped the consent asks and fanned out anyway. New PreToolUse hook
+  `hooks/sf-ops-gate-hook.mjs` (matcher `Bash`, the 2nd hook in `hooks.json`) classifies each command on
+  its ACTION VERB and **DENIES** a gated op — inside a `.security-review/`-managed repo — unless an
+  affirmative consent for its gate is recorded (`harness/record-consent.mjs`, Phase-1 substrate). **Three
+  gates:** `sf-package-promote` (its OWN gate, for the permanent release, with a permanence-emphasizing
+  deny), `sf-deep-audit-ops` (version create / install / uninstall, scratch|sandbox create, org delete,
+  data delete, deploy), `sf-cli-setup` (`sf org login`, `npm install -g`). **Robust normalization** (the
+  adversarial surface): splits on `&& || ; |` + newlines and gates a chain on ANY segment; strips leading
+  env-assignments + `sudo`/`npx`; accepts `sf`/`sfdx`, space-verb + colon + `force:*` legacy forms;
+  verb-based so read-only verbs (`… version list`, `org list`, `config get`, `--help`) and all non-sf Bash
+  pass. **Fail-to-ALLOW** on a malformed/absent payload or out-of-scope cwd — it never blocks arbitrary
+  Bash. **Wired into the 6 gated skills** (`bootstrap-cli-auth`, `build-managed-package` [+ a SEPARATE
+  permanence ask before promote], `install-and-verify-package`, `audit-deployed-package`,
+  `teardown-mcp-registration`, `run-scans`): each couples a mandatory operator `AskUserQuestion` to a
+  `record-consent` call and narrows `allowed-tools` to permit it — a skipped ask means the op is denied,
+  not silently run. **Honest residual** (documented): a deliberately obfuscated op (base64-eval, `$(…)`,
+  variable indirection) can still evade the classifier — "an honest driver running the documented ops is
+  gated," not "impossible to bypass." New standing test `acceptance/test-sf-ops-gate-hook.mjs` (22 checks,
+  inline payloads, no live sf) + one carried-over recurrence nit (by_file `has_reliable_blocker` false
+  branch) → suite **32 files / 309 checks**. Docs: `docs/sf-ops-safety-gate.md`; CONVENTIONS §7/§8. Tag
+  stays **HELD**.
+
+## [0.8.10] — 2026-06-23
+
+- **recurrence-confidence wired in end-to-end** (it was built at 0.8.7 but inert — nothing
+  produced or surfaced its artifact). Three engine refinements (still pure/deterministic/byte-identical):
+  (a) a **commit-consistency honesty guard** — each run's commit = its last pass's `audited_commit`;
+  output adds `generated_from.runs` + `summary.commit_consistency` (`consistent`/`mixed`/`unknown`), and
+  on `mixed` the caveat warns that an appear/disappear may be a CODE CHANGE (a fix between runs) rather
+  than instability — so the fix→re-run loop's output is never misread as drift (descriptive, never gates);
+  (b) a **`summary.by_file` rollup** — one row per file with `locus_count`, a `{high,review,investigate}`
+  tally, and `has_reliable_blocker`, a presentation view over the per-locus classification (which stays the
+  source of truth); (c) an optional **`--repo-root`** display relativization (strip the prefix from emitted
+  paths, segment-aware, matching unaffected). **Skill wiring:** `audit-codebase` gains **step 9** — archive
+  each independent run's ledger to `.security-review/runs/run-<k>/`, and (≥2 snapshots at the SAME commit)
+  run the engine to `recurrence-confidence.json`; sharply distinguished from the fix→re-run step 8, never
+  auto-orchestrated, with the honest contract stated (no fixed run-count is complete; the human adjudicates
+  the contestable band; SF pen-tests regardless). `compile-submission` step 8 renders an **informational**
+  "Finding Stability (N-run consensus)" section from that artifact (or one honest line in the single-run
+  common case) that **MUST NOT** change the SCI computation, invocation, or gate — finding-stability never
+  inflates readiness or clears a blocker. Three new standing checks (commit-consistency, by_file, repo-root)
+  → suite **31 files / 286 checks**. Re-run on the three real ledgers: load-bearing facts unchanged
+  (confirmed-per-run 8/6/7; controller-FLS the one reliably-recurring blocker; Jaccard 0.40/0.67/0.44);
+  `commit_consistency` reports `consistent` (all three at one commit). Docs: `docs/recurrence-confidence.md`
+  §7 "Wiring & usage". Tag stays **HELD**.
+
+## [0.8.9] — 2026-06-23
+
+- **public-readiness scrub** (the repo is heading open-source as a portfolio piece; file-
+  level only, no git-history rewrite). Portable defaults in `acceptance/build-run-args.mjs` (plugin
+  root resolves from the file's own location via `import.meta.url`; the fixture repo defaults under
+  `os.homedir()` — no machine-specific droplet path baked into shipped code). `.gitignore` hardened so
+  a contributor can never commit a partner's run-state or findings (`.security-review/`,
+  `docs/security-review/`, `.claude/`, `*.jsonl`; verified none are currently tracked). Author droplet
+  paths used as **test data** genericized to neutral roots (`/abs/repo`, `/home/user/project`) in
+  `test-ledger-staleness-adversary.mjs` — input, repoRoot, and expected tokens changed together, both
+  staleness tests re-run green — and the residual prose mention neutralized to "the host product repo".
+  New OSS community files in the toolkit's voice: **`SECURITY.md`** (vuln-disclosure policy — honest
+  scope: prepares submissions, not a hosted service, no guarantee about your package; report via GitHub
+  private reporting or `dev@runverdict.com`), **`CONTRIBUTING.md`** (the green-suite bar, the §2/§3/§4/§9
+  rules, conventional commits, Node 18+), and **`CODE_OF_CONDUCT.md`** (Contributor Covenant v2.1). Plus
+  **CI**: `.github/workflows/test.yml` runs the full acceptance suite on push/PR (Node 20), a status
+  badge on the README, and the Node 18+ prerequisite documented. No code/engine behavior changed; suite
+  unchanged at **31 files / 280 checks**. Tag stays **HELD**.
+
+## [0.8.8] — 2026-06-23
+
+- off-disk audit fix-up of the 0.8.7 slice. **(P0 bug) bare-basename over-merge in
+  `fileSuffixMatch`**: a single-segment file cite (a bare basename) was treated as a valid suffix of
+  any deeper path with the same basename, so `package.json` matched BOTH `frontend/package.json` and
+  `backend/package.json` and single-linkage clustering fused three different files into one
+  `all_runs` / `confidence=high` locus — false confidence, the forbidden direction (over-merge can
+  hide a distinct finding; the M10/M11 lesson). Latent on the Solano data (its basenames are unique
+  multi-segment paths) but fixed in the load-bearing matcher: **exact** path equality always matches
+  (a root-level `Dockerfile` cited identically still merges), but at **differing depth** the shorter
+  segment list must be **≥ 2** (basename + a parent dir) before it counts as a tail — a bare basename
+  can no longer bridge. **Two new invariant tests** lock it: the bare-basename non-over-merge (three
+  same-basename files in different dirs → three `single_run` loci, plus the identical-`Dockerfile`
+  positive) and the **two-phase anti-bridge** (a broad refuted finding overlapping two disjoint
+  confirmed defects attaches to one without fusing them — the confirmed-anchored clustering had no
+  test). Plus **§3 genericization** of `docs/recurrence-confidence.md` §6 (real fixture class names →
+  role descriptions; one provenance line). Re-run on the three real ledgers: load-bearing facts
+  **unchanged** (confirmed-per-run 8/6/7; pairwise Jaccard 0.40/0.67/0.44; the controller-FLS the one
+  reliably-recurring blocker) — the stricter matcher is a no-op on that data, confirming the bug was
+  latent. Suite now **31 files / 280 checks**. Tag stays **HELD**.
+
+## [0.8.7] — 2026-06-23
+
+- the **recurrence-confidence engine** (`harness/recurrence-confidence.mjs`), the first
+  build off the Solano refutation: a pure, deterministic, dependency-free engine that takes **N
+  independent run-ledgers of the same codebase** and classifies each finding by how reliably it
+  recurred — `all_runs` / `some_runs` / `single_run`, with `confidence=high` reserved for the
+  `all_runs` + confirmed-every-run + severity-stable set (the **reliably-recurring blocker** set),
+  everything else `review` / `investigate` (the contestable band the human owns). Cross-run matching
+  is **locus-based** (reusing the now-exported `normFile` / `lineSpan` / `spansOverlap` primitives
+  from `finding-clusters.mjs`; `finding.id` is unusable across runs because finder titles drift),
+  with path-suffix reconciliation for absolute-vs-relative file cites and **confirmed-anchored
+  clustering** so a broad refuted finding can't fuse two disjoint confirmed defects. Per-run
+  confirmed counts + pairwise Jaccard are reported as **metrics only** (they gate nothing); the
+  standing honesty caveat is embedded (no fixed run-count = complete; SF pen-tests regardless). Run
+  against the three real Solano ledgers it reproduces the ground truth — the controller-FLS high
+  recurs 3/3 (`confidence=high`), `viewAllRecords` / prompt-delimiter are `all_runs` but
+  severity-unstable, the Contact-PII high flips confirmed→refuted→confirmed, pairwise Jaccard
+  **0.40 / 0.67 / 0.44** (consistent with the 0.44–0.67 refutation). Standing test
+  `acceptance/test-recurrence-confidence.mjs` (15 checks, inline synthetic fixtures); spec in
+  `docs/recurrence-confidence.md`. Skill wiring + cold validation pending; the tag stays **HELD**.
+
+## [0.8.4–0.8.6] — 2026-06-22
+
+- the **durable consent coupling**: `record-consent.mjs` + a fail-closed
+  audit-launch gate (a skipped consent ask physically cannot launch the audit); the journey +
+  audit-codebase gates made mandatory `AskUserQuestion` stops; **four adversarial bypasses closed**
+  (second-substrate, forge-asymmetry, isAffirmative-leaks-declines, forgeable belt); and
+  `isAffirmative` deny-precedence so a natural "no" never records as consent.
+
+## [0.8.3] — 2026-06-22
+
+- version bump so a cold run pulls the current code (the `plugin update` trigger).
+
+## [0.8.2] — 2026-06-20
+
+- three **calibration false-positive patterns** encoded into verifier guidance from a
+  blind 30-judge verification (reachability-is-a-precondition-for-severity; availability ≠
+  security; a missing grant is fail-closed, not a vuln); **Track-1b** cross-dimension ledger dedup
+  (collapse same-file + overlapping-line-span multi-lens findings into one entry); and a
+  **webhook / HMAC-compute-DoS** resource-consumption recalibration.
+
+## [0.8.1] — 2026-06-20
+
+- Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
+  journey "triage → blocker-policy gate" relabel.
+
+## [0.7.2] — 2026-06-19
+
+- **`namespace-check` — the deep-audit BUILD precondition.** The managed-2GP build is offered
+  only when an authed Dev Hub actually carries the package's `namespacePrefix`, so the toolkit
+  never offers a build that would fail at `sf package version create` (and mutate the repo
+  first); otherwise it shows the prerequisite. Full detail under **Detailed record** below.
+
+## [0.7.1] — 2026-06-19
+
+- **`docker-check` — the throwaway-DAST docker precondition (graceful degradation).** Detects
+  Docker (`available` | `absent` | `daemon-down`) and offers the throwaway DAST only when it can
+  actually run; else an honest "install Docker once, or DAST stays owner-run" (Docker is a
+  *guided* prerequisite, never tmp-installed — it is a privileged daemon). Full detail under
+  **Detailed record** below.
+
+## [0.7.0] — 2026-06-19 — last published tag (cold-validated)
+
+- **The autonomous throwaway-DAST harness.** The server-tier analogue of the deployed-org deep
+  audit: `stack-detect` classifies whether the external backend can stand up; `standup-stack`
+  runs it as an isolated throwaway container (copy-in, synthetic secrets, names-not-values
+  manifest, `127.0.0.1`-only); `run-dast` runs a digest-pinned ZAP against that disposable
+  mirror and writes self-labelled *local-throwaway* evidence; `teardown-stack` destroys it
+  (name-scoped, guaranteed); `scaffold-env` handles a `needs-secrets` stack. 12 adversarial-audit
+  findings (several HIGH) were fixed before the tag. Shipped in the unified `0.6.0`+`0.7.0`
+  `main` build. Full detail under **Detailed record** below.
+
+## [0.6.0] — 2026-06-19
+
+- **Consented, tmp-scoped scanner install.** `tool-detect` reports which scan tools are present
+  vs installable-on-consent; `install-scanners` (the one network-touching engine, fail-closed
+  without explicit consent; raw binaries sha256-pinned and verified before exec) installs the
+  missing ones to a tmp dir, turning the external-SAST/SCA/secret/TLS families from
+  `PENDING-OWNER-RUN` into real evidence; `cleanup-scanners` removes the binaries while keeping
+  the evidence. 13 adversarial-audit findings were fixed before validation. Shipped in the
+  unified `0.6.0`+`0.7.0` `main` build. Full detail under **Detailed record** below.
+
+## Detailed record & program notes — the 0.6.0–0.8.x arc (untagged on `main`)
+
+The full change-typed detail behind the per-version summaries above, preserved verbatim — the
+program-note checkpoints first, then the `Fixed` / `Changed` / `Added` / `Hardened` / `Changed`
+/ `Roadmap` record. (Restructured into the versioned sections above in 0.8.15; this section is
+the original detail, kept intact.)
+
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
 > against a pre-committed bar, showed the contestable-severity band is UNSTABLE run-to-run (Jaccard
@@ -189,10 +295,11 @@ follow semantic versioning.
 > produces the artifact; compile-submission renders it informational-only (never touching the SCI gate).
 > Not yet built: the adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations,
 > reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 32 files / 313 checks, green.
-> **Doc-debt note:** the detailed 2026-06-19 note below is the
-> prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
-> versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops
-> behind prose-only consent (a pre-public-release hardening item) — both tracked for a fresh session.
+> **Doc-debt note (resolved by 0.8.15):** the detailed 2026-06-19 note below is the
+> prior checkpoint (accurate for its scope). The `[Unreleased]` restructuring into versioned
+> sections landed in 0.8.15 (the versioned sections above; this block preserves the original
+> change-typed detail verbatim), and the live-SF deep-audit `sf`-ops prose-only-consent gap was
+> closed by the SF-ops safety gate in 0.8.11–0.8.13.
 
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
@@ -243,7 +350,7 @@ follow semantic versioning.
 > and removed from `main` for the run window — stronger isolation than the Helios
 > `expected-findings.md` precedent, on purpose, because the run's whole value is honest judgment.
 > PHASE A **restores the key to the repo and updates it to the corrected post-rebuild reality**
-> (the execution-identity bot + `SolanoSummarizeAction` are now clean controls; C5 is reframed as a
+> (the execution-identity bot + the Einstein summarize action are now clean controls; C5 is reframed as a
 > SOURCE-permset finding; the Expected-SCI section is rewritten honestly). Re-isolate the key the
 > same way before the cold RE-RUN (see the key's *Cold-run isolation* section).
 
@@ -317,7 +424,7 @@ follow semantic versioning.
     the assembler now record the consents in setup.
 - **Cross-dimension severity dedup IN the ledger — Track-1b (2026-06-22; engine + test-backed).**
   The Solano cold-at-standard run double-reported ONE root cause — "Missing FLS enforcement in
-  `SolanoOpportunityController.getOpportunityDetail`" — as TWO HIGH ledger entries, one under
+  a without-sharing controller's detail method" — as TWO HIGH ledger entries, one under
   `apex-exposed-surface` and one under `web-client`. The dedup id is `SHA-256(normalized_file +
   "\n" + normalized_title)`, so two dimensions giving the SAME file but DIFFERENT titles hash
   distinct and never merge. The §5.2 note already said "one root cause → one row at the single
@@ -358,13 +465,13 @@ follow semantic versioning.
     making its `UserInfo.getUserId()` scoping the VerifiedCustomerId auto-fail. Retyped to
     `EinsteinCopilot` (employee-facing, runs as the prompting user) → `getUserId()` is now correct
     and the bot is a clean control. Action-classification doc updated to match.
-  - **Prompt-injection (`SolanoSummarizeAction`):** raw `req.context` flowed straight into
+  - **Prompt-injection (the Einstein summarize action):** raw `req.context` flowed straight into
     `ConnectApi.EinsteinLLM`. Now fenced in a per-inference cryptographically-random enclosure with
-    a data-cannot-override clause (the `Solano_SafeReply` design) → clean control.
-  - **Denial-of-wallet (`SolanoSummarizeAction`):** the metered `generateMessages` callout sat in
+    a data-cannot-override clause (the safe-reply enclosure design) → clean control.
+  - **Denial-of-wallet (the Einstein summarize action):** the metered `generateMessages` callout sat in
     an unbounded per-element loop. Now the request count is capped and the per-call input is
     truncated → bounded paid round-trips, clean control.
-  - **Deploy blocker:** `SolanoCoachingAction` referenced `Body__c`/`Opportunity__c` (and the
+  - **Deploy blocker:** an Einstein coaching action referenced `Body__c`/`Opportunity__c` (and the
     controller referenced `Opportunity.Forecast_System_Score__c`) with no field metadata → the
     package would not deploy. Added all three custom-field definitions (the master-detail
     `Opportunity__c` satisfies the object's `ControlledByParent` sharing). A build-time
@@ -415,7 +522,7 @@ follow semantic versioning.
     never a finding; the security finding is always an OVER-grant, never an under-grant. →
     `agentforce-package`, `apex-exposed-surface`, `admin-surface` (§5 + §6).
 - **Cross-dimension single-severity reconciliation note (`audit-methodology.md` §5.2).** A blind run
-  surfaced one root cause (`worker.js:3`) at HIGH from `secrets-credentials` AND LOW from
+  surfaced one root cause (a single background-worker source line) at HIGH from `secrets-credentials` AND LOW from
   `error-handling-disclosure`. Added a one-line note: a merged cross-dimension duplicate is presented
   ONCE at the single highest VERIFIED `adjusted_severity` (`finding-clusters.mjs` already does this
   per-file for the headline; the report's per-finding list must reconcile the same way). Prose note;
@@ -444,7 +551,7 @@ follow semantic versioning.
     contestable issues**, each a distinct judgment axis, each with a clean negative near-control
     beside it: C1 severity-boundary (owner-scoped PII read with no explicit FLS — low vs medium),
     C2 tempting FP (a `without sharing` AuraEnabled that LOOKS like IDOR but routes every id
-    through a separate `SolanoAccessGuard` first — refute), C3 fix-vs-document (a DAST medium —
+    through a separate access-guard class first — refute), C3 fix-vs-document (a DAST medium —
     missing HSTS behind an edge TLS terminator — acceptable-with-justification), C4 partial
     evidence (a second `worker/` source root the external SAST does not cover), C5 deployed
     artifact (an installed permission set granting `viewAllRecords` on the snapshot object — a
