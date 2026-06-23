@@ -1,6 +1,6 @@
 # SF-ops safety gate — fail-closed consent for irreversible operations
 
-**Status: SHIPPED on `main` (0.8.11, UNTAGGED).**
+**Status: SHIPPED on `main` (0.8.11; classifier hardened 0.8.12, UNTAGGED).**
 
 The deployed-package deep audit runs **irreversible** Salesforce / host operations as
 prose-only Bash inside skills. A prior full-auto run skipped the consent asks and fanned
@@ -17,8 +17,8 @@ keys under `<target>/.security-review/consent/<gate>.json`.
 | Gate | Covers | Why it is gated |
 |---|---|---|
 | `sf-package-promote` | `sf package version promote` **only** | PERMANENTLY releases a managed 2GP version — it can never be deleted, un-promoted, or hidden. Its own gate, with a distinctly-worded permanence ask. |
-| `sf-deep-audit-ops` | `sf package version create`, `sf package install`/`uninstall`, `sf org create scratch\|sandbox`, `sf org delete`, `sf data delete`, `sf project deploy` (and the sfdx legacy `force:*` equivalents) | Mutates orgs / builds artifacts; reversible only at cost, some not at all. |
-| `sf-cli-setup` | `sf org login *` (writes credentials), `npm install -g` | Mutates the host / stores secrets. The tmp-scoped `install-scanners.mjs` path is preferred; the global `-g` install is the gated fallback. |
+| `sf-deep-audit-ops` | `sf package version create`/`delete`, `sf package install`/`uninstall`/`delete`, `sf org create scratch\|sandbox`, `sf org delete`, `sf sandbox create`/`delete`, `sf data delete`, `sf project deploy` (and the sfdx legacy `force:*` equivalents) | Mutates orgs / builds artifacts; reversible only at cost, some not at all. |
+| `sf-cli-setup` | `sf org login *` (writes credentials), `npm install -g` / `npm uninstall -g` | Mutates the host / stores secrets. The tmp-scoped `install-scanners.mjs` path is preferred; the global `-g` install is the gated fallback. |
 
 `sf-package-promote` is **separate** from `sf-deep-audit-ops` by design: a recorded
 deep-audit consent does **not** authorize a permanent release, and vice-versa. The promote
@@ -34,11 +34,17 @@ deny reason spells out the irreversibility.
    payload, or an unreadable command, also allows (it never blocks arbitrary Bash).
 2. **Classify** on the **action verb**, not a substring, so read-only verbs always pass
    (`sf package version list`, `sf org list`, `sf config get`, anything `--help`). The
-   command is split on shell separators (`&&` `||` `;` `|` newline) and each segment is
-   normalized — leading env-var assignments and `sudo`/`npx` (with flags) stripped,
-   whitespace collapsed, both `sf` and `sfdx`, both the space-verb and the colon /
-   `force:*` legacy forms accepted. A chain is gated if **any** segment is irreversible;
-   the highest-severity match (promote > deep-audit > cli-setup) names the deny.
+   normalization (hardened 0.8.12) unwraps a whole `sh -c "…"` / `eval "…"` (and a chained
+   `… && bash -c "…"`) and classifies the inner command; splits on shell separators
+   (`&&` `||` `|&` `;` `&` `|` newline); strips leading shell grouping (`(sf …)`,
+   `{ sf …; }`, `((sf …))`), env-var assignments, and command wrappers (`env`, `sudo`,
+   `npx`, `command`, `exec`, `time`, `nice`, `nohup`, `watch` — each with their flags,
+   incl. a `-x val` value-flag); basename-matches + unquotes the CLI token
+   (`/usr/local/bin/sf`, `./sf`, `"sf"`, `\sf` → `sf`); and SKIPS interspersed flags in
+   the verb scan, matching the gated verb as a contiguous run (so a global flag's value,
+   or the leading `force` of the sfdx colon form `force:package:version:promote`, doesn't
+   defeat it). A chain is gated if **any** segment is irreversible; the highest-severity
+   match (promote > deep-audit > cli-setup) names the deny.
 3. **Enforce.** For a classified op, `verifyConsent(<gate>, {target: root})`. Recorded
    affirmative → allow. Absent / negative → **deny** (exit 0 + the PreToolUse
    `permissionDecision: "deny"` JSON), with a reason that names the op, the gate, and how
@@ -50,14 +56,18 @@ ask leaves no consent → the hook denies the op. The op is denied, **not silent
 
 ## Honest residual
 
-The classifier catches the canonical + normalized command forms. A **deliberately
-obfuscated** op — base64-decode-and-eval, variable indirection, command substitution
-`$(…)`, writing the command to a file and sourcing it — can still evade a regex over an
-LLM-driver's free-form Bash. This is the inherent limit of any such gate, and the same
-honest residual the Phase-1 consent belt documents. **The claim is "an honest driver
-running the documented ops is gated," not "impossible to bypass."** Defense-in-depth the
-operator opts into, never structural impossibility — and Salesforce performs its own
-review regardless.
+After the 0.8.12 hardening, the classifier catches the documented + normalized forms
+(CLI paths, quoting, wrappers, grouping, `sh -c`/`eval`, interspersed flags, the
+`force:*` legacy verbs, and the gated-op set below). Only **EXOTIC runtime / shell-eval
+forms** still evade — command substitution `$(…)` / backticks, variable indirection
+(`$CMD` / `${CMD}`), process-substitution `source <(…)`, and a base64-decode-pipe-to-shell
+one-liner — because resolving them requires actually running the shell, which a static
+classifier cannot. This is the inherent limit of any such gate, and the same honest
+residual the Phase-1 consent belt documents. **The claim is "an honest driver running the
+documented ops is gated," not "impossible to bypass."** Defense-in-depth the operator
+opts into, never structural impossibility — and Salesforce performs its own review
+regardless. The standing test `acceptance/test-sf-ops-gate-hook.mjs` regression-locks
+both the bypass battery (must DENY) and the exotic residual (stays ALLOW by design).
 
 ---
 

@@ -28,21 +28,29 @@
  *       force:* equivalents).
  *   • sf-cli-setup       — `sf org login *` (writes credentials), `npm install -g`.
  *
- * NORMALIZATION (the adversarial surface). Before classifying, each command is split
- * on shell separators (&& || ; | newline) and EACH segment is normalized: leading
- * env-var assignments and `sudo`/`npx` (with their flags) are stripped; whitespace
- * collapsed; both `sf` and `sfdx`, both the space-verb form (`sf package version
- * promote`) and the colon form (`sf package:version:promote` / legacy
- * `force:package:version:promote`) are accepted. A chain is gated if ANY segment is
- * an irreversible op; the highest-severity match (promote > deep-audit > cli-setup)
- * names the deny.
+ * NORMALIZATION (the adversarial surface; hardened 0.8.12). Before classifying, a
+ * WHOLE `sh -c "…"` / `eval "…"` wrapper is unwrapped and its inner command classified
+ * (so a separator inside the quoted inner command survives), then the command is split
+ * on shell separators (&& || |& ; & | newline) and a chained `… && bash -c "…"` segment
+ * is unwrapped too. Each segment is normalized: leading shell grouping (`(sf …)`,
+ * `{ sf …; }`, `((sf …))`), env-var assignments, and command wrappers — `env`, `sudo`,
+ * `npx`, `command`, `exec`, `time`, `nice`, `nohup`, `watch`, each with their flags
+ * (incl. a `-x val` value-flag like `sudo -u nobody`) — are stripped; whitespace
+ * collapsed. The CLI token is basename-matched + unquoted (`/usr/local/bin/sf`, `./sf`,
+ * `"sf"`, `\sf` → `sf`); `sf`/`sfdx`/`npm` accepted. The verb scan SKIPS flags
+ * throughout (not stop-at-first) and matches the gated verb as a CONTIGUOUS run, so
+ * interspersed flags, a global flag's value, and the leading `force` of the sfdx colon
+ * form (`force:package:version:promote`) don't defeat it. A chain is gated if ANY
+ * segment is an irreversible op; the highest-severity match (promote > deep-audit >
+ * cli-setup) names the deny.
  *
- * HONEST RESIDUAL. The classifier catches the canonical + normalized command forms.
- * A DELIBERATELY obfuscated op — base64-decode-and-eval, variable indirection,
- * command substitution `$(…)`, writing the command to a file and sourcing it — can
- * still evade a regex over an LLM-driver's free-form Bash. This is the same inherent
- * limit the Phase-1 consent belt documents. The claim is "an honest driver running
- * the documented ops is gated," NOT "impossible to bypass."
+ * HONEST RESIDUAL (tightened 0.8.12). The classifier now catches the documented +
+ * normalized forms above. Only EXOTIC runtime / shell-eval forms still evade —
+ * command substitution `$(…)` / backticks, variable indirection (`$CMD` / `${CMD}`),
+ * process-substitution `source <(…)`, and a base64-decode-pipe-to-shell one-liner —
+ * because resolving them requires actually running the shell, which a static classifier
+ * cannot. This is the same inherent limit the Phase-1 consent belt documents. The claim
+ * is "an honest driver running the documented ops is gated," NOT "impossible to bypass."
  *
  * DENY MECHANISM (PreToolUse, verified 2026-06): exit 0 + stdout JSON
  * hookSpecificOutput.permissionDecision="deny" — NOT exit 2. allow = exit 0, no stdout.
@@ -77,64 +85,140 @@ function findRepoRoot(startDir) {
 // ---------------------------------------------------------------------------
 const GATE_RANK = { 'sf-package-promote': 3, 'sf-deep-audit-ops': 2, 'sf-cli-setup': 1 }
 
-// Strip a leading env-var run + sudo/npx wrappers (with their flags); collapse ws.
+const CLIS = new Set(['sf', 'sfdx', 'npm'])
+// Leading command wrappers that hand off to the real command (each may carry flags).
+const WRAPPERS = new Set(['env', 'sudo', 'npx', 'command', 'exec', 'time', 'nice', 'nohup', 'watch'])
+const SHELLS = /^(?:bash|sh|zsh|dash|ksh|ash)$/i
+const NPM_INSTALL = new Set(['install', 'i', 'in', 'ins', 'inst', 'add'])
+const NPM_UNINSTALL = new Set(['uninstall', 'un', 'unlink', 'remove', 'rm', 'r'])
+
+// Basename + unquote/unescape, lowercased → so `/usr/local/bin/sf`, `./sf`, `bin/sf`,
+// `~/bin/sf`, `"sf"`, `'sf'`, `\sf` all resolve to `sf`.
+function cliName(tok) {
+  let t = String(tok || '').trim()
+  t = t.replace(/^"([^"]*)"$/, '$1').replace(/^'([^']*)'$/, '$1') // surrounding quotes
+  t = t.replace(/\\/g, '') // escape backslashes
+  t = t.split('/').pop() || t // basename
+  return t.toLowerCase()
+}
+const isCli = (tok) => CLIS.has(cliName(tok))
+const isWrapper = (tok) => WRAPPERS.has(cliName(tok))
+const isEnvAssign = (tok) => /^[A-Za-z_][A-Za-z0-9_]*=[^\s]*$/.test(tok)
+
+// Expose the real command: strip leading shell grouping (`(sf …)`, `{ sf …; }`,
+// `((sf …))`), leading env-var assignments, and command wrappers — each wrapper with
+// its own flags, where a short flag with no `=` may consume a following VALUE token
+// (`sudo -u nobody sf …`) but not the command/wrapper itself (`env -i sf …`). Collapse ws.
 function normSegment(seg) {
   let s = String(seg).replace(/\s+/g, ' ').trim()
-  let prev
-  do {
-    prev = s
-    s = s.replace(/^[A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+/, '') // one leading NAME=value
-    s = s.replace(/^env\s+/i, '') // `env [NAME=val] sf …`
-    s = s.replace(/^sudo\s+(?:-\S+\s+)*/i, '') // sudo + its own flags
-    s = s.replace(/^npx\s+(?:-\S+\s+)*/i, '') // npx + its own flags
-  } while (s !== prev)
-  return s
+  s = s.replace(/^[\s(){]+/, '').replace(/[\s)};]+$/, '') // shell grouping
+  const toks = s.split(' ').filter(Boolean)
+  let i = 0
+  while (i < toks.length) {
+    if (isEnvAssign(toks[i])) { i++; continue }
+    if (isWrapper(toks[i])) {
+      i++
+      while (i < toks.length && toks[i].startsWith('-')) {
+        const f = toks[i]; i++
+        if (!f.includes('=') && i < toks.length && !toks[i].startsWith('-') && !isCli(toks[i]) && !isWrapper(toks[i])) i++
+      }
+      continue
+    }
+    break
+  }
+  return toks.slice(i).join(' ')
 }
 
-// Leading non-flag tokens after the CLI, colon-form expanded → the verb path array.
-function extractVerb(toks) {
+// All non-flag tokens after the CLI (flags + the `--` marker skipped THROUGHOUT, not
+// stopped-at), colon-form expanded → the verb path. Conservative: a flag VALUE that is
+// collected as a verb token only ever OVER-gates a non-executing form, never under-gates.
+function extractVerb(toks, start) {
   const verb = []
-  for (let i = 1; i < toks.length; i++) {
-    if (toks[i].startsWith('-')) break
-    for (const part of toks[i].split(':')) if (part) verb.push(part.toLowerCase())
+  for (let i = start + 1; i < toks.length; i++) {
+    const t = toks[i]
+    if (t === '--' || t.startsWith('-')) continue
+    for (const part of t.split(':')) if (part) verb.push(part.toLowerCase())
   }
   return verb
+}
+
+// True iff `needle` occurs as a CONTIGUOUS run in `v` (so a leading sfdx `force` token,
+// or a global flag's value collected ahead of the verb, doesn't defeat the match).
+function seq(v, ...needle) {
+  for (let i = 0; i + needle.length <= v.length; i++) {
+    let ok = true
+    for (let j = 0; j < needle.length; j++) if (v[i + j] !== needle[j]) { ok = false; break }
+    if (ok) return true
+  }
+  return false
 }
 
 function classifySfVerb(v) {
   if (!v.length) return null
   const has = (t) => v.includes(t)
-  const pre = (...p) => p.every((x, i) => v[i] === x)
 
-  // PROMOTE — its own gate, highest severity (permanent release).
-  if (pre('package', 'version', 'promote')) return 'sf-package-promote'
-  if (pre('force', 'package') && has('promote')) return 'sf-package-promote' // sfdx legacy
+  // PROMOTE — its own gate (permanent release). seq() matches the sfdx
+  // `force:package:version:promote` legacy form too; the force+promote fallback catches
+  // any `force:package:…:promote` variant.
+  if (seq(v, 'package', 'version', 'promote') || (seq(v, 'force', 'package') && has('promote'))) return 'sf-package-promote'
 
-  // DEEP-AUDIT OPS — install/uninstall, version create, org create/delete, data delete, deploy.
-  if (pre('package', 'version', 'create')) return 'sf-deep-audit-ops'
-  if (pre('package', 'install') || pre('package', 'uninstall')) return 'sf-deep-audit-ops'
-  if (pre('force', 'package') && (has('create') || has('install') || has('uninstall'))) return 'sf-deep-audit-ops'
-  if (pre('org', 'create', 'scratch') || pre('org', 'create', 'sandbox') || pre('force', 'org', 'create')) return 'sf-deep-audit-ops'
-  if (pre('org', 'delete') || pre('force', 'org', 'delete')) return 'sf-deep-audit-ops'
-  if (pre('data', 'delete') || (pre('force', 'data') && has('delete'))) return 'sf-deep-audit-ops'
-  if (pre('project', 'deploy') || pre('force', 'source', 'deploy') || pre('force', 'source', 'push') || pre('force', 'mdapi', 'deploy')) {
+  // DEEP-AUDIT OPS — version create/delete, package install/uninstall/delete, org/sandbox
+  // create/delete, data delete, deploy (+ the sfdx legacy force:* forms).
+  if (seq(v, 'package', 'version', 'create') || seq(v, 'package', 'version', 'delete')) return 'sf-deep-audit-ops'
+  if (seq(v, 'package', 'install') || seq(v, 'package', 'uninstall') || seq(v, 'package', 'delete')) return 'sf-deep-audit-ops'
+  if (seq(v, 'force', 'package') && (has('create') || has('install') || has('uninstall') || has('delete'))) return 'sf-deep-audit-ops'
+  if (seq(v, 'org', 'create', 'scratch') || seq(v, 'org', 'create', 'sandbox') || seq(v, 'force', 'org', 'create')) return 'sf-deep-audit-ops'
+  if (seq(v, 'sandbox', 'create') || seq(v, 'sandbox', 'delete')) return 'sf-deep-audit-ops'
+  if (seq(v, 'org', 'delete') || seq(v, 'force', 'org', 'delete')) return 'sf-deep-audit-ops'
+  if (seq(v, 'data', 'delete') || (seq(v, 'force', 'data') && has('delete'))) return 'sf-deep-audit-ops'
+  if (seq(v, 'project', 'deploy') || seq(v, 'force', 'source', 'deploy') || seq(v, 'force', 'source', 'push') || seq(v, 'force', 'mdapi', 'deploy')) {
     return 'sf-deep-audit-ops'
   }
 
   // CLI SETUP — credential-writing login.
-  if (pre('org', 'login') || pre('force', 'auth')) return 'sf-cli-setup'
+  if (seq(v, 'org', 'login') || seq(v, 'force', 'auth')) return 'sf-cli-setup'
 
   return null
 }
 
-function classifyNpm(toks) {
+function classifyNpm(toks, start) {
   let verb = null
-  for (let i = 1; i < toks.length; i++) {
+  for (let i = start + 1; i < toks.length; i++) {
     if (!toks[i].startsWith('-')) { verb = toks[i].toLowerCase(); break }
   }
-  if (verb !== 'install' && verb !== 'i') return null
+  if (!verb || (!NPM_INSTALL.has(verb) && !NPM_UNINSTALL.has(verb))) return null
   const global = toks.some((t) => t === '-g' || t === '--global')
-  return global ? 'sf-cli-setup' : null // a LOCAL `npm install` is not gated
+  return global ? 'sf-cli-setup' : null // a LOCAL install/uninstall is not gated
+}
+
+// Extract the inner string of a single/double-quoted argument; null if not cleanly
+// quoted (nested same-quote, or unquoted/variable → the documented exotic residual).
+function extractQuoted(arg) {
+  const a = String(arg).trim()
+  if (a.length < 2) return null
+  const q = a[0]
+  if ((q === '"' || q === "'") && a[a.length - 1] === q) {
+    const inner = a.slice(1, -1)
+    if (inner.includes(q)) return null
+    return inner
+  }
+  return null
+}
+
+// `sh -c "<cmd>"` / `eval "<cmd>"` → the inner command string (best-effort), else null.
+function unwrapShellC(command) {
+  const s = normSegment(command) // so `sudo bash -c …` is seen
+  const toks = s.split(' ').filter(Boolean)
+  if (!toks.length) return null
+  const c0 = cliName(toks[0])
+  if (SHELLS.test(c0)) {
+    let i = 1
+    while (i < toks.length && !/^-[a-z]*c$/i.test(toks[i])) i++ // `-c`, `-lc`, …
+    if (i < toks.length) return extractQuoted(toks.slice(i + 1).join(' '))
+    return null
+  }
+  if (c0 === 'eval') return extractQuoted(toks.slice(1).join(' '))
+  return null
 }
 
 function classifySegment(rawSeg) {
@@ -142,22 +226,42 @@ function classifySegment(rawSeg) {
   if (!seg) return null
   // A help invocation never executes the op.
   if (/(?:^|\s)(?:--help|-h)(?:\s|$)/.test(seg)) return null
-  const toks = seg.split(' ')
-  const cli = (toks[0] || '').toLowerCase()
-  if (cli === 'npm') return classifyNpm(toks)
+  const toks = seg.split(' ').filter(Boolean)
+  let idx = 0
+  while (idx < toks.length && toks[idx].startsWith('-')) idx++ // skip leading flags / `--` before the CLI
+  if (idx >= toks.length) return null
+  const cli = cliName(toks[idx])
+  if (cli === 'npm') return classifyNpm(toks, idx)
   if (cli !== 'sf' && cli !== 'sfdx') return null
-  return classifySfVerb(extractVerb(toks))
+  return classifySfVerb(extractVerb(toks, idx))
 }
 
-/** Classify a (possibly chained) command → the highest-severity gate id, or null. */
-export function classify(command) {
-  if (!command || typeof command !== 'string') return null
+// Shell separators: && and || and |& and ; and & (background) and | and newline. `&&`
+// is first so it wins over single `&`; `|&` before single `|`.
+const SEP = /&&|\|\||\|&|;|&|\||\n/
+
+function classifyString(command, depth) {
+  if (depth > 6) return null // recursion backstop for nested shell -c / eval
+  // best-effort: a WHOLE `sh -c "…"` / `eval "…"` → classify the inner command (this runs
+  // BEFORE the separator split, so a separator INSIDE the quoted inner command survives).
+  const whole = unwrapShellC(command)
+  if (whole !== null) return classifyString(whole, depth + 1)
   let best = null
-  for (const seg of command.split(/&&|\|\||;|\||\n/)) {
-    const g = classifySegment(seg)
+  for (const rawSeg of command.split(SEP)) {
+    let g = classifySegment(rawSeg)
+    if (!g) {
+      const inner = unwrapShellC(rawSeg) // a CHAINED `… && bash -c "sf promote"` segment
+      if (inner !== null) g = classifyString(inner, depth + 1)
+    }
     if (g && (GATE_RANK[g] || 0) > (GATE_RANK[best] || 0)) best = g
   }
   return best
+}
+
+/** Classify a (possibly chained / wrapped) command → the highest-severity gate id, or null. */
+export function classify(command) {
+  if (!command || typeof command !== 'string') return null
+  return classifyString(command, 0)
 }
 
 // ---------------------------------------------------------------------------
