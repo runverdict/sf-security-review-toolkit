@@ -33,10 +33,11 @@
  * (so a separator inside the quoted inner command survives), then the command is split
  * on shell separators (&& || |& ; & | newline) and a chained `… && bash -c "…"` segment
  * is unwrapped too. Each segment is normalized: leading shell grouping (`(sf …)`,
- * `{ sf …; }`, `((sf …))`), env-var assignments, and command wrappers — `env`, `sudo`,
- * `npx`, `command`, `exec`, `time`, `nice`, `nohup`, `watch`, each with their flags
- * (incl. a `-x val` value-flag like `sudo -u nobody`) — are stripped; whitespace
- * collapsed. The CLI token is basename-matched + unquoted (`/usr/local/bin/sf`, `./sf`,
+ * `{ sf …; }`, `((sf …))`), env-var assignments, and the common command wrappers — `env`,
+ * `sudo`, `doas`, `npx`, `command`, `exec`, `time`, `timeout`, `nice`, `ionice`, `nohup`,
+ * `setsid`, `stdbuf`, `xargs`, `watch`, each with their flags (incl. a `-x val` value-flag
+ * like `sudo -u nobody`, and `timeout`'s positional duration `timeout 60 sf …`) — are
+ * stripped; whitespace collapsed. The CLI token is basename-matched + unquoted (`/usr/local/bin/sf`, `./sf`,
  * `"sf"`, `\sf` → `sf`); `sf`/`sfdx`/`npm` accepted. The verb scan SKIPS flags
  * throughout (not stop-at-first) and matches the gated verb as a CONTIGUOUS run, so
  * interspersed flags, a global flag's value, and the leading `force` of the sfdx colon
@@ -44,13 +45,18 @@
  * segment is an irreversible op; the highest-severity match (promote > deep-audit >
  * cli-setup) names the deny.
  *
- * HONEST RESIDUAL (tightened 0.8.12). The classifier now catches the documented +
- * normalized forms above. Only EXOTIC runtime / shell-eval forms still evade —
+ * HONEST RESIDUAL (recalibrated 0.8.13). The classifier catches the documented +
+ * normalized forms above, including the COMMON process wrappers (env, sudo, doas, npx,
+ * command, exec, time, timeout, nice, ionice, nohup, setsid, stdbuf, xargs, watch). Two
+ * classes still evade: (1) an UNCOMMON process wrapper — some unusual scheduler / limiter
+ * / runner not in the list above that fronts the real command — because the wrapper list
+ * is best-effort, not a complete shell parser; and (2) EXOTIC runtime / shell-eval forms —
  * command substitution `$(…)` / backticks, variable indirection (`$CMD` / `${CMD}`),
- * process-substitution `source <(…)`, and a base64-decode-pipe-to-shell one-liner —
- * because resolving them requires actually running the shell, which a static classifier
- * cannot. This is the same inherent limit the Phase-1 consent belt documents. The claim
- * is "an honest driver running the documented ops is gated," NOT "impossible to bypass."
+ * process-substitution `source <(…)`, a base64-decode-pipe-to-shell one-liner — because
+ * resolving them requires actually running the shell, which a static classifier cannot.
+ * This is the same inherent limit the Phase-1 consent belt documents. The claim is "an
+ * honest driver running the documented ops is gated; the wrapper list is best-effort and
+ * not a complete shell parser," NOT "impossible to bypass."
  *
  * DENY MECHANISM (PreToolUse, verified 2026-06): exit 0 + stdout JSON
  * hookSpecificOutput.permissionDecision="deny" — NOT exit 2. allow = exit 0, no stdout.
@@ -86,8 +92,14 @@ function findRepoRoot(startDir) {
 const GATE_RANK = { 'sf-package-promote': 3, 'sf-deep-audit-ops': 2, 'sf-cli-setup': 1 }
 
 const CLIS = new Set(['sf', 'sfdx', 'npm'])
-// Leading command wrappers that hand off to the real command (each may carry flags).
-const WRAPPERS = new Set(['env', 'sudo', 'npx', 'command', 'exec', 'time', 'nice', 'nohup', 'watch'])
+// Common leading command wrappers that hand off to the real command (each may carry
+// flags). NOT exhaustive — an uncommon wrapper is the documented residual (see header).
+// `timeout` is special: it takes a POSITIONAL duration before the command (handled below).
+const WRAPPERS = new Set([
+  'env', 'sudo', 'doas', 'npx', 'command', 'exec', 'time', 'timeout',
+  'nice', 'ionice', 'nohup', 'setsid', 'stdbuf', 'xargs', 'watch',
+])
+const DURATION = /^\d+(?:\.\d+)?[smhd]?$/ // a `timeout` positional duration: 60, 1m, 5s, 0.5
 const SHELLS = /^(?:bash|sh|zsh|dash|ksh|ash)$/i
 const NPM_INSTALL = new Set(['install', 'i', 'in', 'ins', 'inst', 'add'])
 const NPM_UNINSTALL = new Set(['uninstall', 'un', 'unlink', 'remove', 'rm', 'r'])
@@ -117,11 +129,14 @@ function normSegment(seg) {
   while (i < toks.length) {
     if (isEnvAssign(toks[i])) { i++; continue }
     if (isWrapper(toks[i])) {
+      const w = cliName(toks[i])
       i++
       while (i < toks.length && toks[i].startsWith('-')) {
         const f = toks[i]; i++
         if (!f.includes('=') && i < toks.length && !toks[i].startsWith('-') && !isCli(toks[i]) && !isWrapper(toks[i])) i++
       }
+      // `timeout [flags] <duration> sf …` — consume the one leading bare duration token.
+      if (w === 'timeout' && i < toks.length && DURATION.test(toks[i])) i++
       continue
     }
     break

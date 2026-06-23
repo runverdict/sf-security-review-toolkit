@@ -203,6 +203,16 @@ const BYPASS_DENY = [
   'npm rm -g pkg',
   'bash -c "sf package install && sf package version promote -p 04t"', // separator INSIDE shell -c
   'echo hi && bash -c "sf package version promote -p 04t"', // chained shell -c
+  // 0.8.13 — common process wrappers added to the strip-list
+  'timeout 60 sf package version promote -p 04t', // timeout's POSITIONAL duration
+  'timeout 1m sf package version promote -p 04t',
+  'timeout -s KILL 30 sf package version promote -p 04t', // flags before the duration
+  'doas sf package version promote -p 04t',
+  'doas -u admin sf package install -p 04t', // doas value-flag
+  'stdbuf -oL sf package version promote -p 04t',
+  'xargs sf package version promote -p 04t',
+  'ionice -c2 sf package install -p 04t',
+  'setsid sf package version promote -p 04t',
 ]
 check('0.8.12 battery: every wrapped/normalized bypass DENIES (managed repo, no consent)', () => {
   const root = managed()
@@ -239,6 +249,15 @@ const EXOTIC_RESIDUAL_ALLOW = [
 check('0.8.12 residual: EXOTIC runtime/eval forms stay ALLOW (documented, not closed)', () => {
   const root = managed()
   for (const c of EXOTIC_RESIDUAL_ALLOW) assert.equal(act(c, root), 'allow', `residual stays ALLOW: ${c}`)
+})
+
+// 0.8.13 DOCUMENTED RESIDUAL — the wrapper strip-list is best-effort, not a complete shell
+// parser. An UNCOMMON process wrapper not in the list (here `chrt`, a real scheduler-policy
+// runner) fronts the gated op and is NOT caught. This stays ALLOW BY DESIGN; it regression-
+// locks the HONEST RESIDUAL claim ("the wrapper list is best-effort"), exactly like the
+// exotic-eval locks above. Closing the entire infinite wrapper tail is not the goal.
+check('0.8.13 residual: an UNCOMMON wrapper (chrt) stays ALLOW — the honest wrapper-list residual', () => {
+  assert.equal(act('chrt -f 99 sf package version promote -p 04t', managed()), 'allow')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

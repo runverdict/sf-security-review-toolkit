@@ -205,7 +205,7 @@ adjudication-drift fixes are still pending — the tag stays HELD.
 
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 32 standing test files (312 checks)** that fail the build if a
+engines in `harness/` guarded by 32 standing test files (313 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway

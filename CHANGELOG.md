@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.12`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.13`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -136,6 +136,19 @@ follow semantic versioning.
 >   ~36 bypass forms (must DENY), a benign no-false-denies set, and the exotic residual (stays ALLOW). +3
 >   checks → suite **32 files / 312 checks**. Docs: `docs/sf-ops-safety-gate.md`; hook header. Tag stays
 >   **HELD**.
+> - **0.8.13** — **sf-ops-gate honesty recalibration + a cheap wrapper gap** (final calibration of the
+>   0.8.12 hardening). The defect: `timeout` was omitted from the wrapper strip-list, yet the HONEST
+>   RESIDUAL claimed "only EXOTIC runtime/shell-eval forms still evade" — FALSE (a plain `timeout` wrapper
+>   is not exotic eval and it evaded). For a fail-closed safety gate whose value IS honesty, the shipped
+>   claim must be true. **Recalibrated** the residual (hook header + `docs/sf-ops-safety-gate.md`): the
+>   wrapper list is **best-effort, not a complete shell parser** — an UNCOMMON process wrapper can still
+>   front a gated op, alongside the exotic eval/substitution forms; dropped the false "only exotic evades."
+>   **Closed the easy gap**: added `doas` / `stdbuf` / `xargs` / `timeout` / `ionice` / `setsid` to the
+>   wrappers, with `timeout`'s POSITIONAL duration consumed (`timeout [flags] 60 sf …`, `1m`/`5s`). Tests:
+>   DENY for `timeout 60` / `doas` / `stdbuf -oL` / `xargs` / `ionice` / `setsid` sf-promote, plus an
+>   explicit ALLOW + comment for an UNCOMMON wrapper (`chrt`) that stays a documented residual — so the
+>   honest scope is regression-locked exactly like the exotic-eval locks. +1 check → suite **32 files /
+>   313 checks**. Consent/scope/deny machinery untouched. Tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -149,7 +162,7 @@ follow semantic versioning.
 > output, and (0.8.10) its **end-to-end wiring** — audit-codebase step 9 archives independent runs and
 > produces the artifact; compile-submission renders it informational-only (never touching the SCI gate).
 > Not yet built: the adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations,
-> reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 32 files / 312 checks, green.
+> reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 32 files / 313 checks, green.
 > **Doc-debt note:** the detailed 2026-06-19 note below is the
 > prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
 > versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops

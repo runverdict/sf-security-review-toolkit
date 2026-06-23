@@ -1,6 +1,6 @@
 # SF-ops safety gate — fail-closed consent for irreversible operations
 
-**Status: SHIPPED on `main` (0.8.11; classifier hardened 0.8.12, UNTAGGED).**
+**Status: SHIPPED on `main` (0.8.11; classifier hardened 0.8.12–0.8.13, UNTAGGED).**
 
 The deployed-package deep audit runs **irreversible** Salesforce / host operations as
 prose-only Bash inside skills. A prior full-auto run skipped the consent asks and fanned
@@ -37,9 +37,10 @@ deny reason spells out the irreversibility.
    normalization (hardened 0.8.12) unwraps a whole `sh -c "…"` / `eval "…"` (and a chained
    `… && bash -c "…"`) and classifies the inner command; splits on shell separators
    (`&&` `||` `|&` `;` `&` `|` newline); strips leading shell grouping (`(sf …)`,
-   `{ sf …; }`, `((sf …))`), env-var assignments, and command wrappers (`env`, `sudo`,
-   `npx`, `command`, `exec`, `time`, `nice`, `nohup`, `watch` — each with their flags,
-   incl. a `-x val` value-flag); basename-matches + unquotes the CLI token
+   `{ sf …; }`, `((sf …))`), env-var assignments, and the common command wrappers (`env`,
+   `sudo`, `doas`, `npx`, `command`, `exec`, `time`, `timeout`, `nice`, `ionice`, `nohup`,
+   `setsid`, `stdbuf`, `xargs`, `watch` — each with their flags, incl. a `-x val`
+   value-flag, and `timeout`'s positional duration); basename-matches + unquotes the CLI token
    (`/usr/local/bin/sf`, `./sf`, `"sf"`, `\sf` → `sf`); and SKIPS interspersed flags in
    the verb scan, matching the gated verb as a contiguous run (so a global flag's value,
    or the leading `force` of the sfdx colon form `force:package:version:promote`, doesn't
@@ -56,18 +57,28 @@ ask leaves no consent → the hook denies the op. The op is denied, **not silent
 
 ## Honest residual
 
-After the 0.8.12 hardening, the classifier catches the documented + normalized forms
-(CLI paths, quoting, wrappers, grouping, `sh -c`/`eval`, interspersed flags, the
-`force:*` legacy verbs, and the gated-op set below). Only **EXOTIC runtime / shell-eval
-forms** still evade — command substitution `$(…)` / backticks, variable indirection
-(`$CMD` / `${CMD}`), process-substitution `source <(…)`, and a base64-decode-pipe-to-shell
-one-liner — because resolving them requires actually running the shell, which a static
-classifier cannot. This is the inherent limit of any such gate, and the same honest
-residual the Phase-1 consent belt documents. **The claim is "an honest driver running the
-documented ops is gated," not "impossible to bypass."** Defense-in-depth the operator
-opts into, never structural impossibility — and Salesforce performs its own review
-regardless. The standing test `acceptance/test-sf-ops-gate-hook.mjs` regression-locks
-both the bypass battery (must DENY) and the exotic residual (stays ALLOW by design).
+The classifier catches the documented + normalized forms (CLI paths, quoting, the **common**
+process wrappers — `env`, `sudo`, `doas`, `npx`, `command`, `exec`, `time`, `timeout`,
+`nice`, `ionice`, `nohup`, `setsid`, `stdbuf`, `xargs`, `watch` — grouping, `sh -c`/`eval`,
+interspersed flags, the `force:*` legacy verbs, and the gated-op set below). **Two classes
+still evade, and the claim is calibrated to that:**
+
+1. **An uncommon process wrapper** — some unusual scheduler / limiter / runner not in the
+   list above (e.g. `chrt`, `firejail`, a custom launcher) that fronts the real command.
+   The wrapper list is **best-effort, not a complete shell parser**; the common wrappers an
+   honest driver reaches for are covered, but the tail is infinite.
+2. **Exotic runtime / shell-eval forms** — command substitution `$(…)` / backticks, variable
+   indirection (`$CMD` / `${CMD}`), process-substitution `source <(…)`, and a
+   base64-decode-pipe-to-shell one-liner — because resolving them requires actually running
+   the shell, which a static classifier cannot.
+
+This is the inherent limit of any such gate, and the same honest residual the Phase-1
+consent belt documents. **The claim is "an honest driver running the documented ops is
+gated; the wrapper list is best-effort and not a complete shell parser," not "impossible to
+bypass."** Defense-in-depth the operator opts into, never structural impossibility — and
+Salesforce performs its own review regardless. The standing test
+`acceptance/test-sf-ops-gate-hook.mjs` regression-locks the bypass battery (must DENY), the
+exotic residual, AND an uncommon-wrapper residual (both stay ALLOW by design).
 
 ---
 
