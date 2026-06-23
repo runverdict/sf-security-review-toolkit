@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.8`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.9`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -57,6 +57,22 @@ follow semantic versioning.
 >   **unchanged** (confirmed-per-run 8/6/7; pairwise Jaccard 0.40/0.67/0.44; the controller-FLS the one
 >   reliably-recurring blocker) — the stricter matcher is a no-op on that data, confirming the bug was
 >   latent. Suite now **31 files / 280 checks**. Tag stays **HELD**.
+> - **0.8.9** — **public-readiness scrub** (the repo is heading open-source as a portfolio piece; file-
+>   level only, no git-history rewrite). Portable defaults in `acceptance/build-run-args.mjs` (plugin
+>   root resolves from the file's own location via `import.meta.url`; the fixture repo defaults under
+>   `os.homedir()` — no machine-specific droplet path baked into shipped code). `.gitignore` hardened so
+>   a contributor can never commit a partner's run-state or findings (`.security-review/`,
+>   `docs/security-review/`, `.claude/`, `*.jsonl`; verified none are currently tracked). Author droplet
+>   paths used as **test data** genericized to neutral roots (`/abs/repo`, `/home/user/project`) in
+>   `test-ledger-staleness-adversary.mjs` — input, repoRoot, and expected tokens changed together, both
+>   staleness tests re-run green — and the residual prose mention neutralized to "the host product repo".
+>   New OSS community files in the toolkit's voice: **`SECURITY.md`** (vuln-disclosure policy — honest
+>   scope: prepares submissions, not a hosted service, no guarantee about your package; report via GitHub
+>   private reporting or `dev@runverdict.com`), **`CONTRIBUTING.md`** (the green-suite bar, the §2/§3/§4/§9
+>   rules, conventional commits, Node 18+), and **`CODE_OF_CONDUCT.md`** (Contributor Covenant v2.1). Plus
+>   **CI**: `.github/workflows/test.yml` runs the full acceptance suite on push/PR (Node 20), a status
+>   badge on the README, and the Node 18+ prerequisite documented. No code/engine behavior changed; suite
+>   unchanged at **31 files / 280 checks**. Tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -350,7 +366,8 @@ follow semantic versioning.
     would gate a tag is a separate, later session.
 - **Coverage-gap adversarial-audit hardening (2026-06-20).** After the coverage work landed, a
   5-lens read-only Workflow (honesty/sourcing · cross-dimension boundaries · technical accuracy ·
-  genericization/voice · extraction-contract; hard-anchored to the repo, `/opt/verdict` forbidden)
+  genericization/voice · extraction-contract; hard-anchored to the toolkit repo, the host product
+  repo forbidden)
   audited the whole changeset and adversarially verified each finding: **12 raw → 5 confirmed**
   (7 rejected as nitpicks/false alarms). All 5 fixed:
   - **`agentforce-system-prompt-leakage` cited a non-resolving SF URL** (the bare

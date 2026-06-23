@@ -10,7 +10,7 @@
  *   - comma/range line suffixes      `…/ForecastService.cls:5,15-19`
  *   - a single finding citing TWO files `server/index.js:27 and /abs/…/panel.html:7`
  *   - target-ABSOLUTE path tokens     `/home/.../force-app/.../panel.html`
- * Those shapes are exactly what the real ~/srt-coldstart ledger carries, and on
+ * Those shapes are exactly what a real cold-start run's ledger carries, and on
  * the unhardened engine each was silently reported "current" when its file had
  * changed — a FALSE NEGATIVE, the single worst direction for a staleness check
  * (the engine's own header says so). This test stands up a throwaway git repo,

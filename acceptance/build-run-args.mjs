@@ -14,9 +14,14 @@
  */
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 
-const PLUGIN_ROOT = process.argv[2] || '/home/verdict/sf-security-review-toolkit'
-const REPO = process.argv[3] || '/home/verdict/srt-helios'
+// Portable defaults: the plugin root resolves from this file's own location
+// (acceptance/ → repo root), and the fixture repo defaults under the caller's
+// home dir — both overridable by argv so no machine-specific path is baked in.
+const PLUGIN_ROOT = process.argv[2] || fileURLToPath(new URL('..', import.meta.url))
+const REPO = process.argv[3] || join(homedir(), 'srt-helios')
 const RUN_DATE = process.argv[4] || '2026-06-15'
 // Optional: argv[5] = comma-separated dimension allowlist (focused re-run);
 //           argv[6] = engine/report filename suffix (so a focused re-run does

@@ -56,19 +56,19 @@ const cases = [
   ['FN: parenthetical " (line 5)" stripped', `${C} (line 5)`, [C], '', true],
   ['FN: "&" multi-file join split', `server/index.js & ${C}:13`, [C], '', true],
   ['FN: comma multi-file join split', `server/index.js, ${C}:13`, [C], '', true],
-  ['FN: abs path, no repoRoot → suffix match', '/opt/verdict/server/index.js:42', ['server/index.js'], '', true],
-  ['FN: abs path, embedded /./ collapsed + relativized', '/opt/verdict/./server/index.js:42', ['server/index.js'], '/opt/verdict', true],
+  ['FN: abs path, no repoRoot → suffix match', '/abs/repo/server/index.js:42', ['server/index.js'], '', true],
+  ['FN: abs path, embedded /./ collapsed + relativized', '/abs/repo/./server/index.js:42', ['server/index.js'], '/abs/repo', true],
   // ── encoding edges / controls ──
   ['edge: line:col ":5:13" stripped', 'src/Trigger.cls:5:13', ['src/Trigger.cls'], '', true],
   ['edge: path WITH a space survives (no internal split)', 'force-app/Acc Service.cls:8', ['force-app/Acc Service.cls'], '', true],
   ['edge: bare ":42" (only a line spec) → no token, no flag', ':42', ['src/Foo.cls'], '', false],
   ['edge: " AND " uppercase splits (case-insensitive)', 'config and src/App.cls:5 AND lib/Util.cls', ['lib/Util.cls'], '', true],
   ['edge: double-ext + range "report.tar.gz:100-120"', 'report.tar.gz:100-120', ['report.tar.gz'], '', true],
-  ['edge: abs path, no repoRoot, 2 changed → suffix match', '/opt/verdict/harness/index.js:10', ['harness/index.js', 'harness/ledger-staleness.mjs'], '', true],
+  ['edge: abs path, no repoRoot, 2 changed → suffix match', '/abs/repo/harness/index.js:10', ['harness/index.js', 'harness/ledger-staleness.mjs'], '', true],
   ['edge: array-stringified 2-file list (quotes/brackets)', `["${C}:13","force-app/main/default/classes/RiskService.cls:5"]`, ['force-app/main/default/classes/RiskService.cls'], '', true],
   ['edge: " and " INSIDE a real dir name is preserved', 'docs/sales and marketing/playbook.md:3', ['docs/sales and marketing/playbook.md'], '', true],
   ['edge: windows abs, no repoRoot, suffix match', 'C:\\Users\\dev\\proj\\force-app\\App.cls:10', ['force-app/App.cls'], '', true],
-  ['edge: token == repoRoot → empty token, no flag, no crash', '/opt/verdict:42', ['opt/verdict'], '/opt/verdict', false],
+  ['edge: token == repoRoot → empty token, no flag, no crash', '/abs/repo:42', ['abs/repo'], '/abs/repo', false],
   // ── documented out-of-domain limitations (asserted at accepted behavior) ──
   ['limitation: extension-less "Makefile and Dockerfile" not flagged (accepted FN)', 'Makefile and Dockerfile', ['Dockerfile'], '', false],
   ['limitation: windows abs + subdir repoRoot not flagged (accepted FN)', 'C:\\src\\ForecastService.cls:13', ['src/ForecastService.cls'], 'C:/src', false],
@@ -92,7 +92,7 @@ check('display: multi-file cite reports the MATCHED (changed) file', () => {
 
 // fileTokens directly: the real two-file Lumina shape yields both clean paths.
 check('fileTokens: real Lumina two-file shape → both repo-relative paths', () => {
-  const toks = fileTokens('server/index.js:27 and /home/verdict/srt-coldstart/force-app/main/default/lwc/forecastPanel/forecastPanel.html:7', '/home/verdict/srt-coldstart')
+  const toks = fileTokens('server/index.js:27 and /home/user/project/force-app/main/default/lwc/forecastPanel/forecastPanel.html:7', '/home/user/project')
   assert.deepEqual(toks, ['server/index.js', 'force-app/main/default/lwc/forecastPanel/forecastPanel.html'])
 })
 

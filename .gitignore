@@ -1,3 +1,12 @@
 .DS_Store
 node_modules/
 *.log
+
+# Partner / target repo state — these dirs hold a partner's audit findings and
+# run-state and must NEVER be committed (the skills write them into the TARGET
+# repo, not here; this guard is so a contributor working in a target can't leak
+# them upstream). Note: skills/security-review-journey/ is a SKILL dir, not state.
+.security-review/
+docs/security-review/
+.claude/
+*.jsonl

@@ -1,5 +1,7 @@
 # Salesforce Security Review Toolkit
 
+[![acceptance](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml)
+
 Claude Code skills that take an ISV partner through **AppExchange / AgentExchange
 security review preparation end to end**: an autonomous multi-agent audit of your
 own codebase shaped to what the review actually tests, generation of every
@@ -70,6 +72,11 @@ Salesforce pen-tests regardless,"* never *"you will pass."*
 /plugin marketplace add runverdict/sf-security-review-toolkit
 /plugin install sf-security-review-toolkit
 ```
+
+**Prerequisite: Node.js 18+.** The deterministic engines under `harness/` and their
+standing tests use only Node built-ins — no `npm install`, no dependencies, no network.
+Run the test suite locally with `for t in acceptance/test-*.mjs; do node "$t" || exit 1;
+done` (the same command CI runs).
 
 ## Running it hands-off (permissions)
 
