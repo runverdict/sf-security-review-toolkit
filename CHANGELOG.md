@@ -23,7 +23,7 @@ _Nothing pending — the next change starts a new section here._
 
 - **Pre-public file-level polish — docs genericization + CHANGELOG restructure (docs-only).**
   The repo is heading public as a portfolio piece; this is the last file-level pass before the
-  separate, operator-run history rewrite. Three changes, no engine or behavior touched:
+  separate, operator-run history rewrite. Four changes, no engine or behavior touched:
   (1) genericized the worked example in `docs/recurrence-confidence.md` §3.2 to a role-neutral
   illustration (a service file with two disjoint confirmed defects plus a broad refuted span),
   preserving the interval-transitivity point exactly; (2) genericized the remaining
@@ -33,7 +33,9 @@ _Nothing pending — the next change starts a new section here._
   **umbrella** names stay, since their generators ship in `acceptance/`; (3) restructured the
   single large `[Unreleased]` blockquote into Keep-a-Changelog versioned sections with an
   honest untagged-on-`main` banner, preserving the original change-typed detail verbatim under
-  a **Detailed record** section. Suite unchanged at **32 files / 313 checks**. Tag stays **HELD**.
+  a **Detailed record** section; and (4) reconciled the README `Status` section to current `main` (it
+  was stale at `0.8.7` — added the SF-ops safety gate, marked the recurrence skill-wiring shipped, and
+  updated the version reference to `0.8.15`). Suite unchanged at **32 files / 313 checks**. Tag stays **HELD**.
 
 ## [0.8.14] — 2026-06-23
 

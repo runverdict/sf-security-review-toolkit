@@ -178,14 +178,18 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**`main` is at `0.8.7` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
+**`main` is at `0.8.15` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
 `main` added the **calibration false-positive patterns** + **Track-1b** cross-dimension ledger dedup
-+ a webhook/HMAC-DoS recalibration (0.8.2), and a **durable consent coupling** (0.8.4–0.8.6): a
-skipped consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion`
-stops, and four adversarial bypasses were closed. The 0.7.0 path — installing the scan tooling and
-running a digest-pinned ZAP DAST against an isolated throwaway behind one up-front consent gate, the
-**credential contract** holding throughout (synthetic secrets only in the container; state files
-record names only; loopback-only scan target) — remains intact below it.
++ a webhook/HMAC-DoS recalibration (0.8.2); a **durable consent coupling** (0.8.4–0.8.6: a skipped
+consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion` stops, four
+adversarial bypasses closed); the **recurrence-confidence engine and its skill wiring** (0.8.8 / 0.8.10,
+below); **OSS-readiness** (0.8.9: `SECURITY` / `CONTRIBUTING` / `CODE_OF_CONDUCT` and a CI workflow that
+runs the suite on every push); the **SF-ops safety gate** (0.8.11–0.8.13, below); the **published
+ceiling test** (0.8.14, below); and a pre-public docs genericization + CHANGELOG restructure (0.8.15).
+The 0.7.0 path — installing the scan tooling and running a digest-pinned ZAP DAST against an isolated
+throwaway behind one up-front consent gate, the **credential contract** holding throughout (synthetic
+secrets only in the container; state files record names only; loopback-only scan target) — remains
+intact below it.
 
 **Honest scope — the load-bearing result (2026-06-23).** *(The experiment behind this scope:
 [`docs/ceiling-test.md`](docs/ceiling-test.md).)* A full-pipeline *cold-at-exhaustive* test
@@ -193,22 +197,32 @@ record names only; loopback-only scan target) — remains intact below it.
 finds the unambiguous blockers and builds the evidence pack**, but the **contestable-severity band
 is an incomplete, unstable sample that varies run-to-run** (Jaccard 0.44–0.67; a real high blinking
 in/out across runs) and needs **repeated runs plus human adjudication** — no fixed run-count is
-certified complete, and Salesforce pen-tests regardless. **The first build off this result shipped on
-`main` (0.8.7, UNTAGGED): the recurrence-confidence engine** (`harness/recurrence-confidence.mjs` +
+certified complete, and Salesforce pen-tests regardless. **The product response to this result is
+shipped on `main`: the recurrence-confidence engine** (`harness/recurrence-confidence.mjs` +
 [`docs/recurrence-confidence.md`](docs/recurrence-confidence.md)) — a deterministic engine that takes
 N independent run-ledgers of the same codebase and classifies each finding by how reliably it recurred
 (`all_runs` / `some_runs` / `single_run`; `confidence=high` only for the all-runs + status/severity-
-stable blocker set; everything else is the contestable band the human owns). Run against the three real
-Solano ledgers it reproduces the ground truth (the controller-FLS high recurs 3/3; the over-grant and
-prompt-delimiter findings are stable-in-appearance but unstable-in-severity; pairwise Jaccard
-0.40 / 0.67 / 0.44). The skill wiring that runs it over N stored ledgers, a cold-validation run, and the
-adjudication-drift fixes are still pending — the tag stays HELD.
+stable blocker set; everything else is the contestable band the human owns) — **and its skill wiring**:
+`audit-codebase` archives independent same-commit runs and classifies them, and `compile-submission`
+renders an informational "Finding Stability (N-run consensus)" section that never moves the SCI gate.
+Run against the three real Solano ledgers it reproduces the ground truth (the controller-FLS high recurs
+3/3; the over-grant and prompt-delimiter findings are stable-in-appearance but unstable-in-severity;
+pairwise Jaccard 0.40 / 0.67 / 0.44). A cold-validation run and the adjudication-drift fixes remain
+pending — the tag stays HELD.
 
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
 engines in `harness/` guarded by 32 standing test files (313 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.8.11–0.8.13 — the SF-ops safety gate.** A fail-closed PreToolUse hook
+  (`hooks/sf-ops-gate-hook.mjs` + [`docs/sf-ops-safety-gate.md`](docs/sf-ops-safety-gate.md)): inside a
+  managed audit repo it DENIES an irreversible Salesforce / host operation — package **promote** (a
+  permanent release), install / uninstall, scratch-org create / delete, data delete, destructive deploy,
+  `sf org login`, `npm install -g` — unless an affirmative operator consent for its gate is recorded, so
+  a skipped consent ask physically cannot run the op. The command classifier was hardened through two
+  adversarial-bypass rounds; its residual is honestly scoped (an uncommon process wrapper or an exotic
+  eval form can evade — a static classifier cannot run the shell).
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
   DAST runs in containers, so `harness/docker-check.mjs` detects Docker (`available | absent |
   daemon-down`) and the gate offers it only when it can actually run — else an honest "install
