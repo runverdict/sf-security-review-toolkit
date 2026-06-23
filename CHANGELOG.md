@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.6`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.7`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -21,6 +21,24 @@ follow semantic versioning.
 >   audit-codebase gates made mandatory `AskUserQuestion` stops; **four adversarial bypasses closed**
 >   (second-substrate, forge-asymmetry, isAffirmative-leaks-declines, forgeable belt); and
 >   `isAffirmative` deny-precedence so a natural "no" never records as consent.
+> - **0.8.7** — the **recurrence-confidence engine** (`harness/recurrence-confidence.mjs`), the first
+>   build off the Solano refutation: a pure, deterministic, dependency-free engine that takes **N
+>   independent run-ledgers of the same codebase** and classifies each finding by how reliably it
+>   recurred — `all_runs` / `some_runs` / `single_run`, with `confidence=high` reserved for the
+>   `all_runs` + confirmed-every-run + severity-stable set (the **reliably-recurring blocker** set),
+>   everything else `review` / `investigate` (the contestable band the human owns). Cross-run matching
+>   is **locus-based** (reusing the now-exported `normFile` / `lineSpan` / `spansOverlap` primitives
+>   from `finding-clusters.mjs`; `finding.id` is unusable across runs because finder titles drift),
+>   with path-suffix reconciliation for absolute-vs-relative file cites and **confirmed-anchored
+>   clustering** so a broad refuted finding can't fuse two disjoint confirmed defects. Per-run
+>   confirmed counts + pairwise Jaccard are reported as **metrics only** (they gate nothing); the
+>   standing honesty caveat is embedded (no fixed run-count = complete; SF pen-tests regardless). Run
+>   against the three real Solano ledgers it reproduces the ground truth — the controller-FLS high
+>   recurs 3/3 (`confidence=high`), `viewAllRecords` / prompt-delimiter are `all_runs` but
+>   severity-unstable, the Contact-PII high flips confirmed→refuted→confirmed, pairwise Jaccard
+>   **0.40 / 0.67 / 0.44** (consistent with the 0.44–0.67 refutation). Standing test
+>   `acceptance/test-recurrence-confidence.mjs` (15 checks, inline synthetic fixtures); spec in
+>   `docs/recurrence-confidence.md`. Skill wiring + cold validation pending; the tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -29,10 +47,12 @@ follow semantic versioning.
 > **reliably finds the unambiguous blockers and builds the evidence pack**, but the
 > **contestable-severity band is an incomplete, unstable sample needing repeated runs + human
 > adjudication** — no fixed run-count is certified complete; Salesforce pen-tests regardless. The
-> tag stays **HELD** (the claim that would justify it is refuted). Not yet built: the
-> adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations, reachability-vs-
-> exposed-surface resolve), a union-convergence test, and the recurrence-confidence output.
-> Suite: 30 files / 262 checks, green. **Doc-debt note:** the detailed 2026-06-19 note below is the
+> tag stays **HELD** (the claim that would justify it is refuted). **Shipped off this result (0.8.7):**
+> the **recurrence-confidence engine** that makes the run-to-run variance a visible, classified output
+> (see the 0.8.7 bullet above). Not yet built: the adjudication-drift fixes (multi-vote-on-drops,
+> baseline-checked refutations, reachability-vs-exposed-surface resolve), a union-convergence test, and
+> the skill wiring that runs the engine over N stored ledgers. Suite: 31 files / 277 checks, green.
+> **Doc-debt note:** the detailed 2026-06-19 note below is the
 > prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
 > versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops
 > behind prose-only consent (a pre-public-release hardening item) — both tracked for a fresh session.

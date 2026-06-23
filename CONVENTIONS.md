@@ -131,7 +131,9 @@ Skills write into the PARTNER's repo, never into the plugin:
   past on a resume path). The enforced form lives in `harness/artifact-gate.mjs`,
   `applicable-requirements.mjs`, `baseline-counts.mjs`, `finding-clusters.mjs`,
   `ledger-staleness.mjs`, `injection-check.mjs`, `package-readiness.mjs`,
-  `compute-sci.mjs`, and the three per-run engines that replaced LLM-authored
+  `compute-sci.mjs`, `recurrence-confidence.mjs` (cross-run recurrence
+  classification over N ledgers — the variance is engine-classified, never
+  narrated), and the three per-run engines that replaced LLM-authored
   scripts — `build-audit-engine.mjs` (extract + inject the run-args),
   `merge-ledger.mjs` (mechanical ledger merge), and `build-evidence-index.mjs`
   (the evidence index + the reviewer-reproducible credit rule). The credit rule
@@ -206,7 +208,8 @@ sf-security-review-toolkit/
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
-│   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2)
+│   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2); exports normFile/lineSpan/spansOverlap (0.8.7)
+│   ├── recurrence-confidence.mjs    # 0.8.7: classify findings by cross-run recurrence over N ledgers (all_runs/some_runs/single_run + confidence high|review|investigate); locus-based, confirmed-anchored, pairwise-Jaccard reported as a metric only
 │   ├── ledger-staleness.mjs         # resumption fingerprint: flag findings whose code changed (C1)
 │   ├── injection-check.mjs          # audit-engine pre-launch check: decoy-anchored INJECTED-object validate (G5)
 │   ├── package-readiness.mjs        # preflight power-up precondition: deep-audit install-readiness (installable|needs-build|n/a) from sfdx-project.json
@@ -225,7 +228,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 30 dependency-free standing tests (262 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 31 dependency-free standing tests (277 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

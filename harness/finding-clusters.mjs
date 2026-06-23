@@ -54,20 +54,22 @@ const isOpen = (f) =>
   (String(f.status || '').toLowerCase() === '' && String(f.verdict || '').toLowerCase() === 'confirmed_real')
 const sevOf = (f) => String(f.adjusted_severity || f.severity || '').toLowerCase()
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
-const normFile = (f) => String(f || '').replace(/:[0-9]+(?:[:-][0-9]+)?\s*$/, '').trim() || '(unattributed)'
+// Exported (0.8.7) so harness/recurrence-confidence.mjs reuses the SAME tested
+// locus primitives instead of re-deriving them — see docs/recurrence-confidence.md.
+export const normFile = (f) => String(f || '').replace(/:[0-9]+(?:[:-][0-9]+)?\s*$/, '').trim() || '(unattributed)'
 
 // ---------------------------------------------------------------------------
 // Track-1b — cross-dimension, same-location ledger collapse.
 // ---------------------------------------------------------------------------
 
 // Parse a trailing :N / :N-M / :N:M / :N,M line span from a file ref → {lo,hi} | null.
-function lineSpan(file) {
+export function lineSpan(file) {
   const m = String(file || '').match(/:(\d+)(?:[-:,](\d+))?\s*$/)
   if (!m) return null
   const a = parseInt(m[1], 10), b = m[2] ? parseInt(m[2], 10) : a
   return { lo: Math.min(a, b), hi: Math.max(a, b) }
 }
-const spansOverlap = (a, b) => !!a && !!b && a.lo <= b.hi && b.lo <= a.hi
+export const spansOverlap = (a, b) => !!a && !!b && a.lo <= b.hi && b.lo <= a.hi
 
 // Same code LOCATION: same normalized file AND OVERLAPPING LINE SPAN. That is the
 // ONLY signal. Same file alone is never enough, and a title's method/symbol name is

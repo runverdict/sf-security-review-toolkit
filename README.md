@@ -171,7 +171,7 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**`main` is at `0.8.6` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
+**`main` is at `0.8.7` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
 `main` added the **calibration false-positive patterns** + **Track-1b** cross-dimension ledger dedup
 + a webhook/HMAC-DoS recalibration (0.8.2), and a **durable consent coupling** (0.8.4–0.8.6): a
 skipped consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion`
@@ -185,12 +185,20 @@ record names only; loopback-only scan target) — remains intact below it.
 finds the unambiguous blockers and builds the evidence pack**, but the **contestable-severity band
 is an incomplete, unstable sample that varies run-to-run** (Jaccard 0.44–0.67; a real high blinking
 in/out across runs) and needs **repeated runs plus human adjudication** — no fixed run-count is
-certified complete, and Salesforce pen-tests regardless. The recurrence-confidence output and the
-adjudication-drift fixes that follow from this result are in progress, not yet shipped.
+certified complete, and Salesforce pen-tests regardless. **The first build off this result shipped on
+`main` (0.8.7, UNTAGGED): the recurrence-confidence engine** (`harness/recurrence-confidence.mjs` +
+[`docs/recurrence-confidence.md`](docs/recurrence-confidence.md)) — a deterministic engine that takes
+N independent run-ledgers of the same codebase and classifies each finding by how reliably it recurred
+(`all_runs` / `some_runs` / `single_run`; `confidence=high` only for the all-runs + status/severity-
+stable blocker set; everything else is the contestable band the human owns). Run against the three real
+Solano ledgers it reproduces the ground truth (the controller-FLS high recurs 3/3; the over-grant and
+prompt-delimiter findings are stable-in-appearance but unstable-in-severity; pairwise Jaccard
+0.40 / 0.67 / 0.44). The skill wiring that runs it over N stored ledgers, a cold-validation run, and the
+adjudication-drift fixes are still pending — the tag stays HELD.
 
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 30 standing test files (262 checks)** that fail the build if a
+engines in `harness/` guarded by 31 standing test files (277 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
 - **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
