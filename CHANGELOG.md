@@ -6,6 +6,37 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+> **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
+> `main` is at **`0.8.6`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
+>   journey "triage → blocker-policy gate" relabel.
+> - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
+>   blind 30-judge verification (reachability-is-a-precondition-for-severity; availability ≠
+>   security; a missing grant is fail-closed, not a vuln); **Track-1b** cross-dimension ledger dedup
+>   (collapse same-file + overlapping-line-span multi-lens findings into one entry); and a
+>   **webhook / HMAC-compute-DoS** resource-consumption recalibration.
+> - **0.8.3** — version bump so a cold run pulls the current code (the `plugin update` trigger).
+> - **0.8.4–0.8.6** — the **durable consent coupling**: `record-consent.mjs` + a fail-closed
+>   audit-launch gate (a skipped consent ask physically cannot launch the audit); the journey +
+>   audit-codebase gates made mandatory `AskUserQuestion` stops; **four adversarial bypasses closed**
+>   (second-substrate, forge-asymmetry, isAffirmative-leaks-declines, forgeable belt); and
+>   `isAffirmative` deny-precedence so a natural "no" never records as consent.
+>
+> **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
+> strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
+> against a pre-committed bar, showed the contestable-severity band is UNSTABLE run-to-run (Jaccard
+> 0.44–0.67; a real high blinking in/out across runs). Honest scope going forward: the toolkit
+> **reliably finds the unambiguous blockers and builds the evidence pack**, but the
+> **contestable-severity band is an incomplete, unstable sample needing repeated runs + human
+> adjudication** — no fixed run-count is certified complete; Salesforce pen-tests regardless. The
+> tag stays **HELD** (the claim that would justify it is refuted). Not yet built: the
+> adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations, reachability-vs-
+> exposed-surface resolve), a union-convergence test, and the recurrence-confidence output.
+> Suite: 30 files / 262 checks, green. **Doc-debt note:** the detailed 2026-06-19 note below is the
+> prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
+> versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops
+> behind prose-only consent (a pre-public-release hardening item) — both tracked for a fresh session.
+
 > **Release state (2026-06-19).** **`v0.7.0` is tagged + cold-validated** — one full autonomous
 > journey on a 0-context seeded fixture (Atlas), graded off disk vs both pass-conditions: the
 > consented **scanner install** (0.6.0) and the **throwaway-DAST harness** (0.7.0) + their two

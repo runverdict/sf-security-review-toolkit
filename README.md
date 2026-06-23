@@ -171,17 +171,23 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**v0.7.0 (tagged, cold-validated 2026-06-19) — the toolkit now installs the scan tooling and
-runs the DAST itself, end to end, behind one up-front consent gate.** A single preflight gate
-carries the run's only confirmations: (1) full-auto vs guided, (2) install the missing scanners to
-a tmp dir for the run, and (3) stand up your external backend as an isolated **throwaway** and
-active-scan it. On yes, the run produces real Semgrep/OSV/Checkov/secret evidence **plus** a real
-digest-pinned ZAP scan against a disposable mirror it stands up — then tears it all down keeping the
-evidence, the **credential contract** holding throughout (synthetic secrets live only in the
-container; state files record names only; loopback-only scan target). `main` carries 0.7.1 (Docker
-prerequisite detection + graceful degradation) and 0.7.2 (deep-audit build-feasibility check). The
-v0.7.0 cold run — one full autonomous journey on a 0-context seeded fixture, graded off disk —
-re-confirmed the 0.5.x triage/withhold/SCI honesty properties firing live.
+**`main` is at `0.8.6` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
+`main` added the **calibration false-positive patterns** + **Track-1b** cross-dimension ledger dedup
++ a webhook/HMAC-DoS recalibration (0.8.2), and a **durable consent coupling** (0.8.4–0.8.6): a
+skipped consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion`
+stops, and four adversarial bypasses were closed. The 0.7.0 path — installing the scan tooling and
+running a digest-pinned ZAP DAST against an isolated throwaway behind one up-front consent gate, the
+**credential contract** holding throughout (synthetic secrets only in the container; state files
+record names only; loopback-only scan target) — remains intact below it.
+
+**Honest scope — the load-bearing result (2026-06-23).** A full-pipeline *cold-at-exhaustive* test
+(three runs of identical code, graded against a pre-committed bar) found the toolkit **reliably
+finds the unambiguous blockers and builds the evidence pack**, but the **contestable-severity band
+is an incomplete, unstable sample that varies run-to-run** (Jaccard 0.44–0.67; a real high blinking
+in/out across runs) and needs **repeated runs plus human adjudication** — no fixed run-count is
+certified complete, and Salesforce pen-tests regardless. The recurrence-confidence output and the
+adjudication-drift fixes that follow from this result are in progress, not yet shipped.
+
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
 engines in `harness/` guarded by 30 standing test files (262 checks)** that fail the build if a
