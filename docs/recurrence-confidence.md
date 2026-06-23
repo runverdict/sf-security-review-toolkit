@@ -20,8 +20,8 @@ the contestable-severity band reliably":
 
 - The confirmed-finding **set drifted** run-to-run — pairwise Jaccard **0.44–0.67**
   (the bar required ≥ 0.70 for the strong claim).
-- Individual findings **wobbled**: a real Contact-PII high was confirmed in one run and
-  refuted in another; a `viewAllRecords` over-grant swung **medium / high / medium**
+- Individual findings **wobbled**: a real contact-PII high was confirmed in one run and
+  refuted in another; a permission-set view-all over-grant swung **medium / high / medium**
   across the three runs; a prompt-template delimiter finding swung **info / high / low**.
 
 The honest product position is now locked, and this engine encodes it rather than
@@ -88,6 +88,21 @@ the most repo-relative (fewest-segment) form seen. This is the one deliberate di
 from "plain `normFile` equality"; the `match_key` field records it as
 `"normFile path-suffix + overlapping-line-span (locus-based)"`.
 
+The suffix rule has a **floor** to keep it from over-merging. **Exact** path equality
+(identical segment lists, any length) always matches — so a root-level single-segment
+file like `Dockerfile` cited identically in two runs stays one locus. But at **differing
+depth**, the shorter segment list must have length **≥ 2** (a basename *plus* at least
+one parent directory) before it counts as a tail of the longer. Without that floor a
+**bare basename** would bridge unrelated files: `package.json` would match both
+`frontend/package.json` and `backend/package.json`, and single-linkage clustering would
+fuse three genuinely different files into one `all_runs` / `confidence=high` locus —
+**false confidence, the forbidden direction** (over-merge can hide a distinct finding;
+the same M10/M11 lesson). The residual: two genuinely different files that share a
+≥2-segment tail (e.g. `classes/Foo.cls` living in two directories) could still match —
+**acceptable**, because Salesforce class names are unique per namespace and Node parent
+directories distinguish them; an ambiguous *short* citation fails toward
+under-confidence (a missed merge), never toward false confidence.
+
 ### 3.2 Confirmed-anchored clustering (why a broad refuted finding can't fuse two defects)
 
 The engine matches over **all** findings, including refuted ones, so the
@@ -149,24 +164,28 @@ is the only confidence signal — there is no global one.
 
 ## 6. Validation against the real three-run ledgers
 
-Run against the three preserved real ledgers, the engine reproduces the known
-ground-truth facts (the standing test `acceptance/test-recurrence-confidence.mjs`
-encodes these patterns synthetically; the real-ledger run is the external confidence
-check):
+Run against three independent audit runs of the toolkit's fixture, the engine reproduces
+the known ground-truth facts (the standing test `acceptance/test-recurrence-confidence.mjs`
+encodes these patterns synthetically with generic fixtures; the real-ledger run is the
+external confidence check):
 
-| Finding | Classification |
+| Finding role | Classification |
 |---|---|
-| `SolanoOpportunityController` FLS (missing `USER_MODE`) | `all_runs`, confirmed high ×3, `confidence=high` — the one reliably-recurring blocker |
-| `Solano_Standard` `viewAllRecords` over-grant | `all_runs`, `severity_stable=false` (medium/high/medium), `confidence=review` |
-| `Solano_ForecastSummary` static prompt delimiter | `all_runs`, `severity_stable=false` (info/high/low), `confidence=review` |
-| webhook rate-limit (`server/index.js:30-34`) | `all_runs`, `status_stable=false` (confirmed→refuted→refuted), `confidence=review` |
-| `SolanoAccountInsightController` Contact-PII FLS | `all_runs`, `status_stable=false` (confirmed→refuted→confirmed), `confidence=review` |
+| a without-sharing controller missing `USER_MODE` on a custom-field query | `all_runs`, confirmed high ×3, `confidence=high` — the one reliably-recurring blocker |
+| an end-user permission set with a view-all over-grant | `all_runs`, `severity_stable=false` (medium/high/medium), `confidence=review` |
+| an AI prompt template with a static enclosure delimiter | `all_runs`, `severity_stable=false` (info/high/low), `confidence=review` |
+| a webhook endpoint missing rate-limiting | `all_runs`, `status_stable=false` (confirmed→refuted→refuted), `confidence=review` |
+| a controller exposing contact PII without field-level security | `all_runs`, `status_stable=false` (confirmed→refuted→confirmed), `confidence=review` |
 
 Confirmed-per-run 8 / 6 / 7; pairwise Jaccard 0.40 / 0.67 / 0.44 — consistent with the
 0.44–0.67 refutation result. Note that `recurrence_bucket=all_runs` means a locus was
 **raised** in every run; it can still be unstable (a status or severity flip), which is
 exactly why a separate `confidence` axis is needed — `all_runs` is *appearance*,
 `confidence` is *agreement*.
+
+Validated against three independent audit runs of the toolkit's Solano fixture
+(`acceptance/generate-solano-fixture.mjs`); the per-run ledgers are local audit
+artifacts, not committed.
 
 ---
 

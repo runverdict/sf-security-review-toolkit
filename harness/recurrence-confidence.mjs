@@ -91,14 +91,27 @@ const dimsOf = (f) =>
 // ---------------------------------------------------------------------------
 const pathSegs = (f) => normFile(f).split('/').filter(Boolean)
 
-// Two normalized files name the SAME path iff basenames match AND the shorter
-// segment list is a tail of the longer (reconciles repo-relative vs absolute).
+// Two normalized files name the SAME path. EXACT equality (same segments, any length)
+// always matches — this keeps a root-level single-segment file like "Dockerfile" cited
+// identically in two runs together. At DIFFERING depth (the abs-vs-relative reconcile
+// this function exists for) the SHORTER list must have length >= 2 (basename + at least
+// one parent dir) before it counts as a tail of the longer — so a BARE BASENAME can
+// never bridge a deeper path. Without that floor, "package.json" would match BOTH
+// "frontend/package.json" and "backend/package.json", and single-linkage clustering
+// would FUSE three different files into one all_runs/high locus — false confidence, the
+// forbidden direction (over-merge can hide a distinct finding; mirrors M10/M11). The
+// residual: two different files sharing a >=2-segment tail ("classes/Foo.cls" in two
+// dirs) could still match — acceptable, since Salesforce class names are unique per
+// namespace and Node parent dirs distinguish; it fails toward under-confidence for an
+// ambiguous short cite, never false confidence.
 function fileSuffixMatch(fileA, fileB) {
   const a = pathSegs(fileA)
   const b = pathSegs(fileB)
   if (!a.length || !b.length) return false
   if (a[a.length - 1] !== b[b.length - 1]) return false // basename gate
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+  if (a.length === b.length) return a.every((s, i) => s === b[i]) // exact path equality
+  const [short, long] = a.length < b.length ? [a, b] : [b, a] // abs-vs-relative reconcile
+  if (short.length < 2) return false // a bare basename never bridges a deeper path
   for (let i = 1; i <= short.length; i++) {
     if (short[short.length - i] !== long[long.length - i]) return false
   }

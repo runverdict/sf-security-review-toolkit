@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.7`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.8`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -39,6 +39,24 @@ follow semantic versioning.
 >   **0.40 / 0.67 / 0.44** (consistent with the 0.44–0.67 refutation). Standing test
 >   `acceptance/test-recurrence-confidence.mjs` (15 checks, inline synthetic fixtures); spec in
 >   `docs/recurrence-confidence.md`. Skill wiring + cold validation pending; the tag stays **HELD**.
+> - **0.8.8** — off-disk audit fix-up of the 0.8.7 slice. **(P0 bug) bare-basename over-merge in
+>   `fileSuffixMatch`**: a single-segment file cite (a bare basename) was treated as a valid suffix of
+>   any deeper path with the same basename, so `package.json` matched BOTH `frontend/package.json` and
+>   `backend/package.json` and single-linkage clustering fused three different files into one
+>   `all_runs` / `confidence=high` locus — false confidence, the forbidden direction (over-merge can
+>   hide a distinct finding; the M10/M11 lesson). Latent on the Solano data (its basenames are unique
+>   multi-segment paths) but fixed in the load-bearing matcher: **exact** path equality always matches
+>   (a root-level `Dockerfile` cited identically still merges), but at **differing depth** the shorter
+>   segment list must be **≥ 2** (basename + a parent dir) before it counts as a tail — a bare basename
+>   can no longer bridge. **Two new invariant tests** lock it: the bare-basename non-over-merge (three
+>   same-basename files in different dirs → three `single_run` loci, plus the identical-`Dockerfile`
+>   positive) and the **two-phase anti-bridge** (a broad refuted finding overlapping two disjoint
+>   confirmed defects attaches to one without fusing them — the confirmed-anchored clustering had no
+>   test). Plus **§3 genericization** of `docs/recurrence-confidence.md` §6 (real fixture class names →
+>   role descriptions; one provenance line). Re-run on the three real ledgers: load-bearing facts
+>   **unchanged** (confirmed-per-run 8/6/7; pairwise Jaccard 0.40/0.67/0.44; the controller-FLS the one
+>   reliably-recurring blocker) — the stricter matcher is a no-op on that data, confirming the bug was
+>   latent. Suite now **31 files / 280 checks**. Tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -51,7 +69,7 @@ follow semantic versioning.
 > the **recurrence-confidence engine** that makes the run-to-run variance a visible, classified output
 > (see the 0.8.7 bullet above). Not yet built: the adjudication-drift fixes (multi-vote-on-drops,
 > baseline-checked refutations, reachability-vs-exposed-surface resolve), a union-convergence test, and
-> the skill wiring that runs the engine over N stored ledgers. Suite: 31 files / 277 checks, green.
+> the skill wiring that runs the engine over N stored ledgers. Suite: 31 files / 280 checks, green.
 > **Doc-debt note:** the detailed 2026-06-19 note below is the
 > prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
 > versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops

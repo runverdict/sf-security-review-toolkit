@@ -151,6 +151,42 @@ check('5c same file cited repo-relative vs absolute (path-suffix) MATCHES → al
   assert.equal(ls[0].recurrence_bucket, 'all_runs')
 })
 
+// --- 5d a BARE BASENAME must NOT bridge unrelated deeper paths (over-merge guard) ---
+check('5d bare basename does NOT over-merge: package.json in three DIFFERENT dirs → three single_run loci', () => {
+  const out = classifyRecurrence([
+    led(conf('package.json:1-5', 'high', 'dep flaw')),
+    led(conf('frontend/package.json:1-5', 'high', 'dep flaw')),
+    led(conf('backend/package.json:1-5', 'high', 'dep flaw')),
+  ])
+  const ls = out.loci.filter((l) => l.file.endsWith('package.json'))
+  assert.equal(ls.length, 3, 'a bare "package.json" must NOT be a suffix of frontend/ or backend/ paths')
+  assert.ok(ls.every((l) => l.recurrence_bucket === 'single_run'), 'three different files → three single_run loci')
+  assert.ok(ls.every((l) => l.confidence === 'investigate'), 'NOT all_runs/high — that would be false confidence')
+})
+// --- 5e companion positive: an IDENTICAL bare-basename cite still merges (exact equality) ---
+check('5e an identical root-level single-segment file (Dockerfile:1-3) cited in two runs DOES merge', () => {
+  const out = classifyRecurrence([
+    led(conf('Dockerfile:1-3', 'medium', 'root image flaw')),
+    led(conf('Dockerfile:1-3', 'medium', 'root image flaw')),
+  ])
+  const ls = out.loci.filter((l) => l.file === 'Dockerfile')
+  assert.equal(ls.length, 1, 'exact same single-segment path → ONE locus (the floor only blocks differing-depth bridges)')
+  assert.equal(ls[0].recurrence_bucket, 'all_runs')
+})
+
+// --- 5f two-phase anti-bridge: a broad REFUTED finding must NOT fuse two disjoint CONFIRMED defects ---
+check('5f a broad refuted finding overlapping two disjoint confirmed defects does NOT merge them', () => {
+  const out = classifyRecurrence([
+    led(conf('src/svc.js:3', 'high', 'defect at top'), conf('src/svc.js:6-10', 'high', 'defect below'), ref('src/svc.js:1-14', 'low', 'whole-function FP')),
+    led(conf('src/svc.js:3', 'high', 'defect at top'), conf('src/svc.js:6-10', 'high', 'defect below')),
+  ])
+  const ls = locusFor(out, 'src/svc.js').filter((l) => l.confirmed_count > 0)
+  assert.equal(ls.length, 2, 'the broad refuted :1-14 attaches without bridging :3 and :6-10 into one locus')
+  const spans = ls.map((l) => `${l.line_span.lo}-${l.line_span.hi}`).sort()
+  assert.ok(spans.some((s) => s.startsWith('3-')) , 'the :3 defect stays its own locus')
+  assert.ok(ls.every((l) => l.recurrence_bucket === 'all_runs'), 'each confirmed defect recurs in both runs')
+})
+
 // --- 6. determinism --------------------------------------------------------
 check('6 running twice on the same inputs yields byte-identical JSON', () => {
   const ledgers = [
