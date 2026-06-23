@@ -187,7 +187,8 @@ running a digest-pinned ZAP DAST against an isolated throwaway behind one up-fro
 **credential contract** holding throughout (synthetic secrets only in the container; state files
 record names only; loopback-only scan target) — remains intact below it.
 
-**Honest scope — the load-bearing result (2026-06-23).** A full-pipeline *cold-at-exhaustive* test
+**Honest scope — the load-bearing result (2026-06-23).** *(The experiment behind this scope:
+[`docs/ceiling-test.md`](docs/ceiling-test.md).)* A full-pipeline *cold-at-exhaustive* test
 (three runs of identical code, graded against a pre-committed bar) found the toolkit **reliably
 finds the unambiguous blockers and builds the evidence pack**, but the **contestable-severity band
 is an incomplete, unstable sample that varies run-to-run** (Jaccard 0.44–0.67; a real high blinking

@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.13`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.14`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -149,6 +149,32 @@ follow semantic versioning.
 >   explicit ALLOW + comment for an UNCOMMON wrapper (`chrt`) that stays a documented residual — so the
 >   honest scope is regression-locked exactly like the exotic-eval locks. +1 check → suite **32 files /
 >   313 checks**. Consent/scope/deny machinery untouched. Tag stays **HELD**.
+> - **0.8.14** — **published the ceiling test** (`docs/ceiling-test.md`) — the experiment that REFUTED
+>   the toolkit's strongest claim, written up as a falsification test rather than buried (the honesty IS
+>   the value, CONVENTIONS §2). The doc carries: the **hypothesis** ("at exhaustive the full
+>   generate→verify→synthesize pipeline reliably calls the contestable-severity band"), named distinct
+>   from the separately-proven "multi-vote stabilizes an ISOLATED pre-identified finding" — the variance
+>   lives in the pipeline's GENERATION step, not in adjudicating a fixed input; the **method** (N=3 cold
+>   exhaustive runs over identical Solano-fixture code; a two-axis pass/fail bar committed BEFORE run #1
+>   and held off-repo so the plugin cache couldn't read it; graded off disk, axes reported separately);
+>   the **pre-committed bar** ported generically (Axis 1 generation-set stability — every crit/high
+>   recurs in all 3 AND pairwise Jaccard ≥ 0.70; Axis 2 severity stability + correctness vs blind truth;
+>   the self-interpreting verdict table) with the findings **role-described**, not named; and the
+>   **result — both axes FAILED.** As-graded (issue-class key) pairwise Jaccard **0.56 / 0.67 / 0.44**,
+>   the shipped locus-key engine **0.40 / 0.67 / 0.44** — every pair below 0.70; only **one** high
+>   (the without-sharing-controller FLS gap) recurs in all 3 runs; the contestable anchors are unstable
+>   (the view-all over-grant medium/high/medium and mis-called MEDIUM in 2/3 vs blind HIGH; the prompt
+>   delimiter info/high/low; a real contact-PII high confirmed→refuted→confirmed). Verified mechanism:
+>   genuine generation churn + a reachability-vs-exposed-surface contestability + severity instability —
+>   **not** a single false claim. **Verdict:** Axis-2 FAIL → the hard ceiling: exhaustive does NOT
+>   reliably call the contestable band even at max rigor; the scoped true claim (finds the unambiguous
+>   blockers + builds the evidence pack; the contestable band needs repeated runs + human adjudication;
+>   no fixed run-count is complete; SF pen-tests regardless) is why the tag is HELD. Cross-links:
+>   `README.md` honest-scope section → `docs/ceiling-test.md`; `docs/recurrence-confidence.md` →
+>   ceiling-test as its motivating result; the doc points back to recurrence-confidence (the product
+>   response that makes the variance visible) and distinguishes it from `methodology/known-escapes.md`
+>   (novel-CLASS coverage gaps, not contestable-band stability). **Docs-only**; suite unchanged at
+>   **32 files / 313 checks**. Tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded

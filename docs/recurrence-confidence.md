@@ -30,9 +30,10 @@ evidence pack**, but the **contestable-severity band is an incomplete, unstable 
 that needs **repeated runs plus human adjudication**. No fixed run-count is certified
 complete, and Salesforce performs its own penetration test regardless.
 
-The full ceiling-test publication — porting the pre-committed bar and the three-run
-result into `docs/` — is a **separate planned item**; this document specifies only the
-engine that consumes the run-ledgers.
+The full ceiling-test publication — the pre-committed bar, the three-run result, and the
+product position it forced — is published in [`docs/ceiling-test.md`](ceiling-test.md), the
+**motivating result** for this engine; this document specifies only the engine that
+consumes the run-ledgers.
 
 ## 2. What the engine does
 
