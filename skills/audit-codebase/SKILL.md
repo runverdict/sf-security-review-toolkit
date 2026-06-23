@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/record-consent.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -258,6 +258,55 @@ regardless of anything this engine produces.
       run until the §6 stop rule: two consecutive dry passes, the second a
       full-band pass — one dry pass may only mean the band missed where the
       bugs live.
+
+9. **Run-to-run stability of the contestable band (optional; independent
+   re-runs).** A cold-at-exhaustive test refuted the idea that the audit calls
+   the contestable-severity band reliably in a single run: across three runs of
+   *identical* code the confirmed set drifted (pairwise Jaccard 0.44–0.67) and
+   individual findings flipped status/severity. The unambiguous blockers recur;
+   the contestable band is an unstable *sample*. This step makes that variance
+   visible — it is **NOT** part of the stop rule and never gates anything.
+
+   **Sharply distinct from step 8.** Step 8 is fix → re-run: the code *changes*
+   between passes (remediation), and a finding that disappears is a fix landing.
+   This step is **independent re-runs on the SAME unchanged code** — nothing is
+   fixed between them — so a finding that appears in one run and not the next is
+   *run-to-run instability*, the thing the human must adjudicate.
+
+   1. **Snapshot a completed run.** After a run reaches its stop rule, copy the
+      final `<target>/.security-review/audit-ledger.json` to
+      `<target>/.security-review/runs/run-<k>/audit-ledger.json` (k = the next
+      integer index; start at 1). Do this for each independent run you choose to
+      perform. **Do NOT auto-orchestrate N runs** — each is a deliberate,
+      operator-initiated audit; you only archive what was actually run.
+   2. **Classify once ≥2 snapshots at the SAME `audited_commit` exist.** The
+      stability read is only meaningful across runs of identical code, so
+      confirm the snapshots share an `audited_commit` (the engine reports
+      `commit_consistency`; `mixed` means a code change crept in and the result
+      conflates a fix with instability). Then run the deterministic engine:
+
+      ```bash
+      node ${CLAUDE_PLUGIN_ROOT}/harness/recurrence-confidence.mjs \
+        --ledger <target>/.security-review/runs/run-1/audit-ledger.json \
+        --ledger <target>/.security-review/runs/run-2/audit-ledger.json \
+        [--ledger <target>/.security-review/runs/run-N/audit-ledger.json ...] \
+        --repo-root <target> \
+        --out <target>/.security-review/recurrence-confidence.json
+      ```
+
+      Surface `summary.bucket_counts`, `summary.reliably_recurring_blockers`
+      (the all-runs + status/severity-stable set), and `summary.by_file`. The
+      engine is pure/deterministic and never writes outside
+      `<target>/.security-review/`.
+   3. **The honest contract — state it to the operator.** No fixed run-count is
+      "complete"; the reliably-recurring blockers are what the toolkit finds
+      dependably; everything outside that set — appearing in only some runs, or
+      flipping status/severity — is the contestable band that a **human
+      adjudicates**, run by run. More runs sharpen the picture; they never
+      certify it. **Never imply "run N times and you're safe."** Salesforce
+      pen-tests the surface regardless. The artifact surfaces (informational
+      only, never altering the readiness gate) in
+      `/sf-security-review-toolkit:compile-submission`.
 
 ## Automated vs. manual recap
 

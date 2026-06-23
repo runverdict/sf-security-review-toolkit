@@ -187,9 +187,61 @@ Validated against three independent audit runs of the toolkit's Solano fixture
 (`acceptance/generate-solano-fixture.mjs`); the per-run ledgers are local audit
 artifacts, not committed.
 
+## 7. Wiring & usage
+
+The engine is wired into the product end to end; it is never auto-orchestrated.
+
+**Archiving runs (`/sf-security-review-toolkit:audit-codebase` step 9).** Each
+independent audit run, on reaching its stop rule, snapshots its final
+`<target>/.security-review/audit-ledger.json` to
+`<target>/.security-review/runs/run-<k>/audit-ledger.json` (`k` = next index). This
+is **distinct from the fix → re-run loop (step 8)**: step 8 changes the code between
+passes (remediation), so a vanished finding is a fix; step 9 is **independent re-runs
+of the SAME unchanged code**, so a vanished finding is run-to-run instability. The
+operator initiates each run deliberately — the toolkit never fans out N runs on its
+own, and never implies "run N times and you're safe."
+
+**Same-commit requirement + the commit-consistency guard.** A stability read is only
+meaningful across runs of identical code. Each run's commit is read from its last
+pass's `audited_commit`; the output reports `summary.commit_consistency`
+(`consistent` | `mixed` | `unknown`) and `generated_from.runs`. When `mixed`, the
+caveat is extended to warn that an appear/disappear may reflect a **code change**
+(e.g. a fix that landed between runs) rather than instability — re-run all passes on
+one commit for a clean read. This is the honest counterpart to the step-8/step-9
+distinction: it prevents the fix-loop's output from being misread as drift. It is
+descriptive only and never gates.
+
+**Where the artifact surfaces.** When ≥2 snapshots at the same commit exist, step 9
+runs the engine with `--repo-root <target> --out
+<target>/.security-review/recurrence-confidence.json`.
+`/sf-security-review-toolkit:compile-submission` step 8 then renders a **"Finding
+Stability (N-run consensus)"** section in the readiness verdict from that file (or, in
+the single-run common case, one honest line pointing back to step 9). That section is
+**informational only**: it never alters the Submission Completeness Index, the
+`compute-sci` invocation, or the readiness gate. The SCI is still computed from the
+audit ledger + evidence index exactly as before; finding-stability never inflates
+readiness and never clears a blocker.
+
+**`by_file` rollup.** Because the locus matcher under-merges on the safe side (a
+defect cited at non-overlapping spans fragments into separate loci), a human view can
+be noisy. `summary.by_file` is a presentation rollup — one row per distinct file with
+`locus_count`, a `{high, review, investigate}` confidence tally, and
+`has_reliable_blocker` (membership in the reliably-recurring blocker set). It is a view
+OVER the per-locus classification, which stays the source of truth; no per-locus result
+changes.
+
+**`--repo-root` relativization.** A singleton locus can otherwise keep an absolute
+path (e.g. one run cited a file absolutely). `--repo-root <path>` strips that prefix,
+segment-aware, from every emitted display path; a path not under the root is left
+intact. It affects **display only** — matching runs on the raw paths, so the
+classification is identical with or without the flag. A malformed multi-file finder
+cite that does not start with the root is correctly left untouched (the safe,
+display-only direction).
+
 ---
 
 *Engine: `harness/recurrence-confidence.mjs`. Standing test:
 `acceptance/test-recurrence-confidence.mjs`. Pure, deterministic, dependency-free; same N
 ledgers in → byte-identical JSON out. Authored 2026-06-23 from the Solano
-cold-at-exhaustive refutation; the tag stays HELD pending skill wiring + cold validation.*
+cold-at-exhaustive refutation; wired into audit-codebase (step 9) + compile-submission
+(informational) at 0.8.10. The tag stays HELD pending cold validation.*

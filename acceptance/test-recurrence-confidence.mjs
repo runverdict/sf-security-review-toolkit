@@ -293,6 +293,88 @@ check('10 caveat carries the honesty contract; no completeness assertion appears
   assert.match(out.caveat, /does not certify the audit complete, passed, or safe/i)
 })
 
+// --- 11. commit-consistency honesty guard ----------------------------------
+// A ledger records its audited commit in the LAST pass's audited_commit.
+const ledAt = (commit, ...findings) => ({
+  schema_version: '1', findings, passes: [commit ? { id: 1, audited_commit: commit } : { id: 1 }],
+})
+check('11a same audited_commit across runs → commit_consistency=consistent, caveat has NO mixed warning', () => {
+  const out = classifyRecurrence([
+    ledAt('abc123', conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+    ledAt('abc123', conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+  ])
+  assert.equal(out.summary.commit_consistency, 'consistent')
+  assert.deepEqual(out.generated_from.runs, [
+    { run: 1, audited_commit: 'abc123' },
+    { run: 2, audited_commit: 'abc123' },
+  ])
+  assert.doesNotMatch(out.caveat, /different commits|code change/i)
+})
+check('11b differing commits → commit_consistency=mixed + caveat warns code-change-vs-instability', () => {
+  const out = classifyRecurrence([
+    ledAt('aaa111', conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+    ledAt('bbb222', conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+  ])
+  assert.equal(out.summary.commit_consistency, 'mixed')
+  assert.match(out.caveat, /different commits/i)
+  assert.match(out.caveat, /code change/i)
+  assert.match(out.caveat, /same commit/i)
+})
+check('11c a run missing its commit → commit_consistency=unknown (no false mixed read)', () => {
+  const out = classifyRecurrence([
+    ledAt('aaa111', conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+    ledAt(null, conf('force-app/classes/A.cls:10-20', 'high', 'A')),
+  ])
+  assert.equal(out.summary.commit_consistency, 'unknown')
+  assert.equal(out.generated_from.runs[1].audited_commit, null)
+  assert.doesNotMatch(out.caveat, /different commits/i)
+})
+
+// --- 12. by_file rollup ----------------------------------------------------
+check('12 by_file: 2 loci in fileA + 1 in fileB → 2 entries; fileA locus_count=2, tally + blocker', () => {
+  const out = classifyRecurrence([
+    led(
+      conf('force-app/classes/A.cls:10-20', 'high', 'A1'),
+      conf('force-app/classes/A.cls:50-60', 'high', 'A2'),
+      conf('force-app/classes/B.cls:1-5', 'high', 'B1'),
+    ),
+    led(conf('force-app/classes/A.cls:10-20', 'high', 'A1'), conf('force-app/classes/B.cls:1-5', 'high', 'B1')),
+  ])
+  const bf = out.summary.by_file
+  assert.equal(bf.length, 2, 'one entry per distinct file')
+  assert.deepEqual(bf.map((e) => e.file), ['force-app/classes/A.cls', 'force-app/classes/B.cls'], 'sorted by file')
+  const a = bf.find((e) => e.file === 'force-app/classes/A.cls')
+  assert.equal(a.locus_count, 2, 'two non-overlapping spans on A → two loci, one file row')
+  assert.deepEqual(a.confidences, { high: 1, review: 0, investigate: 1 }, ':10-20 all_runs high + :50-60 single_run')
+  assert.equal(a.has_reliable_blocker, true, 'A carries the all_runs/high :10-20 reliable blocker')
+  const b = bf.find((e) => e.file === 'force-app/classes/B.cls')
+  assert.equal(b.locus_count, 1)
+  assert.equal(b.has_reliable_blocker, true)
+  // the rollup does not change the per-locus source of truth
+  assert.equal(out.loci.length, 3)
+})
+
+// --- 13. --repo-root display relativization (matching unaffected) ----------
+check('13a repoRoot strips the prefix from emitted paths; a path NOT under root is left intact', () => {
+  const out = classifyRecurrence([
+    led(conf('/abs/root/src/x.js:5-9', 'high', 'X'), conf('/elsewhere/y.js:1-3', 'high', 'Y')),
+    led(conf('/abs/root/src/x.js:5-9', 'high', 'X')),
+  ], { repoRoot: '/abs/root' })
+  const files = out.loci.map((l) => l.file)
+  assert.ok(files.includes('src/x.js'), 'path under root → relativized to src/x.js')
+  assert.ok(files.includes('/elsewhere/y.js'), 'path NOT under root → left intact')
+  // relativization is display-only: x.js still matched across both runs
+  assert.equal(out.loci.find((l) => l.file === 'src/x.js').recurrence_bucket, 'all_runs')
+})
+check('13b CLI --repo-root relativizes in the emitted JSON', () => {
+  const d = mkdtempSync(join(tmpdir(), 'rec-conf-')); dirs.push(d)
+  const p1 = join(d, 'r1.json'); const p2 = join(d, 'r2.json')
+  writeFileSync(p1, JSON.stringify(led(conf('/abs/root/src/x.js:5-9', 'high', 'X'))))
+  writeFileSync(p2, JSON.stringify(led(conf('/abs/root/src/x.js:5-9', 'high', 'X'))))
+  const out = JSON.parse(execFileSync('node', [ENGINE, '--ledger', p1, '--ledger', p2, '--repo-root', '/abs/root'], { encoding: 'utf8' }))
+  assert.ok(out.loci.some((l) => l.file === 'src/x.js'), 'CLI threads --repo-root through to display')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -53,8 +53,10 @@
  * recurrence over a phantom run.
  *
  * Usage:
- *   node recurrence-confidence.mjs --ledger <p1> --ledger <p2> [--ledger <pN> ...] [--out <path>]
- *   (--ledger is repeatable; order = run order, 1-based. --out also writes the JSON
+ *   node recurrence-confidence.mjs --ledger <p1> --ledger <p2> [--ledger <pN> ...] \
+ *       [--repo-root <path>] [--out <path>]
+ *   (--ledger is repeatable; order = run order, 1-based. --repo-root strips that prefix
+ *    from every emitted display path (matching is unaffected). --out also writes the JSON
  *    to <path>, which in production is <target>/.security-review/recurrence-confidence.json.)
  */
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs'
@@ -85,6 +87,30 @@ const dimsOf = (f) =>
     : f.dimension
       ? [String(f.dimension)]
       : []
+
+// The target HEAD a run was audited at = the LAST pass's audited_commit (merge-ledger
+// appends passes sorted ascending, so the last element is the newest). Null when the
+// run records no commit — which makes commit-consistency 'unknown', never a false read.
+function lastAuditedCommit(led) {
+  const passes = led && Array.isArray(led.passes) ? led.passes : []
+  if (!passes.length) return null
+  const last = passes[passes.length - 1]
+  const c = last && typeof last === 'object' ? last.audited_commit : null
+  return c != null && String(c).trim() ? String(c).trim() : null
+}
+
+// Display-only: strip a segment-aware repoRoot prefix from an emitted path so a
+// singleton locus does not keep an absolute path in the artifact. A path that is NOT
+// under the root is left intact. Does NOT affect matching — only the emitted display.
+function relativize(file, repoRoot) {
+  if (!repoRoot) return file
+  const root = String(repoRoot).split('/').filter(Boolean)
+  if (!root.length) return file
+  const segs = String(file).split('/').filter(Boolean)
+  if (segs.length <= root.length) return file
+  for (let i = 0; i < root.length; i++) if (segs[i] !== root[i]) return file
+  return segs.slice(root.length).join('/')
+}
 
 // ---------------------------------------------------------------------------
 // Locus matching — path-segment-suffix file match + overlapping line span.
@@ -183,8 +209,8 @@ const round2 = (x) => Math.round(x * 100) / 100
 // The standing honesty caveat (CONVENTIONS §2). Per-locus confidence describes
 // how reliably THAT finding recurred — never global completeness.
 // ---------------------------------------------------------------------------
-function caveatFor(n) {
-  const base =
+function caveatFor(n, commitConsistency) {
+  let text =
     `Descriptive recurrence classification across ${n} independent run${n === 1 ? '' : 's'} of the same ` +
     `codebase. The all-runs + status/severity-stable set is the reliably-recurring blocker set. Findings ` +
     `outside it — appearing in only some runs, or flipping status or severity between runs — are the ` +
@@ -192,13 +218,17 @@ function caveatFor(n) {
     `certifies the audit complete, and Salesforce performs its own penetration test regardless. This output ` +
     `does not certify the audit complete, passed, or safe.`
   if (n === 1) {
-    return (
-      base +
+    text +=
       ' With only ONE run there is no recurrence signal at all: every locus is single-run and cannot be ' +
       'classified for stability — re-run the audit independently several times to populate this.'
-    )
   }
-  return base
+  if (commitConsistency === 'mixed') {
+    text +=
+      ' NOTE: the runs were audited at DIFFERENT commits (see generated_from.runs), so a finding appearing ' +
+      'or disappearing across runs may reflect a CODE CHANGE (e.g. a fix that landed between runs) rather ' +
+      'than run-to-run instability — re-run all passes on the SAME commit for a clean stability read.'
+  }
+  return text
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +341,21 @@ export function classifyRecurrence(ledgers, opts = {}) {
   const runLedgers = Array.isArray(ledgers) ? ledgers : []
   const n = runLedgers.length
   const ledgerPaths = Array.isArray(opts.ledgerPaths) ? opts.ledgerPaths.map(String) : []
+  const repoRoot = opts.repoRoot ? String(opts.repoRoot) : null
+
+  // Commit-consistency honesty guard. Each run's commit = its last pass's audited_commit.
+  // 'mixed' (runs at different commits) means an appear/disappear may be a CODE CHANGE,
+  // not instability — surfaced in the caveat so the fix→re-run loop's output is not
+  // misread as run-to-run drift. Descriptive only; it never gates.
+  const runs = runLedgers.map((led, i) => ({ run: i + 1, audited_commit: lastAuditedCommit(led) }))
+  const commits = runs.map((r) => r.audited_commit)
+  const commitConsistency = !commits.length
+    ? 'unknown'
+    : commits.some((c) => c === null)
+      ? 'unknown'
+      : new Set(commits).size === 1
+        ? 'consistent'
+        : 'mixed'
 
   // 1. Flatten every run's findings tagged with its 1-based run index. FAIL
   //    CLOSED: a ledger whose `findings` is not an array contributes nothing.
@@ -363,8 +408,11 @@ export function classifyRecurrence(ledgers, opts = {}) {
   }
   const clusters = [...anchored.map((members, i) => [...members, ...attachments[i]]), ...clusterTransitive(residual)]
 
-  // 3. One record per locus, sorted for byte-stability.
+  // 3. One record per locus. Apply the optional --repo-root display relativization
+  //    BEFORE sorting + the summary rollups so every emitted path is consistent
+  //    (matching already happened on the raw paths — this is display-only).
   const loci = clusters.map((members) => locusRecord(members, n))
+  if (repoRoot) for (const l of loci) l.file = relativize(l.file, repoRoot)
   loci.sort((a, b) => {
     if (a.file !== b.file) return a.file < b.file ? -1 : 1
     const al = a.line_span ? a.line_span.lo : -1
@@ -426,19 +474,40 @@ export function classifyRecurrence(ledgers, opts = {}) {
       stability_note: l.stability_note,
     }))
 
+  // by_file rollup — a PRESENTATION view over the per-locus classification (which
+  // stays the source of truth). Real output fragments one logical finding across loci
+  // when spans don't overlap (the safe under-merge direction, but noisy for a human);
+  // this groups them by file so a reviewer sees one row per file. has_reliable_blocker
+  // is membership in the reliably-recurring blocker set, not just any high-confidence.
+  const blockerFiles = new Set(reliablyRecurringBlockers.map((b) => b.file))
+  const byFileMap = new Map()
+  for (const l of loci) {
+    if (!byFileMap.has(l.file)) {
+      byFileMap.set(l.file, { file: l.file, locus_count: 0, confidences: { high: 0, review: 0, investigate: 0 } })
+    }
+    const e = byFileMap.get(l.file)
+    e.locus_count++
+    e.confidences[l.confidence] = (e.confidences[l.confidence] || 0) + 1
+  }
+  const byFile = [...byFileMap.values()]
+    .map((e) => ({ ...e, has_reliable_blocker: blockerFiles.has(e.file) }))
+    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+
   return {
     schema_version: '1',
-    generated_from: { run_count: n, ledger_paths: ledgerPaths },
+    generated_from: { run_count: n, ledger_paths: ledgerPaths, runs },
     match_key: 'normFile path-suffix + overlapping-line-span (locus-based)',
     loci,
     summary: {
       n_runs: n,
+      commit_consistency: commitConsistency,
       confirmed_per_run: confirmedPerRun,
       pairwise_jaccard: pairwise,
       bucket_counts: bucketCounts,
       reliably_recurring_blockers: reliablyRecurringBlockers,
+      by_file: byFile,
     },
-    caveat: caveatFor(n),
+    caveat: caveatFor(n, commitConsistency),
   }
 }
 
@@ -448,15 +517,17 @@ export function classifyRecurrence(ledgers, opts = {}) {
 function parseArgs(argv) {
   const ledgers = []
   let out = null
+  let repoRoot = null
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--ledger' && argv[i + 1]) ledgers.push(argv[++i])
     else if (argv[i] === '--out' && argv[i + 1]) out = argv[++i]
+    else if (argv[i] === '--repo-root' && argv[i + 1]) repoRoot = argv[++i]
   }
-  return { ledgers, out }
+  return { ledgers, out, repoRoot }
 }
 
 function main() {
-  const { ledgers: paths, out } = parseArgs(process.argv.slice(2))
+  const { ledgers: paths, out, repoRoot } = parseArgs(process.argv.slice(2))
   if (!paths.length) {
     console.error('recurrence-confidence: at least one --ledger <path> is required')
     process.exit(2)
@@ -483,7 +554,7 @@ function main() {
     }
     parsed.push(json)
   }
-  const result = classifyRecurrence(parsed, { ledgerPaths: paths })
+  const result = classifyRecurrence(parsed, { ledgerPaths: paths, repoRoot })
   const text = JSON.stringify(result, null, 2) + '\n'
   process.stdout.write(text)
   if (out) {

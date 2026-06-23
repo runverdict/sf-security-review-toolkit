@@ -237,6 +237,30 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      findings and recommend a re-audit pass before relying on the verdict. Never
      present a band over a ledger the repo has drifted away from as if it were
      current.
+   - **Finding Stability (N-run consensus) — INFORMATIONAL ONLY.** Render this
+     from `<target>/.security-review/recurrence-confidence.json` if it exists
+     (produced by `/sf-security-review-toolkit:audit-codebase` step 9 from ≥2
+     independent runs of the same commit):
+     - **If present:** show `summary.bucket_counts`, the
+       `summary.reliably_recurring_blockers` (the all-runs + status/severity-stable
+       set — what the audit finds dependably), and name the **contestable band**
+       (loci in `some_runs`, or `all_runs` but status/severity-unstable — the
+       findings a human must adjudicate run by run). If
+       `summary.commit_consistency` is `mixed`, surface that note: the runs were
+       audited at different commits, so an appear/disappear may be a code change,
+       not instability — recommend re-running on one commit.
+     - **If absent (single run — the common case):** one honest line —
+       "Finding stability not assessed: only one audit run. To assess the
+       contestable band's run-to-run stability, re-run the audit independently
+       (see `/sf-security-review-toolkit:audit-codebase` step 9)."
+     - **CRITICAL — this section is informational and changes NOTHING about the
+       gate.** It MUST NOT alter the SCI computation, the `compute-sci`
+       invocation, or the readiness band. The SCI is still computed from the
+       audit ledger + the evidence index exactly as above; finding-stability
+       never inflates readiness, never clears a blocker, and is never a go/no-go
+       input. It describes how reliably findings recurred — not whether the
+       submission is ready. No fixed run-count is "complete"; Salesforce
+       pen-tests regardless.
    - **Per-category ready / not-ready**, using the tracker's section
      boundaries (documentation artifacts; package code-scan artifacts;
      external-endpoint artifacts; CI scanning evidence; test environment;

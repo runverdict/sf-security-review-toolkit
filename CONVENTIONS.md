@@ -97,8 +97,11 @@ Skills write into the PARTNER's repo, never into the plugin:
 - `<target>/docs/security-review/` — generated artifacts (committed, reviewable).
 - `<target>/.security-review/` — machine state: `scope-manifest.json`,
   `audit-ledger.json`, `evidence/` (scan outputs, SSL Labs JSON, screenshots),
-  `run-log.md`. Recommend the partner commits this too (the ledger is what makes
-  re-audits incremental), excluding any credential material.
+  `run-log.md`, `runs/run-<k>/audit-ledger.json` (per-run ledger snapshots for the
+  cross-run stability read, audit-codebase step 9), and
+  `recurrence-confidence.json` (the deterministic recurrence-confidence artifact).
+  Recommend the partner commits this too (the ledger is what makes re-audits
+  incremental), excluding any credential material.
 - Nothing in state files may contain secrets; skills must refuse to write captured
   credentials and say where to put them instead (env vars, vaults).
 
@@ -228,7 +231,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 31 dependency-free standing tests (280 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 31 dependency-free standing tests (286 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hook (G4) — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse matcher Edit|Write → authz-gate-hook

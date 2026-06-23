@@ -7,7 +7,7 @@ follow semantic versioning.
 ## [Unreleased]
 
 > **Current state (2026-06-23) — supersedes the 2026-06-19 note below.** `v0.7.0` is the last tag;
-> `main` is at **`0.8.9`, UNTAGGED**. The 0.8.x arc since v0.7.0:
+> `main` is at **`0.8.10`, UNTAGGED**. The 0.8.x arc since v0.7.0:
 > - **0.8.1** — Solano middle-band fixture Phase-A rebuild + `namespace-check` honest-fix + the
 >   journey "triage → blocker-policy gate" relabel.
 > - **0.8.2** — three **calibration false-positive patterns** encoded into verifier guidance from a
@@ -73,6 +73,27 @@ follow semantic versioning.
 >   **CI**: `.github/workflows/test.yml` runs the full acceptance suite on push/PR (Node 20), a status
 >   badge on the README, and the Node 18+ prerequisite documented. No code/engine behavior changed; suite
 >   unchanged at **31 files / 280 checks**. Tag stays **HELD**.
+> - **0.8.10** — **recurrence-confidence wired in end-to-end** (it was built at 0.8.7 but inert — nothing
+>   produced or surfaced its artifact). Three engine refinements (still pure/deterministic/byte-identical):
+>   (a) a **commit-consistency honesty guard** — each run's commit = its last pass's `audited_commit`;
+>   output adds `generated_from.runs` + `summary.commit_consistency` (`consistent`/`mixed`/`unknown`), and
+>   on `mixed` the caveat warns that an appear/disappear may be a CODE CHANGE (a fix between runs) rather
+>   than instability — so the fix→re-run loop's output is never misread as drift (descriptive, never gates);
+>   (b) a **`summary.by_file` rollup** — one row per file with `locus_count`, a `{high,review,investigate}`
+>   tally, and `has_reliable_blocker`, a presentation view over the per-locus classification (which stays the
+>   source of truth); (c) an optional **`--repo-root`** display relativization (strip the prefix from emitted
+>   paths, segment-aware, matching unaffected). **Skill wiring:** `audit-codebase` gains **step 9** — archive
+>   each independent run's ledger to `.security-review/runs/run-<k>/`, and (≥2 snapshots at the SAME commit)
+>   run the engine to `recurrence-confidence.json`; sharply distinguished from the fix→re-run step 8, never
+>   auto-orchestrated, with the honest contract stated (no fixed run-count is complete; the human adjudicates
+>   the contestable band; SF pen-tests regardless). `compile-submission` step 8 renders an **informational**
+>   "Finding Stability (N-run consensus)" section from that artifact (or one honest line in the single-run
+>   common case) that **MUST NOT** change the SCI computation, invocation, or gate — finding-stability never
+>   inflates readiness or clears a blocker. Three new standing checks (commit-consistency, by_file, repo-root)
+>   → suite **31 files / 286 checks**. Re-run on the three real ledgers: load-bearing facts unchanged
+>   (confirmed-per-run 8/6/7; controller-FLS the one reliably-recurring blocker; Jaccard 0.40/0.67/0.44);
+>   `commit_consistency` reports `consistent` (all three at one commit). Docs: `docs/recurrence-confidence.md`
+>   §7 "Wiring & usage". Tag stays **HELD**.
 >
 > **The load-bearing result (2026-06-23): the Solano cold-at-exhaustive test REFUTED the toolkit's
 > strong contestable-band claim.** Three full-pipeline exhaustive runs of identical code, graded
@@ -81,11 +102,12 @@ follow semantic versioning.
 > **reliably finds the unambiguous blockers and builds the evidence pack**, but the
 > **contestable-severity band is an incomplete, unstable sample needing repeated runs + human
 > adjudication** — no fixed run-count is certified complete; Salesforce pen-tests regardless. The
-> tag stays **HELD** (the claim that would justify it is refuted). **Shipped off this result (0.8.7):**
-> the **recurrence-confidence engine** that makes the run-to-run variance a visible, classified output
-> (see the 0.8.7 bullet above). Not yet built: the adjudication-drift fixes (multi-vote-on-drops,
-> baseline-checked refutations, reachability-vs-exposed-surface resolve), a union-convergence test, and
-> the skill wiring that runs the engine over N stored ledgers. Suite: 31 files / 280 checks, green.
+> tag stays **HELD** (the claim that would justify it is refuted). **Shipped off this result:** the
+> **recurrence-confidence engine** (0.8.7) that makes the run-to-run variance a visible, classified
+> output, and (0.8.10) its **end-to-end wiring** — audit-codebase step 9 archives independent runs and
+> produces the artifact; compile-submission renders it informational-only (never touching the SCI gate).
+> Not yet built: the adjudication-drift fixes (multi-vote-on-drops, baseline-checked refutations,
+> reachability-vs-exposed-surface resolve) and a union-convergence test. Suite: 31 files / 286 checks, green.
 > **Doc-debt note:** the detailed 2026-06-19 note below is the
 > prior checkpoint (accurate for its scope); the `[Unreleased]` entries still need restructuring into
 > versioned 0.6.0–0.8.6 sections, and the live-SF deep-audit skills run live/irreversible `sf` ops
