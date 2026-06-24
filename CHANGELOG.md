@@ -6,7 +6,11 @@ follow semantic versioning.
 
 ## [Unreleased]
 
-_Nothing pending — the next change starts a new section here._
+### Added
+- `docs/ARCHITECTURE.md` — a property → enforcing-engine → guarding-test → code-excerpt map (with exact
+  `file:line` refs) so the "deterministic engines, not model goodwill" claim is verifiable in five minutes
+  without a clone; surfaced from the README trust section. Docs-only, no engine change (prompted by an
+  external audit noting the source was hard to verify from a browser).
 
 ---
 
