@@ -19,6 +19,45 @@ _Nothing pending — the next change starts a new section here._
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.18] — 2026-06-24
+
+**WI-D — the final piece of the driver-improvisation hardening: make the post-Workflow ledger-merge
+step unambiguous so the driver stops fumbling it.** A cold run PROBED the Workflow output file
+(parse-failed), needlessly hand-extracted `.result` into a separate file, and fumbled the
+`merge-ledger.mjs` invocation — because the skill said only "write the return to a file, then merge",
+while `merge-ledger.mjs:59` already unwraps the Workflow envelope (`wrapper.result.ledger_updates ?
+wrapper.result : wrapper`). Skill-clarity + a test that locks the unwrap. Suite **34 files / 346
+checks** (was 34 / 344). Tag stays **HELD**.
+
+### Hardened
+- **Explicit, zero-improvisation merge step (`skills/audit-codebase/SKILL.md`).** Rewrote the merge
+  instruction: the Workflow tool already writes its run to a TASK-OUTPUT FILE as an envelope
+  (`{summary, result, workflowProgress}`); point `merge-ledger --result` DIRECTLY at that
+  task-output file — the engine unwraps `.result` automatically (`merge-ledger.mjs:59`). Do NOT probe
+  the file, hand-extract `.result`, or re-parse the envelope. The exact command form is spelled out
+  with `--result <workflow-task-output-file>`.
+- **Mirrored in the sequential fallback (`harness/sequential-fallback.md`).** The "ledger merge stays
+  mechanical" bullet now names the SAME `merge-ledger.mjs` engine and its both-shapes tolerance (raw
+  envelope or pre-extracted `{ledger_updates}`), so the no-Workflow substrate gets the same
+  point-`--result`-at-the-file-directly guidance.
+- **Defensive clear error (`harness/merge-ledger.mjs`).** The line-59 unwrap's downstream guard now,
+  when the resolved object has no `ledger_updates` array, exits 2 with a CLEAR error naming BOTH
+  accepted shapes (raw Workflow task-output envelope vs pre-extracted result) and telling the caller
+  not to hand-extract — instead of the prior terse "no result.ledger_updates array" (which read like
+  a bug rather than a shape mismatch). Never a silent empty merge.
+
+### Added
+- **Two `test-merge-ledger.mjs` checks (M13, M14; 15 checks total).** M13 — UNWRAP LOCK: a RAW Workflow
+  envelope `{summary, result:{ledger_updates}, workflowProgress}` merges to byte-IDENTICAL findings as a
+  pre-extracted `{ledger_updates}` (locks the `:59` unwrap so the skill's "point at the raw file" promise
+  can't silently regress). M14 — the clear error fires (exit 2, names both shapes) on a `--result` with no
+  `ledger_updates`.
+
+### Roadmap
+- **WI-C still DEFERRED** (carried from 0.8.17): a deterministic baseline-currency-date harness. The driver
+  hand-rolls the currency-date calc and tripped on a token; it does not affect findings. Promote it to a
+  pure `harness/*.mjs` + standing test in a later cycle.
+
 ## [0.8.17] — 2026-06-24
 
 **Driver-improvisation hardening — make the engine enforce two things a cold run showed the

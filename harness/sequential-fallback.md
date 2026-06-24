@@ -34,7 +34,12 @@ method does not.
   `<target>/.security-review/` and the report path.
 - **The ledger merge stays mechanical.** The orchestrator merges verdicts by
   dedup key (normalized file + normalized title, §5.2) as a rote procedure —
-  no subagent, no judgment, no rewording of entries.
+  no subagent, no judgment, no rewording of entries. It runs the SAME
+  `${CLAUDE_PLUGIN_ROOT}/harness/merge-ledger.mjs` engine the Workflow substrate
+  uses; point `--result` at the synthesized result file DIRECTLY — the engine
+  accepts BOTH shapes (a raw `{result:{ledger_updates:[...]}}` envelope and a
+  pre-extracted `{ledger_updates:[...]}`, unwrapping `.result` at
+  `merge-ledger.mjs:59`), so do NOT hand-extract `.result` or re-parse it.
 - **The recorded consent gate (`audit-tier` + `audit-targetmap`).** The fallback
   asks Step 2/3 via `AskUserQuestion`, records each affirmative via
   `record-consent.mjs`, and `verifyConsent`'s both — FAILING CLOSED (no finder Task)

@@ -58,7 +58,17 @@ const wrapper = readJSON(RESULT, null)
 if (!wrapper) { console.error(`merge-ledger: cannot read result ${RESULT}`); process.exit(2) }
 const R = wrapper.result && wrapper.result.ledger_updates ? wrapper.result : wrapper
 const agentCount = wrapper.agentCount
-if (!Array.isArray(R.ledger_updates)) { console.error('merge-ledger: no result.ledger_updates array'); process.exit(2) }
+if (!Array.isArray(R.ledger_updates)) {
+  console.error(
+    'merge-ledger: --result has no `ledger_updates` array after unwrap. Two shapes are accepted:\n' +
+    '  (1) the RAW Workflow task-output envelope — `{ summary, result: { ledger_updates: [...] }, workflowProgress }`\n' +
+    '      (the engine unwraps `.result` automatically); point --result at that task-output file DIRECTLY, or\n' +
+    '  (2) a pre-extracted result object — `{ ledger_updates: [...] }`.\n' +
+    `  Got neither (no \`ledger_updates\` and no \`result.ledger_updates\`) in ${RESULT}. ` +
+    'Do NOT hand-extract `.result` or re-parse the envelope — pass the task-output file as-is.'
+  )
+  process.exit(2)
+}
 
 let HEAD = ''
 try { HEAD = execSync('git rev-parse HEAD', { cwd: REPO }).toString().trim() } catch { HEAD = '' }

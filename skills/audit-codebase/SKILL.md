@@ -219,8 +219,12 @@ regardless of anything this engine produces.
    the white-box-static caveat (a report without this section is dishonest by
    omission); (6) readiness-tracker mapping. Then run the shipped merge engine —
    mechanical, deterministic, never an LLM (a synthesis agent paraphrasing entries
-   corrupts the dedup keys). Write the audit Workflow's return to a file, then:
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/merge-ledger.mjs --repo <target> --result <result.json> --date <date> --pass <N> --report <report-path> --tier <tier>`.
+   corrupts the dedup keys). The Workflow tool already writes its run to a TASK-OUTPUT
+   FILE as an envelope (`{summary, result, workflowProgress}`); use the exact path the
+   tool returned. Point `merge-ledger --result` DIRECTLY at that task-output file — the
+   engine unwraps `.result` automatically (`merge-ledger.mjs:59`). Do NOT probe the file,
+   hand-extract `.result` into a separate file, or re-parse the envelope. Exact form:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/merge-ledger.mjs --repo <target> --result <workflow-task-output-file> --date <date> --pass <N> --report <report-path> --tier <tier>`.
    It computes the dedup ids (16 hex of SHA-256 over normalized file path + `\n` +
    normalized title — never the description, never line numbers; exact normalization
    in `${CLAUDE_PLUGIN_ROOT}/templates/audit-ledger.schema.json`), maps

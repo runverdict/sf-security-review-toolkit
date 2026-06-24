@@ -21,6 +21,11 @@
  *        different vulns (high FLS / critical SOQLi) → MUST stay TWO entries, both severities kept.
  *        Fails the build if a same-file-alone / title-symbol merge ever returns.
  *   M12 — real-Solano shape: 3 dimensions, overlapping line spans (:21-2x) → ONE entry, 3 lenses.
+ *   M13 — UNWRAP LOCK: a RAW Workflow task-output envelope {summary, result:{ledger_updates}, workflowProgress}
+ *         merges IDENTICALLY to a pre-extracted {ledger_updates} — locks the line-59 unwrap so the skill's
+ *         "point --result DIRECTLY at the raw task-output file" promise can't silently regress.
+ *   M14 — a --result with NO ledger_updates (neither accepted shape) → exit 2 with a CLEAR error naming
+ *         BOTH shapes (raw Workflow envelope vs pre-extracted result), never a silent empty merge.
  *
  * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
  */
@@ -233,6 +238,41 @@ check('M12 real-Solano shape: 3 dimensions at overlapping spans (:21-2x) → ONE
   assert.deepEqual(f.merged_dimensions, ['apex-exposed-surface', 'data-export', 'web-client'])
   assert.equal(f.lenses.length, 3)
   assert.equal(l.passes[0].confirmed, 1, 'one root cause counted once, not three times')
+})
+
+check('M13 unwrap-lock: a RAW Workflow envelope merges IDENTICALLY to a pre-extracted result', () => {
+  const updates = [
+    u({ file: 'server/index.js:13', title: 'JWT verify without algorithm allowlist' }),
+    u({ verdict: 'false_positive', file: 'a.cls:5', title: 'SOQL injection in getRows', verdict_reasoning: 'bound variable only' }),
+    u({ file: 'classes/SolanoCtl.cls:21-25', title: 'Missing FLS on the SELECT', dimension: 'apex-exposed-surface', verdict_reasoning: 'no WITH USER_MODE' }),
+  ]
+  const inner = { ledger_updates: updates, dimensions_run: ['crypto-internals', 'apex-exposed-surface'], total_candidates: 3 }
+  // (1) feed it as the RAW Workflow task-output envelope — point --result at the file AS-IS.
+  const dEnv = gitRepo(); dirs.push(dEnv)
+  const env = runMerge(dEnv, { summary: 'Audit workflow completed', result: inner, workflowProgress: { phases: [] }, agentCount: 9 })
+  // (2) feed the SAME updates already pre-extracted.
+  const dRaw = gitRepo(); dirs.push(dRaw)
+  const raw = runMerge(dRaw, inner)
+  // The merged FINDINGS must be byte-identical (the per-repo audited_commit lives in passes[], not findings),
+  // so the line-59 unwrap genuinely makes "point --result at the raw envelope" equivalent to hand-extracting.
+  assert.equal(JSON.stringify(env.findings), JSON.stringify(raw.findings),
+    'the line-59 unwrap must make the raw envelope merge identically to the pre-extracted result')
+  assert.ok(env.findings.length >= 2 && env.passes[0].confirmed >= 1, 'the envelope path produced a real merge, not a silent empty')
+})
+
+check('M14 clear error: a --result with no ledger_updates (neither shape) → exit 2 naming BOTH shapes', () => {
+  const d = gitRepo(); dirs.push(d)
+  const rp = join(d, '.security-review', 'bad-result.json')
+  writeFileSync(rp, JSON.stringify({ summary: 'oops', workflowProgress: {}, notTheRightShape: true }))
+  let err = null
+  try { execFileSync('node', [MERGE, '--repo', d, '--result', rp, '--date', '2026-06-17', '--pass', '1', '--tier', 'standard'], { stdio: 'pipe', encoding: 'utf8' }) }
+  catch (e) { err = e }
+  assert.ok(err, 'must exit non-zero on a shape with no ledger_updates')
+  assert.equal(err.status, 2, 'exit code 2')
+  const msg = String(err.stderr || '')
+  assert.match(msg, /ledger_updates/, 'error names the missing key')
+  assert.match(msg, /Workflow task-output envelope/i, 'error names the raw-envelope shape')
+  assert.match(msg, /pre-extracted/i, 'error names the pre-extracted shape')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
