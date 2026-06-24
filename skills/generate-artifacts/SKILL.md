@@ -1,7 +1,7 @@
 ---
 name: generate-artifacts
 description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton, and the written-policy / org-config pack (incident-response, data-retention + deletion-on-uninstall, DR/backup, vuln-remediation SLA, hosting architecture, prior-pen-test attestation) as owner-completed stubs — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) AskUserQuestion
 ---
 
 # Generate Artifacts
@@ -64,10 +64,14 @@ marked owner-input.
    is the bug this gate closes):
    - **`flagged`** — open critical/high. Generate the full NOT-READY set, but for
      every artifact id in the gate's `suppress` list **do NOT draft it** — write
-     the withheld placeholder instead (step 6, AuthN/AuthZ). The `suppress` list
-     fires purely from the ledger (an open critical/high in the authN/authZ
-     category), independent of any election. The verdict still carries the open
-     findings verbatim (`compile-submission`).
+     the withheld placeholder instead (step 6, AuthN/AuthZ). Pass the gate result
+     verbatim into `artifact-input.json` (drafting mechanism below): the assembler
+     ENGINE-ENFORCES the suppress list — it drops every suppressed `key` before
+     injection, so a withheld doc physically cannot be drafted by the Workflow (you
+     still write the placeholder driver-side). The `suppress` list fires purely from
+     the ledger (an open critical/high in the authN/authZ category), independent of
+     any election. The verdict still carries the open findings verbatim
+     (`compile-submission`).
    - **`clean`** — no open critical/high; generate the full set normally.
    (c) Baseline currency — read every `artifact-*` entry
    the selected set references and warn when any `last_verified` is older
@@ -161,6 +165,58 @@ marked owner-input.
    examined are written as code observations with citations, not as
    audit-confirmed. Running without a ledger? Every control claim downgrades
    to "code reading, unaudited" in the provenance footer.
+
+### Drafting mechanism — data-driven (P2), NOT a hand-authored Workflow
+
+The drafting fan-out (steps 6–11 below) is assembled from DATA and run through the
+shipped, tested template — exactly as the audit phase does (`build-audit-engine.mjs` +
+`workflow-template.mjs`). **Do NOT hand-author a per-run Workflow script** with inline
+prompt strings (`focus` text, nested backticks, regex): that improvisation is the
+JS-escaping/parse-error class the audit phase already retired, and a cold run plus the
+0.8.20 verification both tripped on it. Steps 6–11 are the per-artifact **content
+contracts** — they define what goes in each artifact's `focus` string; they are no
+longer hand-coded into a script.
+
+- **(a) Assemble `artifact-input.json`** at `<target>/.security-review/` — the drafting
+  plan as DATA (the `focus` strings and the shared facts live HERE, never in JS):
+
+  ```json
+  {
+    "runDate": "<YYYY-MM-DD>",
+    "facts": "<the shared authoritative facts — tool inventory + reconciliation (step 4), controls narrative (step 5), the settled org-level identity model + session-ID posture (step 6), hosts/regions + data classes (steps 7-8); the single source of truth every artifact reconciles to>",
+    "gate": "<paste the step-1b artifact-gate.mjs --json result verbatim>",
+    "artifacts": [
+      { "key": "authn-authz-flow", "tmpl": "authn-authz-flow.md.tmpl", "out": "docs/security-review/authn-authz-flow.md", "focus": "<the step-6 content contract>" },
+      { "key": "data-flow-diagram", "tmpl": "data-flow-diagram.md.tmpl", "out": "docs/security-review/data-flow-diagram.md", "focus": "<the step-7 content contract>" }
+    ]
+  }
+  ```
+
+  One `artifacts[]` entry per doc selected in step 2, each `focus` lifted from its step
+  below. Put every cross-cutting number in `facts` (tool count, identity model,
+  session-ID sentence, hosts/regions, data classes), not just inside one artifact — that
+  is what makes the set cross-consistent BY CONSTRUCTION (step 12).
+
+- **(b) Run the assembler** (read-only on source, deterministic):
+  `node ${CLAUDE_PLUGIN_ROOT}/harness/build-artifact-engine.mjs --plugin ${CLAUDE_PLUGIN_ROOT} --repo <target> --input <target>/.security-review/artifact-input.json`.
+  It reads each `tmpl` (THROWS loud on a missing template), validates each `focus`, and
+  **ENGINE-ENFORCES the gate**: every artifact whose `key` is in `gate.suppress` is
+  DROPPED before injection (logged `WARN: artifact <key> withheld by the gate — not
+  drafted`), so a withheld doc PHYSICALLY cannot be drafted — the same fail-closed
+  posture as the audit engine. It writes `<target>/.security-review/artifact-engine.mjs`.
+
+- **(c) Launch it via the Workflow tool with `scriptPath`** = the produced
+  `<target>/.security-review/artifact-engine.mjs` (NOT `args` — args arrive as a JSON
+  string and the engine fails fast). It fans out one read-only agent per artifact and
+  returns `{ drafted: [{ key, out, content }] }`.
+
+- **(d) Write each `drafted.content` to its `out`** (the Workflow runtime has no
+  filesystem access — same return-then-write shape as the audit report). For every
+  artifact the gate suppressed (dropped by the engine in (b)), write the WITHHELD
+  placeholder instead (the step-6 withhold text). Then run the step-12 cross-read and the
+  step-13 provenance footers driver-side.
+
+The content contract each artifact's `focus` carries:
 
 6. **Draft the AuthN/AuthZ flow** from `authn-authz-flow.md.tmpl` (baseline
    `artifact-authn-authz-flow-doc`, plus the § Credential storage section

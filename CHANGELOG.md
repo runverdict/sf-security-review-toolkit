@@ -23,6 +23,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.21] — 2026-06-24
+
+**The ARTIFACT phase is now data-driven — P2 parity with the audit phase.** A cold run AND the
+0.8.20 builder's own verification both hit JS-escaping/parse errors authoring a Workflow script
+with inline prompt strings (`{status:'ok'}`, nested backticks, regex). The AUDIT phase already
+retired this class (the driver supplies scope as DATA in scope-input.json and
+`build-audit-engine.mjs` injects it into the shipped, tested `workflow-template.mjs`); the ARTIFACT
+phase (generate-artifacts) was still pre-P2 — the driver hand-authored `artifact-engine.mjs` per
+run. This brings the same pattern to artifacts. Suite **37 files / 366 checks** (was 36 / 357). Tag
+stays **HELD**.
+
+### Hardened
+- **New `harness/artifact-workflow-template.mjs`** — the P2 artifact-drafting substrate, a faithful
+  mirror of `workflow-template.mjs`: `export const meta` (a `Draft` phase), the
+  `/* {{ARGS_OBJECT}} */ null` injection marker, the `const ARGS = … : INJECTED` resolve, the
+  loud run-args guard if the marker wasn't replaced, and a `Draft` phase that `parallel()`s one
+  read-only agent per artifact — each drafts its `out` from its pre-read `templateContent` + the
+  repo + the shared authoritative `facts` (so cross-cutting claims agree by construction). Agents
+  RETURN the content; the driver writes each `out` after the Workflow (the runtime has no FS).
+- **New `harness/build-artifact-engine.mjs`** — the P2 assembler, a mirror of
+  `build-audit-engine.mjs`: `--plugin/--repo/--input`, reads `{artifacts:[{key,tmpl,out,focus}],
+  facts, gate}` DATA (the per-artifact `focus` content contract + facts live in DATA, never in JS —
+  the escaping class is gone), attaches each pre-read template (THROWS loud on a missing template),
+  validates each `focus`, and **ENGINE-ENFORCES the gate**: an artifact whose `key` is in
+  `gate.suppress` is DROPPED before injection (`WARN: artifact <key> withheld by the gate — not
+  drafted`), so a withheld doc (e.g. authn-authz-flow over an open authN/authZ critical/high)
+  PHYSICALLY cannot be drafted — the same fail-closed posture as the audit engine. Injects into a
+  copy of the template at the marker (loud-fail if absent) → `.security-review/artifact-engine.mjs`.
+- **Rewired `skills/generate-artifacts/SKILL.md`** — replaced the hand-authored-Workflow drafting
+  with a data-driven assembly step: write `artifact-input.json` (the `{artifacts,facts,gate}` DATA,
+  focus strings in DATA), run `build-artifact-engine.mjs`, then launch the produced
+  `artifact-engine.mjs` via the Workflow tool with `scriptPath` (not `args`). The gate honoring is
+  now engine-enforced; the content contracts (steps 6–11), the step-12 cross-read, and provenance
+  (step 13) are PRESERVED unchanged and stay driver-side. Added
+  `Write(**/.security-review/artifact-input.json)` + `Bash(node *harness/{artifact-gate,build-artifact-engine}.mjs *)`
+  to allowed-tools.
+
+### Added
+- **`acceptance/test-build-artifact-engine.mjs` (9 checks)** — mirrors `test-build-audit-engine.mjs`:
+  valid input → engine written + INJECTED carries repoRoot + the artifacts with pre-read templates;
+  a suppressed artifact is dropped + warned (gate enforcement); missing template / empty focus /
+  absent marker each abort loud; the template's own run-args guard AND its per-artifact guard fire
+  against the real source (exercised via the Workflow-runtime async wrapper); every-artifact-withheld
+  → exit 2; determinism.
+
 ## [0.8.20] — 2026-06-24
 
 **Consolidated driver-improvisation + audit hardening cycle** (three cold-run + external-audit

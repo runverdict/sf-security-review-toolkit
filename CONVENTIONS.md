@@ -136,8 +136,13 @@ Skills write into the PARTNER's repo, never into the plugin:
   `ledger-staleness.mjs`, `injection-check.mjs`, `package-readiness.mjs`,
   `compute-sci.mjs`, `recurrence-confidence.mjs` (cross-run recurrence
   classification over N ledgers — the variance is engine-classified, never
-  narrated), and the three per-run engines that replaced LLM-authored
-  scripts — `build-audit-engine.mjs` (extract + inject the run-args),
+  narrated), and the per-run engines that replaced LLM-authored
+  scripts — `build-audit-engine.mjs` (extract + inject the audit run-args),
+  `build-artifact-engine.mjs` (the 0.8.21 P2-PARITY twin for the ARTIFACT phase:
+  inject the artifact-drafting DATA into `artifact-workflow-template.mjs`, the same
+  shipped-template-plus-injected-DATA pattern, so neither phase hand-authors a
+  Workflow with inline prompt strings — the JS-escaping/parse-error class is gone
+  from BOTH phases now),
   `merge-ledger.mjs` (mechanical ledger merge), and `build-evidence-index.mjs`
   (the evidence index + the reviewer-reproducible credit rule). The credit rule
   is the load-bearing one: SATISFIED requires reviewer-reproducible evidence;
@@ -213,10 +218,12 @@ sf-security-review-toolkit/
 │   └── evidence-index.schema.json   # WI-20 typed evidence model
 ├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed (one network exception: install-scanners.mjs — §7)
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
+│   ├── artifact-workflow-template.mjs # 0.8.21: P2 ARTIFACT-drafting substrate — mirror of workflow-template.mjs (export meta, INJECTED marker, ARGS guard, Draft-phase parallel() fan-out, return {drafted}); one agent per artifact from its template + repo + shared facts
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
 │   ├── record-consent.mjs           # 0.8.4: durable consent COUPLING — record/verify an affirmative answer per gate (.security-review/consent/<gate>.json); the launch path fails closed on a missing token so a skipped ask can't proceed. 0.8.17: controlled `--decision affirm|deny` token (the SELECTED AskUserQuestion option is authoritative — the free-text label is recorded but NOT regex-scanned; deny-precedence; invalid→exit 2)
 │   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2); FAILS CLOSED without verifyConsent(audit-tier)&&audit-targetmap (the durable gate — no engine = no fan-out). 0.8.17: ENGINE-ENFORCED always-on dims (sessionid-egress/secrets-credentials/error-handling-disclosure auto-injected regardless of the driver's scope-input; an always-on key in `na` is forced applicable with a WARN)
+│   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
@@ -248,7 +255,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 36 dependency-free standing tests (357 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 37 dependency-free standing tests (366 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
