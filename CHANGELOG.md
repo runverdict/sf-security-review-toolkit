@@ -19,6 +19,25 @@ _Nothing pending — the next change starts a new section here._
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.19] — 2026-06-24
+
+**WI-E — CI least-privilege (caught by an external security audit of the public repo).** Suite
+**35 files / 349 checks** (was 34 / 346). Tag stays **HELD**.
+
+### Hardened
+- **`.github/workflows/test.yml` pinned to a least-privilege `GITHUB_TOKEN`.** The workflow had no
+  top-level `permissions:` block, so its token inherited the repo-default scope — the first thing a
+  Salesforce Product Security reviewer checks. The workflow only checks out the repo and runs the
+  dependency-free test suite, so it now declares a top-level `permissions: { contents: read }` and
+  nothing else. No write token, no inherited scope.
+
+### Added
+- **`acceptance/test-ci-hygiene.mjs` (3 checks) locks it.** A dependency-free standing test reads
+  `.github/workflows/test.yml` as text and asserts it declares a TOP-LEVEL `permissions:` block
+  granting `contents: read` and **no** write scope (rejects any `: write` token and `write-all`). A
+  future edit that drops or widens the workflow's permissions then fails the build (verified: a
+  `contents: write` workflow fails the test).
+
 ## [0.8.18] — 2026-06-24
 
 **WI-D — the final piece of the driver-improvisation hardening: make the post-Workflow ledger-merge
