@@ -584,6 +584,16 @@ therefore be a full-band pass. Two in a row is the signal that the engine has
 exhausted what this method finds in this codebase — which is not the same as
 "the codebase is secure" (§11).
 
+A pass whose only net-new finding(s) are contestable-band FLIPS — a finding
+refuted in a prior pass reappearing as confirmed, or vice-versa, on UNCHANGED
+code (same `audited_commit`) — **counts as DRY for the stop rule.** The
+contestable-severity band (§9) is surfaced by `harness/recurrence-confidence.mjs`
+for HUMAN adjudication, not certified by run count; chasing more passes to
+"resolve" a flip is futile — the flip is the variance, not a new finding. The
+reliably-recurring blockers (confirmed every pass, severity-stable) are the
+load-bearing result; a less-careful driver must neither loop forever on a
+flipping finding nor stop early because a flip looked like "new" work.
+
 ---
 
 ## 7. Token tiers

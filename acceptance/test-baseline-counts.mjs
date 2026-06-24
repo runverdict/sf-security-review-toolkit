@@ -77,5 +77,42 @@ check('A3: harness CLI runs via a symlink (realpath guard)', () => {
   }
 })
 
+// WI-C — deterministic baseline currency: newest/oldest non-null ISO date; a null
+// or MALFORMED token never out-ranks a real date (the cold-run hand-roll trap).
+check('WI-C currency: max REAL ISO date wins; null + malformed are excluded from the ranking', () => {
+  const yaml = [
+    '- id: a', '  verification: verified_primary', '  last_verified: "2026-06-12"',
+    '- id: b', '  verification: verified_primary', '  last_verified: "2026-06-20"',
+    '- id: c', '  verification: verified_primary', '  last_verified: "2026-06-15"',
+    '- id: d', '  verification: web_research_unverified', '  last_verified: null',
+    '- id: e', '  verification: verified_primary', '  last_verified: soon',          // malformed
+    '- id: f', '  verification: verified_primary', '  last_verified: "2026-13-40"',  // malformed (bad month/day)
+    '- id: g', '  verification: verified_primary', '  last_verified: "9999-99-99"',  // malformed but sorts HIGH → must NOT win
+  ].join('\n')
+  const r = countBaseline(yaml)
+  assert.equal(r.total, 7)
+  assert.equal(r.newest_verified, '2026-06-20', 'newest is the max REAL date — a malformed "9999-99-99" must never win')
+  assert.equal(r.newest_verified_count, 1, 'exactly one entry carries the newest date')
+  assert.equal(r.oldest_verified, '2026-06-12', 'oldest is the min REAL date')
+  assert.equal(r.last_verified_null, 1, 'one null')
+  assert.equal(r.last_verified_malformed, 3, 'soon + 2026-13-40 + 9999-99-99 are malformed, excluded from ranking')
+})
+
+check('WI-C currency: a baseline with NO valid dates → newest/oldest null, count 0 (no crash)', () => {
+  const yaml = ['- id: a', '  verification: web_research_unverified', '  last_verified: null'].join('\n')
+  const r = countBaseline(yaml)
+  assert.equal(r.newest_verified, null)
+  assert.equal(r.oldest_verified, null)
+  assert.equal(r.newest_verified_count, 0)
+})
+
+check('WI-C currency: --currency CLI reports newest_verified + count + the null count', () => {
+  const out = execFileSync('node', [
+    fileURLToPath(new URL('../harness/baseline-counts.mjs', import.meta.url)), '--currency',
+  ], { encoding: 'utf8' })
+  assert.match(out, /Baseline currency: newest_verified \d{4}-\d{2}-\d{2} \(\d+ /, 'reports newest_verified + how many carry it')
+  assert.match(out, /unverified \(last_verified: null\)/, 'reports the null/unverified count')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

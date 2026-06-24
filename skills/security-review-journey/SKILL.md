@@ -72,16 +72,18 @@ five seconds, not after a forty-agent audit. **Even a full-auto run does this
 first** — there is no point burning a 40-agent audit if a required input is
 missing or a key piece of the architecture was misread.
 
-1. **Check baseline currency.** Read the baseline. Rank by the newest **non-null**
-   `last_verified` date — entries with `last_verified: null` are *unverified*,
-   not "newest"; never let a `null` sort ahead of a real date (a naive
-   `sort | tail` does exactly that and misreports a fresh baseline as stale).
-   Report two numbers: the newest verified date (and how many entries carry it),
-   and separately the count of `null`/unverified entries. If that newest non-null
-   date is older than 90 days, say so before anything else — the review process
-   changed three times in eighteen months (Chimera retirement, Code Analyzer v5,
-   AgentExchange), and stale guidance burns review cycles (CONVENTIONS §4). Point
-   at `baseline/SOURCES.md` for what to re-verify. This is a warning, not a stop.
+1. **Check baseline currency.** Do NOT hand-roll the date sort (a naive `sort | tail`
+   lets a `null`/malformed token sort ahead of a real date and misreports a fresh
+   baseline as stale — a cold-run driver tripped on exactly this). Run the deterministic
+   counter:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/baseline-counts.mjs --currency --baseline ${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml`
+   It excludes `null`/malformed tokens from the ranking (ISO dates sort lexicographically;
+   no `Date` parsing). Report what it prints: `newest_verified` + how many entries carry it,
+   and separately the `null`/unverified count. If that newest non-null date is older than
+   90 days, say so before anything else — the review process changed three times in eighteen
+   months (Chimera retirement, Code Analyzer v5, AgentExchange), and stale guidance burns
+   review cycles (CONVENTIONS §4). Point at `baseline/SOURCES.md` for what to re-verify. This
+   is a warning, not a stop.
 
 2. **Cheap architecture sense + smart-resume scan, in one pass.** Reuse
    `/sf-security-review-toolkit:scope-submission`'s detection heuristics (do not

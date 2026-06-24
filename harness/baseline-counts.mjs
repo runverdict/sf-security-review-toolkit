@@ -20,8 +20,15 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// Strict ISO calendar date (YYYY-MM-DD), bounded month/day so a malformed token
+// ("soon", "9999-99-99", "tbd") is REJECTED, not ranked. ISO dates sort
+// lexicographically, so max/min need no Date parsing — Workflow-runtime safe
+// (no Date.now / argless new Date).
+const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
 export function countBaseline(yamlText) {
-  const counts = { total: 0, verified_primary: 0, web_research_unverified: 0, conflicting: 0, other_verification: 0, last_verified_null: 0 }
+  const counts = { total: 0, verified_primary: 0, web_research_unverified: 0, conflicting: 0, other_verification: 0, last_verified_null: 0, last_verified_malformed: 0 }
+  const validDates = [] // one valid ISO last_verified per entry that has one
   let cur = null
   const flush = () => {
     if (!cur) return
@@ -31,7 +38,10 @@ export function countBaseline(yamlText) {
     else if (v === 'web_research_unverified') counts.web_research_unverified++
     else if (v === 'conflicting') counts.conflicting++
     else counts.other_verification++
-    if (cur.last_verified === null || cur.last_verified === 'null' || cur.last_verified === undefined) counts.last_verified_null++
+    const lv = cur.last_verified
+    if (lv === null || lv === 'null' || lv === undefined) counts.last_verified_null++
+    else if (ISO_DATE.test(lv)) validDates.push(lv)
+    else counts.last_verified_malformed++ // a non-null, non-ISO token never ranks
   }
   for (const raw of yamlText.split('\n')) {
     const idm = raw.match(/^- id:\s*(\S+)/)
@@ -43,6 +53,16 @@ export function countBaseline(yamlText) {
     if (lv) cur.last_verified = lv[1].replace(/^["']|["']$/g, '')
   }
   flush()
+  // ---- currency (deterministic; ISO YYYY-MM-DD sort lexicographically) ----
+  let newest_verified = null, oldest_verified = null, newest_verified_count = 0
+  if (validDates.length) {
+    newest_verified = validDates.reduce((m, d) => (d > m ? d : m), validDates[0])
+    oldest_verified = validDates.reduce((m, d) => (d < m ? d : m), validDates[0])
+    newest_verified_count = validDates.filter((d) => d === newest_verified).length
+  }
+  counts.newest_verified = newest_verified
+  counts.newest_verified_count = newest_verified_count
+  counts.oldest_verified = oldest_verified
   return counts
 }
 
@@ -52,11 +72,24 @@ function main() {
     return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def
   }
   const PLUGIN = arg('--plugin', fileURLToPath(new URL('..', import.meta.url)))
+  const BASELINE = arg('--baseline', join(PLUGIN, 'baseline', 'requirements-baseline.yaml'))
   const AS_JSON = process.argv.includes('--json')
-  const text = readFileSync(join(PLUGIN, 'baseline', 'requirements-baseline.yaml'), 'utf8')
+  const CURRENCY = process.argv.includes('--currency')
+  const text = readFileSync(BASELINE, 'utf8')
   const c = countBaseline(text)
   if (AS_JSON) {
     process.stdout.write(JSON.stringify(c, null, 2) + '\n')
+  } else if (CURRENCY) {
+    // Deterministic currency — the driver reports this instead of hand-rolling a date sort
+    // (a null/malformed token must never out-rank a real date).
+    process.stdout.write(
+      `Baseline currency: newest_verified ${c.newest_verified ?? 'none'} ` +
+        `(${c.newest_verified_count} ${c.newest_verified_count === 1 ? 'entry' : 'entries'}); ` +
+        `oldest_verified ${c.oldest_verified ?? 'none'}; ` +
+        `${c.last_verified_null} unverified (last_verified: null)` +
+        (c.last_verified_malformed ? `; ${c.last_verified_malformed} malformed (excluded from ranking)` : '') +
+        '\n'
+    )
   } else {
     process.stdout.write(
       `Baseline: ${c.total} entries — ${c.verified_primary} verified_primary, ` +

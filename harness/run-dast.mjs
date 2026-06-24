@@ -32,12 +32,16 @@ import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { dockerStatus } from './docker-check.mjs'
 import { verifyConsent } from './record-consent.mjs'
+import { clampLog } from './clamp-log.mjs'
 
 // ZAP pinned by image digest (verified 2026-06-19, the 0.7.0 prototype). Bump = re-pin.
 export const ZAP_IMAGE = 'zaproxy/zap-stable'
 export const ZAP_DIGEST = 'sha256:7c2f8afc893e4e4000be8ad3fd22013fc36e5cce59359349f5a2d45626e2ccb9'
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const URL_OK = /^https?:\/\/\S+$/i // http(s):// + a non-empty, space-free authority/path
+// http(s):// + a non-empty authority/path with NO whitespace, control chars, or
+// encoding-trick chars (`<>"'\`). The real boundary is the new URL() + LOOPBACK
+// host-check below; this is a belt-and-suspenders pre-filter (WI-F.2).
+const URL_OK = /^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i
 
 /** Loopback-only hosts — an active DAST may ONLY ever hit a local throwaway. */
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
@@ -105,8 +109,8 @@ export function runDast(plan, { consent = false } = {}) {
     mkdirSync(plan.evidenceDir, { recursive: true })
     if (!quiet('docker', ['image', 'inspect', plan.image])) run('docker', ['pull', plan.image]) // pull the pinned digest
     // zap-baseline.py exits non-zero when it FINDS warnings/fails — that's a result, not an error.
-    try { rec.log = run('docker', plan.dockerArgs).slice(-1500) } catch (e) { rec.log = String(e.stdout || e.message || '').slice(-1500) }
-    if (!existsSync(plan.reportInWrk)) { rec.status = 'failed'; rec.log = `ZAP produced no report — ${rec.log}`.slice(-1500); return rec }
+    try { rec.log = clampLog(run('docker', plan.dockerArgs), 1500) } catch (e) { rec.log = clampLog(String(e.stdout || e.message || ''), 1500) }
+    if (!existsSync(plan.reportInWrk)) { rec.status = 'failed'; rec.log = clampLog(`ZAP produced no report — ${rec.log}`, 1500); return rec }
     copyFileSync(plan.reportInWrk, plan.evidencePath) // root-readable → host-owned copy in the project
     rec.evidencePath = plan.evidencePath
     // self-labelling note so this is never mistaken for the production-equivalent submission scan.
@@ -124,7 +128,7 @@ export function runDast(plan, { consent = false } = {}) {
     try { rec.summary = summarizeZap(JSON.parse(readFileSync(plan.evidencePath, 'utf8'))) } catch (e) { rec.summary = { error: String(e.message) } }
     rec.status = 'done'
   } catch (e) {
-    rec.status = 'failed'; rec.log = `${rec.log}\n${String(e && e.message || e)}`.trim().slice(-1500)
+    rec.status = 'failed'; rec.log = clampLog(`${rec.log}\n${String(e && e.message || e)}`.trim(), 1500)
   } finally {
     // remove the root-owned ZAP wrk CONTENTS via a throwaway root container (host can't rm
     // root files), then the now-empty host-owned wrk dir itself.

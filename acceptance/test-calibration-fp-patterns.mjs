@@ -77,5 +77,13 @@ check('audit-methodology §5.2 carries the single-highest-severity cross-dimensi
   assert.ok(methodology.includes('single highest verified'), 'the cross-dimension single-severity dedup note regressed out')
 })
 
+// WI-G — the §6 stop-rule clause that a contestable-band FLIP on unchanged code counts
+// as DRY (so a less-careful driver neither loops forever nor stops wrong). Presence guard
+// only — it must not silently regress out of the methodology.
+check('audit-methodology §6 stop rule carries the contestable-band-flip-counts-as-DRY clause', () => {
+  assert.ok(methodology.includes('counts as dry for the stop rule'),
+    'the §6 "a contestable-band flip on unchanged code counts as DRY" stop-rule clause regressed out')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -224,7 +224,8 @@ sf-security-review-toolkit/
 │   ├── cleanup-scanners.mjs         # 0.6.0 step 2: asymmetric manifest-driven teardown — remove the tmp tool dir, KEEP the evidence; reuses assertSafeTmpRoot (refuses an unsafe root)
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1)
-│   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
+│   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2). 0.8.20: --currency emits newest_verified + count + oldest_verified (null/malformed dates EXCLUDED from the ISO-lexicographic ranking; no Date) so the journey stops hand-rolling the date sort
+│   ├── clamp-log.mjs                # 0.8.20: pure head+tail failure-log truncation (clampLog) — keeps the ROOT CAUSE at the top, not just the tail; used by run-dast + install-scanners
 │   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2); exports normFile/lineSpan/spansOverlap (0.8.7)
 │   ├── recurrence-confidence.mjs    # 0.8.7: classify findings by cross-run recurrence over N ledgers (all_runs/some_runs/single_run + confidence high|review|investigate); locus-based, confirmed-anchored, pairwise-Jaccard reported as a metric only
 │   ├── union-convergence.mjs        # 0.8.16: does the UNION of confirmed loci across N runs STOP growing? cumulative union_size_series + marginal_new + converged + plateau_run + completeness-disclaiming caveat; reuses recurrence locus identity; REPORT-ONLY, gates nothing (Thread 2)
@@ -247,7 +248,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 35 dependency-free standing tests (349 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 36 dependency-free standing tests (357 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

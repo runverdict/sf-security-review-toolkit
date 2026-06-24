@@ -61,6 +61,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { detectTools, whichOn } from './tool-detect.mjs'
 import { verifyConsent } from './record-consent.mjs'
+import { clampLog } from './clamp-log.mjs'
 
 export const MANIFEST_SCHEMA = 'sf-srt-scanner-install/1'
 
@@ -294,11 +295,11 @@ function executeOne(inst) {
     mkdirSync(inst.targetDir, { recursive: true, mode: 0o700 }) // 0700: not world-readable (audit #2)
     if (inst.method === 'pip') {
       run('python3', ['-m', 'venv', inst.venvDir], inst.targetDir)
-      rec.log = run(join(inst.venvDir, 'bin', 'pip'), ['install', '--no-input', '--disable-pip-version-check', inst.pkg], inst.targetDir).slice(-2000)
+      rec.log = clampLog(run(join(inst.venvDir, 'bin', 'pip'), ['install', '--no-input', '--disable-pip-version-check', inst.pkg], inst.targetDir), 2000)
     } else if (inst.method === 'npm') {
-      rec.log = run('npm', ['install', '--prefix', inst.targetDir, '--no-audit', '--no-fund', inst.pkg], inst.targetDir).slice(-2000)
+      rec.log = clampLog(run('npm', ['install', '--prefix', inst.targetDir, '--no-audit', '--no-fund', inst.pkg], inst.targetDir), 2000)
     } else if (inst.method === 'git') {
-      rec.log = run('git', ['clone', '--depth', '1', inst.source, inst.cloneDir], inst.targetDir).slice(-2000)
+      rec.log = clampLog(run('git', ['clone', '--depth', '1', inst.source, inst.cloneDir], inst.targetDir), 2000)
     } else if (inst.method === 'binary') {
       // download → VERIFY (before any exec/extract) → place ONLY the verified binary.
       run('curl', ['-fsSL', '-o', inst.download, inst.source], inst.targetDir)
@@ -338,7 +339,7 @@ function executeOne(inst) {
     if (!rec.runnable && !rec.log) rec.log = `install ran but ${inst.expectedBin} is not present/executable`
   } catch (e) {
     rec.status = 'failed'
-    rec.log = `${rec.log}\n${String(e && e.message || e)}`.trim().slice(-2000)
+    rec.log = clampLog(`${rec.log}\n${String(e && e.message || e)}`.trim(), 2000)
   }
   return rec
 }

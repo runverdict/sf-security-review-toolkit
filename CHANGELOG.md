@@ -23,6 +23,39 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.20] — 2026-06-24
+
+**Consolidated driver-improvisation + audit hardening cycle** (three cold-run + external-audit
+reviews). Suite **36 files / 357 checks** (was 35 / 349). Tag stays **HELD**.
+
+### Hardened
+- **WI-C — deterministic baseline-currency (kills a documented preflight hand-roll).**
+  `security-review-journey` SKILL.md told the driver to HAND-ROLL the baseline-currency check
+  (rank by newest non-null `last_verified`, avoid the "null sorts ahead of a real date" trap the
+  skill itself documented); a cold-run driver tripped on a malformed token doing this.
+  `harness/baseline-counts.mjs` now emits currency via `--currency`: `newest_verified` (max
+  non-null `last_verified`), `newest_verified_count`, `oldest_verified` — with `null`/malformed
+  tokens EXCLUDED from the ranking (ISO `YYYY-MM-DD` sorts lexicographically, so no `Date`
+  parsing; Workflow-runtime safe). The skill now runs the counter instead of hand-rolling the
+  sort. `acceptance/test-baseline-counts.mjs` adds a case proving a malformed `9999-99-99` never
+  out-ranks a real date.
+- **WI-G — codify the exhaustive stop-rule for the contestable-band flip.**
+  `methodology/audit-methodology.md` §6 stop rule ("two consecutive dry passes") didn't cover a
+  pass whose only net-new finding is a contestable-band FLIP (refuted↔confirmed on UNCHANGED code,
+  same `audited_commit`) — the run never went "dry," so a cold-run driver had to override by hand.
+  Added a clause: such a flip **counts as DRY for the stop rule** (the band is surfaced by
+  `recurrence-confidence.mjs` for human adjudication, not certified by run count). A presence
+  guard in `test-calibration-fp-patterns.mjs` keeps the clause from silently regressing out.
+- **WI-F.1 — head+tail failure-log truncation (better diagnostics; code-level audit).** Scanner/
+  DAST failure logs were truncated TAIL-ONLY (`.slice(-1500)`/`.slice(-2000)`), discarding the
+  ROOT CAUSE at the TOP of a deep stack trace. New pure `harness/clamp-log.mjs` (`clampLog`) keeps
+  the head AND the tail with an elision marker; every LOG truncation in `run-dast.mjs` (×4) and
+  `install-scanners.mjs` (×4) now uses it. Guarded by `acceptance/test-clamp-log.mjs`.
+- **WI-F.2 — tightened the DAST URL pre-filter (belt-and-suspenders).** `run-dast.mjs` `URL_OK`
+  went from `/^https?:\/\/\S+$/i` to `/^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i`, rejecting control/
+  encoding-trick chars. The real boundary stays the `new URL()` + LOOPBACK host-check; the
+  bracketed-IPv6 and all loopback cases are unaffected (no test changes).
+
 ## [0.8.19] — 2026-06-24
 
 **WI-E — CI least-privilege (caught by an external security audit of the public repo).** Suite
