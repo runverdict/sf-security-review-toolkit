@@ -19,6 +19,43 @@ _Nothing pending — the next change starts a new section here._
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.17] — 2026-06-24
+
+**Driver-improvisation hardening — make the engine enforce two things a cold run showed the
+LLM driver can slip on.** Both are deterministic + test-proven; their effect on cold-run
+variance is for the next campaign to measure, not claimed here. Suite **34 files / 344 checks**
+(was 34 / 338). Tag stays **HELD**.
+
+### Hardened
+- **WI-A — engine-enforced always-on dimensions (`harness/build-audit-engine.mjs`).** The
+  assembler built its dimension set from the driver's `scope-input.applicable` verbatim, so a
+  driver that forgot a methodology-mandated always-on dimension silently under-covered an
+  auto-fail class (a cold run DROPPED `secrets-credentials`, then re-added it by luck). The
+  engine now force-injects `ALWAYS_ON = ['sessionid-egress','secrets-credentials',
+  'error-handling-disclosure']` (cited to `audit-methodology.md` :77/:78/:91) into EVERY built
+  dimension set regardless of scope-input — de-duped (a driver-listed key keeps its
+  targets/stackNotes), and an always-on key the driver marked N/A is moved back to applicable
+  with a loud stderr `WARN`. Deterministic, fixed set, no LLM. `injection-xss` (:81 — CONDITIONAL,
+  "always for the injection half") is deliberately NOT forced. Guarded by `test-build-audit-engine.mjs`
+  (A1 auto-inject / A2 na→applicable+WARN / A3 no-duplicate-when-listed; 8 checks total).
+- **WI-B — controlled consent decision (`harness/record-consent.mjs`).** The skill recorded
+  consent with `--answer "<operator's yes>"`, but the driver passed the raw selected
+  AskUserQuestion option label (e.g. "Exhaustive now"), which carries no affirm word → the gate
+  stayed false → re-record churn. Added a controlled `--decision affirm|deny` token: when given,
+  it is AUTHORITATIVE (`affirmative = decision === 'affirm'`) and the free-text label is recorded
+  for the trail but NOT regex-scanned — a controlled selection must not be second-guessed by a
+  regex. Invalid `--decision` → exit 2; the exit-0-affirmative / exit-3-otherwise contract and the
+  free-text fallback (with its deny-precedence) are preserved; a `deny` decision always wins. Skill
+  prose now records consent from a SELECTION via `--decision affirm|deny` in `audit-codebase`,
+  `security-review-journey`, and `sequential-fallback`. Guarded by `test-record-consent.mjs`
+  (C11 token decides / C12 invalid→exit 2 + CLI exit codes / C13 back-compat + deny-precedence; 13 checks total).
+
+### Roadmap
+- **WI-C (DEFERRED — not built this cycle):** a deterministic baseline-currency-date harness. The
+  driver currently hand-rolls the currency-date calc and tripped on a token; it does not affect
+  findings. Promote it to a pure `harness/*.mjs` + standing test in a later cycle (same
+  determinizable-honesty-claim pattern as the other engines).
+
 ## [0.8.16] — 2026-06-24
 
 **Phase 1 of the adjudication-drift hardening (Threads 1 & 2).** Targets the run-to-run

@@ -92,6 +92,16 @@ never hard-coded paths. Applicability:
 | `untrusted-deserialization.md` | server code, an external endpoint, an MCP server, or Apex deserializes input — native-object deserializers (pickle/`yaml.load`/`Marshal`/`ObjectInputStream`/node-serialize → RCE), JavaScript prototype-pollution merges, and Apex `JSON.deserialize` into sObjects (caller-tampered privileged fields reaching DML without `stripInaccessible`) |
 | `resource-consumption-abuse.md` | an external endpoint, an MCP server, an Agentforce agent, or Apex does unbounded work — rate-limit/quota gaps + unbounded page sizes/reads/memory (API4:2023), **denial-of-wallet** on metered Agentforce/MCP/LLM round-trips (LLM10:2025), ReDoS, and decompression/parser bombs. The general how-much/how-fast + cost question the per-surface limits (identity/email/export) leave uncovered |
 
+**Engine-enforced always-on dimensions (`build-audit-engine.mjs`, 0.8.17).** Three
+dimensions marked "always" above — `sessionid-egress` (:77), `secrets-credentials`
+(:78), and `error-handling-disclosure` (:91) — are auto-fail classes the driver must
+never silently drop. The audit assembler force-injects them into EVERY built dimension
+set regardless of the driver's scope-input, and an always-on key the driver wrongly
+marked N/A is moved back to applicable with a loud `WARN` (it cannot be N/A). This is a
+deterministic backstop, not a substitute for scoping — the driver still supplies
+targets/stackNotes for the dimensions it lists. `injection-xss` (:81) is CONDITIONAL
+("always for the injection half") and is deliberately left to the driver, not forced.
+
 Packaged Apex's **structured CRUD/FLS dataflow** stays Code Analyzer's job (the
 Graph Engine pass, orchestrated by `/sf-security-review-toolkit:run-scans`) — the
 engine never claims to reproduce SFGE's dataflow analysis. But two Apex/package

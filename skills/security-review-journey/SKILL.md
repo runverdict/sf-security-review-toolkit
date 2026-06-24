@@ -307,14 +307,16 @@ missing or a key piece of the architecture was misread.
      you ASK during the run; it does NOT authorize the per-action consents (2)/(3).
    - **(2) Scan-tool install (network fetch)** — only if ≥1 scanner is installable.
      `AskUserQuestion`: install to a per-run tmp dir (removed at cleanup, evidence kept)?
-     On **yes**, record then install:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --answer "<the yes>" --target <target>`
+     On the operator's SELECTION of the install option (the selection IS the consent — do NOT
+     rely on the label containing "yes"; use `--decision deny` if they declined), record then install:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --decision affirm --question "<the install-to-tmp question>" --answer "<the option they picked>" --target <target>`
      → `install-scanners.mjs --consent` (which now ALSO verifies the recorded token; the
      flag alone no longer installs).
    - **(3) Throwaway DAST (live op)** — only if stack-detect=runnable AND docker=available.
      `AskUserQuestion`: stand up an isolated throwaway, active-scan it, then destroy it?
-     On **yes**, record then run:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --answer "<the yes>" --target <target>`
+     On the operator's SELECTION of the stand-up option (the selection IS the consent — do NOT
+     rely on the label containing "yes"; use `--decision deny` if they declined), record then run:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --decision affirm --question "<the throwaway-DAST question>" --answer "<the option they picked>" --target <target>`
      → `standup-stack.mjs --consent` → `run-dast.mjs --consent` (both verify the token).
 
    **`silence-is-yes` IS HARD-BOUND — read this exactly.** It authorizes ONLY the

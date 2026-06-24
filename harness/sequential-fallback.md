@@ -73,9 +73,11 @@ time, not at report time.
    Before the first finder Task:
    - **Step 2 (tier go-ahead) and Step 3 (show the target map) are MANDATORY
      `AskUserQuestion` stops**, never silence-is-yes inputs. Show the resolved target
-     map, ask for the tier + go-ahead and the map approval, and RECORD each affirmative:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --answer "<the operator's yes>" --target <target>`
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --answer "<the operator's yes>" --target <target>`
+     map, ask for the tier + go-ahead and the map approval, and RECORD each affirmative with
+     the controlled `--decision` token (the operator's SELECTION IS the consent — do NOT rely
+     on the option label containing "yes"; use `--decision deny` if they declined):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<tier + go-ahead>" --answer "<the option they picked>" --target <target>`
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<map approval>" --answer "<the option they picked>" --target <target>`
    - **Then verifyConsent and FAIL CLOSED.** Run
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --verify --gate audit-tier --target <target>`
      and the same for `audit-targetmap`; if EITHER exits non-zero (NOT CONSENTED),

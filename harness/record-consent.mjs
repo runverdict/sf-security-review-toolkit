@@ -20,8 +20,11 @@
  * the Workflow runtime and would break determinism, so consent is ordered, not timed.
  *
  * USAGE
- *   record:  node record-consent.mjs --gate <id> --answer "<text>" [--question "<q>"] [--target <repo>]
- *            (exit 0 when the answer is affirmative; exit 3 when it is not)
+ *   record:  node record-consent.mjs --gate <id> --answer "<text>" [--decision affirm|deny] [--question "<q>"] [--target <repo>]
+ *            (exit 0 when affirmative is recorded; exit 3 when not; exit 2 on a bad --decision)
+ *            --decision is the CONTROLLED token from the operator's SELECTED AskUserQuestion
+ *            option — when given it DECIDES affirmative (affirm→yes, deny→no) and the free-text
+ *            answer is recorded for the trail but NOT regex-scanned; without it, the answer is scanned.
  *   verify:  node record-consent.mjs --verify --gate <id> [--target <repo>]
  *            (exit 0 when an affirmative answer is recorded; exit 3 otherwise)
  */
@@ -46,9 +49,10 @@ const GATE_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 // "dont") are caught explicitly below. (No AFFIRM token contains bare "not" or an
 // apostrophe, so this cannot false-negative a real yes.) Empty/ambiguous → FALSE too.
 //
-// DURABLE DIRECTION (next hardening, NOT this change): the truly robust fix is to
-// record the SELECTED AskUserQuestion option as a controlled token (affirm|deny)
-// rather than scanning free text — then no regex can mis-read intent at all.
+// DURABLE DIRECTION (SHIPPED in WI-B — see recordConsent's `opts.decision`): the truly
+// robust fix is to record the operator's SELECTED AskUserQuestion option as a controlled
+// token (affirm|deny) rather than scanning free text — then no regex can mis-read intent
+// at all. The free-text AFFIRM/DENY scan below remains the fallback when no decision is given.
 const AFFIRM = /\b(yes|y|yeah|yep|ok|okay|approve|approved|grant|granted|consent|consented|go|proceed|confirm|confirmed|allow|allowed|agree|agreed|do it|sounds good)\b/i
 const DENY = /\b(?:no|n|nope|not|deny|denied|decline|declined|skip|cancel|stop|abort|never|refuse|refused|dont|do not)\b|\b\w+n['’]t\b/i
 
@@ -67,6 +71,22 @@ function consentDir(target) {
 export function recordConsent(gate, answer, opts = {}) {
   const g = String(gate || '')
   if (!GATE_RE.test(g)) throw new Error(`record-consent: invalid gate id '${gate}' (lowercase kebab only)`)
+  // CONTROLLED DECISION TOKEN (WI-B) — the DURABLE DIRECTION from the header above, now
+  // shipped. When the caller passes `opts.decision` derived from the operator's SELECTED
+  // AskUserQuestion option, that controlled token is AUTHORITATIVE: `affirmative` is set
+  // from it and the free-text `answer` is NOT regex-scanned. This is the whole point — a
+  // controlled selection must not be second-guessed by a regex; scanning a human label
+  // like "Standard — no deep audit" or "Exhaustive now" would mis-read it (no affirm word,
+  // or a stray "no") and re-introduce the exact free-text mis-read this removes (the
+  // re-record churn a cold run hit). The `answer` text is still recorded for the trail.
+  // DENY PRECEDENCE: a `deny` decision → non-affirmative (a controlled deny ALWAYS wins,
+  // even over an affirm-looking answer). With NO decision, fall back to isAffirmative()
+  // on the free text, whose own deny-precedence (any deny token beats any affirm) holds.
+  const decision = opts.decision == null ? null : String(opts.decision)
+  if (decision !== null && decision !== 'affirm' && decision !== 'deny') {
+    throw new Error(`record-consent: invalid --decision '${opts.decision}' (must be exactly 'affirm' or 'deny')`)
+  }
+  const affirmative = decision !== null ? decision === 'affirm' : isAffirmative(answer)
   const dir = consentDir(opts.target || process.cwd())
   mkdirSync(dir, { recursive: true })
   // Clock-free monotonic seq: one past the highest seq recorded for any gate.
@@ -85,7 +105,8 @@ export function recordConsent(gate, answer, opts = {}) {
     seq: maxSeq + 1,
     question: String(opts.question || ''),
     answer: String(answer == null ? '' : answer),
-    affirmative: isAffirmative(answer),
+    ...(decision !== null ? { decision } : {}),
+    affirmative,
   }
   writeFileSync(join(dir, `${g}.json`), JSON.stringify(record, null, 2) + '\n')
   return record
@@ -117,10 +138,11 @@ function main() {
 
   const answer = arg('--answer', null)
   if (answer == null) { console.error('record-consent: --answer "<text>" is required to record'); process.exit(2) }
+  const decision = arg('--decision', null) // optional CONTROLLED token: affirm|deny (WI-B)
   let rec
-  try { rec = recordConsent(gate, answer, { target, question: arg('--question', '') }) }
+  try { rec = recordConsent(gate, answer, { target, question: arg('--question', ''), decision }) }
   catch (e) { console.error(`record-consent: ${e.message}`); process.exit(2) }
-  process.stdout.write(`recorded gate '${rec.gate}' seq ${rec.seq} → ${rec.affirmative ? 'AFFIRMATIVE' : 'NOT affirmative (verifyConsent stays FALSE)'}\n`)
+  process.stdout.write(`recorded gate '${rec.gate}' seq ${rec.seq}${rec.decision ? ` [decision=${rec.decision}]` : ''} → ${rec.affirmative ? 'AFFIRMATIVE' : 'NOT affirmative (verifyConsent stays FALSE)'}\n`)
   process.exit(rec.affirmative ? 0 : 3)
 }
 

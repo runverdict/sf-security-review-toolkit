@@ -73,8 +73,10 @@ regardless of anything this engine produces.
    **This is a MANDATORY `AskUserQuestion` stop — not a printed line, and never a
    silence-is-yes inference.** Ask the operator to confirm the tier + give the go-ahead
    via `AskUserQuestion` (the tier gate ENFORCES the hard default: `standard` on a first
-   pass — never pre-select or auto-run `exhaustive`). On their affirmative answer, RECORD it:
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --answer "<the operator's yes>" --target <target>`.
+   pass — never pre-select or auto-run `exhaustive`). The operator's SELECTION of an
+   affirmative option IS the consent — record it with the controlled `--decision` token
+   (do NOT rely on the option label containing "yes"); use `--decision deny` if they declined:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the tier + go-ahead question>" --answer "<the option they picked>" --target <target>`.
    The fan-out **physically cannot launch** without this recorded: `build-audit-engine.mjs`
    verifies `audit-tier` (and `audit-targetmap`, below) and refuses to assemble the engine —
    exit non-zero, nothing written — when either is missing. **Consent is written ONLY by
@@ -94,8 +96,9 @@ regardless of anything this engine produces.
      them edit paths, add the module the heuristics missed, or veto a dimension. A
      wrong target map silently audits the wrong code for the entire run. Present the
      resolved `target-map.json` and ask for approval/corrections via `AskUserQuestion`;
-     on approval, RECORD it:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --answer "<the operator's yes>" --target <target>`.
+     on approval, RECORD it — the operator's SELECTION of the approve option IS the consent
+     (do NOT rely on the label containing "yes"); use `--decision deny` if they declined:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<the show-map approval question>" --answer "<the option they picked>" --target <target>`.
      `build-audit-engine.mjs` verifies BOTH `audit-tier` and `audit-targetmap` before it
      will assemble the engine — a skipped show-map physically cannot fan out (it is not a
      silence-is-yes input; the architecture was detected, but the MAP is a stop you record).

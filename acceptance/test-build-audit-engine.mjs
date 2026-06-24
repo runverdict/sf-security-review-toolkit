@@ -16,7 +16,7 @@
  * Dependency-free: `node acceptance/test-build-audit-engine.mjs`.
  */
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -64,6 +64,18 @@ const goodInput = {
 function build(dir) {
   return execFileSync('node', [BUILD, '--plugin', PLUGIN, '--repo', dir], { encoding: 'utf8' })
 }
+// Pull the injected INJECTED object out of the assembled engine (crude brace match
+// good enough for the test — the same shape injection-check.mjs parses).
+function readInjected(dir) {
+  const eng = readFileSync(join(dir, '.security-review', 'audit-engine.mjs'), 'utf8')
+  const m = eng.indexOf('\nconst INJECTED = {')
+  const objStart = eng.indexOf('{', m)
+  let depth = 0, end = objStart
+  for (let i = objStart; i < eng.length; i++) { if (eng[i] === '{') depth++; else if (eng[i] === '}') { depth--; if (depth === 0) { end = i; break } } }
+  return JSON.parse(eng.slice(objStart, end + 1))
+}
+// The three dimensions the engine forces into every audit (WI-A).
+const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-disclosure']
 
 console.log('build-audit-engine standing test')
 
@@ -72,15 +84,16 @@ check('E1 extraction + injection: INJECTED carries repoRoot + dimensions with no
   build(d)
   const eng = readFileSync(join(d, '.security-review', 'audit-engine.mjs'), 'utf8')
   assert.match(eng, /const INJECTED = \{/)
-  // pull the injected object out the same way injection-check does and inspect it
-  const m = eng.indexOf('\nconst INJECTED = {')
-  const objStart = eng.indexOf('{', m)
-  // crude brace match good enough for the test
-  let depth = 0, end = objStart
-  for (let i = objStart; i < eng.length; i++) { if (eng[i] === '{') depth++; else if (eng[i] === '}') { depth--; if (depth === 0) { end = i; break } } }
-  const obj = JSON.parse(eng.slice(objStart, end + 1))
+  const obj = readInjected(d)
   assert.equal(obj.repoRoot, d)
-  assert.equal(obj.dimensions.length, 2)
+  // 2 driver dims + 3 engine-forced always-on (WI-A) = 5.
+  assert.equal(obj.dimensions.length, 5)
+  const keys = obj.dimensions.map((x) => x.key)
+  for (const k of ['crypto-internals', 'apex-exposed-surface', ...ALWAYS_ON]) {
+    assert.ok(keys.includes(k), `dimensions must include ${k}`)
+  }
+  // driver dims come first (always-on are appended), so [0] is still crypto-internals
+  assert.equal(obj.dimensions[0].key, 'crypto-internals')
   assert.ok(obj.dimensions[0].finderPrompt.length > 200, 'finderPrompt must be extracted, not empty')
   assert.ok(obj.dimensions[0].verifierNotes.length > 200, 'verifierNotes must be extracted, not empty')
   assert.match(obj.reportPath, /audit-report-2026-06-17-pass1\.md$/)
@@ -118,6 +131,59 @@ check('E5 determinism: same input → byte-identical audit-engine.mjs', () => {
   build(d)
   const b = readFileSync(join(d, '.security-review', 'audit-engine.mjs'), 'utf8')
   assert.equal(a, b)
+})
+
+check('A1 WI-A: scope-input missing always-on dims → engine auto-injects all three', () => {
+  // goodInput.applicable lists only crypto-internals + apex-exposed-surface (no always-on).
+  const d = makeRepo(goodInput); dirs.push(d)
+  const stdout = build(d)
+  assert.match(stdout, /auto-injected always-on dimensions:.*secrets-credentials/, 'logs the auto-injection')
+  const dims = readInjected(d).dimensions
+  const keys = dims.map((x) => x.key)
+  for (const k of ALWAYS_ON) assert.ok(keys.includes(k), `auto-injected ${k} must be present in the built dimensions`)
+  // the auto-injected entries carry empty targets + the always-on stackNotes marker
+  const sc = dims.find((x) => x.key === 'secrets-credentials')
+  assert.equal(sc.targets, '')
+  assert.match(sc.stackNotes, /always-on dimension \(auto-injected\): full source tree/)
+  // and the target map lists them applicable
+  const tm = JSON.parse(readFileSync(join(d, '.security-review', 'target-map.json'), 'utf8'))
+  for (const k of ALWAYS_ON) assert.equal(tm.dimensions.find((x) => x.key === k)?.applicable, true, `${k} applicable in target-map`)
+})
+
+check('A2 WI-A: an always-on key in na → moved to applicable + a WARN on stderr', () => {
+  const input = { ...goodInput, na: [
+    { key: 'secrets-credentials', na_reason: 'driver wrongly claims no secrets' },
+    { key: 'mcp-surface', na_reason: 'no MCP server in repo' },
+  ] }
+  const d = makeRepo(input); dirs.push(d)
+  const res = spawnSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { encoding: 'utf8' })
+  assert.equal(res.status, 0, 'build still succeeds')
+  assert.match(res.stderr, /WARN: always-on dimension secrets-credentials cannot be N\/A — forcing applicable/, 'must warn on stderr')
+  const tm = JSON.parse(readFileSync(join(d, '.security-review', 'target-map.json'), 'utf8'))
+  assert.equal(tm.dimensions.find((x) => x.key === 'secrets-credentials')?.applicable, true, 'secrets-credentials forced applicable')
+  const naKeys = tm.dimensions.filter((x) => x.applicable === false).map((x) => x.key)
+  assert.ok(!naKeys.includes('secrets-credentials'), 'secrets-credentials removed from the N/A list')
+  assert.ok(naKeys.includes('mcp-surface'), 'a genuine N/A (mcp-surface) is preserved')
+})
+
+check('A3 WI-A: scope-input already listing all always-on → no duplicates, driver values win', () => {
+  const input = { ...goodInput, applicable: [
+    { key: 'crypto-internals', targets: 'server/index.js', stackNotes: 'jwt verify here' },
+    { key: 'sessionid-egress', targets: 'classes/Y.cls', stackNotes: 'driver-provided notes' },
+    { key: 'secrets-credentials', targets: 'config/', stackNotes: 'driver secrets notes' },
+    { key: 'error-handling-disclosure', targets: 'server/', stackNotes: 'driver error notes' },
+  ] }
+  const d = makeRepo(input); dirs.push(d)
+  const stdout = build(d)
+  assert.doesNotMatch(stdout, /auto-injected always-on/, 'nothing auto-injected when all are already listed')
+  const dims = readInjected(d).dimensions
+  const keys = dims.map((x) => x.key)
+  assert.equal(new Set(keys).size, keys.length, 'no duplicate dimension keys')
+  assert.equal(keys.length, 4, 'exactly the 4 driver dims, none duplicated')
+  // driver-provided targets/stackNotes are preserved (NOT overwritten by the always-on default)
+  const se = dims.find((x) => x.key === 'sessionid-egress')
+  assert.equal(se.targets, 'classes/Y.cls')
+  assert.match(se.stackNotes, /driver-provided notes/)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

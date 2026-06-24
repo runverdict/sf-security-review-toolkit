@@ -28,6 +28,7 @@ import { recordConsent, verifyConsent, isAffirmative } from '../harness/record-c
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const BUILD = join(PLUGIN, 'harness', 'build-audit-engine.mjs')
+const REC = join(PLUGIN, 'harness', 'record-consent.mjs')
 
 let pass = 0, fail = 0
 const dirs = []
@@ -138,6 +139,46 @@ check('C10 SUBSTRATE PARITY: sequential-fallback.md carries the verifyConsent/re
     /recorded consent gate \(`audit-tier` \+ `audit-targetmap`\)/, 'audit-codebase §5 substrate list includes consent')
   assert.match(readFileSync(join(PLUGIN, 'methodology', 'audit-methodology.md'), 'utf8'),
     /recorded consent gate \(`audit-tier` \+ `audit-targetmap`\)/, 'methodology §8.2 substrate list includes consent')
+})
+
+check('C11 WI-B controlled --decision token: affirm/deny decide regardless of the answer label', () => {
+  const d = tmp()
+  // affirm on a label with NO affirm word AND a stray "no" (the churn case) → affirmative TRUE.
+  const a = recordConsent('audit-tier', 'Exhaustive now — no caps', { target: d, decision: 'affirm', question: 'tier + go-ahead?' })
+  assert.equal(a.affirmative, true, 'a controlled affirm makes it affirmative even with no "yes" word and a stray "no" in the label')
+  assert.equal(a.decision, 'affirm', 'the decision token is recorded for the trail')
+  assert.equal(verifyConsent('audit-tier', { target: d }), true)
+  // deny decision → non-affirmative EVEN over an affirm-looking answer (controlled deny wins).
+  const b = recordConsent('audit-targetmap', 'yes, looks great', { target: d, decision: 'deny' })
+  assert.equal(b.affirmative, false, 'a controlled deny wins over an affirm-looking answer')
+  assert.equal(verifyConsent('audit-targetmap', { target: d }), false)
+})
+
+check('C12 WI-B invalid --decision → exit 2; CLI affirm → exit 0/verify true; CLI deny → exit 3', () => {
+  const d = tmp()
+  // invalid decision via the exported fn throws
+  assert.throws(() => recordConsent('audit-tier', 'x', { target: d, decision: 'xyz' }), /must be exactly 'affirm' or 'deny'/)
+  // invalid decision via the CLI → exit 2 (clear error, nothing affirmative recorded)
+  let badCode = 0
+  try { execFileSync('node', [REC, '--gate', 'audit-tier', '--answer', 'Exhaustive now', '--decision', 'maybe', '--target', d], { stdio: 'pipe' }) } catch (e) { badCode = e.status }
+  assert.equal(badCode, 2, 'a bad --decision exits 2')
+  // CLI affirm → exit 0 + verify true
+  execFileSync('node', [REC, '--gate', 'audit-tier', '--answer', 'Exhaustive now', '--decision', 'affirm', '--question', 'tier?', '--target', d], { stdio: 'pipe' })
+  assert.equal(verifyConsent('audit-tier', { target: d }), true, 'CLI --decision affirm records affirmative (exit 0)')
+  // CLI deny → exit 3 (the non-affirmative contract is preserved)
+  let denyCode = 0
+  try { execFileSync('node', [REC, '--gate', 'scanner-install', '--answer', 'Install to tmp', '--decision', 'deny', '--target', d], { stdio: 'pipe' }) } catch (e) { denyCode = e.status }
+  assert.equal(denyCode, 3, 'CLI --decision deny exits 3 (not affirmative)')
+  assert.equal(verifyConsent('scanner-install', { target: d }), false)
+})
+
+check('C13 WI-B back-compat: the free-text path (no --decision) is unchanged + deny-precedence holds', () => {
+  const d = tmp()
+  assert.equal(recordConsent('audit-tier', 'yes, standard', { target: d }).affirmative, true, 'free-text affirm unchanged')
+  // a free-text record carries NO decision field (record-shape back-compat)
+  assert.equal('decision' in recordConsent('audit-targetmap', 'go ahead', { target: d }), false, 'free-text records omit the decision field')
+  // free-text deny-precedence still wins (a deny token beats an affirm token)
+  assert.equal(recordConsent('scanner-install', 'no, go ahead', { target: d }).affirmative, false, 'free-text deny token beats an affirm token')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

@@ -44,8 +44,41 @@ const input = readJSON(INPUT, null)
 if (!input) { console.error(`build-audit-engine: cannot read scope input ${INPUT}`); process.exit(2) }
 
 const APPLICABLE = Array.isArray(input.applicable) ? input.applicable : []
-const NA = Array.isArray(input.na) ? input.na : []
+let NA = Array.isArray(input.na) ? input.na : []
 if (!APPLICABLE.length) { console.error('build-audit-engine: scope-input.applicable is empty — nothing to audit'); process.exit(2) }
+
+// ---- ENGINE-ENFORCED ALWAYS-ON DIMENSIONS (WI-A) ----
+// The methodology marks three dimensions unconditional/always-on for this tool, so the
+// engine forces them into EVERY audit regardless of the driver's scope-input — a driver
+// that forgets one silently under-covers an auto-fail class (a cold run DROPPED
+// secrets-credentials, then re-added it by luck). Deterministic, fixed set, no LLM.
+// Citations (methodology/audit-methodology.md applicability table):
+//   sessionid-egress          — :77 ("always on when Salesforce-adjacent code exists";
+//                               this is a Salesforce-review tool, so unconditional here)
+//   secrets-credentials       — :78 ("always")
+//   error-handling-disclosure — :91 ("always — every architecture has error/exception paths")
+// (injection-xss :81 is CONDITIONAL — "always for the injection half" — and is LEFT to the
+// driver; it is deliberately NOT forced here.)
+const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-disclosure']
+{
+  const present = new Set(APPLICABLE.map((d) => d && d.key))
+  const autoInjected = []
+  for (const key of ALWAYS_ON) {
+    // An always-on dimension can never be N/A — if the driver marked it N/A, force it
+    // applicable and warn loudly (de-coupling correctness from the driver's judgement).
+    if (NA.some((n) => n && n.key === key)) {
+      NA = NA.filter((n) => !(n && n.key === key))
+      console.error(`WARN: always-on dimension ${key} cannot be N/A — forcing applicable`)
+    }
+    // De-dup: never inject a key the driver already listed (its targets/stackNotes win).
+    if (!present.has(key)) {
+      APPLICABLE.push({ key, targets: '', stackNotes: 'always-on dimension (auto-injected): full source tree' })
+      present.add(key)
+      autoInjected.push(key)
+    }
+  }
+  if (autoInjected.length) console.log('auto-injected always-on dimensions:', autoInjected.join(', '))
+}
 
 // ---- THE DURABLE CONSENT GATE — fail closed before assembling anything ----
 // The audit fan-out PHYSICALLY CANNOT launch without the two recorded affirmative
