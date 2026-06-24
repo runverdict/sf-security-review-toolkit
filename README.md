@@ -2,6 +2,14 @@
 
 [![acceptance](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml)
 
+Claude Code skills that take an ISV partner through **AppExchange / AgentExchange
+security review preparation end to end**: an autonomous multi-agent audit of your
+own codebase shaped to what the review actually tests, generation of every
+submission artifact that can be generated, orchestration of the required scans,
+and step-by-step runbooks for the parts only a human can do — ending in an honest
+readiness verdict: *what you have, what's missing, and exactly what to do before
+you submit.*
+
 > ## ⚠️ Beta — read this first
 >
 > This toolkit is in **honest beta.** It **reliably finds the unambiguous
@@ -18,14 +26,6 @@
 > time," and **a passing run does not replace the Salesforce security review** —
 > Salesforce Product Security runs its own penetration test regardless of what you
 > submit.
-
-Claude Code skills that take an ISV partner through **AppExchange / AgentExchange
-security review preparation end to end**: an autonomous multi-agent audit of your
-own codebase shaped to what the review actually tests, generation of every
-submission artifact that can be generated, orchestration of the required scans,
-and step-by-step runbooks for the parts only a human can do — ending in an honest
-readiness verdict: *what you have, what's missing, and exactly what to do before
-you submit.*
 
 > **What this toolkit is not.** It prepares a submission; it does not pass one.
 > Salesforce's Product Security team runs its own penetration test regardless of
