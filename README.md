@@ -45,7 +45,7 @@ Create/Read/Update/Delete permissions and Field-Level Security — the access
 checks Apex skips unless you write them), un-testable
 review environments, incomplete artifacts, DAST reports that miss the identity
 endpoints, questionnaires with unexplained N/A answers. This toolkit encodes a
-methodology that was battle-tested on a real partner submission preparation —
+methodology developed preparing Verdict's own AppExchange submission —
 multi-pass multi-agent audits with adversarial verification of every finding —
 and packages the artifact formats, scan harnesses, and runbooks that came out
 of it.
@@ -83,17 +83,33 @@ invoke any single skill directly. It is **read-only on your source**, and its
 strongest verdict is ever only *"no known blockers in what we can verify —
 Salesforce pen-tests regardless,"* never *"you will pass."*
 
+## It runs the scans for you — then wipes the slate clean
+
+Most of what the security review asks for is *scan evidence*: SAST, software-composition (SCA), IaC, secret, DAST, and TLS reports. Producing them by hand means installing a dozen tools, learning each one, running them, and collating the output. The toolkit does it for you, behind **one up-front consent gate** (it touches the network and the host, so it always asks first):
+
+- **Installs up to 14 OSS scanners into a tmp directory** — Semgrep · Bandit · njsscan · gosec (SAST), OSV-Scanner · Trivy · Checkov (SCA + IaC), gitleaks · detect-secrets (secrets), RetireJS (dependencies), Nuclei · Schemathesis (DAST), testssl.sh · sslyze (TLS) — only the ones you don't already have. Raw binary downloads are **sha256-pinned and verified before they ever execute**; pip / npm / git installs lean on their own integrity layers.
+- **Stands up a throwaway mirror of your backend and runs a digest-pinned OWASP ZAP DAST against it** — loopback-only, synthetic secrets, copy-in (never a bind-mount). The active scan only ever hits a disposable copy the toolkit built; never your real prod, Salesforce infra, or any third party.
+- **Writes real evidence files** into `.security-review/evidence/`, folds them into the readiness verdict and the Submission Completeness Index, and dispositions findings into the false-positive dossier.
+- **Then wipes the slate clean** — removes the installed binaries and tears down the mirror, **keeping only the evidence.** Asymmetric by design: tools out, evidence stays.
+
+It's honest about what it can't run for you: **Code Analyzer** (you run it via the `sf` CLI — it's the scanner Salesforce itself runs) and the **Checkmarx portal scan** (partner-portal-gated). For those it hands you the exact commands and *predicts* the findings, so your real runs come back with no surprises.
+
 ## Install
+
+This is a **Claude Code plugin** — it runs inside [Claude Code](https://claude.com/claude-code), not as a standalone CLI. You need:
+
+1. **Claude Code** (CLI or IDE extension) — where the toolkit runs.
+2. **Node.js 18+** — the deterministic engines under `harness/` use only Node built-ins (no `npm install`, no dependencies, no network).
+3. *Optional:* the **Salesforce CLI** authed to your Dev Hub — only for the `sf`-gated deployed-package deep audit.
+
+Inside Claude Code, add and install the plugin (these are Claude Code slash commands, not terminal commands):
 
 ```
 /plugin marketplace add runverdict/sf-security-review-toolkit
 /plugin install sf-security-review-toolkit
 ```
 
-**Prerequisite: Node.js 18+.** The deterministic engines under `harness/` and their
-standing tests use only Node built-ins — no `npm install`, no dependencies, no network.
-Run the test suite locally with `for t in acceptance/test-*.mjs; do node "$t" || exit 1;
-done` (the same command CI runs).
+Then just say **"run the security review."** You never run the `harness/*.mjs` files yourself — they're internal engines the skills invoke. (To run the standing test suite: `for t in acceptance/test-*.mjs; do node "$t" || exit 1; done`.)
 
 ## Running it hands-off (permissions)
 
@@ -190,232 +206,54 @@ All requirement facts therefore live in
 as data — each entry carries its sources, a verification status, and a
 last-verified date. Skills warn when the entries they rely on are stale, and
 entries with conflicting sources are surfaced as "confirm with your Partner
-Account Manager" rather than silently chosen. PRs that update the baseline with
+Account Manager" rather than silently chosen.
+
+As of the latest source sweep, **121 of 165 baseline entries are `verified_primary`** (confirmed against official Salesforce docs or partner-gated primary sources), **43 remain `web_research_unverified`** pending primary-source confirmation, and 1 is `conflicting` (resolve it through your Partner Account Manager, not this repo). Verification status is per-entry in the YAML — check the entries you rely on, not the aggregate.
+
+PRs that update the baseline with
 primary-source citations are the most valuable contribution you can make.
 
-## Status
+## What the output looks like
 
-**`main` is at `0.8.16` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
-`main` added the **calibration false-positive patterns** + **Track-1b** cross-dimension ledger dedup
-+ a webhook/HMAC-DoS recalibration (0.8.2); a **durable consent coupling** (0.8.4–0.8.6: a skipped
-consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion` stops, four
-adversarial bypasses closed); the **recurrence-confidence engine and its skill wiring** (0.8.8 / 0.8.10,
-below); **OSS-readiness** (0.8.9: `SECURITY` / `CONTRIBUTING` / `CODE_OF_CONDUCT` and a CI workflow that
-runs the suite on every push); the **SF-ops safety gate** (0.8.11–0.8.13, below); the **published
-ceiling test** (0.8.14, below); a pre-public docs genericization + CHANGELOG restructure (0.8.15); and
-**Phase 1 of the adjudication-drift hardening** (0.8.16, below) — the verifier-prose carve-outs and two
-report-only diagnostic engines that target the run-to-run instability the ceiling test exposed.
-The 0.7.0 path — installing the scan tooling and running a digest-pinned ZAP DAST against an isolated
-throwaway behind one up-front consent gate, the **credential contract** holding throughout (synthetic
-secrets only in the container; state files record names only; loopback-only scan target) — remains
-intact below it.
+The toolkit's final artifact is a readiness verdict — what you have, what's missing, and exactly what to do before you submit:
 
-**Honest scope — the load-bearing result (2026-06-23).** *(The experiment behind this scope:
-[`docs/ceiling-test.md`](docs/ceiling-test.md).)* A full-pipeline *cold-at-exhaustive* test
-(three runs of identical code, graded against a pre-committed bar) found the toolkit **reliably
-finds the unambiguous blockers and builds the evidence pack**, but the **contestable-severity band
-is an incomplete, unstable sample that varies run-to-run** (Jaccard 0.44–0.67; a real high blinking
-in/out across runs) and needs **repeated runs plus human adjudication** — no fixed run-count is
-certified complete, and Salesforce pen-tests regardless. **The product response to this result is
-shipped on `main`: the recurrence-confidence engine** (`harness/recurrence-confidence.mjs` +
-[`docs/recurrence-confidence.md`](docs/recurrence-confidence.md)) — a deterministic engine that takes
-N independent run-ledgers of the same codebase and classifies each finding by how reliably it recurred
-(`all_runs` / `some_runs` / `single_run`; `confidence=high` only for the all-runs + status/severity-
-stable blocker set; everything else is the contestable band the human owns) — **and its skill wiring**:
-`audit-codebase` archives independent same-commit runs and classifies them, and `compile-submission`
-renders an informational "Finding Stability (N-run consensus)" section that never moves the SCI gate.
-Run against the three real Solano ledgers it reproduces the ground truth (the controller-FLS high recurs
-3/3; the over-grant and prompt-delimiter findings are stable-in-appearance but unstable-in-severity;
-pairwise Jaccard 0.40 / 0.67 / 0.44). **Phase 1 of the adjudication-drift fixes shipped in 0.8.16**
-(below); a cold-validation campaign measuring their EFFECT on run-to-run stability is still pending —
-these are static/deterministic changes whose impact is proven by the next cold run, not by their landing,
-so the tag stays HELD.
+```
+SUBMISSION READINESS — BLOCKED
+Submission Completeness Index: 38%  (gated — 2 open blockers)
 
-The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
-**Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 34 standing test files (338 checks)** that fail the build if a
-refactor breaks an enforced gate or its determinism. Component status, plainly:
+BLOCKERS (must clear before submit)
+  ✗ apex-exposed-surface   AccountController.getDetails — missing CRUD/FLS (HIGH)
+                           → enforce WITH USER_MODE on the SOQL read
+  ✗ permission-set         viewAllRecords on a sensitive custom object (HIGH)
+                           → drop viewAllRecords; grant per-record via sharing
 
-- **New in 0.8.16 — Phase 1 adjudication-drift hardening (Threads 1 & 2).** Targets the run-to-run
-  instability the ceiling test exposed, on two fronts. (1) Verifier-prose carve-outs so a SHIPPED
-  packaged surface stops being wrongly refuted as "unreachable": a defined-but-not-wired packaged Apex
-  entry point (`@AuraEnabled`/`@RestResource`/`@InvocableMethod`/`global`/…) is a surface a subscriber
-  admin can grant or wire post-install, so unreachability DOWNGRADES severity but never yields
-  `false_positive` (mirrors `agentforce-package` §5); and an FLS/sharing refutation that cites "the
-  platform auto-enforces at API 67.0+" is INVALID on a package whose `sourceApiVersion` is ≤66.0. A
-  least-privilege severity anchor pins `viewAllRecords`/`modifyAllRecords` on a sensitive/financial
-  custom object to a HIGH floor. (2) Two **report-only, opt-in** diagnostic engines that gate NOTHING:
-  `harness/baseline-refutation-check.mjs` (flags refutations leaning on auto-enforcement the package
-  version doesn't buy) and `harness/union-convergence.mjs` (does the union of confirmed loci across N
-  runs stop growing?). Effect on cold-run stability is measured by the next cold campaign, not claimed
-  here.
-- **New in 0.8.11–0.8.13 — the SF-ops safety gate.** A fail-closed PreToolUse hook
-  (`hooks/sf-ops-gate-hook.mjs` + [`docs/sf-ops-safety-gate.md`](docs/sf-ops-safety-gate.md)): inside a
-  managed audit repo it DENIES an irreversible Salesforce / host operation — package **promote** (a
-  permanent release), install / uninstall, scratch-org create / delete, data delete, destructive deploy,
-  `sf org login`, `npm install -g` — unless an affirmative operator consent for its gate is recorded, so
-  a skipped consent ask physically cannot run the op. The command classifier was hardened through two
-  adversarial-bypass rounds; its residual is honestly scoped (an uncommon process wrapper or an exotic
-  eval form can evade — a static classifier cannot run the shell).
-- **New in 0.7.1 / 0.7.2 — environment preconditions (graceful degradation).** The throwaway
-  DAST runs in containers, so `harness/docker-check.mjs` detects Docker (`available | absent |
-  daemon-down`) and the gate offers it only when it can actually run — else an honest "install
-  Docker once, or DAST stays owner-run" (Docker is a *guided* prerequisite, never tmp-installed:
-  it's a privileged daemon, unlike the userland scanners). `harness/namespace-check.mjs` confirms
-  the package's namespace is registered to the authed Dev Hub before the deep-audit gate offers a
-  managed-2GP build — so it never offers a build that would fail at `sf package version create`
-  and mutate your repo first.
-- **New in 0.7.0 — the autonomous throwaway-DAST harness (cold-validated, tagged).** The server-
-  tier analogue of the deployed-org deep audit: `stack-detect` classifies whether your external
-  backend can stand up; `standup-stack` runs it as an **isolated throwaway container** (copy-in,
-  synthetic secrets, manifest of names not values, `127.0.0.1`-only); `run-dast` runs a
-  **digest-pinned ZAP** against that disposable mirror and writes host-owned, self-labelled
-  *local-throwaway* evidence; `teardown-stack` destroys it (name-scoped, guaranteed, evidence
-  kept); `scaffold-env` handles a `needs-secrets` stack (an env stub in tmp, never the repo, with
-  a deterministic filled-check). The active scan only ever hits a mirror the toolkit built — never
-  live prod, Salesforce infra, or a third party. 12 adversarial-audit findings (several HIGH —
-  a credential leak, the loopback boundary, guaranteed teardown) were fixed before the tag.
-- **New in 0.6.0 — consented, tmp-scoped scanner install.** `tool-detect` reports which scan
-  tools are present vs installable-on-consent; `install-scanners` (the one network-touching engine,
-  fail-closed without explicit consent) installs the missing ones to a tmp dir — pip→venv,
-  binary→**sha256-pinned download verified before exec**, npm→`--prefix`, git→clone — turning the
-  external-SAST/SCA/secret/TLS families from `PENDING-OWNER-RUN` into real evidence; `cleanup-
-  scanners` removes the binaries while keeping the evidence (asymmetric, name-scoped). 13
-  adversarial-audit findings fixed before validation.
-- **New in 0.5.3 — accurate, proactive power-up offers.** The preflight now settles
-  deployed-org-deep-audit **install-readiness up front** (`harness/package-readiness.mjs`:
-  `installable` / `needs-build` / `n/a` from `sfdx-project.json`) instead of announcing "deep
-  audit available (sf authed)" and only discovering the blocker — a placeholder package alias /
-  unbuilt version — later in scope. The deep audit is then offered **proactively and accurately**
-  (ready → "run it?"; `needs-build` → "build first, then deep-audit?") so the one consent decision
-  is fully informed, not a mid-run surprise.
-- **New in 0.5.2 — audit-only triage + a wider authN/authZ withhold.** The gate no longer pauses
-  at an open critical/high or offers a fix path: the toolkit **audits and reports**, always
-  producing the full NOT-READY report (it never drafts/suggests/writes code; read-only on your
-  source). The one honesty line — withholding the AuthN/AuthZ doc over an open authN/authZ
-  critical/high — now fires purely from the ledger (no election to skip) and covers
-  `sessionid-egress` (the review's named auto-fail class) and `crypto-internals` (JWT verification),
-  gaps an adversarial pass caught. Plus **G5** — the audit-engine pre-launch check is
-  now a decoy-anchored helper (`injection-check.mjs`) so a header-comment mention of
-  the inject marker can't be misread as a failed injection. And **G4** — an opt-in
-  PreToolUse hook (`hooks/`) that, once you arm it, blocks writing the AuthN/AuthZ doc
-  while an open auth hole stands (runtime-independent backstop to the skill gate).
-  Suite now **10 files / 100 checks**.
-- **New in 0.5.1 — C1 staleness hardened + fix-first validated.** The resumption staleness check
-  (`ledger-staleness.mjs`) is rebuilt to handle the messy `finding.file` shapes a real finder writes
-  (comma/range line suffixes, two-file cites, absolute paths) — its detect-changed-code path is now
-  proven LIVE on a real fixture and guarded by a hermetic + an adversarial standing test (suite now
-  **8 files**). The artifact gate's *positive* side is validated end to end (remediate →
-  re-audit → 0 open critical/high → gate clean → the withheld AuthN/AuthZ doc regenerates). Repo
-  moved to the **`runverdict`** org.
-- **New in 0.5.0 — cold-start acceptance hardening (enforced gates + deterministic engines +
-  standing tests).** A 0-context, partner-style cold-start run of the whole journey plus an
-  external critical-reader review surfaced gaps the fixture-based acceptance test structurally
-  could not. Five new no-LLM/no-dependency engines turn the honesty-critical properties into
-  enforced logic: `harness/artifact-gate.mjs` STOPs artifact generation while an open
-  critical/high finding stands and **withholds the AuthN/AuthZ artifact** (fail-closed, not on the
-  model's good behavior); `applicable-requirements.mjs` makes applicability an exact
-  `applies_to ∩ elements` set; `baseline-counts.mjs` is the deterministic source of truth for the
-  baseline self-description; `finding-clusters.mjs` de-dups the per-dimension fan-out for an honest
-  triage headline; `ledger-staleness.mjs` flags findings whose code changed since they were
-  audited (a per-pass `audited_commit` fingerprint). The SCI now splits stale-vs-unverified
-  evidence and adds a band-level **currency floor** (caps confidence, never the partner's
-  completeness %). A new **`agentforce`** architecture element gates the agentforce-* / mcp-*
-  requirements precisely — off the generic managed-package element, so a plain package is no longer
-  told to satisfy Agentforce requirements it has no surface for. Findings carry **ADDRESSED-fixed**
-  vs **ADDRESSED-refuted(FP)** sub-labels so a false positive can't be skim-read as a fix. Six
-  standing test files (`acceptance/test-*.mjs`, 43 deterministic checks) guard all of the above,
-  and `methodology/known-escapes.md` is the seeded recall log for real-review misses.
-- **New in 0.4.4 — Checkmarx prediction (WI-16) + path-to-green (WI-22).** run-scans
-  now predicts the findings your owner-gated portal Checkmarx scan will surface (so
-  your 3 runs come back with no surprises — a prediction, never an equivalence; an
-  optional CxOne CLI path runs the real scan if you hold a licence). And
-  compile-submission writes a single ordered `path-to-green.md` — every open item
-  from the current SCI band to NO-SURPRISES READY, sequenced blocker → major → minor,
-  each tagged with the gate it unblocks. The autonomous-orchestration roadmap
-  (WI-16..22) is complete.
-- **New in 0.4.3 — reviewer-simulation (WI-21).** A first-class "audit AS THE
-  REVIEWER WILL" pass: it reframes everything the audit + scans found as *what
-  Salesforce Product Security will see*, ranked by the reviewer's own attack
-  priority (public/guest reach → authz → injection → egress → package hygiene →
-  infra) and headed by the first things they will hit — each challenge marked
-  WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED.
+ARTIFACTS   14/17 · AuthN/AuthZ flow WITHHELD (open authz blocker)
+SCANS       Code Analyzer ✓ · DAST pending · TLS A · secrets ✓
+FINDING STABILITY (3-run consensus)
+  high    Controller-FLS         recurred 3/3
+  review  Contact-PII FLS        2/3 — needs human adjudication
+PATH TO GREEN → 2 blockers → 1 major → 3 minor   (path-to-green.md)
+```
 
-- **New in 0.4.2 — the written-policy / org-config artifact pack (WI-19).** The
-  surface where a submission stalls *after* the code is clean: `generate-artifacts`
-  now drafts six owner-completed stubs — incident-response plan (with the 24-hour
-  reporting duty), data-retention + deletion-on-uninstall, DR/backup,
-  vuln-remediation SLA, hosting architecture, and prior-pen-test attestation —
-  pre-filled from detected facts, each `PARTIAL` until owner-signed (the SCI never
-  credits an un-signed stub).
-- **New in 0.4.1 — OSS external-surface scanners (WI-17).** The partner-hosted
-  server tree + its IaC — which Code Analyzer never sees but Salesforce explicitly
-  pen-tests — is now mechanically scanned by free/OSS tools: **Family 7 SAST**
-  (Semgrep + Bandit/njsscan/gosec), **Family 8 SCA + IaC** (OSV-Scanner + Checkov),
-  plus DAST (Nuclei + Schemathesis) and local TLS evidence (testssl.sh/sslyze,
-  which clears the one `conflicting` SSL-Labs baseline entry). Proven by running
-  each tool against a seeded fixture; findings feed the SCI.
-- **New in 0.4.0 — the Submission Completeness Index (SCI) + a formal evidence
-  model.** `compile-submission` now emits a deterministic, gated readiness score
-  (`harness/compute-sci.mjs`) — a hard blocker floor over a
-  coverage/disposition/freshness vector, with a completeness % **explicitly
-  labelled "not a pass prediction"** and the standing "not verified by this
-  toolkit" list. Every readiness claim is backed by a typed entry in the evidence
-  index (`templates/evidence-index.schema.json`) — no credit for un-evidenced
-  self-attestation. `security-review-journey` surfaces the SCI as the autonomous
-  pre-compile go/no-go signal. This is the spine of the
-  [autonomous-orchestration extensions roadmap](#status) (OSS external-surface
-  scanners, written-policy artifacts, and reviewer-simulation follow).
+*Illustrative of the format. A passing run never means "you will pass" — Salesforce pen-tests regardless.*
 
-- **Field-tested:** the audit methodology (CONVENTIONS, audit-methodology, the
-  find → adversarial-verify → synthesize engine) and the harness assets — these
-  were extracted from real multi-pass audits of a real partner codebase before
-  its own submission prep.
-- **Validated end to end (fresh-context run, 2026-06-13):** the toolkit was run
-  cold against a real production codebase (FastAPI + Postgres RLS + an OAuth 2.1
-  authorization server + an MCP server + two 2GP packages). From an empty ledger
-  the audit re-discovered every known-open finding, refuted false candidates with
-  code evidence, and the generated artifact pack matched a hand-built reference.
-- **Coverage closures (0.3.0):** three new dimensions —
-  [`agentforce-package`](methodology/dimensions/agentforce-package.md) (the
-  packaged Agentforce/AI surface, audited independent of any MCP server),
-  [`package-metadata`](methodology/dimensions/package-metadata.md) (the
-  metadata/XML violation class no code-AST dimension reads), and
-  [`apex-exposed-surface`](methodology/dimensions/apex-exposed-surface.md)
-  (exposed-entry-point authorization / IDOR / guest-reachability) — plus
-  `run-scans` **Family 6** (mechanical secret scan over the working tree **and
-  full git history**). These close the four CRITICAL recall gaps from the
-  maintainer coverage-gap audit.
-- **Acceptance-proven (0.3.1):** a dedicated [`acceptance/`](acceptance/) harness
-  builds a synthetic Agentforce managed package seeded with one concrete instance
-  of every probe in the new dimensions (plus a deleted-but-recoverable
-  git-history secret and negative controls), then runs the toolkit against it
-  cold. The run auto-selected all three new dimensions, Family 6 recovered the
-  deleted secret from history, and the finders caught the planted classes
-  (`apex-exposed-surface` flagged every planted entry-point at critical/high;
-  `agentforce-package` flagged the service-agent IDOR / VerifiedCustomerId /
-  third-party-LLM / prompt-injection classes). The run also surfaced — and the
-  release fixes — two **engine-robustness** gaps: a finder could be derailed onto
-  a foreign repo's stale scope-manifest (now hard-anchored to the audit target),
-  and the adversarial verifier never received each dimension's §5/§6 refute rules
-  (now threaded in, so declaration-level metadata violations are no longer
-  over-refuted on a "no live caller" rationale). See the [`CHANGELOG`](CHANGELOG.md)
-  and [`acceptance/expected-findings.md`](acceptance/expected-findings.md).
-- **Substantially verified, residual gaps flagged:** after the 2026-06-12
-  primary-source reconciliation and the same-day partner-gated evidence
-  delta (and the 2026-06-20 PMD AppExchange rule-set re-verification),
-  121 of 165 baseline entries are `verified_primary` (confirmed
-  against official Salesforce docs or partner-gated primary sources); 43
-  remain `web_research_unverified` pending primary-source confirmation, and
-  1 is `conflicting` (`endpoint-ssl-labs-a-grade`) — that one must be
-  resolved through your Partner Account Manager or partner Slack, not trusted
-  from this repo. Verification status is per-entry in the YAML; check the
-  entries you rely on, not the aggregate.
+## Why you can trust the output
 
-Use the readiness verdict as preparation guidance, not as a pass prediction. The
-acceptance test proves the toolkit *catches its known failure classes* on a
-seeded fixture — a no-surprises bar, never a guarantee that Salesforce's own
-pen test (which runs regardless) finds nothing.
+The model does the finding; deterministic code owns the guardrails — a weaker model produces weaker findings, it does not collapse the gates.
+
+- **~34 pure engines in `harness/` enforce the honesty-critical properties, not model goodwill.** The AuthN/AuthZ artifact is withheld by an enforced gate while any critical/high finding is open; the Submission Completeness Index has a hard blocker floor and is labelled *"not a pass prediction"*; applicability, finding de-duplication, ledger merge, staleness, and cross-run recurrence are all deterministic and guarded by standing tests. If the model degrades you get weaker findings, not a broken audit — the gates still hold.
+- **Every refutation requires code evidence.** The adversarial verifier reads the actual code — never the finder's reasoning — and must return the exact `file:line` + snippet that decides it. The false-positive dossier reuses that verbatim; any entry missing real evidence is marked `DRAFT`, not submission-ready. The toolkit never accepts residual risk on your behalf — you sign every disposition.
+- **It is honest about its ceiling.** It tells you what it cannot certify — see [`docs/ceiling-test.md`](docs/ceiling-test.md) and [`docs/recurrence-confidence.md`](docs/recurrence-confidence.md) — instead of pretending to be complete.
+
+## How it was validated
+
+The methodology and harness were extracted from real multi-pass audits of **Verdict's own production codebase** — a multi-tenant revenue platform with database row-level tenant isolation, an OAuth 2.1 authorization server, an MCP server, and two managed 2GP packages — during its own AppExchange prep. Run cold from an empty ledger, the audit re-discovered every known-open finding, refuted false candidates with code evidence, and the generated artifact pack matched a hand-built reference. The acceptance suite additionally runs the toolkit cold against synthetic fixtures (a catastrophe-recall fixture and a mostly-compliant middle-band judgment fixture) on every change. **Honest ceiling:** this is the author's own code and self-authored fixtures — only a third-party package or a real Salesforce review tests generalization.
+
+## Maturity & what's in the box
+
+**14 skills · 19 audit dimensions · 8 scan families · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by 34 standing test files (338 checks)** that fail the build if a refactor breaks an enforced gate or its determinism.
+
+Honest beta (see the top of this README). `main` is at `0.8.16`; the full version-by-version history is in [`CHANGELOG.md`](CHANGELOG.md). Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
 
 ## License
 
