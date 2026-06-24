@@ -10,9 +10,7 @@ and step-by-step runbooks for the parts only a human can do — ending in an hon
 readiness verdict: *what you have, what's missing, and exactly what to do before
 you submit.*
 
-> ## ⚠️ Beta — read this first
->
-> This toolkit is in **honest beta.** It **reliably finds the unambiguous
+> **⚠️ Beta — read this first.** This toolkit is in **honest beta.** It **reliably finds the unambiguous
 > blockers** — public-reach authorization holes, missing CRUD/FLS, injection,
 > secret leakage, package-hygiene failures — and **builds the reviewer evidence
 > pack** for your submission. But the **contestable-severity band** (the calls
@@ -26,16 +24,6 @@ you submit.*
 > time," and **a passing run does not replace the Salesforce security review** —
 > Salesforce Product Security runs its own penetration test regardless of what you
 > submit.
-
-> **What this toolkit is not.** It prepares a submission; it does not pass one.
-> Salesforce's Product Security team runs its own penetration test regardless of
-> what you submit. Nothing here represents a scan, test, or certification as
-> complete unless there is an evidence file behind it. Where a property can be
-> made deterministic, it is enforced by code rather than left to the model's good
-> behavior: the AuthN/AuthZ artifact is **withheld by an enforced gate**
-> (`harness/artifact-gate.mjs`) while any critical/high finding is open, and the
-> recall misses a real review catches that the audit didn't are logged in
-> `methodology/known-escapes.md`.
 
 ## Why it exists
 
@@ -172,7 +160,7 @@ source, never phones home, and is plain, readable source in `hooks/`.
 | `/sf-security-review-toolkit:scope-submission` | Detects your architecture elements (managed package, Agentforce agent, external endpoint, MCP server, Canvas, LWC/Aura, mobile), compiles which requirements apply, gates on partner-program prerequisites | Automated |
 | `/sf-security-review-toolkit:audit-codebase` | Multi-agent security audit of your codebase across 19 threat dimensions; every finding adversarially verified; incremental via a findings ledger | Automated (you read the report) |
 | `/sf-security-review-toolkit:generate-artifacts` | Drafts the submission artifacts from your code: AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, exposed-tools inventory + OpenAPI, access-control documentation, credential-storage statement | Automated draft, human review |
-| `/sf-security-review-toolkit:run-scans` | Eight scan families: Code Analyzer v5, Checkmarx-portal check, authenticated DAST plan, TLS grade, dependency audit, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC); folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
+| `/sf-security-review-toolkit:run-scans` | Eight scan families: Code Analyzer v5, Checkmarx-portal check, authenticated DAST plan, TLS grade, dependency audit, secret scan, and **up to 14 consent-installed OSS scanners** (SAST/SCA/IaC/secret/DAST/TLS — see ["It runs the scans for you"](#it-runs-the-scans-for-you--then-wipes-the-slate-clean)); folds results into a false-positive dossier | Mixed: agent runs what it can, guides what it can't |
 | `/sf-security-review-toolkit:reviewer-simulation` | Reframes everything the audit + scans found as **what Salesforce Product Security will see** — the challenge checklist ranked by the reviewer's own attack priority, headed by the first things they will hit | Automated synthesis |
 | `/sf-security-review-toolkit:prepare-test-environment` | Runbooks for the reviewer-facing test org: Trialforce/DE org, agent + Topics + reasoning engine + utterances, two test users, the per-user authorization-boundary proof | Guided manual |
 | `/sf-security-review-toolkit:compile-submission` | Pre-fills the questionnaire (with an "every N/A needs a reason" lint), fills the required-artifacts checklist row by row, emits the readiness tracker and verdict | Automated compile, human submits |
@@ -241,9 +229,9 @@ PATH TO GREEN → 2 blockers → 1 major → 3 minor   (path-to-green.md)
 
 The model does the finding; deterministic code owns the guardrails — a weaker model produces weaker findings, it does not collapse the gates.
 
-- **~34 pure engines in `harness/` enforce the honesty-critical properties, not model goodwill.** The AuthN/AuthZ artifact is withheld by an enforced gate while any critical/high finding is open; the Submission Completeness Index has a hard blocker floor and is labelled *"not a pass prediction"*; applicability, finding de-duplication, ledger merge, staleness, and cross-run recurrence are all deterministic and guarded by standing tests. If the model degrades you get weaker findings, not a broken audit — the gates still hold.
+- **Deterministic engines in `harness/` enforce the honesty-critical properties, not model goodwill.** The AuthN/AuthZ artifact is withheld by an enforced gate while any critical/high finding is open; the Submission Completeness Index has a hard blocker floor, is labelled *"not a pass prediction"*, and credits nothing as complete without a reviewer-reproducible evidence file behind it; applicability, finding de-duplication, ledger merge, staleness, and cross-run recurrence are all deterministic and guarded by standing tests. If the model degrades you get weaker findings, not a broken audit — the gates still hold.
 - **Every refutation requires code evidence.** The adversarial verifier reads the actual code — never the finder's reasoning — and must return the exact `file:line` + snippet that decides it. The false-positive dossier reuses that verbatim; any entry missing real evidence is marked `DRAFT`, not submission-ready. The toolkit never accepts residual risk on your behalf — you sign every disposition.
-- **It is honest about its ceiling.** It tells you what it cannot certify — see [`docs/ceiling-test.md`](docs/ceiling-test.md) and [`docs/recurrence-confidence.md`](docs/recurrence-confidence.md) — instead of pretending to be complete.
+- **It is honest about its ceiling.** It tells you what it cannot certify — see [`docs/ceiling-test.md`](docs/ceiling-test.md) and [`docs/recurrence-confidence.md`](docs/recurrence-confidence.md) — instead of pretending to be complete; the misses (what a real review catches that the audit didn't) are logged in [`methodology/known-escapes.md`](methodology/known-escapes.md).
 
 ## How it was validated
 
@@ -251,9 +239,9 @@ The methodology and harness were extracted from real multi-pass audits of **Verd
 
 ## Maturity & what's in the box
 
-**14 skills · 19 audit dimensions · 8 scan families · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by 34 standing test files (338 checks)** that fail the build if a refactor breaks an enforced gate or its determinism.
+**14 skills · 19 audit dimensions · 8 scan families · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (300+ checks)** that fails the build if a refactor breaks an enforced gate or its determinism.
 
-Honest beta (see the top of this README). `main` is at `0.8.16`; the full version-by-version history is in [`CHANGELOG.md`](CHANGELOG.md). Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
+Honest beta (see the top of this README). See [`CHANGELOG.md`](CHANGELOG.md) for the current version and release notes. Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
 
 ## License
 
