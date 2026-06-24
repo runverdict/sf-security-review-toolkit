@@ -227,6 +227,8 @@ sf-security-review-toolkit/
 │   ├── baseline-counts.mjs          # deterministic baseline self-description counter (F2)
 │   ├── finding-clusters.mjs         # cross-dimension finding de-dup for the triage headline (G2); exports normFile/lineSpan/spansOverlap (0.8.7)
 │   ├── recurrence-confidence.mjs    # 0.8.7: classify findings by cross-run recurrence over N ledgers (all_runs/some_runs/single_run + confidence high|review|investigate); locus-based, confirmed-anchored, pairwise-Jaccard reported as a metric only
+│   ├── union-convergence.mjs        # 0.8.16: does the UNION of confirmed loci across N runs STOP growing? cumulative union_size_series + marginal_new + converged + plateau_run + completeness-disclaiming caveat; reuses recurrence locus identity; REPORT-ONLY, gates nothing (Thread 2)
+│   ├── baseline-refutation-check.mjs # 0.8.16: flags `refuted` findings citing platform auto-enforcement (user-mode/with-sharing at API 67.0+) the package sourceApiVersion (<67.0) doesn't buy; --strict exits 3; REPORT-ONLY, gates nothing
 │   ├── ledger-staleness.mjs         # resumption fingerprint: flag findings whose code changed (C1)
 │   ├── injection-check.mjs          # audit-engine pre-launch check: decoy-anchored INJECTED-object validate (G5)
 │   ├── package-readiness.mjs        # preflight power-up precondition: deep-audit install-readiness (installable|needs-build|n/a) from sfdx-project.json
@@ -245,7 +247,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 32 dependency-free standing tests (313 checks) guarding the harness/ + hooks/
+│   └── test-*.mjs                   # 34 dependency-free standing tests (338 checks) guarding the harness/ + hooks/
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

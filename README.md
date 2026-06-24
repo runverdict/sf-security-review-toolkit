@@ -2,6 +2,23 @@
 
 [![acceptance](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/runverdict/sf-security-review-toolkit/actions/workflows/test.yml)
 
+> ## ⚠️ Beta — read this first
+>
+> This toolkit is in **honest beta.** It **reliably finds the unambiguous
+> blockers** — public-reach authorization holes, missing CRUD/FLS, injection,
+> secret leakage, package-hygiene failures — and **builds the reviewer evidence
+> pack** for your submission. But the **contestable-severity band** (the calls
+> where a reasonable senior reviewer could defensibly land either way) is an
+> **incomplete, unstable sample**: it varies run-to-run and needs **repeated runs
+> plus human adjudication.** The experiment that proved this is written up in
+> [`docs/ceiling-test.md`](docs/ceiling-test.md); the engine that makes the
+> run-to-run variance visible is
+> [`docs/recurrence-confidence.md`](docs/recurrence-confidence.md). So it does
+> **not** guarantee it "catches everything" or "catches the same things every
+> time," and **a passing run does not replace the Salesforce security review** —
+> Salesforce Product Security runs its own penetration test regardless of what you
+> submit.
+
 Claude Code skills that take an ISV partner through **AppExchange / AgentExchange
 security review preparation end to end**: an autonomous multi-agent audit of your
 own codebase shaped to what the review actually tests, generation of every
@@ -178,14 +195,16 @@ primary-source citations are the most valuable contribution you can make.
 
 ## Status
 
-**`main` is at `0.8.15` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
+**`main` is at `0.8.16` (UNTAGGED; last tag `v0.7.0`, cold-validated 2026-06-19).** Since v0.7.0,
 `main` added the **calibration false-positive patterns** + **Track-1b** cross-dimension ledger dedup
 + a webhook/HMAC-DoS recalibration (0.8.2); a **durable consent coupling** (0.8.4–0.8.6: a skipped
 consent ask physically cannot launch the audit, the gates are mandatory `AskUserQuestion` stops, four
 adversarial bypasses closed); the **recurrence-confidence engine and its skill wiring** (0.8.8 / 0.8.10,
 below); **OSS-readiness** (0.8.9: `SECURITY` / `CONTRIBUTING` / `CODE_OF_CONDUCT` and a CI workflow that
 runs the suite on every push); the **SF-ops safety gate** (0.8.11–0.8.13, below); the **published
-ceiling test** (0.8.14, below); and a pre-public docs genericization + CHANGELOG restructure (0.8.15).
+ceiling test** (0.8.14, below); a pre-public docs genericization + CHANGELOG restructure (0.8.15); and
+**Phase 1 of the adjudication-drift hardening** (0.8.16, below) — the verifier-prose carve-outs and two
+report-only diagnostic engines that target the run-to-run instability the ceiling test exposed.
 The 0.7.0 path — installing the scan tooling and running a digest-pinned ZAP DAST against an isolated
 throwaway behind one up-front consent gate, the **credential contract** holding throughout (synthetic
 secrets only in the container; state files record names only; loopback-only scan target) — remains
@@ -207,14 +226,29 @@ stable blocker set; everything else is the contestable band the human owns) — 
 renders an informational "Finding Stability (N-run consensus)" section that never moves the SCI gate.
 Run against the three real Solano ledgers it reproduces the ground truth (the controller-FLS high recurs
 3/3; the over-grant and prompt-delimiter findings are stable-in-appearance but unstable-in-severity;
-pairwise Jaccard 0.40 / 0.67 / 0.44). A cold-validation run and the adjudication-drift fixes remain
-pending — the tag stays HELD.
+pairwise Jaccard 0.40 / 0.67 / 0.44). **Phase 1 of the adjudication-drift fixes shipped in 0.8.16**
+(below); a cold-validation campaign measuring their EFFECT on run-to-run stability is still pending —
+these are static/deterministic changes whose impact is proven by the next cold run, not by their landing,
+so the tag stays HELD.
 
 The toolkit ships **14 skills**, **19 audit dimensions**, **8 scan families**, a deterministic
 **Submission Completeness Index**, a sequenced **path-to-green**, and a core of **deterministic
-engines in `harness/` guarded by 32 standing test files (313 checks)** that fail the build if a
+engines in `harness/` guarded by 34 standing test files (338 checks)** that fail the build if a
 refactor breaks an enforced gate or its determinism. Component status, plainly:
 
+- **New in 0.8.16 — Phase 1 adjudication-drift hardening (Threads 1 & 2).** Targets the run-to-run
+  instability the ceiling test exposed, on two fronts. (1) Verifier-prose carve-outs so a SHIPPED
+  packaged surface stops being wrongly refuted as "unreachable": a defined-but-not-wired packaged Apex
+  entry point (`@AuraEnabled`/`@RestResource`/`@InvocableMethod`/`global`/…) is a surface a subscriber
+  admin can grant or wire post-install, so unreachability DOWNGRADES severity but never yields
+  `false_positive` (mirrors `agentforce-package` §5); and an FLS/sharing refutation that cites "the
+  platform auto-enforces at API 67.0+" is INVALID on a package whose `sourceApiVersion` is ≤66.0. A
+  least-privilege severity anchor pins `viewAllRecords`/`modifyAllRecords` on a sensitive/financial
+  custom object to a HIGH floor. (2) Two **report-only, opt-in** diagnostic engines that gate NOTHING:
+  `harness/baseline-refutation-check.mjs` (flags refutations leaning on auto-enforcement the package
+  version doesn't buy) and `harness/union-convergence.mjs` (does the union of confirmed loci across N
+  runs stop growing?). Effect on cold-run stability is measured by the next cold campaign, not claimed
+  here.
 - **New in 0.8.11–0.8.13 — the SF-ops safety gate.** A fail-closed PreToolUse hook
   (`hooks/sf-ops-gate-hook.mjs` + [`docs/sf-ops-safety-gate.md`](docs/sf-ops-safety-gate.md)): inside a
   managed audit repo it DENIES an irreversible Salesforce / host operation — package **promote** (a

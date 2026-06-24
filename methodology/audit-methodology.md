@@ -313,6 +313,11 @@ MISSING GRANT IS FAIL-CLOSED — an un-granted permission/class/object/field is 
 functionality gap (info at most), never a security finding; the security finding
 is always an OVER-grant, never an under-grant.
 
+Before accepting a refutation that cites platform auto-enforcement (user-mode /
+`with sharing` defaults at API 67.0+), CHECK the package sourceApiVersion; if
+<=66.0 the old system-mode / `without sharing` defaults hold and the
+auto-enforcement rationale is INVALID — the finding stands.
+
 FINDING:
 - title: {{TITLE}}
 - severity: {{SEVERITY}}

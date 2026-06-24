@@ -25,7 +25,9 @@ on every class; the API default never silently creates or masks a gap.
 roadmap names five judgment axes, and they are deliberately of two kinds:
 - **Two-sided calibration / disposition coin-flips** — C1 (severity), C3 (fix vs
   document), C4 (partial vs satisfied), C5 (severity), C6 (hardening vs finding):
-  a reasonable senior reviewer can land defensibly on EITHER side.
+  a reasonable senior reviewer can land defensibly on EITHER side. (C5 has since
+  been **reconciled to a HIGH floor** — see §C5; this two-sided framing predates
+  that reconcile and describes the fixture-seeded `medium`, not the calibrated call.)
 - **Precision (tempting-but-SAFE) — C2.** The roadmap's axis 2 is the *tempting
   false positive*: a finding that LOOKS like a blocker but is SAFE once the
   compensating control is read. Here the load-bearing correct call is a single
@@ -209,27 +211,52 @@ namespace is unregistered, so there is no deployed artifact to inspect; the real
 deployed-package deep-audit path is the real Verdict `04t`'s job, not this
 fixture's). The broadly-assigned end-user permission set grants
 **`viewAllRecords=true`** on the managed `Solano_Forecast_Snapshot__c` object — a
-**sharing bypass**: any assigned user can read every rep's snapshot. It is real
-and **non-catastrophic** (a derived snapshot object, not raw CRM PII).
+**sharing bypass**: any assigned user can read every rep's snapshot. The object is
+**financial/forecast data** (per-rep revenue snapshots), not a benign rollup.
 
-**Intended call: `medium` (defensibly `low`) — a real least-privilege /
-broad-sharing finding on the source permission set.** The contest: a cross-rep
-forecast dashboard may legitimately need org-wide snapshot reads, which argues
-`low`/accept-with-justification; against that, `viewAllRecords` on an end-user
-permset is a textbook least-privilege smell that reviewers flag. Either way it is
-**not a blocker** (no raw PII, no cross-tenant, no write bypass —
-`modifyAllRecords=false`).
+**Intended call: `high` — a least-privilege / broad-sharing violation on a
+SENSITIVE/FINANCIAL custom object.** `viewAllRecords` on a forecast-snapshot
+object, granted to an END-USER permission set, is an all-records, cross-user READ
+of sensitive business data that defeats the subscriber's least-privilege
+expectation, and it ships in the package already assigned to end users — that is
+the stable **HIGH floor** codified in `admin-surface` §5 (the over-broad-grant
+severity anchor). **Reconcile note — the prior key was too lenient.** This entry
+previously called `medium` (defensibly `low`); a **blind 30-judge calibration** on
+exactly this pattern (a packaged permission set granting view/modify-all on a
+sensitive/financial object) ruled it **HIGH**, and the sealed `medium`/`low` was a
+miss in the too-lenient direction. The remaining contest is narrow: a cross-rep
+forecast dashboard may legitimately need org-wide snapshot reads — but that is a
+**documented business justification** that downgrades a HIGH, not a reason to seed
+the call at `medium`. Calibrate the ceiling honestly: it is **not**
+`critical`/`blocker` — `viewAllRecords` is within-org (the org/tenant boundary
+holds, no cross-tenant) and read-only (`modifyAllRecords=false`, no write bypass).
 
-**Pass band:** `low` or `medium`, surfaced from the **source permset metadata**,
-framed as least-privilege / sharing-scope. Disposition fix-or-document.
-`Solano_Admin` (the correctly-scoped control) must NOT be flagged.
+**Pass band:** `high`, surfaced from the **source permset metadata**, framed as
+least-privilege / sharing-scope on a sensitive/financial object. `medium` is a
+pass **only** when explicitly reasoned from a documented, specific business
+justification for org-wide snapshot reads (recorded fix-or-document); an
+unreasoned `medium`/`low` is the under-detection FAIL below. `Solano_Admin` (the
+correctly-scoped control) must NOT be flagged.
 
 **FAIL modes:**
-- **Over-escalation** to `high`/`critical`/`blocker`, or calling it
-  cross-tenant — `viewAllRecords` is within-org, write is not granted.
-- **Under-detection:** never inspecting the permission-set metadata (the source
-  permset is in the package; no install is needed to read it).
+- **Over-escalation** to `critical`/`blocker`, or calling it cross-tenant —
+  `viewAllRecords` is within-org and write is not granted (`modifyAllRecords=false`).
+- **Under-detection (the calibrated miss this reconcile targets):** calling it
+  `medium`/`low` with NO documented business justification — the too-lenient call
+  the blind-30-judge caught — or never inspecting the permission-set metadata at
+  all (the source permset is in the package; no install is needed to read it).
 - Flagging `Solano_Admin` (it correctly sets `viewAllRecords=false`).
+
+**Suite-consistency note (deliberate divergence — do NOT "fix" it).** The
+deterministic `acceptance/test-solano-band.mjs` fixture still SEEDS this finding at
+`adjusted_severity: medium` on purpose: that test asserts the SCI **math/shape**
+(0 open high → `BLOCKED`-on-owner-materials, empty `blocker_findings`), NOT the
+calibration, and re-grading its seed to `high` would change what the SCI-shape
+demonstration tests (and break the band check). So the band fixture keeps
+`medium`; **THIS section is the source of truth for the C5 severity call
+(`high`).** The Issue-taxonomy "two-sided coin-flip" framing and the "Expected SCI
+outcome" ledger list below predate this reconcile and describe the fixture-seeded
+`medium`, not the calibrated call.
 
 ---
 
@@ -272,9 +299,12 @@ fixes the first. Run against `managed-package + agentforce + external-endpoint`
 
 **1. The JUDGMENT — clean (this is what Phase A makes gradeable).** A re-audit of
 the rebuilt fixture surfaces ONLY the six intended contestable issues:
-- `0` open **critical** findings, `0` open **high** findings.
+- `0` open **critical** findings, `0` open **high** findings (in the band
+  fixture's deterministic seeded ledger — see the C5 note below on its seed).
 - The only ledger findings are C1 (`low`), C2 (`refuted`), C3 (`accepted_risk`),
-  C5 (`medium`), C6 (`low`) — all low/medium or dispositioned.
+  C5 (`medium` — the fixture-SEEDED value; the calibration call is **HIGH**, see
+  §C5 and its Suite-consistency note), C6 (`low`) — all low/medium or dispositioned
+  in the band fixture.
 - Every negative control (now including the **bot** and **`SolanoSummarizeAction`**)
   is clean: flagging the employee-bot's `getUserId()` as an execution-identity
   issue, or `SolanoSummarizeAction` as injection / denial-of-wallet, is a

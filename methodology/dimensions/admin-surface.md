@@ -206,6 +206,23 @@ consequential verdict the engine emits. Before confirming, read:
   change actually emits an audit event (read the call site), and that
   impersonation writes distinguish operator from target — absence is the
   finding.
+- **Severity anchor — an over-broad object permission on a SENSITIVE/FINANCIAL
+  custom object has a stable HIGH floor.** When a PACKAGED permission set grants
+  `viewAllRecords` / `modifyAllRecords` / `modifyAllData` on a sensitive or
+  financial managed custom object (forecast, revenue, pipeline, snapshot,
+  compensation, billing — e.g. a `*_Forecast_Snapshot__c`), that is a
+  least-privilege violation with a **stable HIGH floor, not a `medium`**:
+  `viewAllRecords` is an all-records, cross-user READ of sensitive business data
+  that defeats the subscriber's least-privilege expectation, and the grant SHIPS
+  in the package already assigned to end users. Downgrade below HIGH **only** with
+  a documented, specific business justification (a cross-rep dashboard that
+  genuinely needs org-wide reads, recorded in the FP dossier) — never by default,
+  and never to `low` on the bare "it's only a derived/rollup object" rationale.
+  A blind 30-judge calibration ruled this class HIGH; an earlier `medium`/`low`
+  call on exactly this pattern was too lenient. Calibrate the CEILING honestly
+  too: `viewAllRecords` is WITHIN-org (the org/tenant boundary still holds — not
+  cross-tenant), and a read-only over-grant (`modifyAllRecords=false`) is not a
+  write bypass — so the floor is HIGH, not `critical`/`blocker`.
 - **A missing privileged grant is fail-closed, not an escalation —
   directionality.** An admin permission/grant that is ABSENT (a role or
   permission not assigned, a class not granted) is fail-CLOSED — the privileged

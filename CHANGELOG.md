@@ -19,6 +19,65 @@ _Nothing pending — the next change starts a new section here._
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.16] — 2026-06-24
+
+**Phase 1 of the adjudication-drift hardening (Threads 1 & 2).** Targets the run-to-run
+instability the ceiling test (0.8.14) exposed: a verified Contact-PII finding wrongly refuted as
+"unreachable" across cold runs, and a `viewAllRecords` over-grant wobbling medium/HIGH/medium.
+Static / deterministic changes only — their EFFECT on cold-run stability is measured by the next
+cold campaign, not claimed here. Suite **34 files / 338 checks** (was 32 / 313). Tag stays **HELD**.
+
+### Hardened
+- **Reachability-vs-exposed-surface carve-out for packaged Apex (`apex-exposed-surface` §5/§6).**
+  A defined-but-not-wired packaged Apex entry point
+  (`@AuraEnabled`/`@RestResource`/`@InvocableMethod`/`@RemoteAction`/`webservice`/`global`/
+  `@NamespaceAccessible`) is a SHIPPED surface a subscriber admin can grant or wire post-install,
+  so unreachability DOWNGRADES severity (`low`/`info`, "not currently wired", verdict
+  `partially_real`) but NEVER yields `false_positive` — mirroring `agentforce-package` §5. Defects
+  in the method's OWN authorization (CRUD/FLS, sharing, IDOR, mass assignment) stay real findings.
+  Closes the gap that let a verified Contact-PII finding be refuted as "unreachable."
+- **Baseline-checked refutations — the v67 auto-enforcement gate (`apex-exposed-surface` §5/§6 +
+  `audit-methodology` §3 cross-cut).** A refutation citing "the platform auto-enforces user mode /
+  `with sharing` at API 67.0+" is INVALID when the package `sourceApiVersion` is ≤66.0 (the old
+  system-mode / `without sharing` defaults hold) — the finding stands. A one-line verifier-loop
+  cross-cut now requires checking the package version before accepting that rationale.
+- **Least-privilege over-grant severity anchor (`admin-surface` §5).** An over-broad object
+  permission (`viewAllRecords`/`modifyAllRecords`/`modifyAllData`) granted via a packaged
+  permission set on a sensitive/financial custom object (forecast/revenue/pipeline/snapshot/
+  compensation/billing) has a stable HIGH floor — downgrade below HIGH only with a documented
+  business justification; ceiling is HIGH (within-org, not cross-tenant; read-only ≠ write bypass).
+
+### Added
+- **`harness/baseline-refutation-check.mjs`** (report-only, opt-in, gates nothing) — flags
+  `refuted` findings whose reasoning leans on platform auto-enforcement the package's
+  `sourceApiVersion` (`--api-version` / `--sfdx-project` / `--scope-manifest`, that precedence)
+  does not buy: `<67.0` → invalid, `>=67.0` → valid, null → unknown; `--strict` exits 3 on any
+  invalid refutation. Guarded by `acceptance/test-baseline-refutation-check.mjs` (13 checks).
+- **`harness/union-convergence.mjs`** (report-only, opt-in, gates nothing) — answers "does the
+  union of confirmed loci across N independent runs STOP growing?": cumulative `union_size_series`,
+  `marginal_new`, `converged`, `plateau_run`, and a completeness-disclaiming `caveat`. Reuses the
+  recurrence engine's locus identity (path-suffix file match + line-span overlap, same OPEN_STATES)
+  so a converged union means the same thing both engines mean. Guarded by
+  `acceptance/test-union-convergence.mjs` (11 checks).
+- **A 5th calibration false-positive pattern** (`acceptance/test-calibration-fp-patterns.mjs`):
+  the packaged-surface "a subscriber admin can grant or wire" anchor in `apex-exposed-surface` §6,
+  asserted present so the carve-out cannot silently regress out.
+- **A prominent BETA disclaimer at the top of `README.md`** — honest beta: reliably finds the
+  unambiguous blockers and builds the evidence pack, but the contestable-severity band is an
+  incomplete, unstable sample needing repeated runs + human adjudication (links `docs/ceiling-test.md`
+  and `docs/recurrence-confidence.md`); no "catches everything / every time," and a passing run does
+  not replace the Salesforce security review.
+
+### Changed
+- **`acceptance/solano-adjudication-key.md` — C5 reconciled to `high`** (was "medium, defensibly
+  low"): a packaged permission set granting `viewAllRecords` on `Solano_Forecast_Snapshot__c` is the
+  HIGH-floor least-privilege class; a blind-30-judge calibration ruled the prior `medium`/`low` too
+  lenient. The deterministic `test-solano-band.mjs` fixture deliberately KEEPS its seed at `medium`
+  (it asserts SCI math/shape, not calibration) — the divergence is documented in the C5 entry.
+- **README `Status` reconciled to `0.8.16`** — adds the Phase-1 adjudication-drift component, the
+  HELD-tag rationale (effect proven by the next cold run), and the 34-files / 338-checks suite count.
+- Docs cross-refs updated for the two new engines (`CONVENTIONS.md`).
+
 ## [0.8.15] — 2026-06-23
 
 - **Pre-public file-level polish — docs genericization + CHANGELOG restructure (docs-only).**

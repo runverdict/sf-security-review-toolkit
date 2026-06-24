@@ -48,6 +48,7 @@ const PATTERNS = [
   { id: '2 availability-is-not-security', phrase: 'fail-closed on availability', dims: ['error-handling-disclosure', 'secrets-credentials'] },
   { id: '3 a-missing-grant-is-fail-closed', phrase: 'a missing grant is fail-closed', dims: ['agentforce-package', 'apex-exposed-surface', 'admin-surface'] },
   { id: '4 webhook-hmac-rate-limit-cheap-work', phrase: 'hmac-compute', dims: ['resource-consumption-abuse'] },
+  { id: '5 packaged-surface-subscriber-can-grant', phrase: 'a subscriber admin can grant or wire', dims: ['apex-exposed-surface'] },
 ]
 
 for (const p of PATTERNS) {

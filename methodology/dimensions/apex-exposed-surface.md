@@ -391,6 +391,22 @@ mutate.
   `without sharing` data path). At **≤66.0** the default is system mode and the
   absence of a check is real. Do not assert a CRUD/FLS gap without checking
   which default applies.
+- **Before ACCEPTING a refutation that cites 67.0+ auto-enforcement, verify the
+  package's `sourceApiVersion`.** The inverse of the rule above is the more
+  dangerous miss: a verifier can wrongly REFUTE or downgrade an FLS/CRUD or
+  sharing finding on the rationale "the platform auto-enforces user mode / `with
+  sharing` at API 67.0+, so no explicit check is needed." That rationale is
+  **INVALID unless the package actually compiles at ≥67.0** — and the package
+  version is a single number for the whole artifact, not the per-class
+  `apiVersion`. Read the `sourceApiVersion` in `sfdx-project.json` (or the scope
+  manifest's `package.sourceApiVersion`). If it is **≤66.0** (the Solano fixture
+  is `64.0`), the old **system-mode / `without sharing`** defaults hold, the
+  auto-enforcement rationale does NOT apply, and the finding **stands** — the
+  refutation is the bug, not the finding. The deterministic backstop is
+  `harness/baseline-refutation-check.mjs` (opt-in, report-only, gates nothing):
+  it scans `refuted` findings whose reasoning cites the user-mode / `with sharing`
+  / auto-enforce / `67.0` rationale and flags any whose package `apiVersion` is
+  `< 67.0` as an invalid refutation to re-open.
 - **For sharing-declaration claims, the rule is entry-point-specific.** Omission
   on a `global` class or a class with `@NamespaceAccessible` methods is a finding
   *regardless* of API version (omission counts as `without sharing` on those
@@ -430,6 +446,26 @@ mutate.
 - **Reachability first, always.** A violating method behind a permission set the
   package never assigns, on a class no exposed surface reaches, or in dead code
   is `low`/`info` with a note — not the headline severity.
+- **A shipped packaged entry point is a reviewer-visible surface even when
+  nothing currently wires it — that is a DOWNGRADE, never a refute.** An
+  `@AuraEnabled`/`@RestResource`/`@InvocableMethod`/`@RemoteAction`/`webservice`/
+  `global`/`@NamespaceAccessible` method DEFINED in the managed package but not
+  currently wired to a live caller (no LWC/Aura component imports it, no Flow
+  invokes it, no permission set grants its class yet) still **ships** in the
+  package: a subscriber admin can grant or wire it post-install (a class-access
+  grant on a permission set, a new component, a Flow), and the Salesforce
+  reviewer flags packaged metadata regardless of current wiring. So "defined but
+  not reachable / dead packaged code / no caller" lowers severity (to `low`/
+  `info` with a "not currently wired" note) and the verdict is `partially_real`
+  — it is **NEVER** grounds for `false_positive`. This mirrors `agentforce-package`
+  §5 (a packaged artifact a subscriber can bind never refutes on unreachability);
+  the one carve-out the prior `apex-exposed-surface` §5 lacked, which let a
+  verified Contact-PII finding on a defined-but-unwired entry point be wrongly
+  refuted as "unreachable." A defect in the method's OWN authorization — missing
+  CRUD/FLS, a wrong or absent sharing declaration, an unguarded per-record (IDOR)
+  read or write, mass assignment — is a REAL finding in shipped code at its own
+  (reachability-downgraded) severity; only the live-exposure TIER (anonymous
+  guest vs authenticated-only) is gated on actual wiring.
 - **Directionality: a missing grant is fail-closed, not an exposure.** A class
   absent from a permission set's `classAccesses`, a missing object/field
   permission, or any un-granted access is fail-CLOSED — the method cannot be
@@ -453,3 +489,5 @@ mutate.
 | A method annotated `@AuraEnabled cacheable=true` flagged as a write risk | Cacheable methods cannot perform DML (the platform forbids it); treat them as read paths. The read-path CRUD/FLS, per-record, and over-return questions still apply, but not a write/IDOR-mutation claim. |
 | `webservice`/`@RestResource`/`@InvocableMethod` reachable only by an authenticated subscriber/integration user, flagged at the guest-breach (public-exposure) severity | Without a verified guest/unauthenticated path, this is the ordinary authenticated entry-point case at its own severity — not the anonymous-internet-visitor tier. Confirm the guest reachability before applying the higher severity. |
 | A permission set/profile that does NOT grant access to a class/object/field the feature uses | **A missing grant is fail-closed** (the feature can't run for that user) — a functionality/packaging gap (`info` at most), never an exposure finding. The finding is an OVER-grant (guest-profile class access, an over-broad permission), never an under-grant. |
+| A packaged exposed Apex method (`@AuraEnabled`/`@RestResource`/`@InvocableMethod`/`@RemoteAction`/`webservice`/`global`/`@NamespaceAccessible`) refuted as "defined but not wired / not currently reachable / dead packaged code / no caller" | This is a **DOWNGRADE, not a refutation.** The method SHIPS in the managed package, so it is a reviewer-visible surface — **a subscriber admin can grant or wire** it post-install (a class-access grant, a new component, a Flow), and Salesforce flags packaged metadata regardless of current wiring. Unreachability lowers severity (`low`/`info`, a "not currently wired" note, verdict `partially_real`); it NEVER yields `false_positive`. A defect in the method's OWN authorization (missing CRUD/FLS, wrong/absent sharing, IDOR, mass assignment) stays a real finding in shipped code. Mirrors `agentforce-package` §5. |
+| An FLS/CRUD or sharing finding refuted as "the platform auto-enforces user mode / `with sharing` at API 67.0+" on a package whose `sourceApiVersion` is ≤66.0 | **Invalid refutation — the finding stands.** Auto-enforcement is real only at ≥67.0; at ≤66.0 (the Solano fixture is `64.0`) the old system-mode / `without sharing` defaults hold, so the absent check is a genuine gap. Read the package `sourceApiVersion` (`sfdx-project.json` / scope manifest), not just a class `apiVersion`, before accepting the auto-enforcement rationale. `harness/baseline-refutation-check.mjs` flags this class of bad refutation deterministically. |
