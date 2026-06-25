@@ -1,7 +1,7 @@
 ---
 name: compile-submission
 description: Phase 5 of security review prep. Inventories every artifact and evidence file against the baseline, fills the required-artifacts checklist (HAVE only with verified evidence), pre-fills the questionnaire with the hard N/A lint, cross-checks answers against artifacts, compiles the readiness tracker, computes the deterministic Submission Completeness Index (the gated go/no-go), emits an honest readiness verdict + a sequenced path-to-green remediation checklist, and assembles the downloadable submission-package with a wizard-slot INDEX, a PENDING-OWNER-RUN handoff, and step-grouped artifacts. Use as the go/no-go check before paying the review fee — the human submits; this skill makes sure nothing bounces at the materials check.
-allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/compute-sci.mjs *) Bash(node *harness/ledger-staleness.mjs *) Bash(node *harness/render-stability.mjs *) Bash(node *harness/render-readiness-verdict.mjs *) AskUserQuestion
 ---
 
 # Compile Submission
@@ -196,16 +196,25 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    how a future re-compile knows what this one was built from.
 
 8. **Emit the readiness verdict** to
-   `<target>/docs/security-review/submission/readiness-verdict.md` and echo
-   it in the run output. Structure, in order — the honesty block is
-   mandatory, not decoration (CONVENTIONS §2):
-   - **Build the evidence index, then compute the Submission Completeness
-     Index (SCI) — the headline gate.** You do NOT hand-write the index. Write your
-     evidence MAPPING as DATA — `<target>/.security-review/evidence-input.json`
-     (which scan produced which requirement, which artifacts were drafted, which
-     owner-run items were prepared, which auto-fail classes the audit cleared and
-     with what evidence; schema in `${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs`'s
-     header) — then run the shipped producer:
+   `<target>/docs/security-review/submission/readiness-verdict.md` and echo it in
+   the run output. **The verdict SKELETON is PINNED — render it by FILLING
+   `${CLAUDE_PLUGIN_ROOT}/templates/operator/readiness-verdict.md.tmpl` through the
+   engine, NEVER by hand-building it as prose or a Markdown table.** This is the same
+   ENGINE-owns-structure / driver-supplies-data contract gate-spec applied to gates
+   (CONVENTIONS §7): the template owns the fixed `##` section ORDER, you supply the
+   DATA slots, and `render-readiness-verdict.mjs` pastes the deterministic blocks
+   VERBATIM, force-injects the standing caveat, and FAILS CLOSED on any unfilled
+   `{{SLOT}}`. Never paraphrase a slot, reorder a section, drop a sub-block, or flip a
+   table to prose — fill the slots and print the engine's output verbatim. Build the
+   slot values, then fill:
+   - **`SCI_BLOCK` — build the evidence index, then compute the Submission
+     Completeness Index (the headline gate); paste the block BYTE-FOR-BYTE.** You do
+     NOT hand-write the index. Write your evidence MAPPING as DATA —
+     `<target>/.security-review/evidence-input.json` (which scan produced which
+     requirement, which artifacts were drafted, which owner-run items were prepared,
+     which auto-fail classes the audit cleared and with what evidence; schema in
+     `${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs`'s header) — then run the
+     shipped producer:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs --repo <target> --date <runDate> --input <target>/.security-review/evidence-input.json`.
      It writes `evidence/index.json` and ENFORCES the credit rule DETERMINISTICALLY
      (the engine decides credit from the evidence location, never from anything the
@@ -216,73 +225,67 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      `statically-cleared`: surfaced as a separate signal, **never headline credit and
      never a blocker-floor clear** — you do not grade your own exam; Salesforce
      pen-tests these classes regardless. A row with no real, on-disk file is dropped
-     or PARTIAL (no credit for un-evidenced self-attestation). Then run the SCI engine:
+     or PARTIAL (no credit for un-evidenced self-attestation). Then run the SCI engine
+     and capture its stdout block BYTE-FOR-BYTE as the `SCI_BLOCK` slot:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/compute-sci.mjs --target <target> --plugin ${CLAUDE_PLUGIN_ROOT} --date <runDate>`.
-     It reads the audit ledger + the evidence index + the scope-filtered baseline
-     and emits a GATED block — `READINESS: BLOCKED | NOT READY | MATERIALS
-     COMPLETE | NO-SURPRISES READY`, a coverage/disposition/freshness vector, a
-     completeness % **explicitly labelled materials-not-pass-odds**, and the
-     standing "NOT verified by this toolkit" list. Render that block verbatim at
-     the TOP of this verdict and the readiness-tracker header. It is a pure
-     rollup: never edit the number by hand, never collapse it to a single naked
-     figure, never show the % without the gate and the not-verified list. The
-     SCI is the autonomous go/no-go signal `security-review-journey` surfaces at
-     the pre-compile gate.
-   - **Ledger freshness — guard against a verdict over moved code.** Run
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/ledger-staleness.mjs --target <target> --json`.
-     If it reports `stale` (findings whose files changed since their
-     `audited_commit`) or `no-fingerprint`, surface that in the verdict and
-     **degrade the readiness language accordingly** — a clean band computed from
-     findings the code has since moved past is not trustworthy; name the stale
-     findings and recommend a re-audit pass before relying on the verdict. Never
-     present a band over a ledger the repo has drifted away from as if it were
-     current.
-   - **Finding Stability (N-run consensus) — INFORMATIONAL ONLY.** Render this
-     from `<target>/.security-review/recurrence-confidence.json` if it exists
-     (produced by `/sf-security-review-toolkit:audit-codebase` step 9 from ≥2
-     independent runs of the same commit):
-     - **If present:** show `summary.bucket_counts`, the
-       `summary.reliably_recurring_blockers` (the all-runs + status/severity-stable
-       set — what the audit finds dependably), and name the **contestable band**
-       (loci in `some_runs`, or `all_runs` but status/severity-unstable — the
-       findings a human must adjudicate run by run). If
-       `summary.commit_consistency` is `mixed`, surface that note: the runs were
-       audited at different commits, so an appear/disappear may be a code change,
-       not instability — recommend re-running on one commit.
-     - **If absent (single run — the common case):** one honest line —
-       "Finding stability not assessed: only one audit run. To assess the
-       contestable band's run-to-run stability, re-run the audit independently
-       (see `/sf-security-review-toolkit:audit-codebase` step 9)."
-     - **CRITICAL — this section is informational and changes NOTHING about the
-       gate.** It MUST NOT alter the SCI computation, the `compute-sci`
-       invocation, or the readiness band. The SCI is still computed from the
-       audit ledger + the evidence index exactly as above; finding-stability
-       never inflates readiness, never clears a blocker, and is never a go/no-go
-       input. It describes how reliably findings recurred — not whether the
-       submission is ready. No fixed run-count is "complete"; Salesforce
-       pen-tests regardless.
-   - **Per-category ready / not-ready**, using the tracker's section
-     boundaries (documentation artifacts; package code-scan artifacts;
-     external-endpoint artifacts; CI scanning evidence; test environment;
-     listing lifecycle/business), each with the blocking rows named.
-   - **Blockers**, one line each: the row, the owner, the concrete closing
-     action ("run the authenticated DAST against the staging URL using the
-     plan generated from `${CLAUDE_PLUGIN_ROOT}/harness/zap/`", not "complete
-     security testing").
-   - **What was NOT verified, and how the rest was**: the white-box agent
-     audit is static code review — not DAST, not a pen test; owner-run scans
-     were verified only as evidence files on disk, not re-executed; "wired
-     into CI" was verified as workflow-plus-output, which is not the same as
-     a clean baseline; anything resting on a credential this skill couldn't
-     use is asserted by the owner, not checked. If the ledger is absent or
-     the audit ran at a reduced tier, say so with the tier and pass count.
-   - **Open conflicting baseline entries** from step 1, each with the
-     instruction: confirm via your Partner Account Manager or the partner
-     Slack before relying on it — never resolved silently.
-   - **The standing caveat, verbatim in spirit**: Salesforce performs its own
-     penetration testing regardless of submitted evidence. The strongest
-     verdict this toolkit ever emits is "no known blockers remain in what
-     this toolkit can verify" — never "will pass".
+     It emits a GATED block — `READINESS: BLOCKED | NOT READY | MATERIALS COMPLETE |
+     NO-SURPRISES READY`, a coverage/disposition/freshness vector, a completeness %
+     **explicitly labelled materials-not-pass-odds**, and the standing "NOT verified
+     by this toolkit" list. Paste it verbatim — never edit the number by hand, never
+     collapse it to a single naked figure, never show the % without the gate and the
+     not-verified list. It is also the autonomous go/no-go signal
+     `security-review-journey` surfaces at the pre-compile gate, and it fills the
+     readiness-tracker header (§ readiness-tracker SCI_BLOCK) identically.
+   - **`LEDGER_FRESHNESS` — guard against a verdict over moved code.** Paste the
+     one-liner from
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/ledger-staleness.mjs --target <target>` (the
+     non-json `[status] verdict` line). If it reports `stale` (findings whose files
+     changed since their `audited_commit`) or `no-fingerprint`, ALSO degrade the
+     readiness language in the `PER_CATEGORY`/`BLOCKERS` slots and recommend a re-audit
+     pass — a clean band computed from findings the code has moved past is not
+     trustworthy. Never present a band over a drifted ledger as if it were current.
+   - **`FINDING_STABILITY` — INFORMATIONAL ONLY; paste the rendered block.** Paste the
+     block from `node ${CLAUDE_PLUGIN_ROOT}/harness/render-stability.mjs --target <target>`
+     verbatim. It reads `<target>/.security-review/recurrence-confidence.json` (produced
+     by `/sf-security-review-toolkit:audit-codebase` step 9 from ≥2 independent runs of
+     the same commit) and renders BOTH branches itself: present (≥2 runs) → the
+     `bucket_counts` table + the `reliably_recurring_blockers` set + the named
+     contestable band + a mixed-commit note when `commit_consistency != consistent`;
+     absent / single-run → one honest line. **It changes NOTHING about the SCI gate** —
+     it MUST NOT alter the `compute-sci` invocation or the band; it never inflates
+     readiness, never clears a blocker, and is never a go/no-go input. It describes how
+     reliably findings recurred — not whether the submission is ready. No fixed
+     run-count is "complete"; Salesforce pen-tests regardless.
+   - **`PER_CATEGORY`** — ready / not-ready per the tracker's section boundaries
+     (documentation artifacts; package code-scan artifacts; external-endpoint
+     artifacts; CI scanning evidence; test environment; listing lifecycle/business),
+     each with the blocking rows named.
+   - **`BLOCKERS`** — one line each: the row, the owner, the concrete closing action
+     ("run the authenticated DAST against the staging URL using the plan generated from
+     `${CLAUDE_PLUGIN_ROOT}/harness/zap/`", not "complete security testing").
+   - **`NOT_VERIFIED`** — the white-box agent audit is static code review (not DAST,
+     not a pen test); owner-run scans were verified only as evidence files on disk, not
+     re-executed; "wired into CI" was verified as workflow-plus-output, not a clean
+     baseline; anything resting on a credential this skill couldn't use is asserted by
+     the owner, not checked. If the ledger is absent or the audit ran at a reduced tier,
+     say so with the tier and pass count.
+   - **`OPEN_CONFLICTING_BASELINE`** — the conflicting baseline entries from step 1,
+     each with: confirm via your Partner Account Manager or the partner Slack before
+     relying on it — never resolved silently.
+   - **The standing caveat is NOT yours to write** — the engine force-injects the
+     canonical constant from `render-readiness-verdict.mjs` (Salesforce pen-tests
+     regardless; the strongest verdict the toolkit emits is "no known blockers remain in
+     what this toolkit can verify", never "will pass"). You cannot paraphrase it; there
+     is no slot to fill.
+
+   Then write the slot values to `<target>/.security-review/verdict-slots.json` (one
+   JSON object — the `SCI_BLOCK`/`LEDGER_FRESHNESS`/`FINDING_STABILITY` values are the
+   captured harness stdout, pasted byte-for-byte; the rest are the DATA slots above; OMIT
+   `STANDING_CAVEAT`, the engine injects it) and render:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/render-readiness-verdict.mjs --template ${CLAUDE_PLUGIN_ROOT}/templates/operator/readiness-verdict.md.tmpl --slots <target>/.security-review/verdict-slots.json --out <target>/docs/security-review/submission/readiness-verdict.md`.
+   The engine fills every `{{SLOT}}`, force-injects the standing caveat, and ABORTS (exit
+   non-zero) if any slot is left unfilled — so a partial verdict can never ship. Echo the
+   rendered file verbatim.
 
    Then write **`<target>/docs/security-review/path-to-green.md` (WI-22) — the
    single ordered remediation checklist** that takes the partner from the current

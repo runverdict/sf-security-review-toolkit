@@ -1,7 +1,7 @@
 # Roadmap — Presentation Consistency (pin the operator-facing surfaces)
 
-**Status:** Slice 1 — **WI-00A + WI-01 + WI-02 shipped in 0.8.22** (2026-06-25). WI-00B
-and WI-03…WI-12 remain backlog. Sequenced AFTER the
+**Status:** Slice 1 — **WI-00A + WI-01 + WI-02 shipped in 0.8.22** (2026-06-25). Slice 2 —
+**WI-00B + WI-03 shipped in 0.8.23** (2026-06-25). WI-04…WI-12 remain backlog. Sequenced AFTER the
 0.8.21 cold campaign tags — these are presentation-only changes that do NOT
 touch the finding band, so they ship as post-tag hardening (the 0.8.18→0.8.21
 friction/structure class) and never require re-running the campaign.
@@ -68,7 +68,7 @@ pinned downstream — the free-text regex fallback becomes vestigial).
   option text IS the hook's canonical `denyReason()` permanence string
   (`sf-ops-gate-hook.mjs`), so prompt and deny-reason can never diverge.
 
-### (2) Output render-verbatim substrate  (WI-00B)
+### (2) Output render-verbatim substrate  (WI-00B) — ✅ DONE (0.8.23)
 Two flavors, both render-verbatim:
 
 - **Render harnesses** for surfaces backed by deterministic JSON — extend
@@ -102,10 +102,10 @@ remaining ~50 surfaces.
 | WI | Title | Covers (INV) | Pri | Effort |
 |----|-------|--------------|-----|--------|
 | 00A | gate-spec engine (frozen catalog + selector + fail-closed) | the gate class | high | M |
-| 00B | output render-verbatim substrate (`templates/operator/` + renders + lint) | the output class | high | M |
+| 00B | output render-verbatim substrate (`templates/operator/` + renders + lint) ✅0.8.23 | the output class | high | M |
 | 01 | pin the 3 preflight gates (run-mode / audit-tier / scanner-install) | 26, 01, 02 | high | S |
 | 02 | audit-launch gate: confirm the locked tier, don't re-ask | 01 | high | S |
-| 03 | template the readiness-verdict (fixed skeleton) | 10, 11, 35 | high | M |
+| 03 | template the readiness-verdict (fixed skeleton) ✅0.8.23 | 10, 11, 35 | high | M |
 | 04 | pin finding-cluster headline + target-map approval display | 08, 12, 34 | high | M |
 | 05 | pin preflight 3-tier report + scan-status summary | 07, 13, 33 | high | M |
 | 06 | pin scope-submission surfaces (detected-elements, applicable-reqs, MCP probe, auto-resolve, confirm gate + scope gates) | 06,15,16,44,45,43,05,32 | high | L |
@@ -151,7 +151,7 @@ recorded token → `{Authorize, Change tier, Cancel}`; standalone (no token) →
 full first-pass menu; journey→audit-codebase integration fixture asserts the
 tier is collected once.
 
-### WI-03 — template the readiness-verdict
+### WI-03 — template the readiness-verdict — ✅ DONE (0.8.23)
 `templates/operator/readiness-verdict.md.tmpl` (mirror
 `readiness-tracker.md.tmpl`) with fixed `##` headers in fixed order: SCI block
 slot (paste compute-sci stdout byte-for-byte), Ledger Freshness, Finding
@@ -181,8 +181,8 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 07 | one-page preflight 3-tier report | report | ◐ | H | 05 |
 | 08 | finding-cluster triage headline | report | ◐ | H | 04 |
 | 09 | synthesis audit report (§9 body) | report | ◐ | H | 10 |
-| 10 | readiness-verdict wrapper | verdict | ◐ | H | 03 |
-| 11 | Finding Stability (N-run consensus) | report | ✗ | H | 03 |
+| 10 | readiness-verdict wrapper | verdict | ✓ | H | 03 ✅0.8.23 |
+| 11 | Finding Stability (N-run consensus) | report | ✓ | H | 03 ✅0.8.23 |
 | 12 | target-map approval display | targetmap | ◐ | H | 04 |
 | 13 | scan-status summary | output | ✗ | H | 05 |
 | 14 | submission-package INDEX.md | targetmap | ◐ | H | 10 |
@@ -206,7 +206,7 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 32 | scope listing-type + tenancy gate | gate | ✗ | M | 06 |
 | 33 | router-mode "where are we?" status | output | ✗ | M | 05 |
 | 34 | end-of-run audit recap + verdict | report | ◐ | M | 04 |
-| 35 | ledger-freshness note | report | ◐ | M | 03 |
+| 35 | ledger-freshness note | report | ✓ | M | 03 ✅0.8.23 |
 | 36 | path-to-green checklist + per-finding line | report | ◐ | M | 10 |
 | 37 | PENDING-OWNER-RUN.md runbook | report | ◐ | M | 10 |
 | 38 | Checkmarx portal-run prediction file | report | ◐ | M | 11 |

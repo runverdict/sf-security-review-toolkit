@@ -171,6 +171,28 @@ Skills write into the PARTNER's repo, never into the plugin:
   neither. No silent behavior change — gate-spec only fixes WHICH options appear and their
   wording; the consent semantics (`record-consent` token, `build-audit-engine` fail-closed
   verify) are unchanged. Guarded by `test-gate-spec.mjs` + `test-tier-no-reask.mjs`.
+- **Operator-facing OUTPUT is pinned by render harnesses + `{{SLOT}}` templates,
+  rendered VERBATIM by the driver (0.8.23).** The gate-spec rule's twin for the OUTPUT
+  class — the readiness verdict / status / target-map renders were driver-improvised
+  (a table one run, prose the next; reordered sections; a re-worded standing caveat).
+  Two mechanisms, both ENGINE-owns-skeleton / driver-supplies-data:
+  (1) **Render harnesses** extend a deterministic-JSON emitter with a fixed-block mode
+  the way `compute-sci.mjs` does — `harness/render-stability.mjs` emits the verbatim
+  Finding-Stability block from `recurrence-confidence.json`; later WIs add the other
+  `render-*.mjs` siblings.
+  (2) **`templates/operator/*.md.tmpl`** `{{SLOT}}` skeletons with fixed `##` section
+  order, each engine block wrapped in `<!-- RENDER:… -->` sentinels — filled by
+  `harness/render-readiness-verdict.mjs`, which force-injects the SINGLE canonical
+  `STANDING_CAVEAT` constant (so source and output can't diverge) and FAILS CLOSED on
+  any unfilled `{{SLOT}}` (the "not submission-ready" lint, promoted from skill prose to
+  an engine — mirrors `build-artifact-engine`'s missing-template throw).
+  **The render-verbatim-output contract:** each pinned surface's skill (a) lists the
+  render harness / template in `allowed-tools`, (b) carries "print the harness stdout /
+  fill the `.tmpl` VERBATIM — never paraphrase, reorder, drop a column, or flip
+  table↔prose", and (c) pastes deterministic blocks (the SCI block, the stability block)
+  byte-for-byte. Policed by `lintRenderVerbatim` (`render-readiness-verdict.mjs`), which
+  flags a skill that hand-builds a Markdown table for a surface that has a registered
+  renderer/template. Guarded by `test-render-stability.mjs` + `test-readiness-verdict.mjs`.
 - **Irreversible sf/host ops are consent-gated, fail-closed (0.8.11).** The
   deployed-package deep-audit skills run live, irreversible Salesforce / host ops
   (`sf package version promote` — a PERMANENT release — plus package install/uninstall,
@@ -225,7 +247,7 @@ sf-security-review-toolkit/
 │       ├── package-metadata.md      ├── apex-exposed-surface.md
 │       ├── error-handling-disclosure.md  ├── untrusted-deserialization.md
 │       └── resource-consumption-abuse.md
-├── templates/                       # 16 reviewer-facing artifact templates + 2 schemas
+├── templates/                       # 16 reviewer-facing artifact templates + 2 schemas + operator/ render skeletons (0.8.23)
 │   ├── submission-checklist.md.tmpl # the required-artifacts table, per-row
 │   ├── authn-authz-flow.md.tmpl     ├── data-flow-diagram.md.tmpl
 │   ├── data-sensitivity.md.tmpl     ├── access-control.md.tmpl
@@ -235,7 +257,9 @@ sf-security-review-toolkit/
 │   ├── disaster-recovery-backup.md.tmpl      ├── vulnerability-remediation-sla.md.tmpl
 │   ├── hosting-architecture.md.tmpl          ├── prior-pentest-attestation.md.tmpl  # WI-19 owner-completed pack
 │   ├── audit-ledger.schema.json     # ledger shape (+ per-pass audited_commit fingerprint)
-│   └── evidence-index.schema.json   # WI-20 typed evidence model
+│   ├── evidence-index.schema.json   # WI-20 typed evidence model
+│   └── operator/                    # 0.8.23: operator-facing render skeletons (WI-00B) — fixed {{SLOT}} templates, RENDER:… sentinels, filled by render-readiness-verdict.mjs
+│       └── readiness-verdict.md.tmpl # WI-03: the pinned readiness-verdict skeleton (SCI block · Ledger Freshness · Finding Stability · Per-category · Blockers · NOT-verified · Open conflicting · Standing caveat)
 ├── harness/                         # deterministic engines: no LLM, no deps, byte-identical, each test-backed (one network exception: install-scanners.mjs — §7)
 │   ├── workflow-template.mjs        # parameterized multi-agent audit workflow
 │   ├── artifact-workflow-template.mjs # 0.8.21: P2 ARTIFACT-drafting substrate — mirror of workflow-template.mjs (export meta, INJECTED marker, ARGS guard, Draft-phase parallel() fan-out, return {drafted}); one agent per artifact from its template + repo + shared facts
@@ -243,6 +267,8 @@ sf-security-review-toolkit/
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
 │   ├── record-consent.mjs           # 0.8.4: durable consent COUPLING — record/verify an affirmative answer per gate (.security-review/consent/<gate>.json); the launch path fails closed on a missing token so a skipped ask can't proceed. 0.8.17: controlled `--decision affirm|deny` token (the SELECTED AskUserQuestion option is authoritative — the free-text label is recorded but NOT regex-scanned; deny-precedence; invalid→exit 2)
 │   ├── gate-spec.mjs                # 0.8.22: FROZEN gate catalog + pure gateOptions(gateId,facts) selector — PINS each AskUserQuestion gate's option set so the driver renders label/description VERBATIM + pipes the chosen `decision` to record-consent (the engine owns the options, the driver never improvises them). ALWAYS_ON-style FORCE-INJECTED safe-default decline on every consent gate; FOCUS_MIN-style FAIL CLOSED on an unknown gate / malformed option / non-record-consent decision. Registers run-mode/audit-tier/scanner-install; audit-tier confirms a journey-recorded tier instead of re-asking (WI-02)
+│   ├── render-stability.mjs         # 0.8.23: VERBATIM Finding-Stability block from recurrence-confidence.json (WI-00B render-harness) — compute-sci-style fixed-block mode; present (n≥2)=bucket table+reliably-recurring blockers+contestable band+mixed-commit note / absent=honest one-liner; informational-only, never a gate input
+│   ├── render-readiness-verdict.mjs # 0.8.23: readiness-verdict FILL ENGINE (WI-00B+WI-03) — STANDING_CAVEAT constant + fillVerdict(template,slots) (force-injects the caveat, FAILS CLOSED on any unfilled {{SLOT}}) + lintRenderVerbatim (flags a hand-built table for a registered surface). The output-class twin of gate-spec.mjs
 │   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2); FAILS CLOSED without verifyConsent(audit-tier)&&audit-targetmap (the durable gate — no engine = no fan-out). 0.8.17: ENGINE-ENFORCED always-on dims (sessionid-egress/secrets-credentials/error-handling-disclosure auto-injected regardless of the driver's scope-input; an always-on key in `na` is forced applicable with a WARN)
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge)
@@ -276,7 +302,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 39 dependency-free standing tests (389 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 41 dependency-free standing tests (402 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

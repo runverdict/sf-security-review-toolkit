@@ -23,6 +23,57 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.23] — 2026-06-25
+
+**Operator-facing OUTPUT is now pinned by an engine — presentation-consistency Slice 2
+(WI-00B substrate + WI-03 readiness-verdict).** Slice 1 pinned the gate option sets;
+this pins the OTHER improvised surface class — the readiness verdict, rendered from
+table-vs-prose / reordered-sections / re-worded-caveat skill prose run-to-run. Same
+contract (the ENGINE owns the skeleton, the driver supplies data): a fixed-header
+`{{SLOT}}` template + a deterministic fill engine that pastes the SCI block byte-for-byte,
+force-injects a single canonical standing caveat, and FAILS CLOSED on any unfilled slot.
+Presentation-only — the finding band is unchanged, so the 0.8.21 cold tag still certifies
+it; do NOT re-run the campaign. Suite **41 files / 402 checks** (was 39 / 389). Tag stays **HELD**.
+
+### Added
+- **`harness/render-stability.mjs`** — the VERBATIM Finding-Stability render (WI-00B
+  render-harness). Mirrors `compute-sci.mjs`'s verbatim-block mode: reads
+  `recurrence-confidence.json` and emits ONE fixed block in two branches — PRESENT (n≥2):
+  the `bucket_counts` table + the `reliably_recurring_blockers` set + the contestable band
+  named consistently + a mixed-commit note when `commit_consistency != consistent`;
+  ABSENT/single-run: one honest one-liner. Both carry the "informational only — changes
+  NOTHING about the SCI gate" caveat; neither ever claims the audit is complete/passed.
+  Pure, byte-identical on re-run.
+- **`harness/render-readiness-verdict.mjs`** — the verdict FILL ENGINE. Exports the single
+  canonical `STANDING_CAVEAT` constant, `fillVerdict(template, slots)` (force-injects the
+  caveat so a driver can't paraphrase it; FAILS CLOSED — throws on a missing caveat slot or
+  any unfilled `{{SLOT}}`, the "not submission-ready" lint promoted from skill prose to an
+  engine), `REGISTERED_SURFACES`, `hasMarkdownTable`, and `lintRenderVerbatim` (flags a
+  skill that hand-builds a table for a surface with a registered renderer/template).
+- **`templates/operator/readiness-verdict.md.tmpl`** — the new `templates/operator/` dir's
+  first skeleton: fixed `##` section order, each a `{{SLOT}}`, every engine block wrapped in
+  `<!-- RENDER:… -->` sentinels (SCI block · Ledger Freshness · Finding Stability ·
+  Per-category · Blockers · NOT-verified · Open conflicting baseline · Standing caveat).
+- **`acceptance/test-render-stability.mjs`** (6 checks) + **`acceptance/test-readiness-verdict.mjs`**
+  (7 checks) — determinism, both stability branches, the byte-for-byte SCI paste, the
+  force-injected caveat constant, the fail-closed unfilled-slot throw, and the hand-built-table lint.
+
+### Changed
+- **`compile-submission` Step 8 (WI-03)** — the readiness verdict is now rendered by FILLING
+  the template through `render-readiness-verdict.mjs`, not hand-built. The improvisable
+  "render the verdict (pick table-vs-prose / reorder / drop a sub-block)" prose is gone; the
+  SCI block is locked to a byte-for-byte `compute-sci` paste, Finding Stability to a
+  `render-stability` paste, and the standing caveat to the force-injected constant. Added the
+  render-harness grants to `allowed-tools`.
+- **`CONVENTIONS.md`** — documents the output render-verbatim substrate + the
+  render-verbatim contract/lint (§7), adds the new harnesses + `templates/operator/` to the
+  §8 layout, and bumps the test-count line.
+
+### Roadmap
+- `docs/roadmap-presentation-consistency.md` — WI-00B / WI-03 marked **done (0.8.23)**;
+  inventory rows INV-10 (readiness-verdict) / INV-11 (Finding Stability) / INV-35
+  (ledger-freshness) flipped to ✓.
+
 ## [0.8.22] — 2026-06-25
 
 **Operator-facing GATES are now pinned by an engine — presentation-consistency Slice 1
