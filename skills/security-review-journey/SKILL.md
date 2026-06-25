@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, audit, artifacts, scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/record-consent.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -304,13 +304,33 @@ missing or a key piece of the architecture was misread.
    affirmative answer, RECORD it — the downstream engine verifies the recorded token
    and a skipped ask physically cannot proceed (the launch path fails closed on it):
 
-   - **(1) Ask-tolerance + tier** — `AskUserQuestion`: full-auto vs guided, and the audit
-     tier (default `standard`; **never `exhaustive` on a first pass**). This sets how much
-     you ASK during the run; it does NOT authorize the per-action consents (2)/(3).
-   - **(2) Scan-tool install (network fetch)** — only if ≥1 scanner is installable.
-     `AskUserQuestion`: install to a per-run tmp dir (removed at cleanup, evidence kept)?
-     On the operator's SELECTION of the install option (the selection IS the consent — do NOT
-     rely on the label containing "yes"; use `--decision deny` if they declined), record then install:
+   **Every gate's option set is PINNED by `gate-spec.mjs` — render its
+   `options[].label/description` VERBATIM, never improvise the set (the engine owns
+   the options; the driver only pipes the chosen option's `decision` token to
+   `record-consent`). This kills the run-to-run drift a cold campaign caught (the
+   same depth gate offered a different option set each run).**
+
+   - **(1) Run-mode + tier** — render BOTH gates in ONE `AskUserQuestion` call (its
+     `questions` array carries both):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate run-mode` (full-auto vs
+     guided — sets ask-tolerance) and
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate audit-tier` (the pinned tier
+     menu — `standard` default, `exhaustive` offered but **never pre-selected**, `quick`
+     triage; identical every run). Render each gate's options VERBATIM. The tier election
+     is RECORDED here with the controlled `decision` token from the chosen option, so
+     audit-codebase Step 2 CONFIRMS it instead of re-asking (WI-02):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision <affirm|deny> --question "<the tier question>" --answer "<the option they picked>" --target <target>`
+     (`affirm` for a chosen tier, `deny` for the Cancel option). run-mode sets how much you
+     ASK during the run; it does NOT authorize the per-action consents (2)/(3).
+   - **(2) Scan-tool install (network fetch)** — only if `tool-detect` reported ≥1
+     installable scanner. Render the gate from `gate-spec.mjs` — its install-option
+     description is the VERBATIM sha256 / tmp-removed / evidence-kept / "this yes also
+     covers RUNNING them, which fetches rules" disclosure; only the count + the
+     `name(method)` list are filled, from the `tool-detect` installable set:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate scanner-install --scanners "<name:method,… from tool-detect installable_missing>"`
+     `AskUserQuestion` with those options VERBATIM. On the operator's SELECTION of the
+     install option (the selection IS the consent — do NOT rely on the label containing
+     "yes"; use `--decision deny` if they declined), record then install:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --decision affirm --question "<the install-to-tmp question>" --answer "<the option they picked>" --target <target>`
      → `install-scanners.mjs --consent` (which now ALSO verifies the recorded token; the
      flag alone no longer installs).

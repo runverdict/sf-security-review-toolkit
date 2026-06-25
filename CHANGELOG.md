@@ -23,6 +23,60 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.22] — 2026-06-25
+
+**Operator-facing GATES are now pinned by an engine — presentation-consistency Slice 1
+(WI-00A + WI-01 + WI-02).** The findings engine is deterministic, but the in-skill
+`AskUserQuestion` gate option sets were driver-improvised prose, and a cold campaign caught
+the drift: the same depth gate offered a different option set run-to-run (run 1 hard-removed
+Exhaustive → `{Standard, Quick}`; run 2 offered it → `{Standard, Quick, Exhaustive}`), and
+the tier was re-asked in audit-codebase after the journey already collected it. This applies
+the repo's proven contract (the ENGINE owns structure, the driver supplies data) to the gate
+class: a frozen catalog + a pure selector own the option set; the driver renders
+`label`/`description` VERBATIM and pipes the chosen `decision` to `record-consent`.
+Presentation-only — the finding band is unchanged, so the 0.8.21 cold tag still certifies it;
+do NOT re-run the campaign. Suite **39 files / 389 checks** (was 37 / 366). Tag stays **HELD**.
+
+### Added
+- **`harness/gate-spec.mjs`** — the FROZEN gate catalog + the pure `gateOptions(gateId, facts)`
+  selector (WI-00A). Mirrors three shipped patterns: `build-audit-engine`'s `ALWAYS_ON` (the
+  decline/skip option is FORCE-INJECTED on every consent gate, so a caller cannot drop it),
+  `build-artifact-engine`'s `FOCUS_MIN` THROW (FAIL CLOSED on an unknown gate id or any option
+  missing `label`/`description`/`decision`, or a decision that is not a valid `record-consent`
+  token), and `applicable-requirements`'s pure set-operation selector style (no LLM, no
+  network, byte-identical; the CLI's `--target` ledger read is the only FS touch). Registers
+  three gates for this slice — `run-mode`, `audit-tier`, `scanner-install` — and THROWS on any
+  other id (later WIs register the rest). CLI
+  `--gate <id> [--facts f.json] [--target <repo>] [--scanners "n:m,…"]` prints the exact
+  `AskUserQuestion` payload (+ per-option decision tokens) as JSON.
+- **`acceptance/test-gate-spec.mjs`** (17 checks) + **`acceptance/test-tier-no-reask.mjs`**
+  (6 checks) — determinism (byte-identical re-runs), golden option snapshots, the fail-closed
+  throws, the force-injected safe-default present on every consent gate, every emitted
+  `decision` round-tripping through the real `recordConsent`, and the journey→audit-codebase
+  collect-once / confirm-don't-re-ask flow.
+
+### Changed
+- **`security-review-journey` preflight (WI-01)** — the run-mode + audit-tier gate (rendered
+  in one `AskUserQuestion` call) and the scanner-install gate now render their option sets
+  from `gate-spec.mjs` VERBATIM instead of improvising the prose. The tier election is recorded
+  there with the controlled `--decision` token so the launch can be CONFIRMED downstream.
+  `audit-tier`'s menu is identical every run — `standard` default, `exhaustive` OFFERED but
+  never pre-selected (transparency + agency over silent removal — the run-1-hid-it /
+  run-2-offered-it drift is gone), `quick` triage. scanner-install's sha256 / tmp-removed /
+  evidence-kept / "this yes also covers RUNNING them, which fetches rules" disclosure is the
+  verbatim install description; only the count + the `name(method)` list fill from `tool-detect`.
+- **`audit-codebase` Step 2 (WI-02)** — when a tier token is already recorded (journey gate 1),
+  gate-spec emits a CONFIRM-and-authorize variant `{Authorize the <locked> launch, Change tier,
+  Cancel}` and the step records the LAUNCH authorization (reusing the prior `audit-tier` token
+  via `verifyConsent`) instead of re-offering the election. Only "Change tier" re-opens the
+  full menu. Kills the redundant tier re-ask. No silent behavior change: `build-audit-engine`
+  still verifies `audit-tier` + `audit-targetmap` and fails closed without them.
+- **`CONVENTIONS.md`** — documents the gate-spec engine + the render-verbatim-gate contract,
+  adds `gate-spec.mjs` to the §8 harness layout, and bumps the test-count line.
+
+### Roadmap
+- `docs/roadmap-presentation-consistency.md` — WI-00A / WI-01 / WI-02 marked **done (0.8.22)**.
+
 ## [0.8.21] — 2026-06-24
 
 **The ARTIFACT phase is now data-driven — P2 parity with the audit phase.** A cold run AND the

@@ -1,6 +1,7 @@
 # Roadmap — Presentation Consistency (pin the operator-facing surfaces)
 
-**Status:** planned (2026-06-25). Backlog, not yet built. Sequenced AFTER the
+**Status:** Slice 1 — **WI-00A + WI-01 + WI-02 shipped in 0.8.22** (2026-06-25). WI-00B
+and WI-03…WI-12 remain backlog. Sequenced AFTER the
 0.8.21 cold campaign tags — these are presentation-only changes that do NOT
 touch the finding band, so they ship as post-tag hardening (the 0.8.18→0.8.21
 friction/structure class) and never require re-running the campaign.
@@ -115,7 +116,7 @@ remaining ~50 surfaces.
 | 11 | generate-artifacts operator surfaces (gate echo, partition, WITHHELD, status, cross-read, Checkmarx) | 17,39,40,41,42,38,52 | med | M |
 | 12 | remaining low-risk renders + harden already-pinned verbatim contracts | 51,35,54,55,58,59,60 | low | M |
 
-### WI-00A — gate-spec engine
+### WI-00A — gate-spec engine — ✅ DONE (0.8.22)
 Create `harness/gate-spec.mjs` (frozen catalog + pure `gateOptions(gateId,
 facts)` selector + CLI). Fail closed on unknown gate / malformed option;
 force-inject the safe-default option. Driver renders verbatim → pipes the
@@ -124,17 +125,21 @@ determinism (twice → byte-identical), golden snapshot of every gate's options,
 fail-closed throw on a short/missing option, safe-default present on every
 consent gate, every `option.decision` is a valid record-consent token.
 
-### WI-01 — pin the 3 preflight gates
+### WI-01 — pin the 3 preflight gates — ✅ DONE (0.8.22)
 Register `run-mode` (fixed 2-option, same call as audit-tier), `audit-tier`
-(selector: first-pass → `{standard(default), exhaustive}`, exhaustive never
-pre-selected; later passes add `quick`), `scanner-install` (fixed install/skip,
+(selector: first-pass → the PINNED `{standard(default), exhaustive, quick}` +
+force-injected `Cancel` — **identical every run**, exhaustive OFFERED but never
+pre-selected; the operator+builder ratified OFFER-don't-hide it, since hiding it
+blocks legitimate exhaustive re-runs — and a confirm-the-locked-tier variant on a
+later pass, WI-02), `scanner-install` (fixed install/skip,
 the sha256/tmp/run-also-fetches disclosure as the verbatim install description,
 `N + scanner(method)` the only fillable data). Rewrite the journey preflight
 prose (`security-review-journey/SKILL.md:307-316`) to call `gate-spec.mjs`.
-**Test** snapshot each gate; assert audit-tier omits `quick` and never
-pre-selects `exhaustive` on pass 1; run-mode + audit-tier share one call.
+**Test** snapshot each gate; assert audit-tier OFFERS `quick` + `exhaustive` but
+never pre-selects `exhaustive` on pass 1 and the option set is identical every
+run; run-mode + audit-tier share one call.
 
-### WI-02 — fix the redundant tier re-ask
+### WI-02 — fix the redundant tier re-ask — ✅ DONE (0.8.22)
 In the `audit-tier` selector, when the consent ledger already carries a recorded
 tier token, emit a CONFIRM-and-authorize variant `{Authorize the <locked>
 launch (default), Change tier, Cancel}` instead of the full menu. Rewrite
@@ -167,8 +172,8 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 
 | INV | Surface | Kind | Status | Risk | WI |
 |-----|---------|------|--------|------|----|
-| 01 | audit-tier/depth gate (cross-skill, re-asked) | gate | ✗ | H | 01,02 |
-| 02 | scanner-install network-fetch gate | gate | ◐ | H | 01 |
+| 01 | audit-tier/depth gate (cross-skill, re-asked) | gate | ✓ | H | 01,02 ✅0.8.22 |
+| 02 | scanner-install network-fetch gate | gate | ✓ | H | 01 ✅0.8.22 |
 | 03 | throwaway-DAST consent gate | gate | ◐ | H | 06* |
 | 04 | sf-package-promote permanence consent | gate | ◐ | H | 08 |
 | 05 | scope partner-program preflight gates (6) | gate | ◐ | H | 06 |
@@ -192,7 +197,7 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 23 | agent-utterances artifact | output | ✗ | H | 09 |
 | 24 | two-user authorization probe transcript | output | ◐ | H | 09 |
 | 25 | test-environment runbook | report | ✗ | H | 09 |
-| 26 | run-mode gate | gate | ✗ | M | 01 |
+| 26 | run-mode gate | gate | ✓ | M | 01 ✅0.8.22 |
 | 27 | deployed-org deep-audit consent (3 variants) | gate | ◐ | M | 06* |
 | 28 | sf-deep-audit-ops gate family (4 skills) | gate | ◐ | M | 08 |
 | 29 | sf-cli-setup consent gate | gate | ◐ | M | 08 |

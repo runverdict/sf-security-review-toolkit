@@ -151,6 +151,26 @@ Skills write into the PARTNER's repo, never into the plugin:
   but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
   a high-stakes prose layer is a candidate for promotion to an engine + a
   PreToolUse hook (runtime-independent enforcement).
+- **Operator-facing GATES are pinned by an engine, rendered VERBATIM by the driver
+  (0.8.22).** The `AskUserQuestion` gate option sets were driver-improvised prose, and a
+  cold campaign caught the drift (the same depth gate offered a different option set
+  run-to-run). The fix applies the repo's contract — the ENGINE owns structure, the driver
+  supplies data — to the gate class. `harness/gate-spec.mjs` is a FROZEN catalog keyed by
+  gate id + a PURE `gateOptions(gateId, facts)` selector that returns
+  `{gate, consent, header, question, options:[{label, description, decision}]}`. It mirrors
+  `build-audit-engine`'s `ALWAYS_ON` (the decline/skip option is FORCE-INJECTED on every
+  consent gate, so a caller cannot drop it), `build-artifact-engine`'s `FOCUS_MIN` THROW
+  (FAIL CLOSED on an unknown gate id or any option missing `label`/`description`/`decision`,
+  or a decision that is not a valid `record-consent` token — exactly `affirm`/`deny`), and
+  `applicable-requirements`'s pure set-operation style (no LLM/network; the CLI's `--target`
+  ledger read is the only FS touch). **The render-verbatim-gate contract:** the driver lists
+  `gate-spec.mjs` in `allowed-tools`, calls it, renders each option's `label`/`description`
+  VERBATIM (never paraphrases, reorders, or invents the option set), and pipes ONLY the
+  chosen option's `decision` token to `record-consent.mjs --decision`. The engine owns the
+  option set upstream; `record-consent` pins the decision downstream; the driver improvises
+  neither. No silent behavior change — gate-spec only fixes WHICH options appear and their
+  wording; the consent semantics (`record-consent` token, `build-audit-engine` fail-closed
+  verify) are unchanged. Guarded by `test-gate-spec.mjs` + `test-tier-no-reask.mjs`.
 - **Irreversible sf/host ops are consent-gated, fail-closed (0.8.11).** The
   deployed-package deep-audit skills run live, irreversible Salesforce / host ops
   (`sf package version promote` — a PERMANENT release — plus package install/uninstall,
@@ -222,6 +242,7 @@ sf-security-review-toolkit/
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
 │   ├── record-consent.mjs           # 0.8.4: durable consent COUPLING — record/verify an affirmative answer per gate (.security-review/consent/<gate>.json); the launch path fails closed on a missing token so a skipped ask can't proceed. 0.8.17: controlled `--decision affirm|deny` token (the SELECTED AskUserQuestion option is authoritative — the free-text label is recorded but NOT regex-scanned; deny-precedence; invalid→exit 2)
+│   ├── gate-spec.mjs                # 0.8.22: FROZEN gate catalog + pure gateOptions(gateId,facts) selector — PINS each AskUserQuestion gate's option set so the driver renders label/description VERBATIM + pipes the chosen `decision` to record-consent (the engine owns the options, the driver never improvises them). ALWAYS_ON-style FORCE-INJECTED safe-default decline on every consent gate; FOCUS_MIN-style FAIL CLOSED on an unknown gate / malformed option / non-record-consent decision. Registers run-mode/audit-tier/scanner-install; audit-tier confirms a journey-recorded tier instead of re-asking (WI-02)
 │   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2); FAILS CLOSED without verifyConsent(audit-tier)&&audit-targetmap (the durable gate — no engine = no fan-out). 0.8.17: ENGINE-ENFORCED always-on dims (sessionid-egress/secrets-credentials/error-handling-disclosure auto-injected regardless of the driver's scope-input; an always-on key in `na` is forced applicable with a WARN)
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge)
@@ -255,7 +276,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 37 dependency-free standing tests (366 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 39 dependency-free standing tests (389 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

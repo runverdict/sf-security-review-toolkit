@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -71,13 +71,30 @@ regardless of anything this engine produces.
    → fix → re-run (step 8) → `exhaustive` once the ledger is quiet.
 
    **This is a MANDATORY `AskUserQuestion` stop — not a printed line, and never a
-   silence-is-yes inference.** Ask the operator to confirm the tier + give the go-ahead
-   via `AskUserQuestion` (the tier gate ENFORCES the hard default: `standard` on a first
-   pass — never pre-select or auto-run `exhaustive`). The operator's SELECTION of an
-   affirmative option IS the consent — record it with the controlled `--decision` token
-   (do NOT rely on the option label containing "yes"); use `--decision deny` if they declined:
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the tier + go-ahead question>" --answer "<the option they picked>" --target <target>`.
-   The fan-out **physically cannot launch** without this recorded: `build-audit-engine.mjs`
+   silence-is-yes inference. The option set is PINNED by `gate-spec.mjs`; render its
+   `options[].label/description` VERBATIM and pipe the chosen option's `decision` straight
+   to `record-consent` — never improvise the option set (the engine owns it).** Get the
+   gate from the engine WITH the resume facts so a tier already chosen in the journey is
+   CONFIRMED, not re-litigated:
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate audit-tier --target <target>`.
+
+   - **The journey already collected the tier** (a recorded `audit-tier` token exists) →
+     gate-spec emits the CONFIRM-and-authorize variant `{Authorize the <locked> launch,
+     Change tier, Cancel}` — it does NOT re-offer the election (WI-02; this kills the
+     redundant tier re-ask). On **Authorize**, record the LAUNCH authorization (it reuses
+     the prior tier token, cross-referenced via `verifyConsent`):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the launch confirm question>" --answer "<the Authorize option>" --target <target>`.
+     On **Cancel**, the same call with `--decision deny`, then STOP. Only **Change tier**
+     re-opens the full menu — re-run `gate-spec --gate audit-tier` without `--target` (or with
+     `--facts` `{"reelect":true}`) and record the newly chosen tier.
+   - **Standalone (no prior token)** → gate-spec emits the full first-pass menu (`standard`
+     default, `exhaustive` offered but **never pre-selected**, `quick` triage — identical
+     every run). The operator's SELECTION IS the consent — record it with the controlled
+     `--decision` token (do NOT rely on the option label containing "yes"; `--decision deny`
+     for Cancel):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the tier + go-ahead question>" --answer "<the option they picked>" --target <target>`.
+
+   The fan-out **physically cannot launch** without `audit-tier` recorded: `build-audit-engine.mjs`
    verifies `audit-tier` (and `audit-targetmap`, below) and refuses to assemble the engine —
    exit non-zero, nothing written — when either is missing. **Consent is written ONLY by
    `record-consent.mjs`** (its grant is in `allowed-tools`, so recording a yes is the
