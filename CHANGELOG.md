@@ -23,6 +23,78 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.24] — 2026-06-26
+
+**The entry-experience renders are now pinned by engines — presentation-consistency Slice 3
+(WI-04 + WI-05).** Slices 1–2 pinned the gate option sets and the readiness verdict; this pins
+the six most-seen ENTRY surfaces that were still driver-improvised prose: the finding-cluster
+triage headline (the FAILURE VERDICT — it now reads byte-identically at the audit exec summary
+AND the journey blocker gate), the target-map approval table, the end-of-run audit recap, the
+3-tier preflight report (with the deployed-org power-up as a FIXED 4-state enum), the scan-status
+summary, and the router "where are we?" status. Same contract (the ENGINE owns the skeleton, the
+driver pastes it verbatim): each render is pure over deterministic engine JSON — no LLM, no Date,
+no random — and fails safe to an honest line, never a fabricated "clean". Presentation-only — the
+finding band is unchanged, so the 0.8.21 cold tag still certifies it; do NOT re-run the campaign.
+Suite **47 files / 440 checks** (was 41 / 402). Tag stays **HELD**.
+
+### Added
+- **`harness/render-target-map.mjs`** (INV-12) — the VERBATIM target-map approval display: a
+  fixed `{dimension | applicable | targets | why | confidence | unresolved}` table, applicable
+  rows FIRST (in file order), UNRESOLVED dimensions flagged. Pure; a missing/non-JSON source →
+  an honest "not resolved yet" line, never a fabricated map. Printed verbatim in the one
+  pre-fan-out approval `AskUserQuestion` (audit-codebase Step 3).
+- **`harness/render-preflight.mjs`** (INV-07) — the VERBATIM one-page 3-tier preflight report
+  (✓ DETECTED / ⚠ NEED-FROM-YOU / ✦ OPTIONAL POWER-UPS) rendered from the deterministic detector
+  JSONs (baseline-counts · package-readiness · tool-detect · stack-detect · docker-check). The
+  deployed-org power-up line is a FIXED 4-state enum (`installable` / `needs-build-buildable` /
+  `needs-build-unregistered` / `no-package`) — `DEEP_AUDIT_STATES` + the total `deepAuditState()`
+  selector; only the readiness-reason fills. A missing detector → an honest "not detected" line.
+- **`harness/render-scan-status.mjs`** (INV-13) — the VERBATIM scan-status summary: a FIXED 8-row
+  Family table in canonical Family 1–8 order with locked columns (`Family | Applies | Runner |
+  Status | Evidence file | Gate id | Next command if PENDING`), rendered from the evidence
+  `index.json` + the scope manifest. DONE requires a reviewer-reproducible report ON DISK — a
+  plan with no report is PARTIAL, never DONE (CONVENTIONS §2). `SCAN_FAMILIES` is the frozen catalog.
+- **`harness/render-router-status.mjs`** (INV-33) — the VERBATIM router-mode "where are we?" block:
+  a FIXED 3-line status (resume-point · single next-skill · one-sentence reason) over a frozen
+  phase ladder; drift → re-scope, a stale ledger → re-audit. A null facts source → "fresh start".
+- **`harness/render-recap.mjs`** (INV-34) — the VERBATIM end-of-run audit recap, LED BY the
+  finding-cluster headline (byte-identical to the exec summary + blocker gate), then this-pass
+  counts, the PROCEED/HALT verdict, and the fixed not-covered caveat. `merge-ledger.mjs` emits it
+  to stdout at the end of every pass; audit-codebase Step 7 prints it verbatim.
+- **`harness/finding-clusters.mjs` — `renderClusterHeadline` + `--headline`/`--format md`** (INV-08)
+  — the VERBATIM finding-cluster triage headline: raw per-severity counts FIRST, then the clustered
+  distinct-file view, then the headline narrative. The SAME block at the audit exec summary and the
+  journey blocker gate; a missing ledger → an honest "unavailable" line, never a false clean.
+- **`harness/package-readiness.mjs` — additive `registered` field** — splits the `needs-build`
+  verdict into buildable (a real 0Ho package-id alias exists) vs unregistered, feeding the
+  preflight 4-state enum. Additive only; every prior status/verdict is unchanged.
+- **Six standing tests** (`test-finding-clusters-headline` · `test-render-target-map` ·
+  `test-render-preflight` · `test-render-scan-status` · `test-render-router-status` ·
+  `test-render-recap`) + new `registered`-field checks in `test-package-readiness` — determinism,
+  a golden snapshot of each fixed structure (column set, row/section order, the 4-state enum, the
+  canonical Family 1–8 order), fail-safe on missing/non-JSON input, and a wiring assertion that the
+  consuming skill grants + references the harness and states "print verbatim".
+
+### Changed
+- **`audit-codebase` Steps 3/6/7** — the target-map approval (Step 3) now shows
+  `render-target-map.mjs` stdout verbatim; the exec-summary cluster view (Step 6) is now
+  `finding-clusters.mjs --headline` verbatim (the SAME block as the journey blocker gate); Step 7
+  prints the `merge-ledger`/`render-recap` recap verbatim. New harness grants in `allowed-tools`.
+- **`security-review-journey`** — the preflight report (Step 6) is rendered by `render-preflight.mjs`
+  verbatim (the freehand 3-tier bullet contents are gone); the blocker gate uses
+  `finding-clusters.mjs --headline` verbatim; the status-only "where are we?" path prints
+  `render-router-status.mjs` verbatim. New harness grants in `allowed-tools`.
+- **`run-scans` Step 11** — the scan-status readout is rendered by `render-scan-status.mjs` verbatim.
+- **`harness/render-readiness-verdict.mjs`** — `REGISTERED_SURFACES` extended with the six Slice-3
+  surfaces, so `lintRenderVerbatim` polices them centrally.
+- **`CONVENTIONS.md`** — §7 lists the new renders, §8 adds the harnesses to the layout, and the
+  test-count line is bumped. **`acceptance/README.md`** — file/check counts updated + the Slice-3
+  renders described.
+
+### Roadmap
+- `docs/roadmap-presentation-consistency.md` — **WI-04** + **WI-05** marked **done (0.8.24)**;
+  inventory rows INV-07 / 08 / 12 / 13 / 33 / 34 flipped to ✓.
+
 ## [0.8.23] — 2026-06-25
 
 **Operator-facing OUTPUT is now pinned by an engine — presentation-consistency Slice 2

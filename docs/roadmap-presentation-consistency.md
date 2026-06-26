@@ -1,8 +1,10 @@
 # Roadmap — Presentation Consistency (pin the operator-facing surfaces)
 
 **Status:** Slice 1 — **WI-00A + WI-01 + WI-02 shipped in 0.8.22** (2026-06-25). Slice 2 —
-**WI-00B + WI-03 shipped in 0.8.23** (2026-06-25). WI-04…WI-12 remain backlog. Sequenced AFTER the
-0.8.21 cold campaign tags — these are presentation-only changes that do NOT
+**WI-00B + WI-03 shipped in 0.8.23** (2026-06-25). Slice 3 — **WI-04 + WI-05 shipped in 0.8.24**
+(2026-06-26): the entry-experience renders (finding-cluster headline · target-map approval ·
+audit recap · 3-tier preflight · scan-status · router status). WI-06…WI-12 remain backlog.
+Sequenced AFTER the 0.8.21 cold campaign tags — these are presentation-only changes that do NOT
 touch the finding band, so they ship as post-tag hardening (the 0.8.18→0.8.21
 friction/structure class) and never require re-running the campaign.
 
@@ -106,8 +108,8 @@ remaining ~50 surfaces.
 | 01 | pin the 3 preflight gates (run-mode / audit-tier / scanner-install) | 26, 01, 02 | high | S |
 | 02 | audit-launch gate: confirm the locked tier, don't re-ask | 01 | high | S |
 | 03 | template the readiness-verdict (fixed skeleton) ✅0.8.23 | 10, 11, 35 | high | M |
-| 04 | pin finding-cluster headline + target-map approval display | 08, 12, 34 | high | M |
-| 05 | pin preflight 3-tier report + scan-status summary | 07, 13, 33 | high | M |
+| 04 | pin finding-cluster headline + target-map approval display ✅0.8.24 | 08, 12, 34 | high | M |
+| 05 | pin preflight 3-tier report + scan-status summary ✅0.8.24 | 07, 13, 33 | high | M |
 | 06 | pin scope-submission surfaces (detected-elements, applicable-reqs, MCP probe, auto-resolve, confirm gate + scope gates) | 06,15,16,44,45,43,05,32 | high | L |
 | 07 | template reviewer-simulation report | 18 | high | M |
 | 08 | CLI-gated deep-audit gates + verification batteries | 04,28,29,53,46,47,48,54,55 | med | L |
@@ -163,7 +165,34 @@ Step 8 to fill slots + print verbatim. **Test** render twice on a frozen
 fixture → byte-identical; section order; SCI slot equals compute-sci stdout;
 standing caveat equals the committed constant; no `{{...}}` survives.
 
-*(WI-04…WI-12 detail: see the synthesis result captured for this roadmap;
+### WI-04 — finding-cluster headline + target-map approval + recap — ✅ DONE (0.8.24)
+Three surfaces, one shared block. `finding-clusters.mjs` gains `renderClusterHeadline`
++ a `--headline`/`--format md` CLI emitting the fixed triage block — raw per-severity
+counts FIRST, then the clustered distinct-file view, then the headline narrative. BOTH
+`audit-codebase` Step 6 (exec summary) and `security-review-journey` Step 3 (blocker gate)
+print it VERBATIM, so the FAILURE VERDICT reads byte-identically. `render-target-map.mjs`
+renders `target-map.json` → the fixed `{dimension | applicable | targets | why |
+confidence | unresolved}` table (applicable rows first, unresolved flagged), printed
+verbatim in the Step-3 approval `AskUserQuestion`. `merge-ledger.mjs` emits a fixed
+`render-recap.mjs` block to stdout — LED BY the cluster headline, then counts · PROCEED/HALT
+· not-covered caveat — printed verbatim at `audit-codebase` Step 7. **Tests**
+`test-finding-clusters-headline` (6), `test-render-target-map` (5), `test-render-recap` (6):
+determinism, golden structure, fail-safe, a byte-identical-lead assertion, and skill wiring.
+
+### WI-05 — preflight 3-tier report + scan-status + router status — ✅ DONE (0.8.24)
+`render-preflight.mjs` renders the 3-tier report (✓ DETECTED / ⚠ NEED-FROM-YOU /
+✦ OPTIONAL POWER-UPS) from the deterministic detector JSONs; the deployed-org power-up
+line is a FIXED 4-state enum (`DEEP_AUDIT_STATES` + the total `deepAuditState` selector,
+fed by the new additive `package-readiness.registered` field). `render-scan-status.mjs`
+renders the evidence `index.json` → a fixed 8-row Family table (frozen `SCAN_FAMILIES`,
+canonical 1–8 order, locked columns; DONE needs an on-disk report). `render-router-status.mjs`
+emits the fixed 3-line "where are we?" block over a frozen phase ladder. The journey prints
+the preflight + router blocks verbatim; `run-scans` Step 11 prints scan-status verbatim.
+**Tests** `test-render-preflight` (6), `test-render-scan-status` (5), `test-render-router-status`
+(5): determinism, the golden skeleton (4-state enum completeness, canonical Family order),
+fail-safe, and skill wiring.
+
+*(WI-06…WI-12 detail: see the synthesis result captured for this roadmap;
 each follows the same render-harness-or-template + standing-test pattern.)*
 
 ## Inventory — all 60 surfaces (condensed)
@@ -178,13 +207,13 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 04 | sf-package-promote permanence consent | gate | ◐ | H | 08 |
 | 05 | scope partner-program preflight gates (6) | gate | ◐ | H | 06 |
 | 06 | final scope-manifest summary + confirm | verdict | ✗ | H | 06 |
-| 07 | one-page preflight 3-tier report | report | ◐ | H | 05 |
-| 08 | finding-cluster triage headline | report | ◐ | H | 04 |
+| 07 | one-page preflight 3-tier report | report | ✓ | H | 05 ✅0.8.24 |
+| 08 | finding-cluster triage headline | report | ✓ | H | 04 ✅0.8.24 |
 | 09 | synthesis audit report (§9 body) | report | ◐ | H | 10 |
 | 10 | readiness-verdict wrapper | verdict | ✓ | H | 03 ✅0.8.23 |
 | 11 | Finding Stability (N-run consensus) | report | ✓ | H | 03 ✅0.8.23 |
-| 12 | target-map approval display | targetmap | ◐ | H | 04 |
-| 13 | scan-status summary | output | ✗ | H | 05 |
+| 12 | target-map approval display | targetmap | ✓ | H | 04 ✅0.8.24 |
+| 13 | scan-status summary | output | ✓ | H | 05 ✅0.8.24 |
 | 14 | submission-package INDEX.md | targetmap | ◐ | H | 10 |
 | 15 | detected-architecture-elements summary | targetmap | ◐ | H | 06 |
 | 16 | applicable-requirements presentation | output | ◐ | H | 06 |
@@ -204,8 +233,8 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 30 | live-endpoint read-only probe gate | gate | ✗ | M | 06* |
 | 31 | NEED-FROM-YOU clarification gate | gate | ✗ | M | 06* |
 | 32 | scope listing-type + tenancy gate | gate | ✗ | M | 06 |
-| 33 | router-mode "where are we?" status | output | ✗ | M | 05 |
-| 34 | end-of-run audit recap + verdict | report | ◐ | M | 04 |
+| 33 | router-mode "where are we?" status | output | ✓ | M | 05 ✅0.8.24 |
+| 34 | end-of-run audit recap + verdict | report | ✓ | M | 04 ✅0.8.24 |
 | 35 | ledger-freshness note | report | ✓ | M | 03 ✅0.8.23 |
 | 36 | path-to-green checklist + per-finding line | report | ◐ | M | 10 |
 | 37 | PENDING-OWNER-RUN.md runbook | report | ◐ | M | 10 |

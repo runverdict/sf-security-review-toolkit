@@ -80,5 +80,44 @@ check('cross-package: only an UNRELATED 04t alias present → needs-build (no fa
   assert.equal(r.status, 'needs-build')
 })
 
+// ── the `registered` field — the needs-build split for the preflight 4-state enum ──
+check('registered: a real 0Ho id (no 04t) → needs-build + registered:true (buildable)', () => {
+  const r = packageReadiness({
+    packageDirectories: [{ path: 'force-app', package: 'Acme', versionNumber: '1.0.0.NEXT' }],
+    packageAliases: { Acme: '0Ho5e0000008aBcCAE' },
+  })
+  assert.equal(r.status, 'needs-build')
+  assert.equal(r.registered, true, 'a valid 0Ho alias means build-managed-package can cut a version')
+  assert.match(r.reason, /build-managed-package/)
+})
+
+check('registered: a PLACEHOLDER 0Ho alias → needs-build + registered:false (unregistered)', () => {
+  const r = packageReadiness({
+    packageDirectories: [{ path: 'force-app', default: true, package: 'Lumina Forecast Connector', versionNumber: '1.2.0.NEXT' }],
+    packageAliases: { 'Lumina Forecast Connector': '0Ho5e000000XXXXCAW' },
+  })
+  assert.equal(r.status, 'needs-build')
+  assert.equal(r.registered, false, 'a placeholder 0Ho alias is not a real Dev-Hub registration')
+  assert.match(r.reason, /not created against your Dev Hub/)
+})
+
+check('registered: no package-id alias at all → needs-build + registered:false', () => {
+  const r = packageReadiness({
+    packageDirectories: [{ path: 'force-app', package: 'Acme', versionNumber: '1.0.0.NEXT' }],
+    packageAliases: {},
+  })
+  assert.equal(r.status, 'needs-build')
+  assert.equal(r.registered, false)
+})
+
+check('registered: installable → registered:true; no-package → registered:false', () => {
+  const inst = packageReadiness({
+    packageDirectories: [{ path: 'force-app', package: 'Acme', versionNumber: '1.0.0.1' }],
+    packageAliases: { Acme: '0Ho5e0000008aBcCAE', 'Acme@1.0.0-1': '04t5e0000004XyZAAU' },
+  })
+  assert.equal(inst.registered, true)
+  assert.equal(packageReadiness(null).registered, false)
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

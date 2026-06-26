@@ -238,6 +238,88 @@ export function clusterFindings(findings) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// WI-04 / INV-08 — the VERBATIM finding-cluster triage headline (presentation
+// consistency Slice 3). The output-class analog of the gate-spec engine: the
+// ENGINE owns the block SKELETON, the driver pastes it byte-for-byte.
+//
+// WHY THIS EXISTS. The triage headline was driver-improvised prose — rendered as a
+// table one run and text the next, and it is the FAILURE VERDICT (an open
+// critical/high halts the run), so it MUST read identically at the two sites that
+// print it: `security-review-journey` Step 3 (the blocker gate) and `audit-codebase`
+// Step 6 (the audit exec summary). This pins it: a fixed-block render over the
+// already-deterministic `clusterFindings()` output, mirroring `render-stability.mjs`.
+//
+// FIXED ORDER (the contract): raw counts FIRST, then the clustered headline. The raw
+// per-severity counts come before the clustered file view so an open critical/high is
+// never hidden behind the (smaller) distinct-file number — the cluster view is a lower
+// bound on distinct issues, never a downgrade of the count that gates the run.
+// ---------------------------------------------------------------------------
+
+// Canonical severity print order — always shown so the skeleton is fixed run-to-run.
+const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
+
+/**
+ * Pure: the `clusterFindings()` result (or null) → the fixed triage-headline block.
+ * Three branches, all honest, none ever asserting the code is safe/clean:
+ *   - UNAVAILABLE (null / not a cluster object) → an honest "could not read" line, never
+ *     a fabricated "clean" (a missing ledger is not a passed audit);
+ *   - NONE (a valid cluster with 0 open confirmed) → the false-negative-aware "nothing
+ *     new this pass" line;
+ *   - PRESENT → raw per-severity counts, then the clustered distinct-file table, then the
+ *     `clusterFindings().headline` narrative verbatim (its lower-bound caveat is the
+ *     single source — never re-worded here).
+ */
+export function renderClusterHeadline(cluster) {
+  const H = '### Finding triage — cluster view'
+  if (!cluster || typeof cluster !== 'object' || !Number.isInteger(cluster.confirmed_count)) {
+    return [
+      H, '',
+      'Finding cluster view unavailable: the audit ledger could not be read (no `.security-review/audit-ledger.json`, ' +
+        'or it is unreadable/non-JSON). This is NOT a clean result — run `/sf-security-review-toolkit:audit-codebase` ' +
+        'first. Salesforce performs its own penetration test regardless.',
+    ].join('\n')
+  }
+  if (cluster.confirmed_count === 0) {
+    return [
+      H, '',
+      '**No open confirmed findings.** The audited dimensions surfaced nothing new this pass. Verification bounds ' +
+        'false positives; it does NOT bound false negatives — "no findings" is never "no vulnerabilities" and never ' +
+        '"secure"/"clean" (CONVENTIONS §2). Salesforce performs its own penetration test regardless.',
+    ].join('\n')
+  }
+
+  const bs = cluster.by_severity && typeof cluster.by_severity === 'object' ? cluster.by_severity : {}
+  const sevStr = SEV_ORDER.map((s) => `${s} ${Number.isFinite(bs[s]) ? bs[s] : 0}`).join(' · ')
+  const unknown = Number.isFinite(bs.unknown) ? bs.unknown : 0
+  const dims = Array.isArray(cluster.dimensions_touched) ? cluster.dimensions_touched.length : 0
+  const df = Number.isFinite(cluster.distinct_files) ? cluster.distinct_files : 0
+  const dcf = Number.isFinite(cluster.distinct_critical_files) ? cluster.distinct_critical_files : 0
+  const dhf = Number.isFinite(cluster.distinct_high_files) ? cluster.distinct_high_files : 0
+  const overlap = Array.isArray(cluster.multi_dimension_overlap) ? cluster.multi_dimension_overlap.length : 0
+
+  const L = [H, '']
+  // 1) RAW counts first — the number that gates the run, never hidden behind the cluster.
+  L.push(
+    `**Raw confirmed findings: ${cluster.confirmed_count}** (${sevStr}${unknown ? ` · unknown ${unknown}` : ''}) ` +
+      `across ${dims} dimension(s).`
+  )
+  L.push('')
+  // 2) THEN the clustered view — a conservative lower bound on distinct issues.
+  L.push('**Clustered (distinct affected files — a conservative lower bound on distinct issues):**')
+  L.push('')
+  L.push('| Metric | Count |')
+  L.push('|---|---|')
+  L.push(`| Distinct affected files | ${df} |`)
+  L.push(`| Files topping out at critical | ${dcf} |`)
+  L.push(`| Files topping out at high | ${dhf} |`)
+  L.push(`| Files with cross-dimension overlap | ${overlap} |`)
+  L.push('')
+  // 3) The headline narrative verbatim — its lower-bound caveat is the single source of truth.
+  L.push(String(cluster.headline || ''))
+  return L.join('\n')
+}
+
 function main() {
   const arg = (flag, def) => {
     const i = process.argv.indexOf(flag)
@@ -245,10 +327,16 @@ function main() {
   }
   const TARGET = arg('--target', process.cwd())
   const AS_JSON = process.argv.includes('--json')
+  // WI-04: `--headline` (alias `--format md`) prints the fixed verbatim triage block.
+  const AS_HEADLINE = process.argv.includes('--headline') || arg('--format', '') === 'md'
   let ledger = { findings: [] }
-  try { ledger = JSON.parse(readFileSync(join(TARGET, '.security-review', 'audit-ledger.json'), 'utf8')) } catch {}
+  let ledgerRead = false
+  try { ledger = JSON.parse(readFileSync(join(TARGET, '.security-review', 'audit-ledger.json'), 'utf8')); ledgerRead = true } catch {}
   const r = clusterFindings(ledger.findings)
   if (AS_JSON) process.stdout.write(JSON.stringify(r, null, 2) + '\n')
+  // A genuinely-missing/unreadable ledger renders the UNAVAILABLE branch (pass null), so the
+  // headline never reports a missing audit as "no findings" (a false clean).
+  else if (AS_HEADLINE) process.stdout.write(renderClusterHeadline(ledgerRead ? r : null) + '\n')
   else process.stdout.write(r.headline + '\n')
 }
 

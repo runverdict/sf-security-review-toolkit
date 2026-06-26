@@ -22,6 +22,14 @@
  *   no-package   → no sfdx-project.json, or no 2GP package configured (nothing to
  *                  install; the deep audit is N/A for this listing).
  *
+ * Every verdict also carries `registered` — whether a real `0Ho…` package-id alias
+ * exists (the package is created against the Dev Hub, so `build-managed-package` CAN
+ * cut a version). This splits the `needs-build` verdict into the two states the
+ * preflight's deployed-org power-up line distinguishes: `needs-build` + registered =
+ * "build first, then deep-audit"; `needs-build` + NOT registered = "can't build:
+ * the package isn't created against your Dev Hub — register it first". The render
+ * harness (`render-preflight.mjs`) maps (status, registered) → the fixed 4-state enum.
+ *
  * PURE core (`packageReadiness`); the CLI reads the file. No LLM, no deps, no
  * network. (A live `sf package version list` confirms an alias is actually
  * PROMOTED/released — this reads the project config, which is the up-front signal.)
@@ -39,12 +47,12 @@ const isPlaceholder = (v) => /X{3,}/.test(String(v || '')) // a literal XXXX pla
 /** Pure: classify install-readiness from a parsed sfdx-project.json (or null). */
 export function packageReadiness(proj) {
   if (!proj || typeof proj !== 'object') {
-    return { status: 'no-package', reason: 'no readable sfdx-project.json (not an SFDX package project)' }
+    return { status: 'no-package', registered: false, reason: 'no readable sfdx-project.json (not an SFDX package project)' }
   }
   const dirs = Array.isArray(proj.packageDirectories) ? proj.packageDirectories : []
   const pkgDir = dirs.find((d) => d && d.package)
   if (!pkgDir) {
-    return { status: 'no-package', reason: 'sfdx-project.json has no packageDirectory with a `package` — source-only project, not a 2GP to install' }
+    return { status: 'no-package', registered: false, reason: 'sfdx-project.json has no packageDirectory with a `package` — source-only project, not a 2GP to install' }
   }
   const pkgName = pkgDir.package
   const aliases = proj.packageAliases && typeof proj.packageAliases === 'object' ? proj.packageAliases : {}
@@ -62,6 +70,8 @@ export function packageReadiness(proj) {
   if (versionAlias) {
     return {
       status: 'installable',
+      // An installable version implies the package is created against the Dev Hub.
+      registered: true,
       package: pkgName,
       versionAlias: versionAlias[0],
       reason: `version alias '${versionAlias[0]}' → ${versionAlias[1]} is present — installable into a scratch org (confirm it is PROMOTED via \`sf package version list\` before relying on it)`,
@@ -69,6 +79,10 @@ export function packageReadiness(proj) {
   }
   // No installable version — diagnose why, for the proactive gate's message.
   const pkgIdAlias = aliases[pkgName]
+  // `registered`: a real 0Ho package-id alias exists, so the package is created against
+  // the Dev Hub and `build-managed-package` can cut a version. A missing/placeholder/
+  // non-0Ho alias means the package itself is not registered yet — `sf package create` first.
+  const registered = !!pkgIdAlias && !isPlaceholder(pkgIdAlias) && PACKAGE_ID.test(String(pkgIdAlias))
   const why = []
   if (!pkgIdAlias) why.push('no package-id alias')
   else if (isPlaceholder(pkgIdAlias)) why.push(`package alias is a placeholder (${pkgIdAlias})`)
@@ -77,8 +91,9 @@ export function packageReadiness(proj) {
   why.push('no 04t version alias')
   return {
     status: 'needs-build',
+    registered,
     package: pkgName,
-    reason: `package '${pkgName}' is defined but has no installable released version (${why.join('; ')}) — run build-managed-package before a deployed-org deep audit`,
+    reason: `package '${pkgName}' is defined but has no installable released version (${why.join('; ')}) — ${registered ? 'run build-managed-package before a deployed-org deep audit' : 'the package is not created against your Dev Hub yet — `sf package create`, then build-managed-package, before a deployed-org deep audit'}`,
   }
 }
 

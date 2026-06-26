@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, audit, artifacts, scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -274,27 +274,32 @@ missing or a key piece of the architecture was misread.
    degrade the code audit.
 
 6. **Emit ONE preflight report, then act on the tier behaviors.** A single
-   scannable message, the only interaction in the common case:
+   scannable message, the only interaction in the common case. **Render it VERBATIM**
+   from `node ${CLAUDE_PLUGIN_ROOT}/harness/render-preflight.mjs --facts <facts.json>`,
+   where `<facts.json>` is the `{ repo, commit, resumePoint, elements, needFromYou,
+   baseline, packageReadiness, toolDetect, stackDetect, dockerCheck }` you assembled in
+   Steps 0.2–0.4 — the detector JSONs piped straight in, plus your scan's architecture
+   `elements` and any audit-blocking `needFromYou` gaps. The engine owns the 3-tier
+   SKELETON (✓ DETECTED / ⚠ NEED-FROM-YOU / ✦ OPTIONAL POWER-UPS) and the deployed-org
+   power-up's FIXED 4-state enum (installable / needs-build-buildable /
+   needs-build-unregistered / no-package); print its stdout verbatim — never hand-rebuild
+   the bullets, reorder the tiers, or re-word the 4-state line. The fixed shape:
 
    ```
    PREFLIGHT — AppExchange/AgentExchange security-review readiness
-   Repo: <target> @ <short commit>   Baseline last_verified: <date> (<N>d old)
+   Repo: <repo> @ <commit>   Baseline currency: <newest_verified, N unverified>
    Resume point: <fresh start | resuming from Phase X | re-scoping on drift>
 
    ✓ DETECTED (proceeding with these — interrupt only to correct)
-     • <element> — <evidence>
-     • <endpoint> — <where found>, env: <unknown until labeled>
-     • <prior-phase state being resumed / reused>
+     • <architecture elements · managed package · external backend · scan tools · docker — from the detectors>
 
    ⚠ NEED-FROM-YOU (blocks a good audit — the only hard-stop)
-     • <only if a genuinely audit-blocking gap exists; otherwise: "none">
+     • <only a genuinely audit-blocking gap; otherwise: "none">
 
    ✦ OPTIONAL POWER-UPS (proactive + accurate; a LIVE power-up runs only on your explicit yes)
-     • Deployed-org deep audit — <READY (installable) → "run it?"  |  needs-build +
-       namespace registered → "build first, then deep-audit?"  |  needs-build + namespace
-       NOT registered → "can't build: namespace not linked to your Dev Hub — register first"
-       (no yes/no)  |  N/A (no installable package / no sf auth)>
-     • <live probe / install-sf — generated from what was sensed>
+     • Deployed-org deep audit — <FIXED 4-state: READY (installable) | needs-build
+       (buildable) | needs-build (unregistered) | N/A (no installable package)>
+     • <throwaway-DAST · scan-tool install · sf CLI — generated from what was sensed>
 
    ```
 
@@ -356,8 +361,12 @@ missing or a key piece of the architecture was misread.
    - **If ⚠ NEED-FROM-YOU is non-empty**: ask the minimum (use `AskUserQuestion`), or, if
      the operator can't supply it, narrow scope and proceed with that surface honestly
      flagged as unaudited — never fabricate the missing input.
-   - **Status-only / one-step requests stop here** in router mode: report the state and
-     the single recommended next skill with its reason, and run nothing.
+   - **Status-only / one-step requests stop here** in router mode: report the state via
+     the FIXED 3-line block — print VERBATIM the stdout of
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/render-router-status.mjs --target <target>`
+     (resume-point · single next-skill · one-sentence reason; pass a richer `--facts`
+     JSON when you have run the drift / ledger-staleness checks so it reflects them).
+     Never hand-author the status — the engine owns the resume ladder. Then run nothing.
 
 ### AUTONOMOUS RUN (no further questions beyond NEED-FROM-YOU + consent)
 
@@ -384,11 +393,14 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    code, and is read-only on the partner's source; if the partner wants to
    remediate, they do so on their own and re-run (the staleness check re-audits
    the changed dimensions automatically). **Surface the
-   blockers via the deterministic cluster view, not the raw ledger count** —
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target>
-   --json`. Report the raw counts AND the clustered headline (distinct affected
-   files + the file-level critical/high count + which files carry cross-dimension
-   overlap), so "N findings across D dimensions" is never presented as N distinct
+   blockers via the deterministic cluster view, not the raw ledger count** — print
+   VERBATIM the fixed block from
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target> --headline`:
+   raw confirmed counts FIRST, then the clustered distinct-file headline (distinct
+   affected files + the file-level critical/high count + which files carry cross-dimension
+   overlap). This is the SAME block audit-codebase Step 6 prints, so the failure verdict
+   reads identically at both sites; never hand-rebuild, reorder, or flip it to prose. So
+   "N findings across D dimensions" is never presented as N distinct
    problems — the audit fans out per dimension and re-finds one root cause under
    several lenses (e.g. a `without sharing` class flagged by apex-exposed-surface
    AND web-client AND package-metadata is one issue, not three).

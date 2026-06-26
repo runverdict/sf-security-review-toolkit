@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -111,8 +111,12 @@ regardless of anything this engine produces.
    - **Show the map to the user BEFORE any agent launches — a MANDATORY
      `AskUserQuestion` stop.** This is the one cheap moment to correct course — let
      them edit paths, add the module the heuristics missed, or veto a dimension. A
-     wrong target map silently audits the wrong code for the entire run. Present the
-     resolved `target-map.json` and ask for approval/corrections via `AskUserQuestion`;
+     wrong target map silently audits the wrong code for the entire run. Render the
+     resolved map with `node ${CLAUDE_PLUGIN_ROOT}/harness/render-target-map.mjs --target
+     <target>` and show its stdout VERBATIM inside the `AskUserQuestion` — the fixed
+     `{dimension | applicable | targets | why | confidence | unresolved}` table, applicable
+     rows first, with UNRESOLVED dimensions flagged. Never hand-rebuild, reorder, drop a
+     column, or flip it to prose. Ask for approval/corrections via `AskUserQuestion`;
      on approval, RECORD it — the operator's SELECTION of the approve option IS the consent
      (do NOT rely on the label containing "yes"); use `--decision deny` if they declined:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<the show-map approval question>" --answer "<the option they picked>" --target <target>`.
@@ -223,11 +227,13 @@ regardless of anything this engine produces.
    writes `<target>/docs/security-review/audit-report-<date>-pass<N>.md` from
    confirmed/partial findings only, with the §9 contract: (1) executive
    summary — blocking vs hardening, stated plainly, and headed by the
-   deterministic cluster view (`node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs
-   --target <target> --json`): report the raw confirmed counts AND the distinct
-   affected files / file-level critical-high / cross-dimension-overlap headline,
-   so the per-dimension fan-out re-finding one root cause under several lenses is
-   never presented as that many distinct problems; (2) prioritized findings
+   deterministic cluster view printed VERBATIM from
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target> --headline`
+   (the fixed block: raw confirmed counts FIRST, then the clustered distinct-file
+   headline — never hand-rebuilt, reordered, dropped a column, or flipped table↔prose).
+   This is the SAME block the journey's blocker gate prints, so the failure verdict reads
+   identically at both sites, and the per-dimension fan-out re-finding one root cause under
+   several lenses is never presented as that many distinct problems; (2) prioritized findings
    table sorted by the verifier's `adjusted_severity` (the finder's severity
    is provenance only); (3) a short, concrete remediation plan per
    critical/high finding; (4) **strong controls observed** — written for reuse
@@ -255,7 +261,14 @@ regardless of anything this engine produces.
    `.security-review/run-log.md`. Surface the unverified list from the run. Do NOT
    hand-edit ledger entries.
 
-7. **Gate and route.** Open `critical`/`high` findings halt the journey: fix
+7. **Print the recap, then gate and route.** `merge-ledger.mjs` (Step 6) emits a
+   FIXED operator recap block to stdout via `harness/render-recap.mjs` — LED BY the
+   same finding-cluster headline as the exec summary, then dimensions-ran ·
+   candidate/confirmed/refuted/unverified counts · the PROCEED/HALT verdict · the
+   not-covered caveat lines. **Print that stdout block VERBATIM** (or re-render it with
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/render-recap.mjs --target <target>`); never
+   paraphrase, reorder, or hand-rebuild it. Then gate: open `critical`/`high` findings
+   halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the
    AuthN/AuthZ artifact would otherwise document the vulnerable flow.
    Quiet ledger → proceed. Two phrasings are banned everywhere — "secure" and
@@ -339,10 +352,12 @@ resolution, the find → verify → synthesize fan-out, the mechanical ledger
 merge, report and run-log writing. Manual: tier choice, target-map
 confirmation and pruning, every remediation, the `fixed`/`accepted_risk`
 dispositions, and the judgment call on what a finding means for the business.
-The run recap states which dimensions ran, candidates vs confirmed vs refuted
-vs unverified counts, and what was NOT covered: packaged Apex CRUD/FLS belongs
-to Code Analyzer, dynamic behavior belongs to DAST, and this was white-box
-static review by LLM agents — Salesforce pen-tests the surface regardless.
+The run recap is the FIXED `harness/render-recap.mjs` block (emitted by
+`merge-ledger.mjs`, printed verbatim at Step 7): it states which dimensions ran,
+candidates vs confirmed vs refuted vs unverified counts, the PROCEED/HALT verdict, and
+what was NOT covered: packaged Apex CRUD/FLS belongs to Code Analyzer, dynamic behavior
+belongs to DAST, and this was white-box static review by LLM agents — Salesforce
+pen-tests the surface regardless.
 
 ## What feeds the next skill
 

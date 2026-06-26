@@ -37,6 +37,7 @@ import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { collapseCrossDimension } from './finding-clusters.mjs' // Track-1b cross-dimension same-location collapse
+import { renderAuditRecap } from './render-recap.mjs' // WI-04/INV-34 — the fixed end-of-run operator recap
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag)
@@ -243,3 +244,21 @@ appendFileSync(RUNLOG_PATH, logEntry)
 
 console.log(`ledger: ${ledger.findings.length} findings total (${confirmed.length} open confirmed, ${ledger.findings.filter((f) => f.status === 'refuted').length} refuted); pass ${PASS} added ${confirmedThisPass} confirmed / ${refutedThisPass} refuted, collisions=${collisions}`)
 if (sevStr) console.log(`open confirmed severities: ${sevStr}`)
+
+// ── WI-04 / INV-34: the FIXED end-of-run operator recap, LED BY the finding-cluster
+// triage headline. audit-codebase Step 7 prints this stdout block VERBATIM. It is a pure
+// render over the merged ledger + this pass's stats (deterministic; no Date/LLM/network).
+process.stdout.write(
+  '\n' +
+    renderAuditRecap({
+      findings: ledger.findings,
+      dimensions: dims,
+      candidates,
+      confirmed: confirmedThisPass,
+      refuted: refutedThisPass,
+      unverified,
+      pass: PASS,
+      tier: TIER,
+    }) +
+    '\n'
+)

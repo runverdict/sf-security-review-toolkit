@@ -62,13 +62,59 @@ const ANY_BRACE_RE = /\{\{[^{}]*\}\}/g
 // content-presence for those is the SCI gate's job, not this engine's.
 const REQUIRED_NONEMPTY = ['SCI_BLOCK', 'LEDGER_FRESHNESS', 'FINDING_STABILITY']
 
-/** The operator surfaces the render-verbatim contract governs. WI-03 ships readiness-verdict. */
+/** The operator surfaces the render-verbatim contract governs. WI-03 ships
+ * readiness-verdict; WI-04/WI-05 (Slice 3) add the entry-experience renders. For a
+ * render-harness-only surface (no `.tmpl`), `template` is the harness path, so the lint's
+ * "references the template" check is satisfied by the skill's allowed-tools grant + call. */
 export const REGISTERED_SURFACES = Object.freeze([
   Object.freeze({
     id: 'readiness-verdict',
     template: 'templates/operator/readiness-verdict.md.tmpl',
     renderers: Object.freeze(['compute-sci.mjs', 'ledger-staleness.mjs', 'render-stability.mjs']),
     skill: 'skills/compile-submission/SKILL.md',
+  }),
+  // WI-04 — the finding-cluster triage headline (INV-08): the FAILURE VERDICT, printed
+  // verbatim at the audit exec summary (audit-codebase Step 6) AND the journey blocker gate.
+  Object.freeze({
+    id: 'finding-cluster-headline',
+    template: 'harness/finding-clusters.mjs',
+    renderers: Object.freeze(['finding-clusters.mjs']),
+    skill: 'skills/audit-codebase/SKILL.md',
+  }),
+  // WI-04 — the target-map approval display (INV-12): audit-codebase Step 3 approval gate.
+  Object.freeze({
+    id: 'audit-target-map',
+    template: 'harness/render-target-map.mjs',
+    renderers: Object.freeze(['render-target-map.mjs']),
+    skill: 'skills/audit-codebase/SKILL.md',
+  }),
+  // WI-04 — the end-of-run audit recap (INV-34): emitted by merge-ledger, printed at Step 7.
+  Object.freeze({
+    id: 'audit-recap',
+    template: 'harness/render-recap.mjs',
+    renderers: Object.freeze(['render-recap.mjs', 'merge-ledger.mjs']),
+    skill: 'skills/audit-codebase/SKILL.md',
+  }),
+  // WI-05 — the 3-tier preflight report (INV-07): security-review-journey preflight.
+  Object.freeze({
+    id: 'preflight-report',
+    template: 'harness/render-preflight.mjs',
+    renderers: Object.freeze(['render-preflight.mjs']),
+    skill: 'skills/security-review-journey/SKILL.md',
+  }),
+  // WI-05 — the router-mode "where are we?" status (INV-33): journey status-only path.
+  Object.freeze({
+    id: 'router-status',
+    template: 'harness/render-router-status.mjs',
+    renderers: Object.freeze(['render-router-status.mjs']),
+    skill: 'skills/security-review-journey/SKILL.md',
+  }),
+  // WI-05 — the scan-status summary (INV-13): run-scans Step 11.
+  Object.freeze({
+    id: 'scan-status',
+    template: 'harness/render-scan-status.mjs',
+    renderers: Object.freeze(['render-scan-status.mjs']),
+    skill: 'skills/run-scans/SKILL.md',
   }),
 ])
 

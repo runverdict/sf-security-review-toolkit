@@ -507,12 +507,22 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    the finding itself (baseline: `scan-false-positive-documentation`,
    `scan-no-clean-scan-required`).
 
-11. **Verify evidence on disk, then report status.** List
+11. **Verify evidence on disk, then report status VERBATIM.** List
    `.security-review/evidence/` and confirm each selected family's files
    exist before stating any family's status; append a dated entry to
    `.security-review/run-log.md` (what ran, tool versions, repo commit, what
-   is PENDING owner-run). The readiness rule this enforces: a scan row goes
-   **HAVE only with the report file on disk** — a generated plan with no
+   is PENDING owner-run). **Then render the scan-status summary and print it
+   VERBATIM** — assemble this run's evidence mapping and build the index
+   (`node ${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs --repo <target>
+   --date <date> --input <evidence-input.json>`), then render
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/render-scan-status.mjs --target <target>
+   --commit <repo HEAD> --tools "<tool versions>"`. It emits the FIXED 8-row Family
+   table in canonical Family 1–8 order with locked columns `Family | Applies | Runner |
+   Status | Evidence file | Gate id | Next command if PENDING`, rendered from the
+   evidence `index.json` + the scope manifest (the manifest drives the Applies column).
+   Print its stdout verbatim — never hand-rebuild the table, reorder the families, or
+   drop a column. The readiness rule it enforces: a family reads **DONE only with the
+   report file on disk** — a generated plan with no
    report is PARTIAL, full stop. `/sf-security-review-toolkit:compile-submission`
    lints for HAVE-without-evidence and demotes it, but the lie should never
    be written in the first place (CONVENTIONS §2).
