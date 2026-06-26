@@ -192,3 +192,64 @@ Phase 1 is now cleared. It runs through the builder/auditor split, validated
 deterministically (run the parser twice → identical; the 3 anchors present with
 `provenance:'deterministic'` + class-severity on the frozen Solano fixture — no
 campaign).
+
+## 10. Per-scanner adapter roadmap (every scanner → an adapter)
+
+The ingest seam is **per-scanner, not Code-Analyzer-specific**. Code Analyzer is
+adapter #1; the same `{name, kind, collect, parse, classify}` contract covers every
+scanner the toolkit runs — each is a new adapter object, never a rewrite. Mapped
+against the REAL captured outputs already on disk from the run-5 evidence set (so
+every adapter is testable against genuine scanner output, no authorship ceiling).
+
+| Adapter | Kind | Class(es) | Baseline req | Real fixture | Severity source |
+|---|---|---|---|---|---|
+| `code-analyzer` (PMD+SFGE) ✅ | file-parser | CRUD/FLS · sharing · (SOQLi/secrets ext.) | fail-crud-fls · fail-sharing-model | ✅ Slice 1 | class |
+| `metadata-viewall` ✅ | source-scanner | ViewAll/ModifyAll over-grant | fail-sharing-model | ✅ Slice 1 | class |
+| `checkov` | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-helios | tool→band |
+| `semgrep` | file-parser | injection (CWE-78…) | scan-external-sast | ✅ coldstart-full | tool→band |
+| `bandit` / `njsscan` / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | tool→band |
+| `gitleaks` / `detect-secrets` | file-parser | secrets | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) |
+| `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
+| `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
+| `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
+
+**Three extensions the new adapters force (the seam supports all; spec them in Phase 2):**
+1. **Severity fork for dep-CVEs.** "Discard the scanner number, take the class
+   severity" works for Apex (the class *is* the severity); but every CVE carries a real
+   CVSS and the only class severity is a *missing-scan* severity. OSV/npm/RetireJS need a
+   per-advisory CVSS→enum path (`severityKind:'advisory'`), class governs only the gate.
+2. **Mandatory Security/AppExchange tag filter** *(Slice-2 prerequisite — surfaced by the
+   off-disk grade).* Raw Code Analyzer output is dominated by non-security rules (one
+   fixture: 23/23 ApexDoc/naming/codestyle). Slice 1 ingests an unmapped rule as a
+   `deterministic` finding (correct for an unmapped *security* rule, wrong for code-style
+   lint). Add `tags ∋ Security|AppExchange` in the Code Analyzer adapter — non-security
+   best-practices rules are NOT security findings (this is a filter, not a drop of a
+   security finding); update test U1 accordingly.
+3. **Cross-engine dedup.** OSV↔npm (same CVE), Trivy↔Checkov (same control),
+   gitleaks↔detect-secrets↔Trivy-secret collide as duplicate ledger rows — add a
+   cross-engine cluster key in `finding-clusters.mjs` once ≥2 overlapping adapters exist.
+
+**DAST is a conditional adapter of a distinct kind.** It *runs* (proven in 0.7.0 — it
+stands a digest-pinned ZAP against a throwaway local mirror, scans, saves
+`zap-throwaway-local-*.json`, tears down) — conditionally on the stack standing up,
+exactly like Code Analyzer is conditional on the `sf` CLI. But its output has **no
+file:line** (runtime endpoint loci) and is **not byte-deterministic** (live scan). So it
+ingests as `provenance:'dast-runtime'` (engine + ruleId + endpoint-locus + band-severity
++ a `live-runtime, non-reproducible-sample` flag) — held to "the rule-based alerts recur,"
+NOT the §8 run-twice-identical test — and stays PENDING-OWNER-RUN when the stack can't
+stand up. (The Solano fixture needs the package info to stand the stack up — a small
+fixture slice — so future runs exercise it instead of falling to PENDING.) **TLS** is
+similar but simpler: a property-assertion adapter (HTTPS-only / TLS-floor / HSTS / chain),
+PENDING-OWNER-RUN until a live host exists.
+
+**Phase 2 build order** (each one new adapter; the easy ones have real fixtures on disk):
+- **2a (ingest-first, real fixtures):** checkov → semgrep → bandit → njsscan → gitleaks →
+  detect-secrets → osv → npm-audit → trivy. (Plus extension #2's tag filter, done with
+  Slice 2.)
+- **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,
+  trivy SCA/secret modes, the cross-engine dedup (#3).
+- **Special:** tls (property-assertion, PENDING), dast (`dast-runtime` kind, conditional).
+
+The LLM keeps only the residual no scanner covers (per-record IDOR / object-authz logic,
+guest-sensitivity judgment, prompt-injection, denial-of-wallet, business-logic, multi-step
+authz) — labelled `llm-inferred`, over a deterministic fact substrate.
