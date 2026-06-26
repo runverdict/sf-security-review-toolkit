@@ -218,7 +218,8 @@ USER_MODE`, `WITH SECURITY_ENFORCED`, `stripInaccessible`, `isAccessible`,
 **presence** is good (someone enforced access); their **absence** in a method
 that does `Database.query`/`[SELECT ...]`/`insert`/`update`/`delete`/`upsert`/
 `Database.` is the lead — but defer the pure dataflow-to-sink case to SFGE
-(§intro) and report here the over-exposure / per-record / guest specializations.
+(§intro) *only when SFGE actually ran* (engine-absent → KEEP it; see §5) and
+report here the over-exposure / per-record / guest specializations.
 
 **Per-record (IDOR) handling:** find Id-shaped parameters reaching a query or
 DML — method signatures with `Id `, `String recordId`, `Id recordId`,
@@ -381,7 +382,10 @@ mutate.
   records or *whether it should be exposed* — that is SFGE's dataflow finding;
   mark it `false_positive` for this dimension with a note to route it to the
   Code Analyzer pass, to avoid double-counting a CRUD/FLS finding the scanners
-  already produce.
+  already produce — **but ONLY when that engine actually ran** (see the
+  engine-absent rule below). With no `code-analyzer-*.json` evidence on disk the
+  scanner never produced anything to double-count: do NOT refute by deferring to
+  it — KEEP the finding as `llm-inferred`.
 - **For CRUD/FLS claims, read the API version before deciding the default.**
   Open the `*.cls-meta.xml` `<apiVersion>`: at **≥67.0** the method runs in user
   mode by default, so object/field access IS enforced even with no explicit
@@ -473,13 +477,28 @@ mutate.
   NEVER a finding. The exposure finding is always an OVER-grant (a class granted
   to a GUEST profile, an over-broad object/field permission), never an
   under-grant.
+- **Defer to SFGE/Code Analyzer ONLY when that engine actually ran —
+  engine-absent → KEEP, never refute-by-phantom-handoff.** The "route a pure
+  dataflow CRUD/FLS gap to the scanner, don't double-report" rule above is
+  CONDITIONAL: it holds only when a Code Analyzer / SFGE run exists on disk —
+  concretely, a `code-analyzer-*.json` file under
+  `<target>/.security-review/evidence/`. If NO such evidence file exists the
+  engine did NOT run, so there is nothing to defer to: you must NOT mark the
+  FLS/CRUD finding `false_positive` (or drop it) on the rationale "SFGE owns
+  this." That exact phantom hand-off dropped a real FLS blocker in the cold
+  campaign (the verifier deferred to a Graph Engine that had never run). Instead
+  **KEEP the finding as `llm-inferred`** at its real severity and flag the class
+  **PENDING-OWNER-RUN** (install `sf` + the Code Analyzer plugin to re-home it as
+  a `deterministic` finding). Defer to an engine ONLY on proof it ran; deferring
+  to a scan that never happened is the one move that silently drops a real
+  blocker — never make it.
 
 ## 6. Known false-positive patterns
 
 | Pattern | Why it is not a finding (or not at the reported severity) |
 |---|---|
 | A method that does `[SELECT ...]`/`insert`/`update` with no explicit describe check, on a class whose `*.cls-meta.xml` `apiVersion` is **≥67.0** and that does not opt into system mode | At 67.0+ Apex runs in user mode by default — object/field access IS enforced. The "missing CRUD/FLS" finding requires an explicit system-mode opt-in (` as system`, `AccessLevel.SYSTEM_MODE`, a `without sharing` data path) or an API version ≤66.0. |
-| A pure DML/SOQL-to-sink CRUD/FLS dataflow gap with no over-exposure / per-record / guest dimension | Code Analyzer's SFGE pass owns this (`scan-sfge-crud-fls-dataflow`); reporting it here double-counts a scanner finding. Route it to the run-scans pass; this dimension reports only the should-this-be-exposed / per-record / guest specializations. |
+| A pure DML/SOQL-to-sink CRUD/FLS dataflow gap with no over-exposure / per-record / guest dimension — **AND a `code-analyzer-*.json` evidence file exists** (the SFGE engine actually ran) | Code Analyzer's SFGE pass owns this (`scan-sfge-crud-fls-dataflow`); reporting it here double-counts a scanner finding. Route it to the run-scans pass; this dimension reports only the should-this-be-exposed / per-record / guest specializations. **Conditional on the engine having run** — with no `code-analyzer-*.json` under `.security-review/evidence/`, this is NOT an FP: engine-absent → KEEP the finding as `llm-inferred` and mark the class PENDING-OWNER-RUN; never refute by deferring to a scan that never ran (the fixrun4 dropped-blocker). |
 | An entry point that takes a record Id but the class is `with sharing` and the query/DML honors sharing | Sharing-enforced access returns zero rows for an unentitled Id and blocks the DML — the per-record boundary IS the sharing model. Confirm the query is not `without sharing`/system-mode before refuting; a `with sharing` class with a sharing-respecting query is the correct IDOR control. |
 | A method whose record Id is derived from the authenticated user's own context (`UserInfo.getUserId()`, the user's own related records), not a caller parameter | No caller-controlled Id, no IDOR. The attacker cannot substitute another principal's record. |
 | `with inherited sharing` on a controller entry point | The codified rules accept `with inherited sharing` on controller entry points; it is a finding only if some class in the solution is `without sharing` (which makes inherited resolve to without-sharing) — check the whole solution before flagging. |

@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — Phase 1 building; Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (enforcement + journey re-sequencing) next.** The architecture
+> Status: **RATIFIED (2026-06-26) — Phase 1 building; Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the live Solano acceptance) next.** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -133,9 +133,12 @@ existing PENDING-OWNER-RUN posture for owner-gated scanners.
 - The methodology ALREADY assigns CRUD/FLS dataflow to SFGE and tells the LLM to
   "defer and don't double-report" (`apex-exposed-surface.md:482`).
 
-**Missing:** a scanner→ledger-findings path, the `provenance/ruleId` field, the
-merge-engine enforcement, the engine-absent→PENDING (not LLM-fill/drop) rule, and
-actually running SFGE.
+**Missing (pre-Phase-1 — now mostly shipped):** the scanner→ledger-findings path +
+the `provenance/ruleId` field (Slice 1, 0.8.28); the security-tag filter, the
+merge-engine supersession enforcement, and the engine-absent→KEEP (not LLM-fill/drop)
+rule (Slice 2, 0.8.29). **REMAINING:** the deterministic-pass-FIRST journey
+re-sequencing + wiring `reconcile-provenance` into the merge pipeline (Slice 3), and
+actually running SFGE in the cold journey (owner-gated — §5).
 
 ## 7. Phasing
 
@@ -160,11 +163,26 @@ actually running SFGE.
     `acceptance/test-ingest-scanner-findings.mjs` against REAL captured Solano/Meridian
     fixtures (the anchor `ApexCRUDViolation` on `SolanoAccountInsightController.cls:19`
     lands `deterministic`/`pmd`/class-severity `high` every run) — no campaign.
-  - **Slice 2 — NEXT: the enforcement half.** The merge engine REJECTS an LLM finding
-    in a deterministic-owned class when that engine ran; engine-absent →
-    PENDING-OWNER-RUN (never LLM-fill, never drop) — the direct fix for the fixrun4
-    hallucinated hand-off; the deterministic pass runs FIRST in the journey; the
-    deterministic acceptance on the live Solano fixture.
+  - **Slice 2 — SHIPPED (0.8.29): the correctness core.** (a) A Security/AppExchange
+    TAG FILTER in the Code Analyzer adapter (§10 extension #2) — only a security-tagged
+    rule becomes a finding; ApexDoc/naming/codestyle/Performance noise is filtered (a
+    filter on noise, never a drop of a security finding). (b) `harness/reconcile-provenance.mjs`
+    ENFORCES supersession: a `deterministic` finding in the SAME owned class at the SAME
+    locus demotes a co-located `llm-inferred` finding to `status:'superseded'`
+    (`superseded_by` → the deterministic id) — pure + idempotent, conservative (only an
+    OWNED class supersedes; precise class match with a dimension fallback; mark-not-delete),
+    so the LLM never re-reports/re-judges what an engine determined. (c) The engine-absent
+    → KEEP methodology fix (`apex-exposed-surface.md` §5/§6): defer a CRUD/FLS gap to SFGE
+    ONLY when a `code-analyzer-*.json` proves it ran; otherwise KEEP the finding
+    `llm-inferred` and mark the class PENDING-OWNER-RUN — the direct fix for the fixrun4
+    hallucinated hand-off. Guarded by `test-reconcile-provenance` + the updated
+    `test-ingest-scanner-findings` (tag filter) + a `test-calibration-fp-patterns` presence
+    check (engine-absent → KEEP).
+  - **Slice 3 — NEXT: deterministic-pass-FIRST + live acceptance.** Re-sequence the journey
+    so the engines (Code Analyzer/SFGE, metadata) run and ingest BEFORE the LLM fan-out, and
+    wire `reconcile-provenance` into the merge pipeline (run it after both kinds are in the
+    ledger); add the deterministic acceptance on the live Solano fixture (run the parser
+    twice → identical; the 3 anchors present with class-severity, no LLM in that path).
 - **Phase 2 (the full principle).** Extend provenance-typing to every class, scope
   the LLM fan-out to the labelled residual, wire severity-from-class everywhere,
   and the explicit `llm-inferred` rendering tag throughout the output surfaces.
@@ -218,13 +236,15 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
    severity" works for Apex (the class *is* the severity); but every CVE carries a real
    CVSS and the only class severity is a *missing-scan* severity. OSV/npm/RetireJS need a
    per-advisory CVSS→enum path (`severityKind:'advisory'`), class governs only the gate.
-2. **Mandatory Security/AppExchange tag filter** *(Slice-2 prerequisite — surfaced by the
-   off-disk grade).* Raw Code Analyzer output is dominated by non-security rules (one
-   fixture: 23/23 ApexDoc/naming/codestyle). Slice 1 ingests an unmapped rule as a
+2. **Mandatory Security/AppExchange tag filter** *(✅ SHIPPED 0.8.29, Slice 2 — surfaced by
+   the off-disk grade).* Raw Code Analyzer output is dominated by non-security rules (one
+   fixture: 23/23 ApexDoc/naming/codestyle). Slice 1 ingested an unmapped rule as a
    `deterministic` finding (correct for an unmapped *security* rule, wrong for code-style
-   lint). Add `tags ∋ Security|AppExchange` in the Code Analyzer adapter — non-security
-   best-practices rules are NOT security findings (this is a filter, not a drop of a
-   security finding); update test U1 accordingly.
+   lint). The Code Analyzer adapter now keeps only a hit whose `tags ∋ Security|AppExchange`
+   (`hasSecurityTag` + the adapter's `securityRelevant` predicate, consulted by `ingest`) —
+   non-security best-practices rules are NOT security findings (a filter, not a drop of a
+   security finding); the Performance-tagged `MissingNullCheckOnSoqlVariable` is caught by
+   the same rule; test U1 updated accordingly.
 3. **Cross-engine dedup.** OSV↔npm (same CVE), Trivy↔Checkov (same control),
    gitleaks↔detect-secrets↔Trivy-secret collide as duplicate ledger rows — add a
    cross-engine cluster key in `finding-clusters.mjs` once ≥2 overlapping adapters exist.
@@ -244,8 +264,8 @@ PENDING-OWNER-RUN until a live host exists.
 
 **Phase 2 build order** (each one new adapter; the easy ones have real fixtures on disk):
 - **2a (ingest-first, real fixtures):** checkov → semgrep → bandit → njsscan → gitleaks →
-  detect-secrets → osv → npm-audit → trivy. (Plus extension #2's tag filter, done with
-  Slice 2.)
+  detect-secrets → osv → npm-audit → trivy. (Extension #2's tag filter ✅ shipped with
+  Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,
   trivy SCA/secret modes, the cross-engine dedup (#3).
 - **Special:** tls (property-assertion, PENDING), dast (`dast-runtime` kind, conditional).

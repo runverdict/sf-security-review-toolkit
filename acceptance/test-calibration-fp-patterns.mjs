@@ -85,5 +85,24 @@ check('audit-methodology §6 stop rule carries the contestable-band-flip-counts-
     'the §6 "a contestable-band flip on unchanged code counts as DRY" stop-rule clause regressed out')
 })
 
+// Slice 2 (docs/roadmap-deterministic-findings.md §3/§5) — the engine-absent → KEEP clause.
+// The defer-to-SFGE verifier guidance MUST be conditioned on Code Analyzer having actually
+// RUN; otherwise a verifier drops a real FLS blocker by deferring to a scanner that never
+// ran (the cold-campaign "fixrun4" hallucinated hand-off). Presence guard only — it must
+// not silently regress out of the §5/§6 prose. Whitespace-normalized so a wrapped phrase
+// still matches.
+const apexSurface = readFileSync(join(DIMS, 'apex-exposed-surface.md'), 'utf8')
+  .toLowerCase().replace(/\s+/g, ' ')
+check('apex-exposed-surface conditions defer-to-SFGE on the engine having actually run (engine-absent → KEEP)', () => {
+  assert.ok(apexSurface.includes('only when that engine actually ran'),
+    'the defer-to-SFGE rule is no longer conditioned on the engine running — a verifier can drop a real FLS finding by deferring to a scan that never ran (fixrun4)')
+  assert.ok(apexSurface.includes('engine-absent → keep'),
+    'the engine-absent → KEEP clause regressed out of apex-exposed-surface §5/§6')
+  assert.ok(apexSurface.includes('code-analyzer-*.json'),
+    'the concrete engine-ran evidence test (a code-analyzer-*.json under .security-review/evidence/) regressed out')
+  assert.ok(apexSurface.includes('pending-owner-run'),
+    'the PENDING-OWNER-RUN re-home posture for the engine-absent case regressed out')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -23,6 +23,67 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.29] — 2026-06-26
+
+**Deterministic-findings Phase 1 · Slice 2 — the correctness core
+(docs/roadmap-deterministic-findings.md).** Slice 1 shipped the scanner→ledger INGEST path;
+this slice makes it correct and authoritative. Three changes: (1) a Security/AppExchange **tag
+filter** so the deterministic band carries security findings, not the ApexDoc/naming/codestyle/
+Performance noise that dominates raw Code Analyzer output; (2) **LLM-supersession enforcement**
+— a deterministic engine finding now structurally demotes a co-located, same-class LLM finding,
+so the LLM can never re-report or re-judge what a scanner already determined; (3) the **engine-
+absent → KEEP** methodology fix — defer a CRUD/FLS gap to SFGE ONLY on proof the engine ran,
+never via a phantom hand-off that drops a real blocker (the `fixrun4` failure). Validated
+deterministically (run-twice-identical unit assertions), NOT a campaign. The deterministic-pass-
+first journey re-sequencing + the live Solano acceptance are Slice 3. Suite **54 files / 554
+checks** (was 53 / 532 — +`test-reconcile-provenance` (18); +3 in `test-ingest-scanner-findings`;
++1 in `test-calibration-fp-patterns`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/reconcile-provenance.mjs`** — the LLM-supersession ENFORCEMENT engine
+  (roadmap §3). `reconcileProvenance(findings)` is a pure, idempotent reconciliation: when a
+  `provenance:'deterministic'` finding and an `llm-inferred` finding occupy the SAME owned class
+  at the SAME locus (same normalized file + overlapping line span — reusing
+  `finding-clusters.mjs` `sameLocation`), the deterministic one WINS and the LLM one is marked
+  `status:'superseded'` with `superseded_by` → the deterministic finding's id (kept, never
+  deleted — auditable + recoverable, mirroring the refuted-finding posture). CONSERVATIVE by
+  design (the "never hide a finding" contract): only a deterministic finding that OWNS a class
+  (carries a `class`) supersedes — an unmapped-fallback deterministic finding supersedes nothing;
+  the class match is PRECISE when the LLM finding carries an explicit `class`, with a `dimension`
+  fallback otherwise; two independent signals (locus AND class) are always required, never locus
+  alone; and supersede MARKS, never deletes. A CLI (`--target`, `--json`, `--dry-run`) reconciles
+  a target ledger and refuses a corrupted (non-array `findings`) one. Guarded by
+  `acceptance/test-reconcile-provenance.mjs` (18 checks: supersession, the different-class /
+  different-locus / unmapped-owner negatives, precise-vs-dimension matching, owner-state
+  preservation, byte-identical idempotency, input non-mutation, schema conformance, and the CLI).
+- **`harness/ingest-scanner-findings.mjs`** — a **Security/AppExchange tag filter** (roadmap §10
+  extension #2): `hasSecurityTag(tags)` + an adapter-level `securityRelevant(hit)` predicate
+  consulted by `ingest()`. Only a Code Analyzer rule tagged `Security` or `AppExchange` becomes a
+  finding; a non-security best-practices rule (ApexDoc, naming, codestyle) and the `Performance`-
+  tagged `MissingNullCheckOnSoqlVariable` are FILTERED (with an honest note), so the real Solano
+  fixture goes 6 violations → 4 findings. This is a filter on non-security NOISE, **never a drop
+  of a security finding** — an unmapped *security*-tagged rule still ingests via the CA-severity
+  fallback (the "never drop an unmapped security rule" rule holds). The metadata source-scanner
+  carries no filter (every emission is a security over-grant). A MAPPED deterministic finding now
+  also carries its owned-`class` label (the key `reconcile-provenance` reads).
+- **`templates/audit-ledger.schema.json`** — additively extended `$defs/finding`: a new
+  `superseded` value on the `status` enum, plus optional `class` (the owned-class label, kebab
+  pattern), `superseded_by` (16-hex id pattern), and `superseded_reason`. No existing required
+  field changes; a finding written before this slice validates unchanged.
+
+### Changed
+- **`methodology/dimensions/apex-exposed-surface.md` §5/§6** — the defer-to-SFGE / don't-double-
+  report verifier guidance is now CONDITIONED on the engine having actually run. A new §5 bullet
+  ("Defer to SFGE/Code Analyzer ONLY when that engine actually ran — engine-absent → KEEP") and the
+  §6 FP-table row both require a `code-analyzer-*.json` evidence file under
+  `.security-review/evidence/` before deferring; with no such file the LLM KEEPS the finding as
+  `llm-inferred` at its real severity and flags the class PENDING-OWNER-RUN — never refuting by a
+  phantom hand-off to a scan that never ran (the `fixrun4` dropped a real FLS blocker exactly this
+  way). Guarded by a presence check in `acceptance/test-calibration-fp-patterns.mjs`.
+- **`harness/finding-clusters.mjs`** — exported `sameLocation(a, b)` (was module-private) so
+  `reconcile-provenance.mjs` reuses the SAME tested same-code-location primitive instead of
+  re-deriving it.
+
 ## [0.8.28] — 2026-06-26
 
 **Deterministic-findings Phase 1 · Slice 1 — the scanner→ledger ingest foundation

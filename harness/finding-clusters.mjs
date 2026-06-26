@@ -82,7 +82,9 @@ export const spansOverlap = (a, b) => !!a && !!b && a.lo <= b.hi && b.lo <= a.hi
 // DIFFERENT issues: under-merge is the safe failure, over-merge hides a finding. It costs
 // nothing here — every real multi-lens cluster (e.g. the Solano triple-lens FLS, all at
 // :21-2x) carries overlapping line spans, so the line-span path already covers them.
-function sameLocation(a, b) {
+// Exported (Slice 2) so harness/reconcile-provenance.mjs reuses the SAME tested
+// "same code location" primitive (deterministic-supersession) instead of re-deriving it.
+export function sameLocation(a, b) {
   const fa = normFile(a.file), fb = normFile(b.file)
   if (fa === '(unattributed)' || fa !== fb) return false
   return spansOverlap(lineSpan(a.file), lineSpan(b.file))

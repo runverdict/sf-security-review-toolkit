@@ -45,6 +45,7 @@ import {
   baselineSeverityFor,
   mergeFindings,
   loadLedger,
+  hasSecurityTag,
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
   CLASS_DEFS,
@@ -118,9 +119,12 @@ check('D1 determinism: ingest the real Solano fixture twice → byte-identical f
   assert.equal(JSON.stringify(a), JSON.stringify(b))
 })
 
-check('D2 the 6 real Solano violations all ingest (none silently dropped)', () => {
+check('D2 the 4 Security/AppExchange-tagged Solano violations ingest (the 2 Performance-tagged filtered, no security finding dropped)', () => {
   const { findings } = ingestSolano()
-  assert.equal(findings.length, 6)
+  // 6 real violations → 4 findings: 2× ApexCRUDViolation + 1× AvoidHardcodedCredentialsInVarDecls
+  // + 1× ApexFlsViolation are Security-tagged; the 2× MissingNullCheckOnSoqlVariable are
+  // Performance-tagged (∌ Security/AppExchange) → filtered as non-security noise.
+  assert.equal(findings.length, 4)
   assert.ok(findings.every((f) => f.provenance === 'deterministic'))
 })
 
@@ -150,6 +154,14 @@ check('A2 the two ApexCRUDViolation files are DISTINCT findings (distinct ids)',
   const files = crud.map((f) => f.file).sort()
   assert.ok(files.some((f) => f.endsWith('SolanoAccountInsightController.cls:19')))
   assert.ok(files.some((f) => f.endsWith('SolanoOpportunityController.cls:21')))
+})
+
+check('A3 a MAPPED deterministic finding carries its owned-class label (`class`); reconcile-provenance reads it', () => {
+  const { findings } = ingestSolano()
+  const anchor = findById(findings, (f) => f.ruleId === 'ApexCRUDViolation' && f.file.endsWith('SolanoAccountInsightController.cls:19'))
+  assert.equal(anchor.class, 'crud-fls') // mapped → owns the crud-fls class
+  const meta = ingest(metadataViewAllAdapter.collect({ target: FIX }), metadataViewAllAdapter, { repoRoot: FIX, pass: 1 }).findings[0]
+  assert.equal(meta.class, 'viewall-overgrant')
 })
 
 // ──────────────────────────────────────────────────── severity FROM THE CLASS
@@ -239,26 +251,62 @@ check('V3 classSeverity: viewall-overgrant grounds in fail-sharing-model (a shar
   assert.equal(CLASS_DEFS['viewall-overgrant'].dimension, 'admin-surface')
 })
 
-// ─────────────────────────────────────────────────────────── unmapped rules
-check('U1 unmapped rule still ingested as deterministic with the CA-severity fallback + note', () => {
-  const { findings, notes } = ingestSolano()
-  const nullChecks = findings.filter((f) => f.ruleId === 'MissingNullCheckOnSoqlVariable')
-  assert.ok(nullChecks.length >= 1)
-  for (const f of nullChecks) {
-    assert.equal(f.provenance, 'deterministic') // NEVER dropped
-    assert.equal(f.adjusted_severity, 'medium') // CA sev 3 → medium
-    assert.match(f.verdict_reasoning, /no toolkit class maps rule/)
-    assert.match(f.verdict_reasoning, /Phase 2/)
+// ──────────────────────────────────────────────── Security/AppExchange tag filter
+check('U1 tag filter: a non-security rule (ApexDoc, tags Documentation/BestPractices) → 0 findings; the Performance-tagged MissingNullCheckOnSoqlVariable is filtered out of the real fixture', () => {
+  // inline a synthetic non-security best-practices violation (NOT in the real captured
+  // fixture, which stays genuine) — it must NOT become a security finding.
+  const apexDoc = {
+    violations: [
+      {
+        rule: 'ApexDoc',
+        engine: 'pmd',
+        severity: 3,
+        tags: ['Documentation', 'BestPractices'],
+        primaryLocationIndex: 0,
+        locations: [{ file: 'force-app/main/default/classes/Anything.cls', startLine: 3 }],
+        message: 'Document this method.',
+      },
+    ],
   }
+  const { findings, notes } = ingest(apexDoc, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 0, 'a non-security best-practices rule must NOT be ingested as a finding')
+  assert.ok(notes.some((n) => /not Security\/AppExchange-tagged/.test(n)), 'expected a non-security-filtered note')
+  // and the REAL Performance-tagged rule is filtered too (same rule, no special-casing)
+  const real = ingestSolano().findings
+  assert.ok(
+    !real.some((f) => f.ruleId === 'MissingNullCheckOnSoqlVariable'),
+    'Performance-tagged MissingNullCheckOnSoqlVariable leaked through the Security/AppExchange tag filter'
+  )
+})
+
+check('U2 an unmapped SECURITY rule (AvoidHardcodedCredentialsInVarDecls, security-tagged, not in RULE_CLASS) is STILL ingested with the CA-severity fallback — never dropped', () => {
+  const { findings, notes } = ingestSolano()
+  const hc = findById(findings, (f) => f.ruleId === 'AvoidHardcodedCredentialsInVarDecls')
+  assert.ok(hc, 'unmapped security rule was dropped — the tag filter must keep an unmapped SECURITY rule')
+  assert.equal(hc.provenance, 'deterministic')
+  assert.equal(hc.engine, 'pmd')
+  assert.equal(hc.adjusted_severity, 'medium') // CA sev 3 → medium (unmapped fallback)
+  assert.equal(hc.class, undefined) // unmapped → owns no class
+  assert.match(hc.verdict_reasoning, /no toolkit class maps rule/)
   assert.ok(notes.some((n) => /unmapped/.test(n)))
 })
 
-check('U2 an unmapped SECURITY rule (AvoidHardcodedCredentialsInVarDecls) is ingested, never dropped', () => {
-  const { findings } = ingestSolano()
-  const hc = findById(findings, (f) => f.ruleId === 'AvoidHardcodedCredentialsInVarDecls')
-  assert.ok(hc, 'hardcoded-credentials rule was dropped')
-  assert.equal(hc.provenance, 'deterministic')
-  assert.equal(hc.engine, 'pmd')
+check('TF1 hasSecurityTag: Security/AppExchange (any case) pass; Performance/Documentation/BestPractices do not', () => {
+  assert.equal(hasSecurityTag(['Recommended', 'Security', 'Apex']), true)
+  assert.equal(hasSecurityTag(['AppExchange', 'Security']), true)
+  assert.equal(hasSecurityTag(['appexchange']), true) // case-insensitive
+  assert.equal(hasSecurityTag(['DevPreview', 'Performance', 'Apex']), false)
+  assert.equal(hasSecurityTag(['Documentation', 'BestPractices']), false)
+  assert.equal(hasSecurityTag([]), false)
+  assert.equal(hasSecurityTag(undefined), false)
+})
+
+check('TF2 code-analyzer adapter filters via securityRelevant; metadata-viewall keeps all (security by construction)', () => {
+  assert.equal(typeof codeAnalyzerAdapter.securityRelevant, 'function')
+  assert.equal(codeAnalyzerAdapter.securityRelevant({ tags: ['Security'] }), true)
+  assert.equal(codeAnalyzerAdapter.securityRelevant({ tags: ['Performance'] }), false)
+  // metadata-viewall has NO filter — every emission is a security over-grant → all pass
+  assert.equal(metadataViewAllAdapter.securityRelevant, undefined)
 })
 
 // ───────────────────────────────────────────────────────────── ledger merge
@@ -266,11 +314,11 @@ check('M1 merge is idempotent: ingest twice into a ledger → no duplicate findi
   const ledger = { schema_version: '1', findings: [], passes: [] }
   const { findings } = ingestSolano()
   const r1 = mergeFindings(ledger, findings, 1)
-  assert.equal(r1.added, 6)
-  assert.equal(ledger.findings.length, 6)
+  assert.equal(r1.added, 4)
+  assert.equal(ledger.findings.length, 4)
   const r2 = mergeFindings(ledger, findings, 1)
   assert.equal(r2.added, 0)
-  assert.equal(ledger.findings.length, 6) // still 6 — no dupes
+  assert.equal(ledger.findings.length, 4) // still 4 — no dupes
 })
 
 check('M2 merge is additive: a pre-existing llm-inferred finding survives', () => {
@@ -289,7 +337,7 @@ check('M2 merge is additive: a pre-existing llm-inferred finding survives', () =
   }
   const ledger = { schema_version: '1', findings: [llm], passes: [] }
   mergeFindings(ledger, ingestSolano().findings, 1)
-  assert.equal(ledger.findings.length, 7)
+  assert.equal(ledger.findings.length, 5) // 1 pre-existing llm + 4 deterministic
   assert.ok(ledger.findings.some((f) => f.id === 'a'.repeat(16) && !('provenance' in f)))
 })
 
@@ -437,11 +485,11 @@ check('CLI2 merge into a target ledger writes deterministic findings + is idempo
   const lp = join(d, '.security-review', 'audit-ledger.json')
   execFileSync('node', [CLI, '--scanner', 'code-analyzer', '--input', SOLANO, '--target', d], { encoding: 'utf8' })
   const l1 = readJSON(lp)
-  assert.equal(l1.findings.length, 6)
+  assert.equal(l1.findings.length, 4)
   assert.ok(l1.findings.every((f) => f.provenance === 'deterministic'))
   execFileSync('node', [CLI, '--scanner', 'code-analyzer', '--input', SOLANO, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
-  assert.equal(l2.findings.length, 6) // idempotent — no duplicates
+  assert.equal(l2.findings.length, 4) // idempotent — no duplicates
 })
 
 check('CLI3 --scanner metadata-viewall runs the source-scanner over --target and writes the over-grant', () => {

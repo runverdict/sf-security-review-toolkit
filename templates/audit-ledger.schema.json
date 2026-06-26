@@ -98,9 +98,23 @@
           "minLength": 1
         },
         "status": {
-          "description": "Lifecycle state (audit-methodology.md §5.1). confirmed: verifier returned confirmed_real or partially_real — open, counts against the readiness gates, in the do-not-re-report digest. refuted: verifier returned false_positive — kept (never deleted) so the next pass's finder doesn't re-raise it, and its reasoning is reusable verbatim in the FP dossier when a scanner later flags the same pattern. fixed: remediated with a fix reference; re-reported by a later pass only as a regression (the merge flips it back to confirmed with regression: true). accepted_risk: the partner decided, with a written justification, not to fix — dispositioned for gate purposes like a dossier entry, but unlike refuted the defect is real; it must carry accepted_risk_justification and appears in the readiness tracker so the acceptance is visible, not buried.",
+          "description": "Lifecycle state (audit-methodology.md §5.1). confirmed: verifier returned confirmed_real or partially_real — open, counts against the readiness gates, in the do-not-re-report digest. refuted: verifier returned false_positive — kept (never deleted) so the next pass's finder doesn't re-raise it, and its reasoning is reusable verbatim in the FP dossier when a scanner later flags the same pattern. fixed: remediated with a fix reference; re-reported by a later pass only as a regression (the merge flips it back to confirmed with regression: true). accepted_risk: the partner decided, with a written justification, not to fix — dispositioned for gate purposes like a dossier entry, but unlike refuted the defect is real; it must carry accepted_risk_justification and appears in the readiness tracker so the acceptance is visible, not buried. superseded: an llm-inferred finding that a deterministic engine finding made redundant — a deterministic finding in the SAME owned class at the SAME locus is authoritative, so the LLM finding is moved out of the open band (docs/roadmap-deterministic-findings.md §3; harness/reconcile-provenance.mjs). Kept (never deleted) with superseded_by pointing at the deterministic finding's id, so the supersession is auditable and recoverable — the LLM never refutes/downgrades/duplicates what an engine already determined. Only an llm-inferred finding is ever superseded; a deterministic finding is never.",
           "type": "string",
-          "enum": ["confirmed", "refuted", "fixed", "accepted_risk"]
+          "enum": ["confirmed", "refuted", "fixed", "accepted_risk", "superseded"]
+        },
+        "class": {
+          "description": "The toolkit's OWNED-CLASS label for a deterministic finding (docs/roadmap-deterministic-findings.md §4): the fine-grained class key the scanner/metadata engine re-homes (e.g. `crud-fls`, `sharing`, `viewall-overgrant`) — distinct from the coarser methodology `dimension`. Present ONLY on a deterministic finding whose rule mapped to a known class; an unmapped-fallback deterministic finding and every llm-inferred finding omit it. harness/reconcile-provenance.mjs reads this: a deterministic finding supersedes a co-located LLM finding only in a class it OWNS (a finding without `class` owns none and supersedes nothing).",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "superseded_by": {
+          "description": "Set on a finding with status `superseded`: the `id` of the deterministic finding that made this llm-inferred finding redundant (same owned class + overlapping locus). Engine-maintained by harness/reconcile-provenance.mjs; do not hand-edit.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "superseded_reason": {
+          "description": "Set on a finding with status `superseded`: a one-line human note recording which deterministic engine/rule/locus superseded it. Provenance for the audit trail — the LLM finding is not deleted, it is dispositioned.",
+          "type": "string"
         },
         "first_seen": {
           "$ref": "#/$defs/pass_id",

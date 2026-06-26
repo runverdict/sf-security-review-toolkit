@@ -265,11 +265,25 @@ Skills write into the PARTNER's repo, never into the plugin:
   doesn't cover). The core is pure/byte-deterministic (`collect()` is the only I/O seam),
   an unmapped rule is still ingested (never dropped) with a documented Code-Analyzer-severity
   fallback, and re-ingest is idempotent (a deterministic id is stable from
-  `engine+ruleId+file:line`). Scope is INGEST ONLY — the merge-engine enforcement (reject
-  an LLM finding in a class the engine owns and ran), the engine-absent→PENDING fix, and the
-  deterministic-pass-first journey re-sequencing are Slice 2. Guarded by
-  `test-ingest-scanner-findings.mjs` (determinism + severity-from-class + schema conformance
-  over REAL captured Code Analyzer fixtures in `acceptance/fixtures/`).
+  `engine+ruleId+file:line`). **Slice 2 (0.8.29) adds the correctness core:** (1) a
+  Security/AppExchange **tag filter** — only a Code Analyzer rule tagged `Security` or
+  `AppExchange` becomes a finding (raw CA output is dominated by ApexDoc/naming/codestyle/
+  Performance noise); a FILTER on non-security noise, never a drop of a security finding
+  (an unmapped *security* rule still ingests via the CA-severity fallback). (2) A mapped
+  finding now carries its owned-`class` label, and `harness/reconcile-provenance.mjs`
+  ENFORCES supersession — a `deterministic` finding in the SAME owned class at the SAME
+  locus (reusing `finding-clusters.mjs` `sameLocation`) demotes a co-located `llm-inferred`
+  finding to `status:'superseded'` (`superseded_by` → the deterministic id), pure +
+  idempotent, so the LLM can never re-report or re-judge what an engine determined. (3) The
+  engine-absent→**KEEP** methodology fix (`apex-exposed-surface.md` §5/§6): defer a CRUD/FLS
+  gap to SFGE ONLY when a `code-analyzer-*.json` evidence file proves it ran — engine-absent
+  → keep the finding `llm-inferred` and mark the class PENDING-OWNER-RUN, never refute by a
+  phantom hand-off (the fixrun4 dropped-blocker). The deterministic-pass-first journey
+  re-sequencing + the live Solano acceptance are Slice 3. Guarded by
+  `test-ingest-scanner-findings.mjs` (determinism + severity-from-class + the tag filter +
+  schema conformance over REAL captured Code Analyzer fixtures), `test-reconcile-provenance.mjs`
+  (supersession is precise, conservative, idempotent), and a `test-calibration-fp-patterns.mjs`
+  presence guard on the engine-absent → KEEP clause.
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -330,7 +344,9 @@ sf-security-review-toolkit/
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge). 0.8.24: emits the fixed render-recap.mjs operator recap to stdout (WI-04/INV-34)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
-│   ├── ingest-scanner-findings.mjs  # 0.8.28: scanner/metadata output → provenance:'deterministic' ledger findings (roadmap-deterministic-findings.md Phase 1·Slice 1). PLUGGABLE adapter registry — pure ingest(raw,adapter) core + {name,kind,collect,parse,classify} adapters in two KINDS: file-parser (code-analyzer; future Semgrep/OSV/gitleaks) + source-scanner (metadata-viewall ViewAll/ModifyAll over-grant). adjusted_severity from the requirement CLASS (REQ_SEVERITY_TO_FINDING over the baseline), never the scanner number/LLM; unmapped rule still ingested (CA-severity fallback); idempotent merge (id = engine+ruleId+file:line). INGEST ONLY — enforcement/PENDING/re-sequencing = Slice 2
+│   ├── ingest-scanner-findings.mjs  # 0.8.28: scanner/metadata output → provenance:'deterministic' ledger findings (roadmap-deterministic-findings.md Phase 1·Slice 1). PLUGGABLE adapter registry — pure ingest(raw,adapter) core + {name,kind,collect,parse,classify} adapters in two KINDS: file-parser (code-analyzer; future Semgrep/OSV/gitleaks) + source-scanner (metadata-viewall ViewAll/ModifyAll over-grant). adjusted_severity from the requirement CLASS (REQ_SEVERITY_TO_FINDING over the baseline), never the scanner number/LLM; unmapped rule still ingested (CA-severity fallback); idempotent merge (id = engine+ruleId+file:line). 0.8.29 (Slice 2): Security/AppExchange tag filter (hasSecurityTag — only a security-tagged CA rule becomes a finding; non-security noise filtered, an unmapped SECURITY rule still kept) + a mapped finding carries its owned-`class` label
+│   ├── reconcile-provenance.mjs     # 0.8.29 (Slice 2): LLM-supersession ENFORCEMENT (roadmap-deterministic-findings.md §3). A `deterministic` finding in the SAME owned class at the SAME locus (reuses finding-clusters.mjs sameLocation) demotes a co-located `llm-inferred` finding → status:'superseded' + superseded_by(det id). PURE + IDEMPOTENT; conservative (only an OWNED class supersedes; precise class match, dimension fallback; mark-not-delete). The LLM can never re-report/re-judge what an engine determined
+│   #   (Slice 2 also conditions apex-exposed-surface.md §5/§6 defer-to-SFGE on a code-analyzer-*.json proving the engine ran — engine-absent → KEEP llm-inferred + PENDING-OWNER-RUN, never a phantom hand-off)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
 │   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); the ONE network-touching engine (§7)
 │   ├── cleanup-scanners.mjs         # 0.6.0 step 2: asymmetric manifest-driven teardown — remove the tmp tool dir, KEEP the evidence; reuses assertSafeTmpRoot (refuses an unsafe root)
@@ -361,8 +377,8 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml
 │   ├── README.md
-│   └── test-*.mjs                   # 53 dependency-free standing tests (532 checks) guarding the harness/ + hooks/ + CI hygiene
-│                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
+│   └── test-*.mjs                   # 54 dependency-free standing tests (554 checks) guarding the harness/ + hooks/ + CI hygiene
+│                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
 │   ├── authz-gate-hook.mjs          # NO-OP unless armed (.security-review/hook-armed) + writing authn-authz-flow.md → consults the gate, denies on a live authz hole (fail-closed)

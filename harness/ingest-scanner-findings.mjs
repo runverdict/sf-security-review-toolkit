@@ -34,11 +34,16 @@
  * output is idempotent: a deterministic finding's id is stable from engine+ruleId+file:line,
  * so the merge dedups it (no duplicates).
  *
- * SCOPE (Slice 1): ingest ONLY — the three wobbled classes (CRUD/FLS, sharing,
- * ViewAll/ModifyAll) get provenance + class-severity; an unmapped rule is still
- * ingested as deterministic (a scanner finding is real — never silently dropped) with
- * a documented Code-Analyzer-severity fallback. LLM-supersession ENFORCEMENT (reject
- * an LLM finding in a class the engine owns and ran) + journey re-sequencing are Slice 2.
+ * SCOPE: ingest + a Security/AppExchange TAG FILTER (Slice 2) — the three wobbled
+ * classes (CRUD/FLS, sharing, ViewAll/ModifyAll) get provenance + class-severity, and a
+ * MAPPED finding also carries its toolkit `class` (the owned-class label the supersession
+ * engine reads). Only a Security/AppExchange-tagged Code Analyzer rule becomes a finding
+ * (raw CA output is dominated by ApexDoc/naming/codestyle/Performance noise) — this is a
+ * filter on non-security NOISE, NOT a drop of a security finding: an unmapped *security*
+ * rule is still ingested as deterministic (never silently dropped) with the documented
+ * Code-Analyzer-severity fallback. LLM-supersession ENFORCEMENT (a deterministic finding
+ * supersedes a co-located same-class LLM finding) lives in its own pure engine,
+ * harness/reconcile-provenance.mjs (Slice 2); journey re-sequencing is Slice 3.
  *
  * Read-only on partner source except the ledger it merges into
  * (<target>/.security-review/audit-ledger.json).
@@ -72,6 +77,23 @@ export const CA_SEVERITY_TO_FINDING = {
   3: 'medium',
   4: 'low',
   5: 'info',
+}
+
+// ----------------------------------------------------------------------------
+// Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
+// Raw Code Analyzer output is dominated by NON-security rules (ApexDoc, naming,
+// codestyle, Performance — one captured fixture was 23/23 best-practices). A SECURITY
+// ledger must not ingest those: only a violation whose `tags` include `Security` or
+// `AppExchange` becomes a finding. This is a FILTER on non-security noise — NOT a drop
+// of a security finding: a security-tagged rule with no class mapping still passes here
+// and ingests via the Code-Analyzer-severity fallback (the "never drop an unmapped
+// SECURITY rule" rule holds). The metadata source-scanner emits only over-grants, so it
+// has no filter (every emission is security by construction). SFGE's Performance-tagged
+// `MissingNullCheckOnSoqlVariable` is excluded by this same rule (Performance ∌ Security).
+export const SECURITY_TAGS = ['security', 'appexchange']
+export function hasSecurityTag(tags) {
+  if (!Array.isArray(tags)) return false
+  return tags.some((t) => SECURITY_TAGS.includes(String(t).toLowerCase()))
 }
 
 // The three wobbled classes Slice 1 re-homes onto the scanners. Each carries the
@@ -206,7 +228,7 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
       `Provenance: deterministic (scanner-relayed, not an LLM judgment); ${sevReason}.${caNote}`
   )
 
-  return {
+  const finding = {
     id,
     dimension,
     title: `${ruleId}: ${oneLine(message, 140)}`,
@@ -225,6 +247,12 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
     engine: String(engine),
     ruleId: String(ruleId),
   }
+  // The owned-class label, set ONLY for a MAPPED class (an unmapped fallback finding owns
+  // no class). harness/reconcile-provenance.mjs reads this: a deterministic finding
+  // supersedes a co-located LLM finding ONLY in a class it owns — so an unmapped
+  // deterministic finding (no `class`) never supersedes anything.
+  if (classKey && CLASS_DEFS[classKey]) finding.class = classKey
+  return finding
 }
 
 // ----------------------------------------------------------------------------
@@ -252,6 +280,16 @@ export function ingest(raw, adapter, opts = {}) {
   for (const h of hits) {
     if (!h || !h.file || h.ruleId == null || h.engine == null) {
       notes.push(`${adapter.name}: skipped a malformed hit (missing engine/ruleId/file)`)
+      continue
+    }
+    // Security/AppExchange tag filter (Slice 2): only a security-relevant hit becomes a
+    // finding. The adapter decides relevance (code-analyzer → Security/AppExchange tag);
+    // an adapter with no `securityRelevant` is security-by-construction and keeps all. A
+    // FILTER on non-security NOISE, never a drop of a security finding (an unmapped
+    // SECURITY rule passes here and ingests via the CA-severity fallback below).
+    if (typeof adapter.securityRelevant === 'function' && !adapter.securityRelevant(h)) {
+      const tg = Array.isArray(h.tags) && h.tags.length ? h.tags.join(', ') : 'no tags'
+      notes.push(`${adapter.name}: rule ${h.ruleId} is not Security/AppExchange-tagged (${tg}) — filtered as non-security noise, not a finding`)
       continue
     }
     let classKey = null
@@ -313,6 +351,13 @@ export const codeAnalyzerAdapter = {
   },
   classify(ruleId) {
     return RULE_CLASS[ruleId] || null
+  },
+  // Slice 2: only a Security/AppExchange-tagged Code Analyzer rule is a security finding.
+  // Filters out ApexDoc / naming / codestyle / Performance noise (incl. the Performance-
+  // tagged MissingNullCheckOnSoqlVariable). An unmapped SECURITY rule still passes (then
+  // ingests via the CA-severity fallback) — this never drops a security finding.
+  securityRelevant(hit) {
+    return hasSecurityTag(hit && hit.tags)
   },
 }
 
