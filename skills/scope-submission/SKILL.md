@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -102,6 +102,23 @@ elements, get the requirement list those elements imply.
    MCP-surface and identity dimensions read it to pick which rule set to assert.
    When neither MCP element is present, omit `listingDirection` entirely.
 
+   **Render the detected-elements summary + the MCP direction profile — VERBATIM.**
+   Once the manifest exists (after step 8), surface the two step-2 reports by running
+   the renders and printing their stdout BYTE-FOR-BYTE — never paraphrase, reorder,
+   drop a column, or flip table↔prose (the pinned-output contract, CONVENTIONS §7):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/render-detected-elements.mjs --target <target>
+   node ${CLAUDE_PLUGIN_ROOT}/harness/render-mcp-scope.mjs --target <target> --section direction
+   ```
+
+   `render-detected-elements.mjs` emits the fixed `| Element | Detected how (evidence) |`
+   table in canonical element order plus the `listingType` line — the evidence column is
+   the operator's "I can dispute this" provenance. `render-mcp-scope.mjs --section direction`
+   emits the fixed listing-direction caption + the auth-profile table rendered straight from
+   the manifest's `mcp.authExpectations` (rendered, not re-derived); when no MCP element is in
+   scope it prints an honest "no MCP surface in scope" line, never a fabricated profile.
+
 3. **Probe the live MCP server — after confirming which environment you are
    pointing at.** Ask the operator for the URL *and* whether it is staging or
    production; never probe a URL whose environment you haven't confirmed, and
@@ -163,6 +180,18 @@ elements, get the requirement list those elements imply.
    credentials are involved, use them and discard them — nothing they touch
    goes in the manifest. No live URL, or no consent? Record the MCP facts
    from code as `"probed": false` and move on — downstream skills re-probe.
+
+   **Render the live-probe result — VERBATIM.** Surface the recorded probe facts by
+   printing the render's stdout byte-for-byte (CONVENTIONS §7):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/render-mcp-scope.mjs --target <target> --section probe
+   ```
+
+   It emits the fixed probe-fact table (`protocolVersion` · `toolCount` · `authType` ·
+   `transport`) led by a probe-status line. When `"probed": false` it renders an explicit
+   "recorded from code, NOT live-probed" status — it NEVER presents an un-probed fact as a
+   live probe result. No `mcp` block → an honest "no MCP surface in scope — nothing to probe".
 
 4. **SF-CLI auto-resolution (optional, operator-consented DevHub connection).**
    When `sf` is already authed to a DevHub — or the operator consents to auth
@@ -237,6 +266,23 @@ elements, get the requirement list those elements imply.
    button, and status monitoring. The toolkit auto-answers the evidence;
    the human owns the Console residue.
 
+   **Render the auto-resolution readout — VERBATIM.** After writing
+   `sf-autoresolve.json`, surface it by printing the render's stdout byte-for-byte
+   (CONVENTIONS §7):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/render-sf-autoresolve.mjs --target <target>
+   ```
+
+   It is gated on the manifest's `sfAutoResolved` flag: `false` / no file → an honest
+   "auto-resolution skipped (no DevHub / no consent / no `sf`)" line. When it ran, it emits
+   the fixed auto-resolved-rows table, a dedicated **Security flags** section (every
+   `http://` non-TLS host, wildcard host, host with no matching Named Credential, and
+   `ViewAllRecords`/`ModifyAllData` over-grant — surfaced, never silently dropped), and a
+   **Conflicts with operator answers** section (the CLI is EVIDENCE, not an override — the
+   operator reconciles each, never silently substituted). It never renders a secret
+   (CONVENTIONS §6): a secret-named key or token-shaped value is redacted in the output.
+
 5. **Run the partner-program preflight gates.** These are operator questions,
    not detections (baseline: `process-partner-program-prerequisites`) — a
    submission can be technically perfect and still blocked here:
@@ -294,6 +340,21 @@ elements, get the requirement list those elements imply.
    AgentExchange MCP listing carries BOTH the package-scanning track (the
    thin registration package) and the external-endpoint/DAST track for the
    server itself. Scope both from the start.
+
+   **Show the operator "which requirements apply to you" — VERBATIM.** The `--json`
+   above feeds the manifest's `applicableBaselineIds`; the operator-facing read is a
+   SEPARATE invocation whose stdout you print byte-for-byte (CONVENTIONS §7), never a
+   hand-narrated estimate:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/applicable-requirements.mjs --elements <comma-list> --render
+   ```
+
+   It emits the applicable COUNT (the exact list length), the ids grouped by track, the
+   **Conflicting requirements** section (every applicable `conflicting` entry with its
+   `conflicts` text — "confirm via Partner Console / your Partner Account Manager / partner
+   Slack before relying on these," never silently resolved), and the **Mobile gap** line when
+   a `mobile` element is in scope. Empty elements → an honest "scope not computed yet" line.
 
 8. **Write the manifest** to `<target>/.security-review/scope-manifest.json`.
    Exact shape:

@@ -116,6 +116,36 @@ export const REGISTERED_SURFACES = Object.freeze([
     renderers: Object.freeze(['render-scan-status.mjs']),
     skill: 'skills/run-scans/SKILL.md',
   }),
+  // WI-06 (Slice 4) — the scope-submission REPORT renders (15/16/43/44/45). Each is printed
+  // VERBATIM by skills/scope-submission/SKILL.md at the noted step.
+  // INV-15 — detected-architecture-elements summary: scope-submission Step 2.
+  Object.freeze({
+    id: 'detected-elements',
+    template: 'harness/render-detected-elements.mjs',
+    renderers: Object.freeze(['render-detected-elements.mjs']),
+    skill: 'skills/scope-submission/SKILL.md',
+  }),
+  // INV-16 — applicable-requirements presentation: scope-submission Step 7 (the --render mode).
+  Object.freeze({
+    id: 'applicable-requirements',
+    template: 'harness/applicable-requirements.mjs',
+    renderers: Object.freeze(['applicable-requirements.mjs']),
+    skill: 'skills/scope-submission/SKILL.md',
+  }),
+  // INV-43+44 — MCP listing-direction/auth-profile + live-probe result: scope-submission Steps 2–3.
+  Object.freeze({
+    id: 'mcp-scope',
+    template: 'harness/render-mcp-scope.mjs',
+    renderers: Object.freeze(['render-mcp-scope.mjs']),
+    skill: 'skills/scope-submission/SKILL.md',
+  }),
+  // INV-45 — SF-CLI auto-resolution flags + conflicts: scope-submission Step 4.
+  Object.freeze({
+    id: 'sf-autoresolve',
+    template: 'harness/render-sf-autoresolve.mjs',
+    renderers: Object.freeze(['render-sf-autoresolve.mjs']),
+    skill: 'skills/scope-submission/SKILL.md',
+  }),
 ])
 
 /**

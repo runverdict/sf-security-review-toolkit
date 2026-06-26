@@ -12,6 +12,16 @@
  * order with locked columns, rendered from the deterministic evidence index.json, where
  * DONE requires a reviewer-reproducible report ON DISK — a plan alone is PARTIAL.
  *
+ * WHERE THE DONE GATE IS ENFORCED. The on-disk "DONE needs a reviewer-reproducible report"
+ * rule is enforced and regression-locked at the PRODUCER — `build-evidence-index.mjs` sets
+ * each entry's `disposition` + `reviewer_reproducible` from real evidence files (the credit
+ * rule, guarded by `test-build-evidence-index`). This renderer trusts those flags BY DESIGN:
+ * it reads `disposition`/`reviewer_reproducible` and maps them to the Status enum WITHOUT
+ * re-deriving the gate, so it stays PURE and byte-deterministic (re-statting disk here would
+ * make the render non-deterministic and duplicate the producer's tested logic). A `partial`/
+ * `pending-owner` disposition → PARTIAL/PENDING; only `satisfied` + `reviewer_reproducible`
+ * is DONE — the renderer cannot upgrade a plan to DONE on its own.
+ *
  * INPUTS:
  *   index    — build-evidence-index.mjs's evidence/index.json
  *              ({ generated, entries:[{ ref_type, ref_id, source, reviewer_reproducible,

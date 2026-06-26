@@ -320,6 +320,21 @@ export function renderClusterHeadline(cluster) {
   return L.join('\n')
 }
 
+/**
+ * Honesty guard (CLAUDE.md rule-8 dict-vs-array corollary): a ledger whose `findings` is
+ * PRESENT but NOT an array (a dict like `{factor:{...}}`) is an UNREADABLE shape, NOT
+ * "no findings". Return null so `renderClusterHeadline` takes its UNAVAILABLE branch
+ * ("could not read the ledger") — never the NONE branch ("no open confirmed findings"),
+ * which would read as a false clean. A null/undefined/array `findings` is handled as
+ * before (`clusterFindings` tolerates it → a 0-count cluster for the legitimate empty case).
+ * Unreachable via the merge-ledger pipeline (it forces `findings` to an array); this is
+ * defense-in-depth on the honesty contract, not a live bug fix.
+ */
+export function clusterOrNullFromFindings(findings) {
+  if (findings != null && !Array.isArray(findings)) return null
+  return clusterFindings(findings)
+}
+
 function main() {
   const arg = (flag, def) => {
     const i = process.argv.indexOf(flag)
@@ -334,9 +349,10 @@ function main() {
   try { ledger = JSON.parse(readFileSync(join(TARGET, '.security-review', 'audit-ledger.json'), 'utf8')); ledgerRead = true } catch {}
   const r = clusterFindings(ledger.findings)
   if (AS_JSON) process.stdout.write(JSON.stringify(r, null, 2) + '\n')
-  // A genuinely-missing/unreadable ledger renders the UNAVAILABLE branch (pass null), so the
-  // headline never reports a missing audit as "no findings" (a false clean).
-  else if (AS_HEADLINE) process.stdout.write(renderClusterHeadline(ledgerRead ? r : null) + '\n')
+  // A genuinely-missing/unreadable ledger → UNAVAILABLE (pass null). A PRESENT-but-non-array
+  // `findings` (a dict) is likewise unreadable, NOT "no findings" → UNAVAILABLE, never a false
+  // clean (clusterOrNullFromFindings returns null for that shape).
+  else if (AS_HEADLINE) process.stdout.write(renderClusterHeadline(ledgerRead ? clusterOrNullFromFindings(ledger.findings) : null) + '\n')
   else process.stdout.write(r.headline + '\n')
 }
 

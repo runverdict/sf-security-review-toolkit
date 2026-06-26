@@ -3,7 +3,12 @@
 **Status:** Slice 1 — **WI-00A + WI-01 + WI-02 shipped in 0.8.22** (2026-06-25). Slice 2 —
 **WI-00B + WI-03 shipped in 0.8.23** (2026-06-25). Slice 3 — **WI-04 + WI-05 shipped in 0.8.24**
 (2026-06-26): the entry-experience renders (finding-cluster headline · target-map approval ·
-audit recap · 3-tier preflight · scan-status · router status). WI-06…WI-12 remain backlog.
+audit recap · 3-tier preflight · scan-status · router status). Slice 4 — **WI-06 REPORTS HALF
+shipped in 0.8.25** (2026-06-26): the scope-submission REPORT renders (detected-elements 15 ·
+applicable-requirements 16 · MCP direction/auth-profile 43 + live-probe 44 · SF-CLI
+auto-resolution 45). **WI-06 is PARTIAL** — the GATES half (scope partner-program gates 05,
+live-endpoint probe 30, NEED-FROM-YOU 31, listing-type/tenancy 32, final summary + confirm 06) is
+Slice 5. WI-07…WI-12 remain backlog.
 Sequenced AFTER the 0.8.21 cold campaign tags — these are presentation-only changes that do NOT
 touch the finding band, so they ship as post-tag hardening (the 0.8.18→0.8.21
 friction/structure class) and never require re-running the campaign.
@@ -110,7 +115,7 @@ remaining ~50 surfaces.
 | 03 | template the readiness-verdict (fixed skeleton) ✅0.8.23 | 10, 11, 35 | high | M |
 | 04 | pin finding-cluster headline + target-map approval display ✅0.8.24 | 08, 12, 34 | high | M |
 | 05 | pin preflight 3-tier report + scan-status summary ✅0.8.24 | 07, 13, 33 | high | M |
-| 06 | pin scope-submission surfaces (detected-elements, applicable-reqs, MCP probe, auto-resolve, confirm gate + scope gates) | 06,15,16,44,45,43,05,32 | high | L |
+| 06 | pin scope-submission surfaces — ◐ PARTIAL (reports 15/16/43/44/45 ✅0.8.25; gates 05/30/31/32 + confirm 06 → Slice 5) | 06,15,16,44,45,43,05,32 | high | L |
 | 07 | template reviewer-simulation report | 18 | high | M |
 | 08 | CLI-gated deep-audit gates + verification batteries | 04,28,29,53,46,47,48,54,55 | med | L |
 | 09 | cadence + test-env templates + shared run-log entry | 19,20,21,22,23,24,25,50 | med | L |
@@ -192,7 +197,33 @@ the preflight + router blocks verbatim; `run-scans` Step 11 prints scan-status v
 (5): determinism, the golden skeleton (4-state enum completeness, canonical Family order),
 fail-safe, and skill wiring.
 
-*(WI-06…WI-12 detail: see the synthesis result captured for this roadmap;
+### WI-06 — scope-submission REPORT renders (reports half) — ◐ PARTIAL, reports ✅ DONE (0.8.25)
+WI-06 is SPLIT (auditor + operator decision): this slice ships the REPORT renders
+(INV-15/16/43/44/45); the scope GATES + final confirm (INV-05/30/31/32/06) are Slice 5.
+`render-detected-elements.mjs` (INV-15) renders `scope-manifest.json` → the fixed
+`{Element | Detected how (evidence)}` table in a frozen `CANONICAL_ELEMENT_ORDER` (unknown
+types appended, never dropped) + the `listingType` line; a no-evidence element gets an honest
+cell, empty → "scope not detected yet". `applicable-requirements.mjs --render` (INV-16) emits the
+applicable COUNT (= exact list length), the ids grouped by track, the conflicting-requirements
+section (every applicable `conflicting` entry with its `conflicts` text — surfaced per
+CONVENTIONS §4, never silently resolved), and the mobile-no-coverage gap line; `parseBaselineApplies`
+now additively captures `verification` + the folded `conflicts` block scalar. `render-mcp-scope.mjs`
+(INV-43+44) renders the listing-direction caption + the auth-profile fields straight from
+`mcp.authExpectations` (rendered, NOT re-derived) and the live-probe result where `probed:false`
+reads "recorded from code, NOT live-probed" (never presenting an un-probed fact as a probe).
+`render-sf-autoresolve.mjs` (INV-45) renders the auto-resolved rows + a Security-flags section
+(http:// non-TLS · wildcard · no-Named-Credential · ViewAll/ModifyAll over-grant — surfaced,
+never dropped) + a Conflicts section (CLI is evidence, not an override); gated on the manifest
+`sfAutoResolved`, and NEVER renders a secret (redaction guard, CONVENTIONS §6). scope-submission
+Steps 2/3/4/7 print each verbatim. Also folds in two Slice-3 grade nits: the dict-vs-array honesty
+guard (`finding-clusters.mjs` + `render-recap.mjs` — a PRESENT-but-non-array `findings` → UNAVAILABLE,
+never NONE/PROCEED) and a `render-scan-status.mjs` docstring clarify (the DONE gate is enforced at
+the producer). **Tests** `test-render-detected-elements` (6), `test-render-mcp-scope` (7),
+`test-render-sf-autoresolve` (7), extended `test-applicable-requirements` (+6), + the two nit
+regressions: determinism, the golden skeleton, fail-safe, the secret/probe honesty guards, and
+skill wiring.
+
+*(WI-07…WI-12 detail: see the synthesis result captured for this roadmap;
 each follows the same render-harness-or-template + standing-test pattern.)*
 
 ## Inventory — all 60 surfaces (condensed)
@@ -215,8 +246,8 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 12 | target-map approval display | targetmap | ✓ | H | 04 ✅0.8.24 |
 | 13 | scan-status summary | output | ✓ | H | 05 ✅0.8.24 |
 | 14 | submission-package INDEX.md | targetmap | ◐ | H | 10 |
-| 15 | detected-architecture-elements summary | targetmap | ◐ | H | 06 |
-| 16 | applicable-requirements presentation | output | ◐ | H | 06 |
+| 15 | detected-architecture-elements summary | targetmap | ✓ | H | 06 ✅0.8.25 |
+| 16 | applicable-requirements presentation | output | ✓ | H | 06 ✅0.8.25 |
 | 17 | artifact-status / handoff summary | report | ✗ | H | 11 |
 | 18 | reviewer-simulation report | report | ✗ | H | 07 |
 | 19 | post-approval obligations register | output | ✗ | H | 09 |
@@ -243,9 +274,9 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 40 | three-bucket artifact partition display | targetmap | ✗ | M | 11 |
 | 41 | AuthN/AuthZ WITHHELD placeholder | output | ✗ | M | 11 |
 | 42 | cross-read consistency result | report | ◐ | M | 11 |
-| 43 | listing-direction + MCP auth profile | output | ◐ | M | 06 |
-| 44 | live MCP-probe result | report | ◐ | M | 06 |
-| 45 | SF-CLI auto-resolution flags + conflicts | report | ✗ | M | 06 |
+| 43 | listing-direction + MCP auth profile | output | ✓ | M | 06 ✅0.8.25 |
+| 44 | live MCP-probe result | report | ✓ | M | 06 ✅0.8.25 |
+| 45 | SF-CLI auto-resolution flags + conflicts | report | ✓ | M | 06 ✅0.8.25 |
 | 46 | permission-chain battery (install-verify) | report | ✗ | M | 08 |
 | 47 | zero-residue battery (teardown) | report | ✗ | M | 08 |
 | 48 | install/uninstall integrity report | report | ✗ | M | 08 |

@@ -24,7 +24,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { clusterFindings, renderClusterHeadline } from '../harness/finding-clusters.mjs'
+import { clusterFindings, renderClusterHeadline, clusterOrNullFromFindings } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'finding-clusters.mjs')
@@ -99,6 +99,23 @@ check('FH5 HONESTY: never will-pass/passed; pen-test caveat on non-PRESENT branc
   }
   // the NONE branch explicitly refuses the "secure"/"clean" framing (a negation, not a claim)
   assert.match(renderClusterHeadline(clusterFindings([])), /never "secure"\/"clean"/)
+})
+
+check('FH7 dict-vs-array guard (rule-8 corollary): a PRESENT-but-non-array findings → UNAVAILABLE, never NONE', () => {
+  // a dict-shaped `findings` (e.g. {factor:{...}}) is an UNREADABLE shape, NOT "no findings"
+  assert.equal(clusterOrNullFromFindings({ factor: { x: 1 } }), null, 'dict findings → null cluster (UNAVAILABLE)')
+  // a legitimate empty array stays a real 0-count cluster (NONE), NOT UNAVAILABLE
+  const emptyCluster = clusterOrNullFromFindings([])
+  assert.ok(emptyCluster !== null && emptyCluster.confirmed_count === 0, 'empty array → a 0-count cluster, not null')
+  const block = renderClusterHeadline(clusterOrNullFromFindings({ factor: {} }))
+  assert.match(block, /Finding cluster view unavailable/, 'dict findings render UNAVAILABLE')
+  assert.ok(!/No open confirmed findings/.test(block), 'NEVER reads as "no findings" for a malformed-but-present ledger')
+  // the CLI on a ledger whose `findings` is a dict → UNAVAILABLE, never a false clean
+  const d = tmp(); mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'audit-ledger.json'), JSON.stringify({ findings: { factor: { sev: 'critical' } } }))
+  const out = execFileSync('node', [CLI, '--target', d, '--headline'], { encoding: 'utf8' })
+  assert.match(out, /Finding cluster view unavailable/)
+  assert.ok(!/No open confirmed findings/.test(out), 'CLI never reports a dict ledger as "no findings"')
 })
 
 check('FH6 WIRING: both skills grant + reference --headline, say verbatim, claim identical at both sites', () => {

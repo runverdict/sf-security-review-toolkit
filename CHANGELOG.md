@@ -23,6 +23,90 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.25] — 2026-06-26
+
+**The scope-submission REPORT renders are now pinned by engines — presentation-consistency
+Slice 4 (WI-06, reports half).** Slice 3 pinned the entry-experience surfaces; this pins the
+five scope-submission REPORT surfaces that were still driver-improvised prose: the detected-
+architecture-elements summary (INV-15), the applicable-requirements presentation (INV-16), the
+MCP listing-direction/auth-profile (INV-43) and live-probe result (INV-44), and the SF-CLI
+auto-resolution flags + conflicts (INV-45). **WI-06 is now PARTIAL** — the reports half ships
+here; the scope GATES + final confirm (INV-05/30/31/32/06) are Slice 5. Same contract (the
+ENGINE owns the skeleton, the driver pastes it verbatim): each render is pure over deterministic
+JSON — no LLM, no Date, no random — and fails safe to an HONEST line, never a fabricated
+"clean"/"ready". The MCP renders never present an un-probed fact as probed; the auto-resolution
+render SURFACES every security flag + operator-answer conflict (never silently dropped or
+resolved) and NEVER renders a secret (a secret-named key / token-shaped value is redacted).
+Folds in two Slice-3 grade nits: the dict-vs-array honesty guard (a PRESENT-but-non-array
+`findings` renders UNAVAILABLE, never NONE/PROCEED — CLAUDE-rule-8 corollary) in
+`finding-clusters.mjs` + `render-recap.mjs`, and a `render-scan-status.mjs` docstring clarify
+(the DONE gate is enforced at the producer). Presentation-only — the finding band is unchanged,
+so the 0.8.21 cold tag still certifies it; do NOT re-run the campaign. Suite **50 files / 468
+checks** (was 47 / 440). Tag stays **HELD**.
+
+### Added
+- **`harness/render-detected-elements.mjs`** (INV-15) — the VERBATIM detected-architecture-
+  elements summary: a fixed `| Element | Detected how (evidence) |` table in a frozen
+  `CANONICAL_ELEMENT_ORDER` (unknown types appended in manifest order, never dropped) + the
+  `listingType` line; the evidence column is the operator's dispute-this provenance. Pure; a
+  missing/non-JSON manifest or one with no elements → an honest "scope not detected yet" line.
+  Printed verbatim at scope-submission Step 2.
+- **`harness/render-mcp-scope.mjs`** (INV-43 + INV-44) — two VERBATIM MCP renders. DIRECTION:
+  a fixed listing-direction (B/A/both) caption + the auth-profile table rendered straight from
+  the manifest's `mcp.authExpectations` (rendered, NOT re-derived — inbound and outbound have
+  opposite rules, never collapsed). PROBE: a probe-status line + the recorded MCP facts table,
+  where `probed:false` renders an explicit "recorded from code, NOT live-probed" status and never
+  presents an un-probed fact as a probe. No MCP surface → an honest "no MCP surface in scope"
+  line. Printed verbatim at scope-submission Steps 2 (direction) + 3 (probe).
+- **`harness/render-sf-autoresolve.mjs`** (INV-45) — the VERBATIM SF-CLI auto-resolution render:
+  the auto-resolved-rows table + a **Security flags** section (every `http://` non-TLS host,
+  wildcard host, host with no matching Named Credential, and `ViewAllRecords`/`ModifyAllData`
+  over-grant — DERIVED from the endpoint inventory + permission matrix, merged with any recorded
+  flags, deduped — surfaced, never dropped) + a **Conflicts with operator answers** section (the
+  CLI is EVIDENCE, not an override — never silently substituted). Gated on the manifest's
+  `sfAutoResolved` flag → an honest "auto-resolution skipped" line when it did not run. NEVER
+  renders a secret (CONVENTIONS §6): a secret-named key / token-shaped value is redacted. Printed
+  verbatim at scope-submission Step 4.
+
+### Changed
+- **`harness/applicable-requirements.mjs`** (INV-16) — gains a `--render` mode + exported
+  `renderApplicable(entries, elementTypes)`: the VERBATIM operator-facing "which requirements
+  apply to you" block (the applicable COUNT = exact list length, ids grouped by track, a
+  **Conflicting requirements** section surfacing every applicable `conflicting` entry with its
+  `conflicts` text per CONVENTIONS §4, and the **Mobile gap** line when a `mobile` element is in
+  scope), DISTINCT from `--json` (which the manifest consumes). `parseBaselineApplies` now
+  additively captures `verification` + the folded `conflicts` block scalar (the legacy
+  `{id, applies_to}` shape is preserved). Printed verbatim at scope-submission Step 7.
+- **`harness/render-readiness-verdict.mjs`** — `REGISTERED_SURFACES` extends with the four
+  Slice-4 scope-submission surfaces (detected-elements · applicable-requirements · mcp-scope ·
+  sf-autoresolve), so the render-verbatim contract governs them.
+- **`skills/scope-submission/SKILL.md`** — `allowed-tools` grants the four render harnesses;
+  Steps 2/3/4/7 each call their render and print its stdout VERBATIM (replacing the freehand
+  prose), per the pinned-output contract.
+
+### Fixed
+- **Dict-vs-array honesty guard (CLAUDE-rule-8 corollary), defense-in-depth.** In
+  `harness/finding-clusters.mjs` (new exported `clusterOrNullFromFindings`, used by the
+  `--headline` ledger-read path) and `harness/render-recap.mjs` (`renderAuditRecap` `present`
+  derivation): a `findings` value that is PRESENT but NOT an array (a dict like `{factor:{...}}`)
+  now renders the **UNAVAILABLE** branch — never NONE ("no open confirmed findings") or PROCEED.
+  A malformed-but-present ledger is not "no findings". Unreachable via the merge-ledger pipeline
+  (it forces an array); regression-locked in `test-finding-clusters-headline` + `test-render-recap`.
+
+### Hardened
+- **`harness/render-scan-status.mjs`** docstring clarifies (docs-in-code only, no behavior
+  change) that the on-disk DONE gate is enforced + regression-locked at the PRODUCER
+  (`build-evidence-index.mjs`); the renderer trusts the index's `disposition`/`reviewer_reproducible`
+  flags BY DESIGN to stay pure + byte-deterministic.
+
+### Tests
+- New `acceptance/test-render-detected-elements.mjs` (6), `test-render-mcp-scope.mjs` (7),
+  `test-render-sf-autoresolve.mjs` (7); extended `test-applicable-requirements.mjs` (+6 `--render`
+  cases incl. the verification/conflicts parse), `test-finding-clusters-headline.mjs` (+1 dict
+  guard), `test-render-recap.mjs` (+1 dict guard). Each new render: determinism + golden snapshot
+  + fail-safe on missing/non-JSON/empty input + skill-wiring (grants + references + "print
+  verbatim"). Suite **50 files / 468 checks**.
+
 ## [0.8.24] — 2026-06-26
 
 **The entry-experience renders are now pinned by engines — presentation-consistency Slice 3
