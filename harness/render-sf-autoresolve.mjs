@@ -27,10 +27,16 @@
  * grant) AND merged with any pre-recorded `flags`, deduped — so a flag the step recorded OR a
  * flag latent in the raw inventory is surfaced, never dropped.
  *
- * NEVER RENDERS A SECRET (CONVENTIONS §6). The file carries config, not secret values, by
- * contract — but the render defends in depth: a secret-named key or a token/JWT/high-entropy
- * value is redacted to a "[redacted — secret belongs in env var/vault]" cell, so the render
- * can NEVER introduce a secret into operator-facing output.
+ * SECRET HANDLING (CONVENTIONS §6) — honest scope, NOT a blanket "never" guarantee. The actual
+ * secret-exclusion boundary is the PRODUCER: scope-submission step 4 excludes secret VALUES when
+ * it writes sf-autoresolve.json (it records config — hosts, Named-Credential names, permission-set
+ * names — never the secret material). This render is defense-in-depth ON TOP of that: in every
+ * cell it guards (row values, the row/endpoint/flag/conflict `source`, the derived-flag host, the
+ * recorded-flag detail, and the conflict's auto-resolved value) it redacts a secret-NAMED key or a
+ * WHOLE-value token / JWT / high-entropy hex|base64 blob to a "[redacted …]" cell. KNOWN LIMIT
+ * (why this does not claim "never"): the entropy match is whole-value-anchored (^…$), so a secret
+ * EMBEDDED mid-string inside an otherwise free-form value is NOT caught here — excluding that is
+ * the producer's job; this layer is a backstop, not a guarantee.
  *
  * DETERMINISTIC + PURE (CONVENTIONS §7): same inputs → byte-identical block out. No LLM, no
  * network, no deps, no Date/Math.random. `sfAutoResolved:false` / a missing/unreadable file →
@@ -79,13 +85,14 @@ export function deriveFlags(ar) {
   const endpoints = Array.isArray(ar.endpoints) ? ar.endpoints : []
   for (const e of endpoints) {
     if (!e || typeof e !== 'object') continue
-    const host = String(e.host || '')
-    const src = e.source ? ` (${cell(e.source)})` : ''
-    if (/^http:\/\//i.test(host)) push(`non-TLS (http://) host: ${cell(host)}${src} — plain HTTP for data transfer is prohibited`)
-    if (host.includes('*')) push(`wildcard host: ${cell(host)}${src} — reviewers scrutinize wildcard callout scope`)
+    const host = String(e.host || '')          // RAW host drives detection below…
+    const safeHost = safeValue('host', host)    // …the DISPLAY is secret-guarded (a whole-blob host is redacted)
+    const src = e.source ? ` (${safeValue('source', e.source)})` : ''
+    if (/^http:\/\//i.test(host)) push(`non-TLS (http://) host: ${safeHost}${src} — plain HTTP for data transfer is prohibited`)
+    if (host.includes('*')) push(`wildcard host: ${safeHost}${src} — reviewers scrutinize wildcard callout scope`)
     const nc = e.namedCredential
     if (nc == null || nc === '' || nc === false) {
-      push(`host with NO matching Named Credential: ${cell(host)}${src} — the signature of a likely hardcoded secret`)
+      push(`host with NO matching Named Credential: ${safeHost}${src} — the signature of a likely hardcoded secret`)
     }
   }
   const perms = Array.isArray(ar.permissions) ? ar.permissions : []
@@ -99,8 +106,10 @@ export function deriveFlags(ar) {
   const recorded = Array.isArray(ar.flags) ? ar.flags : []
   for (const f of recorded) {
     if (!f || typeof f !== 'object') continue
-    const t = f.type ? `${cell(f.type)}: ${cell(f.detail)}` : cell(f.detail || f.text)
-    const src = f.source ? ` (${cell(f.source)})` : ''
+    // `type` is a short label (kept verbatim); the free-form `detail`/`text` + `source` are
+    // secret-guarded so a recorded flag carrying a token never echoes through.
+    const t = f.type ? `${cell(f.type)}: ${safeValue('detail', f.detail)}` : safeValue('detail', f.detail || f.text)
+    const src = f.source ? ` (${safeValue('source', f.source)})` : ''
     push(`${t}${src}`)
   }
   // Dedupe by text, preserving first-seen order (derived flags before recorded duplicates).
@@ -129,7 +138,7 @@ export function renderSfAutoResolve({ autoresolve, manifest } = {}) {
   L.push('| Key | Value | Source |')
   L.push('|---|---|---|')
   if (rows.length) {
-    for (const r of rows) L.push(`| ${cell(r.key)} | ${safeValue(r.key, r.value)} | ${cell(r.source)} |`)
+    for (const r of rows) L.push(`| ${cell(r.key)} | ${safeValue(r.key, r.value)} | ${safeValue('source', r.source)} |`)
   } else {
     L.push('| — | (no auto-resolved rows recorded) | — |')
   }
@@ -153,8 +162,10 @@ export function renderSfAutoResolve({ autoresolve, manifest } = {}) {
         'operator reconciles each (never silently substituted, CONVENTIONS §4):'
     )
     for (const c of conflicts) {
-      const src = c.source ? ` [${cell(c.source)}]` : ''
-      L.push(`- ${cell(c.field)}: operator said "${cell(c.operatorClaim)}" but auto-resolved ${cell(c.autoResolved)}${src}`)
+      // `field` is a label and `operatorClaim` is the operator's OWN typed input (echoed back);
+      // the CLI-derived `autoResolved` value + `source` are secret-guarded.
+      const src = c.source ? ` [${safeValue('source', c.source)}]` : ''
+      L.push(`- ${cell(c.field)}: operator said "${cell(c.operatorClaim)}" but auto-resolved ${safeValue('autoResolved', c.autoResolved)}${src}`)
     }
   } else {
     L.push('**Conflicts with operator answers:** none — no auto-resolved fact contradicts a recorded operator answer.')

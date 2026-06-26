@@ -275,6 +275,29 @@ check('M14 clear error: a --result with no ledger_updates (neither shape) → ex
   assert.match(msg, /pre-extracted/i, 'error names the pre-extracted shape')
 })
 
+check('M15 corruption guard: a PRESENT-but-non-array prior `findings` (dict) → exit 2, LOUD warning, on-disk ledger UNTOUCHED (never a silent drop)', () => {
+  const d = gitRepo(); dirs.push(d)
+  // Seed a CORRUPTED prior ledger: `findings` is a DICT (a hand-edit / out-of-band write), not an
+  // array. The OLD code silently coerced it to [] then overwrote the file → silent false-clean.
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  const corrupt = { schema_version: '1', findings: { 'apex.fls': { severity: 'high' } }, passes: [{ id: 1 }] }
+  writeFileSync(lp, JSON.stringify(corrupt))
+  // A perfectly valid result for THIS pass — the merge must STILL refuse because of the prior corruption.
+  const rp = join(d, '.security-review', 'result-1.json')
+  writeFileSync(rp, JSON.stringify({ ledger_updates: [u({ file: 'x.cls:1', title: 'a finding' })], dimensions_run: ['apex-exposed-surface'], total_candidates: 1 }))
+  let err = null
+  try { execFileSync('node', [MERGE, '--repo', d, '--result', rp, '--date', '2026-06-17', '--pass', '1', '--tier', 'standard'], { stdio: 'pipe', encoding: 'utf8' }) }
+  catch (e) { err = e }
+  assert.ok(err, 'must exit non-zero on a corrupted prior ledger, never silently drop it')
+  assert.equal(err.status, 2, 'exit code 2')
+  const msg = String(err.stderr || '')
+  assert.match(msg, /\[merge-ledger\] WARNING/, 'a LOUD stderr warning fires (never silent)')
+  assert.match(msg, /not an array/i, 'the warning names the corruption (non-array findings)')
+  assert.match(msg, /refusing to silently drop/i, 'states it refuses to drop the prior findings')
+  // The on-disk ledger is LEFT UNTOUCHED (not overwritten with an empty/clean one) so it can be restored.
+  assert.deepEqual(JSON.parse(readFileSync(lp, 'utf8')), corrupt, 'the corrupted ledger on disk is preserved, never overwritten')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

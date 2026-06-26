@@ -223,6 +223,15 @@ the producer). **Tests** `test-render-detected-elements` (6), `test-render-mcp-s
 regressions: determinism, the golden skeleton, fail-safe, the secret/probe honesty guards, and
 skill wiring.
 
+**0.8.26 honesty-hardening (post-Slice-4 off-disk grade):** the dict-vs-array guard now also covers
+the `render-recap.mjs --target` standalone re-render (`factsFromLedger` had coerced the dict shape to
+`[]` → a false PROCEED; it now preserves it → UNAVAILABLE, RC7); `merge-ledger.mjs` refuses a
+corrupted prior ledger LOUDLY (stderr warning + exit 2, on-disk ledger untouched) instead of silently
+dropping it (M15); and `render-sf-autoresolve.mjs`'s secret guard extends to every rendered cell (host
+· source · flag detail · conflict auto-resolved) with the docstring softened to its honest
+producer-is-the-boundary scope (SA6). Presentation/honesty-only, no finding-band change. Suite 50
+files / 471 checks.
+
 *(WI-07…WI-12 detail: see the synthesis result captured for this roadmap;
 each follows the same render-harness-or-template + standing-test pattern.)*
 

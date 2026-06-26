@@ -121,7 +121,13 @@ function factsFromLedger(ledger) {
   if (!passes.length) return null
   const latest = passes.reduce((m, p) => (m && m.id >= p.id ? m : p), null)
   return {
-    findings: Array.isArray(ledger.findings) ? ledger.findings : [],
+    // Preserve a PRESENT-but-non-array `findings` (a dict-corrupted/hand-edited ledger) AS-IS
+    // so renderAuditRecap's `findingsPresentNonArray` guard fires → UNAVAILABLE, never a false
+    // PROCEED. Coercing it to [] HERE (the old bug) hid the corruption behind the present
+    // pass/dimensions and the `--target` re-render emitted "no open confirmed findings" +
+    // PROCEED on an unreadable ledger. An ABSENT `findings` (no key) stays [] — the legitimate
+    // empty / zero-open case still reads NONE + PROCEED.
+    findings: 'findings' in ledger ? ledger.findings : [],
     dimensions: latest && Array.isArray(latest.dimensions) ? latest.dimensions : [],
     candidates: latest ? latest.candidates : 0,
     confirmed: latest ? latest.confirmed : 0,

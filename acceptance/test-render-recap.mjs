@@ -118,6 +118,43 @@ check('RC6 dict-vs-array guard (rule-8 corollary): PRESENT-but-non-array finding
   }
 })
 
+check('RC7 --target dict-vs-array guard: a dict-findings ledger WITH passes[] → UNAVAILABLE via the CLI (the factsFromLedger path), never a false PROCEED', () => {
+  // The corrupted ledger: `findings` is a DICT (rule-8 shape) but a real pass IS recorded. The
+  // OLD factsFromLedger coerced findings→[] BEFORE renderAuditRecap's guard, so `--target` read
+  // "no open confirmed findings" + PROCEED on an unreadable ledger. It must now be UNAVAILABLE.
+  const d = tmp(); mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'audit-ledger.json'), JSON.stringify({
+    schema_version: '1',
+    findings: { 'apex.fls': { severity: 'high' } },
+    passes: [{ id: 1, dimensions: ['apex-exposed-surface'], candidates: 4, confirmed: 1, refuted: 3, unverified: 0, tier: 'standard' }],
+  }))
+  const out = execFileSync('node', [CLI, '--target', d], { encoding: 'utf8' })
+  assert.match(out, /\*\*Verdict: UNAVAILABLE\.\*\*/, 'a dict-findings ledger forces UNAVAILABLE on the --target path')
+  assert.ok(!/\*\*Verdict: PROCEED\.\*\*/.test(out), 'NEVER a false PROCEED from a corrupted ledger via --target')
+  assert.ok(!/No open confirmed findings/.test(out), 'NEVER reads "no open confirmed findings" for an unreadable ledger')
+
+  // A LEGIT array ledger with an open high still renders the real HALT via --target (not broken).
+  const dH = tmp(); mkdirSync(join(dH, '.security-review'), { recursive: true })
+  writeFileSync(join(dH, '.security-review', 'audit-ledger.json'), JSON.stringify({
+    schema_version: '1',
+    findings: [{ id: '1', dimension: 'apex-exposed-surface', status: 'confirmed', adjusted_severity: 'high', file: 'a.cls:5' }],
+    passes: [{ id: 1, dimensions: ['apex-exposed-surface'], candidates: 1, confirmed: 1, refuted: 0, unverified: 0, tier: 'standard' }],
+  }))
+  const outH = execFileSync('node', [CLI, '--target', dH], { encoding: 'utf8' })
+  assert.match(outH, /\*\*Verdict: HALT\.\*\*/, 'a legit array ledger with an open high still HALTs via --target')
+  assert.ok(!/\*\*Verdict: UNAVAILABLE\.\*\*/.test(outH), 'a legit ledger is NOT UNAVAILABLE')
+
+  // A LEGIT array ledger with ZERO open (refuted only) still PROCEEDs via --target.
+  const dP = tmp(); mkdirSync(join(dP, '.security-review'), { recursive: true })
+  writeFileSync(join(dP, '.security-review', 'audit-ledger.json'), JSON.stringify({
+    schema_version: '1',
+    findings: [{ id: 'r', dimension: 'x', status: 'refuted', adjusted_severity: 'critical', file: 'a.cls:1' }],
+    passes: [{ id: 2, dimensions: ['x'], candidates: 1, confirmed: 0, refuted: 1, unverified: 0, tier: 'quick' }],
+  }))
+  const outP = execFileSync('node', [CLI, '--target', dP], { encoding: 'utf8' })
+  assert.match(outP, /\*\*Verdict: PROCEED\.\*\*/, 'a legit array ledger with zero open still PROCEEDs via --target')
+})
+
 check('RC5 wiring: merge-ledger imports + emits the recap; audit-codebase Step 7 verbatim', () => {
   const merge = readFileSync(join(PLUGIN, 'harness', 'merge-ledger.mjs'), 'utf8')
   assert.match(merge, /import \{ renderAuditRecap \} from '\.\/render-recap\.mjs'/, 'merge-ledger imports renderAuditRecap')

@@ -101,6 +101,22 @@ const oneLine = (s, n = 200) => {
 
 // ---- load the existing ledger and merge INTO it ----
 const ledger = readJSON(LEDGER_PATH, { schema_version: '1', findings: [], passes: [] })
+// HONESTY (data-loss guard): a PRESENT-but-non-array `findings` is a CORRUPTED or hand-edited
+// prior ledger, NOT an empty one. Silently coercing it to [] (the old bug) would DROP the prior
+// findings, and the writeFileSync below would OVERWRITE the recoverable file — a silent
+// false-clean. The toolkit never self-writes this shape, so the ledger was altered out-of-band;
+// refuse LOUDLY and leave the on-disk ledger untouched so it can be restored (matches the file's
+// existing exit-2-on-malformed-input posture for `--result`).
+if (ledger.findings != null && !Array.isArray(ledger.findings)) {
+  console.error(
+    '[merge-ledger] WARNING: prior ledger `findings` was not an array ' +
+    `(corrupted or hand-edited) in ${LEDGER_PATH}; refusing to silently drop it. ` +
+    'The toolkit never writes this shape — the ledger was altered out-of-band. Restore it from ' +
+    'version control (git checkout) and re-run. This pass was NOT recorded and the on-disk ' +
+    'ledger was left untouched.'
+  )
+  process.exit(2)
+}
 if (!Array.isArray(ledger.findings)) ledger.findings = []
 if (!Array.isArray(ledger.passes)) ledger.passes = []
 

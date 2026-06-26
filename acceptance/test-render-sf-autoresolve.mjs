@@ -131,6 +131,42 @@ check('SA5 wiring: scope-submission Step 4 grants + references the harness + ver
   assert.match(skill, /Security flags|Conflicts with operator/i, 'references the flags/conflicts sections')
 })
 
+check('SA6 secret guard covers EVERY cell (not just row values): a secret-shaped host / source / flag-detail / conflict-autoResolved is REDACTED; a normal value is not', () => {
+  // The reproduced leak vectors: a secret echoing through the HOST, the row SOURCE, a recorded-
+  // flag DETAIL, and a conflict's autoResolved — all of which used plain cell() (only the row
+  // VALUE was guarded). Every guarded cell must now redact a whole-blob secret.
+  const leaky = renderSfAutoResolve({
+    autoresolve: {
+      generated: '2026-06-12',
+      rows: [{ key: 'isReleased', value: true, source: SECRET_VALUE }],                         // secret in the SOURCE column
+      endpoints: [{ host: SECRET_VALUE, namedCredential: null, source: 'RemoteSiteSettings' }], // secret as the HOST (credential-less → flagged)
+      permissions: [],
+      flags: [{ type: 'note', detail: SECRET_VALUE, source: 'Tooling' }],                       // secret in a recorded-flag DETAIL
+      conflicts: [{ field: 'token', operatorClaim: 'absent', autoResolved: SECRET_VALUE, source: 'sf' }], // secret in the conflict autoResolved
+    },
+    manifest: { sfAutoResolved: true },
+  })
+  assert.ok(!leaky.includes(SECRET_VALUE), 'the secret is redacted in EVERY guarded cell (host, source, flag detail, conflict autoResolved) — never echoed')
+  assert.match(leaky, /\[redacted —/, 'the redaction marker is present where the secret was')
+
+  // …but legitimate non-secret values in those SAME cells are NOT over-redacted (determinism + honesty).
+  const clean = renderSfAutoResolve({
+    autoresolve: {
+      generated: '2026-06-12',
+      rows: [{ key: 'isReleased', value: true, source: 'sf package version report --json' }],
+      endpoints: [{ host: 'http://legacy.example.com', namedCredential: null, source: 'CspTrustedSites' }],
+      permissions: [],
+      flags: [{ type: 'note', detail: 'a wildcard host was found', source: 'Tooling' }],
+      conflicts: [{ field: 'packagePromoted', operatorClaim: 'promoted', autoResolved: 'IsReleased=false', source: 'sf' }],
+    },
+    manifest: { sfAutoResolved: true },
+  })
+  assert.ok(!/\[redacted —/.test(clean), 'no over-redaction of legitimate non-secret values')
+  assert.match(clean, /sf package version report --json/, 'a normal source renders verbatim')
+  assert.match(clean, /host: http:\/\/legacy\.example\.com/, 'a normal host renders verbatim')
+  assert.match(clean, /auto-resolved IsReleased=false/, 'a normal conflict value renders verbatim')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -23,6 +23,54 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.26] — 2026-06-26
+
+**Honesty-hardening — three contract fixes the Slice-4 off-disk grade surfaced (presentation /
+honesty-only, no finding-band change).** Each closes a path where an operator-facing render could
+read as cleaner/safer than the truth. (1) `render-recap.mjs --target` no longer emits a false
+PROCEED on a dict-corrupted ledger: `factsFromLedger` was coercing a PRESENT-but-non-array
+`findings` to `[]` BEFORE the dict-vs-array guard could fire, so the standalone `--target`
+re-render read "no open confirmed findings" + PROCEED on an unreadable ledger; it now preserves
+the shape into the guard → **UNAVAILABLE** (the legit empty-array / absent-findings cases still
+read NONE/PROCEED). (2) `merge-ledger.mjs` no longer SILENTLY drops a corrupted prior ledger's
+`findings`: a present-but-non-array prior `findings` was coerced to `[]` then OVERWRITTEN on the
+next write (silent false-clean / data loss); it now refuses LOUDLY — a `[merge-ledger] WARNING` to
+stderr + `exit 2`, leaving the on-disk ledger untouched so it can be restored. (3)
+`render-sf-autoresolve.mjs` secret-guard now covers EVERY cell it renders, not just row values:
+the derived-flag host, the row/endpoint/flag/conflict `source`, the recorded-flag detail, and the
+conflict's auto-resolved value all route through `safeValue`, and the docstring is softened from
+the overclaimed "NEVER RENDERS A SECRET" to its HONEST scope (the producer — scope-submission
+step 4 — is the secret-exclusion boundary; a secret embedded mid-string in a free-form value is a
+documented defense-in-depth LIMIT, not a guarantee). Presentation/honesty-only — the finding band
+is unchanged, so the 0.8.21 cold tag still certifies it; do NOT re-run the campaign. Suite
+**50 files / 471 checks** (was 50 / 468 — +1 each to `test-render-recap`, `test-merge-ledger`,
+`test-render-sf-autoresolve`). Tag stays **HELD**.
+
+### Fixed
+- **`harness/render-recap.mjs`** — `factsFromLedger` preserves a PRESENT-but-non-array `findings`
+  (a dict-corrupted/hand-edited ledger) into `renderAuditRecap`'s `findingsPresentNonArray` guard
+  instead of coercing it to `[]`, so the `--target` standalone re-render renders **UNAVAILABLE**,
+  never a false PROCEED. The dict-vs-array guard (0.8.25) now covers the `--target` path, not just
+  the in-process call. An ABSENT `findings` still defaults to `[]` (the legit empty/zero-open case
+  still PROCEEDs). Regression-locked by `test-render-recap` RC7.
+- **`harness/merge-ledger.mjs`** — a present-but-non-array prior ledger `findings` now triggers a
+  LOUD `console.error` warning + `process.exit(2)` (matching the file's existing
+  exit-2-on-malformed-`--result` posture) and leaves the on-disk ledger untouched, instead of
+  silently coercing it to `[]` and overwriting the recoverable file. A genuinely absent/null
+  `findings` still defaults to `[]` silently (no data to lose). Regression-locked by
+  `test-merge-ledger` M15.
+
+### Changed
+- **`harness/render-sf-autoresolve.mjs`** — the defense-in-depth secret guard (`safeValue`) now
+  also covers the derived-flag host, the row/endpoint/flag/conflict `source`, the recorded-flag
+  detail, and the conflict's auto-resolved value (previously only the row VALUE column was
+  guarded), so a secret-shaped value is redacted EVERYWHERE, not just in one cell. The docstring is
+  softened from "NEVER RENDERS A SECRET" to its honest scope: the producer is the actual
+  secret-exclusion boundary, this render is a backstop over the cells it guards, and an
+  embedded-mid-string secret in a free-form value is a documented LIMIT (the entropy match is
+  whole-value-anchored). No over-redaction of legitimate non-secret values — determinism + every
+  existing render is unchanged. Regression-locked by `test-render-sf-autoresolve` SA6.
+
 ## [0.8.25] — 2026-06-26
 
 **The scope-submission REPORT renders are now pinned by engines — presentation-consistency
