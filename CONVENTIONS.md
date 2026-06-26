@@ -278,12 +278,21 @@ Skills write into the PARTNER's repo, never into the plugin:
   engine-absent→**KEEP** methodology fix (`apex-exposed-surface.md` §5/§6): defer a CRUD/FLS
   gap to SFGE ONLY when a `code-analyzer-*.json` evidence file proves it ran — engine-absent
   → keep the finding `llm-inferred` and mark the class PENDING-OWNER-RUN, never refute by a
-  phantom hand-off (the fixrun4 dropped-blocker). The deterministic-pass-first journey
-  re-sequencing + the live Solano acceptance are Slice 3. Guarded by
-  `test-ingest-scanner-findings.mjs` (determinism + severity-from-class + the tag filter +
-  schema conformance over REAL captured Code Analyzer fixtures), `test-reconcile-provenance.mjs`
-  (supersession is precise, conservative, idempotent), and a `test-calibration-fp-patterns.mjs`
-  presence guard on the engine-absent → KEEP clause.
+  phantom hand-off (the fixrun4 dropped-blocker). **Slice 3 (0.8.30) WIRES both engines into
+  the flow — PHASE 1 COMPLETE:** audit-codebase runs the deterministic pass FIRST (Step 4b,
+  before the LLM fan-out — `metadata-viewall` always + `code-analyzer` when a
+  `code-analyzer-*.json` evidence file exists; `sf` absent → PENDING-OWNER-RUN, never LLM-fill,
+  never drop) and `reconcile-provenance.mjs` LAST (end of Step 6, after `merge-ledger.mjs`),
+  with Step 7 re-rendering the recap off the reconciled band; the journey + run-scans document
+  the same ordering; and `docs/deterministic-findings-acceptance.md` is the live-Solano runbook
+  (the campaign replacement — run the engine twice → identical, end-to-end). The three wobbled
+  classes are now deterministic end-to-end. Guarded by `test-ingest-scanner-findings.mjs`
+  (determinism + severity-from-class + the tag filter + schema conformance over REAL captured
+  Code Analyzer fixtures), `test-reconcile-provenance.mjs` (supersession is precise,
+  conservative, idempotent), `test-deterministic-integration.mjs` (the real CLI sequence
+  end-to-end + the journey/audit-codebase grant+invoke+order wiring), and a
+  `test-calibration-fp-patterns.mjs` presence guard on the engine-absent → KEEP clause. Phase 2
+  = the §10 per-scanner adapters (build order 2a/2b).
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -377,8 +386,8 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml
 │   ├── README.md
-│   └── test-*.mjs                   # 54 dependency-free standing tests (554 checks) guarding the harness/ + hooks/ + CI hygiene
-│                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement)
+│   └── test-*.mjs                   # 55 dependency-free standing tests (570 checks) guarding the harness/ + hooks/ + CI hygiene
+│                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
 │   ├── authz-gate-hook.mjs          # NO-OP unless armed (.security-review/hook-armed) + writing authn-authz-flow.md → consults the gate, denies on a live authz hole (fail-closed)

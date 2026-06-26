@@ -387,6 +387,25 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    ledger so confirmed/refuted findings are not re-reported. Declare the
    token-cost tier up front (`quick`/`standard`/`exhaustive`).
 
+   **Deterministic pass FIRST, then reconcile (Phase 1 of
+   `docs/roadmap-deterministic-findings.md`).** audit-codebase now runs the
+   deterministic engines BEFORE its LLM fan-out and reconciles AFTER its merge —
+   the journey just needs to know the ordering this introduces:
+   `harness/ingest-scanner-findings.mjs` seeds `provenance:'deterministic'` findings
+   (the `metadata-viewall` source scan ALWAYS — ViewAll/ModifyAll over-grants, no
+   `sf` needed; the `code-analyzer` adapter WHEN a
+   `.security-review/evidence/code-analyzer-*.json` exists — CRUD/FLS + sharing),
+   then after the merge `harness/reconcile-provenance.mjs` supersedes any co-located
+   `llm-inferred` finding the engine now owns. **`sf`/Code Analyzer absent →
+   PENDING-OWNER-RUN, never LLM-fill, never drop:** with no `code-analyzer-*.json`,
+   CRUD/FLS + sharing stay PENDING and the LLM KEEPS those findings as
+   `llm-inferred`. Note the cold-run ordering: on a first journey run the audit (this
+   step) precedes Scans (Step 5), so the `code-analyzer-*.json` does not exist yet and
+   those classes are PENDING; once the owner has run Code Analyzer (Step 5 Family 1,
+   or out of band) a re-audit ingests it and reconcile supersedes the LLM
+   duplicates — the deterministic band then recurs identically run-to-run (the §8
+   "run the engine twice → identical" replacement for the 5-run campaign).
+
 3. **Blocker-policy gate (automatic — no election since 0.5.2).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
    does NOT halt the run and does NOT offer a fix path — it **auto-proceeds** to
    the full NOT-READY report. It never pauses to fix, never drafts/suggests/writes

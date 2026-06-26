@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — Phase 1 building; Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the live Solano acceptance) next.** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) next.** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -133,12 +133,14 @@ existing PENDING-OWNER-RUN posture for owner-gated scanners.
 - The methodology ALREADY assigns CRUD/FLS dataflow to SFGE and tells the LLM to
   "defer and don't double-report" (`apex-exposed-surface.md:482`).
 
-**Missing (pre-Phase-1 — now mostly shipped):** the scanner→ledger-findings path +
-the `provenance/ruleId` field (Slice 1, 0.8.28); the security-tag filter, the
-merge-engine supersession enforcement, and the engine-absent→KEEP (not LLM-fill/drop)
-rule (Slice 2, 0.8.29). **REMAINING:** the deterministic-pass-FIRST journey
-re-sequencing + wiring `reconcile-provenance` into the merge pipeline (Slice 3), and
-actually running SFGE in the cold journey (owner-gated — §5).
+**Shipped (Phase 1 complete):** the scanner→ledger-findings path + the
+`provenance/ruleId` field (Slice 1, 0.8.28); the security-tag filter, the merge-engine
+supersession enforcement, and the engine-absent→KEEP (not LLM-fill/drop) rule (Slice 2,
+0.8.29); the deterministic-pass-FIRST journey re-sequencing + `reconcile-provenance`
+wired into the merge pipeline + the live Solano acceptance runbook
+(`docs/deterministic-findings-acceptance.md`) (Slice 3, 0.8.30). The only Phase-1
+residual is the owner-gated act of actually running SFGE/Code Analyzer in the cold
+journey (§5) — it is **PENDING-OWNER-RUN by design**, not a code gap.
 
 ## 7. Phasing
 
@@ -178,11 +180,20 @@ actually running SFGE in the cold journey (owner-gated — §5).
     hallucinated hand-off. Guarded by `test-reconcile-provenance` + the updated
     `test-ingest-scanner-findings` (tag filter) + a `test-calibration-fp-patterns` presence
     check (engine-absent → KEEP).
-  - **Slice 3 — NEXT: deterministic-pass-FIRST + live acceptance.** Re-sequence the journey
-    so the engines (Code Analyzer/SFGE, metadata) run and ingest BEFORE the LLM fan-out, and
-    wire `reconcile-provenance` into the merge pipeline (run it after both kinds are in the
-    ledger); add the deterministic acceptance on the live Solano fixture (run the parser
-    twice → identical; the 3 anchors present with class-severity, no LLM in that path).
+  - **Slice 3 — SHIPPED (0.8.30): deterministic-pass-FIRST + live acceptance.** The journey
+    is re-sequenced so the engines (Code Analyzer/SFGE, metadata) run and ingest BEFORE the
+    LLM fan-out — `audit-codebase` Step 4b runs `ingest-scanner-findings.mjs --scanner
+    metadata-viewall` (always) + `--scanner code-analyzer` (when a `code-analyzer-*.json`
+    evidence file exists; `sf` absent → PENDING-OWNER-RUN, never LLM-fill, never drop) — and
+    `reconcile-provenance.mjs` is wired in as the LAST merge step (end of Step 6, after
+    `merge-ledger.mjs`), with Step 7 re-rendering the recap off the reconciled band. The
+    journey + run-scans document the same ordering. The deterministic acceptance on the live
+    Solano fixture is the operator runbook `docs/deterministic-findings-acceptance.md` (run
+    the engine twice → identical; the anchors present with class-severity, no LLM in that
+    path), and the hermetic `acceptance/test-deterministic-integration.mjs` (16 checks) drives
+    the real CLI sequence end-to-end + asserts the journey/audit-codebase grant+invoke+order
+    wiring. **Phase 1 is COMPLETE** — the three wobbled blocker classes are deterministic
+    end-to-end, validated without a campaign.
 - **Phase 2 (the full principle).** Extend provenance-typing to every class, scope
   the LLM fan-out to the labelled residual, wire severity-from-class everywhere,
   and the explicit `llm-inferred` rendering tag throughout the output surfaces.

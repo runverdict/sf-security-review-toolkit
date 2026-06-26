@@ -564,3 +564,12 @@ production-mode verification carries into
 attacks the same endpoints the DAST did, with the credentials that phase
 stages. Findings fixed here belong in the audit ledger so the next
 `/sf-security-review-toolkit:audit-codebase` pass doesn't re-report them.
+
+Family 1's `evidence/code-analyzer-<date>.json` is also consumed by
+audit-codebase's **deterministic pass** (`harness/ingest-scanner-findings.mjs
+--scanner code-analyzer`): on the next audit it becomes `provenance:'deterministic'`
+CRUD/FLS + sharing findings, and `harness/reconcile-provenance.mjs` supersedes the
+co-located LLM duplicates (`docs/roadmap-deterministic-findings.md` Phase 1). So
+running THIS phase is what flips those classes from PENDING-OWNER-RUN to
+deterministic — the deterministic band then recurs identically run-to-run, the
+replacement for the unstable LLM-only blocker sample.

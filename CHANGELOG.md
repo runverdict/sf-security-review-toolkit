@@ -23,6 +23,61 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.30] — 2026-06-26
+
+**Deterministic-findings Phase 1 · Slice 3 — journey integration + live acceptance
+(docs/roadmap-deterministic-findings.md). PHASE 1 COMPLETE.** Slices 1+2 built and unit-tested
+the two engines; this slice WIRES them into the real flow so they APPLY. The deterministic pass
+now runs **FIRST** (before the LLM fan-out) and reconcile runs **LAST** (after the merge), in
+the skills the journey actually drives. Net effect: the three wobbled blocker classes (CRUD/FLS,
+sharing, ViewAll/ModifyAll) are deterministic end-to-end — validated by "run the engine twice →
+identical", not a 5-run campaign. Suite **55 files / 570 checks** (was 54 / 554;
++`test-deterministic-integration` (16)). Tag stays **HELD** (0.9.0 reserved). Phase 2 = the §10
+per-scanner adapters (build order 2a/2b) next.
+
+### Added
+- **`acceptance/test-deterministic-integration.mjs`** (16 checks) — the standing INTEGRATION
+  guard that drives the **real CLI sequence** end to end on a tmp ledger off the committed
+  `acceptance/fixtures/` (no `sf`, no LLM, no network): the deterministic pass
+  (`metadata-viewall` source scan + `code-analyzer` file-parser) seeds
+  `provenance:'deterministic'` CRUD/FLS + ViewAll findings; a co-located same-class LLM finding
+  (standing in for merge-ledger's product) is SUPERSEDED by `reconcile-provenance.mjs` while
+  off-class / off-locus LLM findings SURVIVE; reconcile is idempotent; the reconciled open band
+  excludes the superseded finding. Plus **WIRING assertions**: audit-codebase GRANTS + INVOKES
+  both harnesses with the ingest BEFORE the LLM fan-out (`build-audit-engine.mjs --plugin`) and
+  the reconcile AFTER the merge (`merge-ledger.mjs`), the `sf`-absent → PENDING-OWNER-RUN (never
+  LLM-fill) note present; the journey REFERENCES both harnesses with the same ordering + note.
+- **`docs/deterministic-findings-acceptance.md`** — the operator runbook for the **live** Solano
+  acceptance (Level B, needs `sf` + Code Analyzer): generate the fixture, run Code Analyzer into
+  `evidence/`, run the deterministic pass, confirm the three anchors come through
+  `provenance:'deterministic'` from the scanner (severity-from-class, no LLM in that path), the
+  co-located LLM duplicates are superseded, and — the campaign replacement — the **deterministic
+  band is byte-identical run-to-run**. Documents the honest ceiling (only the deterministic-owned
+  classes are stable; the LLM residual is still a sample; Salesforce pen-tests regardless).
+
+### Changed
+- **`skills/audit-codebase/SKILL.md`** — new **Step 4b "Deterministic pass FIRST"**: before the
+  Step 5 LLM fan-out, run `ingest-scanner-findings.mjs --scanner metadata-viewall` (always) and
+  `--scanner code-analyzer` (when a `.security-review/evidence/code-analyzer-*.json` exists), so a
+  `provenance:'deterministic'` finding exists when the verifier defers; **`sf` absent →
+  PENDING-OWNER-RUN, never LLM-fill, never drop** (the LLM KEEPS those findings as `llm-inferred`
+  — the fixrun4 dropped-blocker fix). At the end of **Step 6** (after `merge-ledger.mjs`), run
+  `reconcile-provenance.mjs --target` as the LAST merge step; **Step 7** now RE-RENDERS the recap
+  so the headline + band reflect the reconciled state. Both harnesses added to `allowed-tools`.
+- **`skills/security-review-journey/SKILL.md`** — the Audit step (AUTONOMOUS RUN Step 2) now
+  documents the deterministic-pass-before-fan-out + reconcile-after-merge ordering audit-codebase
+  introduces, the `sf`-absent → PENDING posture, and the cold-run note (Scans produces the Code
+  Analyzer JSON after the audit, so CRUD/FLS is PENDING on a first run and deterministic on
+  re-audit).
+- **`skills/run-scans/SKILL.md`** — "What feeds the next skill" now states that Family 1's
+  `code-analyzer-<date>.json` is consumed by audit-codebase's deterministic pass: running this
+  phase is what flips the CRUD/FLS + sharing classes from PENDING-OWNER-RUN to deterministic.
+
+### Roadmap
+- `docs/roadmap-deterministic-findings.md` — **Slice 3 shipped; Phase 1 COMPLETE.** The three
+  wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2
+  (the §10 per-scanner adapters, build order 2a/2b) is next.
+
 ## [0.8.29] — 2026-06-26
 
 **Deterministic-findings Phase 1 · Slice 2 — the correctness core

@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -151,6 +151,44 @@ regardless of anything this engine produces.
    again. Never let an LLM rewrite ledger entries — the merge is mechanical
    (step 6) or the dedup keys corrupt.
 
+4b. **Deterministic pass FIRST — the engines seed the ledger before the LLM
+   fan-out** (Phase 1 of `docs/roadmap-deterministic-findings.md`). A 5-run cold
+   campaign proved the LLM-generated CRUD/FLS band is unstable run-to-run
+   (high·high·ABSENT·high·high on identical code), while Code Analyzer (PMD/SFGE)
+   and the permission-set metadata scan find those exact classes
+   DETERMINISTICALLY. Run them NOW — before Step 5's LLM fan-out — so a
+   `provenance:'deterministic'` finding already exists in the ledger when the
+   verifier defers to it (the Slice-2 "defer to the engine ONLY when it actually
+   ran" rule in `apex-exposed-surface.md` §5/§6 keys off exactly this evidence):
+
+   - **Always** run the metadata source scan — it needs neither `sf` nor the
+     network (it greps the repo's `*.permissionset-meta.xml` for ViewAll/ModifyAll
+     over-grants on custom objects):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --scanner metadata-viewall --target <target>`.
+   - **When `<target>/.security-review/evidence/code-analyzer-*.json` exists** — the
+     owner ran `sf code-analyzer`, or `/sf-security-review-toolkit:run-scans` Family 1
+     produced it on a prior pass — ingest it too; this is what makes the CRUD/FLS +
+     sharing classes deterministic:
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --scanner code-analyzer --input <that code-analyzer-*.json> --target <target>`.
+     Each security-tagged violation becomes a `provenance:'deterministic'` finding
+     carrying its `engine` + `ruleId`, severity READ FROM the requirement class —
+     relayed verbatim, never re-judged or re-severitied by the LLM.
+   - **`sf`/Code Analyzer absent → PENDING-OWNER-RUN, never LLM-fill, never drop.**
+     When no `code-analyzer-*.json` exists, Code Analyzer has not run, so the
+     CRUD/FLS + sharing classes stay **PENDING-OWNER-RUN** (prompt the owner to
+     install `sf` + the Code Analyzer plugin and run
+     `/sf-security-review-toolkit:run-scans` to make these deterministic). The LLM
+     fan-out still audits those classes and **KEEPS** its findings as
+     `llm-inferred` — it is NOT licensed to defer to an engine that never ran (that
+     phantom hand-off, dropping a real FLS blocker to a scanner with no output, is
+     the fixrun4 failure the Slice-2 methodology fix closed). The metadata scan
+     above is unconditional; only the Code-Analyzer-owned classes go PENDING.
+
+   Read-only on the partner source except the ledger it seeds. Re-ingest is
+   idempotent (a deterministic id is stable from `engine+ruleId+file:line`), so
+   running this on every pass never duplicates — and Step 6's reconcile, after the
+   merge, is what demotes any co-located LLM finding the engine now owns.
+
 5. **Run the engine.** Preferred substrate: the Workflow tool with a project-local
    copy of `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`, assembled by the
    shipped `build-audit-engine.mjs` (next). You do NOT hand-extract prompts or
@@ -261,13 +299,33 @@ regardless of anything this engine produces.
    `.security-review/run-log.md`. Surface the unverified list from the run. Do NOT
    hand-edit ledger entries.
 
+   **Then reconcile provenance — the LAST step of the merge phase.** After
+   `merge-ledger.mjs` has folded the LLM findings into the ledger, run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/reconcile-provenance.mjs --target <target>`.
+   A `provenance:'deterministic'` finding from Step 4b that owns a class, sitting in
+   the SAME owned class at the SAME locus as an `llm-inferred` finding, demotes that
+   LLM finding to `status:'superseded'` (`superseded_by` → the deterministic id) — so
+   the LLM never re-reports or re-judges what an engine already determined. It runs
+   AFTER the merge because both the deterministic findings (Step 4b) and the LLM
+   findings must be in the ledger first; it is conservative (only an OWNED class at
+   an overlapping locus supersedes — a different class, a non-overlapping locus, or
+   an unmapped deterministic finding leaves the LLM finding untouched) and it MARKS,
+   never deletes (pure + idempotent, so a re-run supersedes nothing new). Because
+   `merge-ledger.mjs` already printed its operator recap BEFORE this supersession,
+   Step 7 RE-RENDERS the recap so the headline + band reflect the reconciled state.
+
 7. **Print the recap, then gate and route.** `merge-ledger.mjs` (Step 6) emits a
    FIXED operator recap block to stdout via `harness/render-recap.mjs` — LED BY the
    same finding-cluster headline as the exec summary, then dimensions-ran ·
    candidate/confirmed/refuted/unverified counts · the PROCEED/HALT verdict · the
-   not-covered caveat lines. **Print that stdout block VERBATIM** (or re-render it with
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/render-recap.mjs --target <target>`); never
-   paraphrase, reorder, or hand-rebuild it. Then gate: open `critical`/`high` findings
+   not-covered caveat lines. **Because Step 6's `reconcile-provenance.mjs` ran AFTER
+   `merge-ledger.mjs` printed its recap, RE-RENDER the recap so it reflects the
+   reconciled band** — `node ${CLAUDE_PLUGIN_ROOT}/harness/render-recap.mjs --target
+   <target>` — and print THAT stdout block VERBATIM; never paraphrase, reorder, or
+   hand-rebuild it. (A superseded finding carries `status:'superseded'`, so it drops
+   out of the open band the headline and PROCEED/HALT verdict read — the re-render is
+   what propagates the supersession to the operator-facing recap.) Then gate: open
+   `critical`/`high` findings
    halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the
    AuthN/AuthZ artifact would otherwise document the vulnerable flow.
