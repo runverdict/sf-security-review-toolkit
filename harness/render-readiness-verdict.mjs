@@ -146,6 +146,14 @@ export const REGISTERED_SURFACES = Object.freeze([
     renderers: Object.freeze(['render-sf-autoresolve.mjs']),
     skill: 'skills/scope-submission/SKILL.md',
   }),
+  // WI-06 (Slice 5) — the final scope-manifest summary (INV-06): printed VERBATIM at
+  // scope-submission Step 9, right before the `scope-confirm` gate.
+  Object.freeze({
+    id: 'scope-summary',
+    template: 'harness/render-scope-summary.mjs',
+    renderers: Object.freeze(['render-scope-summary.mjs']),
+    skill: 'skills/scope-submission/SKILL.md',
+  }),
 ])
 
 /**

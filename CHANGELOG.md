@@ -23,6 +23,83 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.27] — 2026-06-26
+
+**Presentation-consistency Slice 5 — WI-06 GATES half (the scope-submission gates + final
+confirm; INV-05/30/31/32/06). COMPLETES WI-06.** Slice 4 (0.8.25) pinned the scope-submission
+REPORT renders; this pins the GATES, applying the gate-spec contract (the ENGINE owns the option
+set, the driver renders it VERBATIM) to the last freehand-prompt surfaces in Phase 0. Two semantic
+classes, encoded by a new `kind` field on every catalog entry (`consent` ⟺ `consent:true`,
+validated at load): **CONSENT-to-act** gates (force-injected decline + the chosen `decision` pipes
+to `record-consent`) and **ANSWER** gates (the selected option is RECORDED into the scope manifest,
+NOT a consent-to-act — no force-injected decline, not piped). Presentation-only — the finding band
+is unchanged, so the 0.8.21 cold tag still certifies it; do NOT re-run the campaign. Suite
+**52 files / 499 checks** (was 50 / 471 — +`test-scope-gates` (17) + `test-render-scope-summary`
+(11)). Tag stays **HELD**.
+
+### Added
+- **`harness/gate-spec.mjs`** — six new gates pinning the scope-submission option sets, plus a
+  `kind` taxonomy (`consent | election | answer`) returned on every payload and load-validated
+  (`consent ⟺ kind:'consent'`):
+  - **`mcp-probe`** (WI-30/INV-30, CONSENT) — the live-endpoint read-only-probe gate. The operator
+    picks `STAGING` or `PRODUCTION` (both `affirm`) — that selection IS the environment
+    confirmation, so production is never probed silently — or the force-injected `Skip — do not
+    probe` (`deny`). `{{URL}}` is the only fillable datum, rendered via a function-replacer so a
+    `$`-bearing URL can't expand the template. Throws without `facts.url`.
+  - **`scope-confirm`** (WI-06/INV-06, CONSENT) — the final-manifest confirm, mirroring the WI-02
+    audit-tier confirm: `{Confirm scope & proceed (default) → affirm, Correct the scope → deny,
+    Cancel → deny}`. `Correct the scope` is a navigation-by-label re-open; both non-confirm options
+    are the FAIL-SAFE `deny` (never authorize a proceed).
+  - **`partner-program`** (WI-05/INV-05, ANSWER family) — the SIX preflight gates (agreement · PBO ·
+    promoted · namespace · listing · contacts) via `facts.subGate`, each a FIXED `Yes → affirm /
+    No → deny` whose answer is recorded into `operatorConfirmed.<key>`. The `promoted` gate offers
+    an `N/A — no package in scope` option ONLY when `facts.noPackage` (no package element); that N/A
+    is recorded (by its LABEL) as the distinct `"n/a"` sentinel — NOT `false` — so a legitimate
+    MCP-server-only / external-app listing is never shown as a failed promotion gate. Throws on a
+    missing/unknown sub-gate.
+  - **`clarify-detection`** (WI-31/INV-31, ANSWER) — the NEED-FROM-YOU gate for an ambiguous element
+    (`present → affirm / not present → deny / unsure-investigate → deny`); `{{ELEMENT}}` fills the
+    question. Throws without `facts.element`. ASK rather than omit — an undetected element drops a
+    dimension, an over-detected one drags in a track.
+  - **`listing-type`** + **`tenancy`** (WI-32/INV-32, ANSWER) — the two CLOSED choices (managed-pkg /
+    mcp-server / both; multi-tenant / single-tenant). Categorical (all `affirm`), the chosen LABEL
+    recorded into the manifest. The free-text security-model CLAIMS stay free-text, deliberately
+    un-pinned.
+  - CLI conveniences `--sub-gate`, `--no-package`, `--url`, `--element` (an explicit `--facts` wins);
+    `assertCatalogWellFormed` now EXERCISES every gate through the real selector at load (the
+    strongest catalog self-check) and validates the new templates + the partner-program sub-catalog.
+- **`harness/render-scope-summary.mjs`** (WI-06/INV-06) — the VERBATIM final scope-manifest summary
+  printed at Step 9: a FIXED-field readout (listing type · direction · auto-resolution · repo
+  commit · element list in `CANONICAL_ELEMENT_ORDER` · endpoints WITH environment labels, a missing
+  one flagged `⚠ UNLABELED` · the applicable count = exact `applicableBaselineIds` length · the
+  partner-program gate states rendered HONESTLY from `operatorConfirmed`: ✓ confirmed / ✗ NOT
+  confirmed / — N/A (the promoted gate's `"n/a"` sentinel, never a ✗ blocker) / (not recorded),
+  never a fabricated ✓ and never collapsing an N/A into a ✗). Deterministic + pure; a
+  missing/non-JSON/non-object manifest → an explicit "scope not finalized" line, NEVER a fabricated
+  "ready/confirmed" state. Registered in `REGISTERED_SURFACES` (`render-readiness-verdict.mjs`).
+- **`acceptance/test-scope-gates.mjs`** (17) + **`acceptance/test-render-scope-summary.mjs`** (11) —
+  the Slice-5 standing tests: per-gate determinism + golden option snapshots + fail-closed throws +
+  the force-injected decline on the CONSENT gates / none on the ANSWER gates + the `kind` semantics
+  distinction + the consent decisions round-tripping through `recordConsent` + the promoted-N/A
+  conditional + the `$`-bearing-URL/element-literal guards + the gate→manifest→render N/A honesty
+  seam (the `"n/a"` sentinel renders not-applicable, never ✗) + the writer/reader manifest-key
+  cross-lock (`PARTNER_PROGRAM_SUBGATES.manifestKey` == `PREFLIGHT_GATES` keys) + the
+  whitespace-only-environment loud-flag + the scope-summary skeleton/fail-safe/registration + the
+  scope-submission wiring.
+
+### Changed
+- **`skills/scope-submission/SKILL.md`** — Steps 2/3/5/6/9 now route their gates through `gate-spec`
+  and render VERBATIM (replacing the freehand table-as-prompt in step 5): Step 2 `clarify-detection`
+  on ambiguous detection; Step 3 `mcp-probe` CONSENT + `record-consent` BEFORE any curl probe; Step 5
+  the six `partner-program` sub-gates (with the sub-gate → `operatorConfirmed` key map); Step 6
+  `listing-type` + `tenancy`; Step 9 prints `render-scope-summary` verbatim then runs the
+  `scope-confirm` CONSENT gate + records it. `allowed-tools` grants `gate-spec`, `record-consent`,
+  and `render-scope-summary`; the Automated-vs-manual recap records the gate-pinning.
+- **`acceptance/test-gate-spec.mjs`** — the G4 "every consent gate" reps map gains `mcp-probe` and
+  `scope-confirm` (a new consent gate must register representative facts there).
+- **`docs/roadmap-presentation-consistency.md`** — WI-06 flipped PARTIAL → DONE; INV-05/06/30/31/32
+  flipped to ✓ (0.8.27). WI-07…WI-12 remain backlog.
+
 ## [0.8.26] — 2026-06-26
 
 **Honesty-hardening — three contract fixes the Slice-4 off-disk grade surfaced (presentation /

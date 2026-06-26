@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -72,6 +72,22 @@ elements, get the requirement list those elements imply.
    endpoints, tools metadata, per-user authz proof) for surfaces that don't
    exist, and the submission reads as confused.
 
+   **When detection is ambiguous, ASK — through the pinned gate, not a freehand
+   question.** Both failure modes above are detection ambiguity; resolve each by
+   running the `clarify-detection` gate so the option set (present / not present /
+   unsure-investigate) is FIXED run-to-run, and render its `label`/`description`
+   VERBATIM rather than improvising the prompt:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate clarify-detection --element "<element>"
+   ```
+
+   `Present` adds the element to the detected set (its audit dimension runs);
+   `Not present` keeps it out (an over-detected MCP-client config does not drag in
+   the MCP track); `Unsure` records nothing and flags it for investigation. This is
+   an ANSWER gate — the selected option adjusts the detected-element set; it is NOT
+   piped to record-consent.
+
    **Agentforce detection self-check — a miss silently drops 12 requirements.**
    The `agentforce-*` baseline requirements (incl. the three BLOCKER auto-fails:
    VerifiedCustomerId scoping, user-controlled record refs, third-party-LLM)
@@ -127,6 +143,27 @@ elements, get the requirement list those elements imply.
    `/sf-security-review-toolkit:run-scans` — a production URL recorded without
    an environment label becomes a production DAST scan three phases later.
    Label every endpoint.
+
+   **Confirm the URL + environment through the `mcp-probe` CONSENT gate before any
+   probe — and record the decision.** Probing a live URL is a real outbound action,
+   so it is a recorded consent, never a silence-is-yes. Render the gate's options
+   VERBATIM; the operator's choice of staging-vs-production IS the environment
+   confirmation, so production is never probed silently:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate mcp-probe --url "<MCP_URL>"
+   ```
+
+   Pipe the chosen option's `decision` token to `record-consent` BEFORE running any
+   curl; the force-injected `Skip — do not probe` default records a deny and the
+   handshake physically does not run:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate mcp-probe \
+     --answer "<selected option label>" --decision <affirm|deny> --target <target>
+   ```
+
+   Only on a recorded affirm do the curl handshakes below run.
 
    With consent, a single pass captures everything the manifest needs:
 
@@ -283,18 +320,49 @@ elements, get the requirement list those elements imply.
    operator reconciles each, never silently substituted). It never renders a secret
    (CONVENTIONS §6): a secret-named key or token-shaped value is redacted in the output.
 
-5. **Run the partner-program preflight gates.** These are operator questions,
-   not detections (baseline: `process-partner-program-prerequisites`) — a
-   submission can be technically perfect and still blocked here:
+5. **Run the partner-program preflight gates — through the pinned gate, one per
+   sub-gate.** These are operator questions, not detections (baseline:
+   `process-partner-program-prerequisites`) — a submission can be technically
+   perfect and still blocked here. Run each of the SIX sub-gates through
+   `gate-spec` so the question + option set are FIXED run-to-run, and render each
+   option's `label`/`description` VERBATIM (do not improvise the prompt — that
+   freehand table-as-prompt drifted run-to-run):
 
-   | Gate | Question | Why it blocks |
-   |---|---|---|
-   | Partner agreement | Signed and active? | Nothing can be submitted without program enrollment |
-   | Partner Business Org | PBO exists, and you have Partner Console access? | The Security Review Wizard lives in the Partner Console |
-   | Package promoted | Is the package version promoted/released? If step 4 ran, `sf-autoresolve.json` already carries `IsReleased` / `ValidationSkipped` — read it; otherwise verify with `sf package version list`. A **beta 2GP cannot be submitted** | Review attaches to a released version; beta versions are rejected at intake |
-   | Namespace | Registered and linked to the Dev Hub? Step 4 can *read* the linked namespace, but **registration stays a manual DevHub "Link Namespace" action** (`NamespaceRegistry` is not API-writable) | Packaging and listing identity both hang off it |
-   | Listing | Created in the Partner Console? | The review attaches to a listing object |
-   | Review contacts | Primary **and** backup contact designated? | Reviewer questions to an unmonitored inbox stall the clock silently |
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate agreement
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate pbo
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate promoted    # add --no-package when NO package element
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate namespace
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate listing
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate contacts
+   ```
+
+   These are ANSWER gates — record each answer into the manifest
+   `operatorConfirmed.<key>` from the chosen option's `decision` (`affirm`→`true`,
+   `deny`→`false`; the `promoted` gate's `N/A` option is the ONE exception — see
+   below), NOT through record-consent. The sub-gate → manifest-key map:
+
+   | Sub-gate | manifest `operatorConfirmed` key |
+   |---|---|
+   | agreement | partnerAgreementSigned |
+   | pbo | partnerConsoleAccess |
+   | promoted | packagePromoted |
+   | namespace | namespaceRegisteredAndLinked |
+   | listing | listingCreated |
+   | contacts | reviewContactsDesignated |
+
+   Each gate's `description` carries the FIXED "why it blocks" reasoning (a beta 2GP
+   cannot be submitted; the review attaches to a released version; namespace
+   **registration** stays a manual DevHub "Link Namespace" action — `NamespaceRegistry`
+   is not API-writable; reviewer questions to an unmonitored inbox stall the clock).
+   The `promoted` gate offers an `N/A — no package in scope` option only when you
+   pass `--no-package` (no package element detected). Recording the N/A option —
+   detected by its LABEL, the same way `scope-confirm`'s "Correct the scope" is —
+   writes `operatorConfirmed.packagePromoted: "n/a"` (NOT `false`, which would read as
+   a failed promotion gate), so a legitimate MCP-server-only / external-app listing is
+   never shown as a blocker in the Step-9 summary (`render-scope-summary` renders the
+   `"n/a"` sentinel as an explicit not-applicable cell). Answer N/A to skip the
+   promotion check honestly, never by omitting the gate.
 
    Note the review fee for paid listings — the settled per-attempt
    semantics: Returned submissions and false-positive-only responses
@@ -305,15 +373,28 @@ elements, get the requirement list those elements imply.
    entry's one open facet: whether the schedule applies as-is to
    MCP-server/API-solution listings — route that to the operator's Partner
    Account Manager. Record every answer in the manifest under
-   `operatorConfirmed`; skip the package-promoted gate only when no package
-   element was detected.
+   `operatorConfirmed`; for the package-promoted gate, pass `--no-package` when no
+   package element was detected so the operator answers `N/A` (recorded as `"n/a"`,
+   never a `false` blocker) rather than omitting the gate.
 
-6. **Ask what code cannot reveal.** Listing type (managed package, external
-   MCP server, both), multi-tenant or single-tenant-per-deployment (drives the
-   tenant-isolation dimension), the claimed security model (isolation
-   mechanism, auth design — recorded as *claims* for the audit to verify,
-   never as facts), and a one-line product description for the shared audit
-   context.
+6. **Ask what code cannot reveal.** Two of these are CLOSED choices — run them
+   through `gate-spec` so the option set is pinned, and render `label`/`description`
+   VERBATIM:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate listing-type
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate tenancy
+   ```
+
+   `listing-type` (managed package / MCP server / both) records the chosen LABEL
+   into the manifest `listingType`; `tenancy` (multi-tenant /
+   single-tenant-per-deployment, which drives the tenant-isolation dimension)
+   records into `securityModelClaims.tenancy`. Both are ANSWER gates — record the
+   selected label into the manifest, NOT through record-consent. The remaining two
+   stay FREE-TEXT, deliberately un-pinned: the claimed security model (isolation
+   mechanism, auth design — recorded as *claims* for the audit to verify, never as
+   facts; do NOT try to pin a free-text answer) and a one-line product description
+   for the shared audit context.
 
 7. **Compile "which requirements apply to you" — deterministically.** Run
    `node ${CLAUDE_PLUGIN_ROOT}/harness/applicable-requirements.mjs
@@ -437,9 +518,41 @@ elements, get the requirement list those elements imply.
 
 9. **Show the manifest summary and get an explicit confirm/correct from the
    operator** before recommending the next phase. This is the cheap moment to
-   fix scope; every later phase multiplies an error here. Then state the
-   staleness contract out loud: the manifest is a snapshot at `repoCommit`.
-   Downstream skills spot-check it against the repo (changed
+   fix scope; every later phase multiplies an error here. Print the FIXED summary
+   render's stdout BYTE-FOR-BYTE (CONVENTIONS §7 — never paraphrase, reorder, or
+   drop a field):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/render-scope-summary.mjs --target <target>
+   ```
+
+   It emits the fixed readout (listing type · listing direction · auto-resolution ·
+   repo commit · the element list · endpoints WITH their environment labels · the
+   applicable count · the partner-program gate states rendered HONESTLY from
+   `operatorConfirmed` — ✓ confirmed / ✗ NOT confirmed / (not recorded), never a
+   fabricated ✓), flags any endpoint missing its environment as `⚠ UNLABELED`, and
+   on a missing/unfinalized manifest renders an explicit "scope not finalized" line —
+   never a fabricated "ready/confirmed" state.
+
+   Then run the `scope-confirm` CONSENT gate and render its options VERBATIM:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate scope-confirm
+   ```
+
+   `Confirm scope & proceed` records an affirm via `record-consent` and is the only
+   path that proceeds; `Correct the scope` (a navigation branch detected by LABEL,
+   re-open this skill) and the force-injected `Cancel` both record a deny and
+   stop — mirroring the WI-02 audit-tier confirm. Record the decision before
+   recommending the next phase:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scope-confirm \
+     --answer "<selected option label>" --decision <affirm|deny> --target <target>
+   ```
+
+   Then state the staleness contract out loud: the manifest is a snapshot at
+   `repoCommit`. Downstream skills spot-check it against the repo (changed
    `sfdx-project.json`, changed MCP tool count, new routes) and will bounce
    back here when it drifts — re-running this skill after an architecture
    change is normal operation, not failure.
@@ -460,6 +573,14 @@ every partner-program gate answer, namespace **registration** (DevHub Link-
 Namespace button only), listing-type decision, security-model claims, and the
 final confirmation of the element list. Nothing in this phase verifies
 security — it decides what will be examined.
+
+Every operator-facing gate in this phase — the live-probe consent (`mcp-probe`),
+the six partner-program preflight gates, the clarify-detection NEED-FROM-YOU, the
+listing-type / tenancy closed choices, and the final `scope-confirm` — renders
+through the FROZEN `gate-spec` catalog, so its option set is byte-identical
+run-to-run; the consents-to-act (`mcp-probe`, `scope-confirm`) are recorded via
+`record-consent`, the answer gates into the manifest. The final summary prints
+through `render-scope-summary.mjs` VERBATIM.
 
 ## What feeds the next skill
 

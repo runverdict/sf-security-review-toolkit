@@ -152,7 +152,13 @@ check('G4 force-injection: the decline is present on EVERY consent gate, even wh
   assert.ok(!GATE_CATALOG['audit-tier'].firstPass.some((o) => o.decision === 'deny'),
     'pre-injection: the static audit-tier firstPass set has no decline')
   // every consent gate's emitted options carry the gate's exact safeDefault decline.
-  const reps = { 'audit-tier': {}, 'scanner-install': SCANNERS }
+  // A new consent gate MUST get a representative-facts entry here (the loop asserts it).
+  const reps = {
+    'audit-tier': {},
+    'scanner-install': SCANNERS,
+    'mcp-probe': { url: 'https://example.test/mcp' },
+    'scope-confirm': {},
+  }
   for (const [gate, spec] of Object.entries(GATE_CATALOG)) {
     if (!spec.consent) continue
     // a new consent gate added to the catalog MUST get a representative-facts entry

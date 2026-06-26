@@ -72,6 +72,7 @@ const GATE_CATALOG = Object.freeze({
   // there is no decline, so NO safe-default is injected. Pinned 2-option set.
   'run-mode': Object.freeze({
     consent: false,
+    kind: 'election',
     header: 'Run mode',
     question: 'How should I run the review — fully autonomous, or pausing at each decision?',
     base: Object.freeze([
@@ -99,6 +100,7 @@ const GATE_CATALOG = Object.freeze({
   // offered-it drift. Exhaustive is OFFERED but never pre-selected.
   'audit-tier': Object.freeze({
     consent: true,
+    kind: 'consent',
     header: 'Audit tier',
     question: 'Which audit depth, and go-ahead to launch the fan-out?',
     confirmHeader: 'Launch audit',
@@ -144,6 +146,7 @@ const GATE_CATALOG = Object.freeze({
   // installable_missing set passed in facts.scanners.
   'scanner-install': Object.freeze({
     consent: true,
+    kind: 'consent',
     header: 'Scanners',
     question: 'Install the missing scanners to a per-run temp dir for this run?',
     // The full sha256 / tmp-removed / evidence-kept / "this yes also covers RUNNING
@@ -161,6 +164,230 @@ const GATE_CATALOG = Object.freeze({
         'fetched and no scanner runs.',
       decision: 'deny',
     }),
+  }),
+
+  // ── Slice 5 (WI-05/30/31/32/06) — the scope-submission gates ──────────────────
+  // TWO semantic classes live below; the `kind` field encodes which (validated at load):
+  //   - kind:'consent' — a real CONSENT-to-act (mcp-probe, scope-confirm): the safe-default
+  //     decline is FORCE-INJECTED and the chosen option's `decision` pipes to record-consent.
+  //   - kind:'answer'  — an operator QUESTION whose SELECTED option is RECORDED into the scope
+  //     manifest (partner-program, clarify-detection, listing-type, tenancy): NO force-injected
+  //     decline, NOT piped to record-consent. The option set is still pinned so it renders
+  //     verbatim run-to-run; the `decision` token is the recorded POLARITY (affirm = the
+  //     present/yes/selected value, deny = the absent/no value) — never a consent-to-act.
+  // (`kind:'election'` — run-mode — is the third, pre-existing class: both options proceed.)
+
+  // mcp-probe (WI-30/INV-30) — CONSENT to a live read-only handshake. Probing a URL is a real
+  // outbound action; the operator's choice of staging-vs-production IS the environment
+  // confirmation scope-submission step 3 requires, so a production endpoint is never probed
+  // silently. {{URL}} is the only fillable datum; a function-replacer renders a $-bearing URL
+  // literally (the scanner-install lesson).
+  'mcp-probe': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Probe MCP endpoint',
+    question: 'Confirm this endpoint and its environment before the read-only MCP handshake.',
+    probeTemplate: Object.freeze({
+      staging:
+        'Confirm {{URL}} is a STAGING endpoint and run the read-only initialize + tools/list ' +
+        'handshake. The handshake itself is read-only, but the endpoints recorded here become the ' +
+        'DAST target list three phases later — the environment label rides with them.',
+      production:
+        'Confirm {{URL}} is a PRODUCTION endpoint and run the read-only handshake. Production is ' +
+        'probed ONLY with this explicit confirmation, never silently — an unlabeled production URL ' +
+        'becomes a production DAST scan downstream.',
+    }),
+    safeDefault: Object.freeze({
+      label: 'Skip — do not probe',
+      description:
+        'Record the MCP facts from code as "probed": false and move on. Nothing is fetched and no ' +
+        'live handshake runs; downstream skills re-probe under their own consent.',
+      decision: 'deny',
+    }),
+  }),
+
+  // scope-confirm (WI-06/INV-06) — the final manifest CONSENT, mirroring the WI-02 audit-tier
+  // confirm variant: {Confirm & proceed (default), Correct the scope, Cancel}. 'Correct the
+  // scope' is a NAVIGATION branch the driver detects by LABEL (re-open scope-submission); its
+  // decision is 'deny' as the FAIL-SAFE, exactly like WI-02's 'Change tier' — neither it nor
+  // the force-injected Cancel ever authorizes a proceed.
+  'scope-confirm': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Confirm scope',
+    question: 'The scope manifest is written. Confirm it and proceed, correct the scope, or cancel?',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Confirm scope & proceed (recommended)',
+        description:
+          'Accept the manifest as the input contract for every downstream phase. This is the cheapest ' +
+          'moment to fix scope — every later phase multiplies an error here (the audit fans out against ' +
+          'the wrong surface set; the DAST scope comes up narrower than the architecture diagram).',
+        decision: 'affirm',
+      }),
+      Object.freeze({
+        label: 'Correct the scope',
+        description:
+          'Re-open scope-submission to fix an element, endpoint, gate answer, or listing field before ' +
+          'anything is audited. Nothing proceeds until you re-confirm the corrected manifest.',
+        decision: 'deny',
+      }),
+    ]),
+    safeDefault: Object.freeze({
+      label: 'Cancel — do not proceed',
+      description:
+        'Stop here and record no scope confirmation. No downstream phase runs without a recorded ' +
+        'confirmation, so nothing proceeds.',
+      decision: 'deny',
+    }),
+  }),
+
+  // partner-program (WI-05/INV-05) — the SIX preflight ANSWER gates (baseline
+  // process-partner-program-prerequisites). facts.subGate selects which; each renders a FIXED
+  // Yes/No question whose answer is RECORDED into manifest operatorConfirmed.<key>. The
+  // 'promoted' sub-gate adds an N/A option ONLY when facts.noPackage is set (no package element →
+  // promotion does not apply). Definitions live in PARTNER_PROGRAM_SUBGATES below.
+  'partner-program': Object.freeze({
+    consent: false,
+    kind: 'answer',
+    header: 'Partner program',
+    question: 'Partner-program preflight gate.',
+  }),
+
+  // clarify-detection (WI-31/INV-31) — the NEED-FROM-YOU gate for an AMBIGUOUS element (step 2's
+  // two failure modes: an undetected element silently drops a dimension; an over-detected MCP
+  // client config drags in a whole track). ASK rather than omit. facts.element names the element;
+  // the answer adjusts the detected-element set. ANSWER gate — recorded, not consent.
+  'clarify-detection': Object.freeze({
+    consent: false,
+    kind: 'answer',
+    header: 'Clarify detection',
+    questionTemplate:
+      'Detection is ambiguous for "{{ELEMENT}}". Confirm it rather than omit — an undetected element ' +
+      'silently drops its whole audit dimension, and an over-detected one drags in a track that does not exist.',
+    opts: Object.freeze({
+      present:
+        'Confirm "{{ELEMENT}}" IS part of the submission. It is added to the detected element set and its ' +
+        'audit dimension runs.',
+      absent:
+        'Confirm "{{ELEMENT}}" is NOT part of the submission; it stays out of scope. (A Named Credential ' +
+        "pointing at someone else's MCP server makes the partner a client, not a server operator — no " +
+        'mcp-server element is added.)',
+      unsure:
+        'Do not record either way — flag "{{ELEMENT}}" for investigation. The safe default when you cannot ' +
+        'confirm: an un-investigated guess is exactly what drops a dimension or fabricates a track.',
+    }),
+  }),
+
+  // listing-type (WI-32/INV-32) — the CLOSED-choice listing type. A CATEGORICAL answer gate:
+  // every option is a valid recorded selection (all 'affirm'), the driver records the chosen
+  // LABEL into manifest listingType. The free-text security-model CLAIMS stay free-text (recorded
+  // as claims, never pinned — per the WI-32 boundary).
+  'listing-type': Object.freeze({
+    consent: false,
+    kind: 'answer',
+    header: 'Listing type',
+    question: 'What is the listing type? (drives which submission track applies)',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Managed package',
+        description:
+          'An installable managed 2GP only — the package-scanning track (Code Analyzer, package metadata, ' +
+          'permission sets).',
+        decision: 'affirm',
+      }),
+      Object.freeze({
+        label: 'MCP server',
+        description:
+          'An external MCP server only — the endpoint/DAST + MCP-surface track. Note: every AgentExchange ' +
+          'listing is ALSO an installable managed package, so if any package ships, pick "Both".',
+        decision: 'affirm',
+      }),
+      Object.freeze({
+        label: 'Both',
+        description:
+          'A managed package AND an external MCP server — BOTH tracks. The common AgentExchange case: a thin ' +
+          'registration package plus the server it registers.',
+        decision: 'affirm',
+      }),
+    ]),
+  }),
+
+  // tenancy (WI-32/INV-32) — the CLOSED-choice tenancy model (drives the tenant-isolation
+  // dimension). A CATEGORICAL answer gate: both options 'affirm', the chosen LABEL recorded into
+  // manifest securityModelClaims.tenancy.
+  'tenancy': Object.freeze({
+    consent: false,
+    kind: 'answer',
+    header: 'Tenancy',
+    question: 'What is the tenancy model? (drives the tenant-isolation audit dimension)',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Multi-tenant',
+        description:
+          'One deployment serves multiple customer orgs — tenant-isolation is a primary, high-stakes audit ' +
+          'dimension (cross-tenant leakage is an auto-fail class).',
+        decision: 'affirm',
+      }),
+      Object.freeze({
+        label: 'Single-tenant per deployment',
+        description:
+          'Each customer gets an isolated deployment — cross-tenant leakage is structurally limited, but ' +
+          'per-deployment hardening (secrets, auth, egress) still applies.',
+        decision: 'affirm',
+      }),
+    ]),
+  }),
+})
+
+// The SIX partner-program preflight sub-gates (scope-submission step 5 / baseline
+// process-partner-program-prerequisites), in the step-5 order. Each is a FIXED Yes/No ANSWER
+// gate; `manifestKey` is the manifest operatorConfirmed.<key> the driver records the answer into;
+// the `yes`/`no` clauses carry the FIXED "why it blocks" reasoning. The selector renders
+// Yes→affirm / No→deny; the 'promoted' gate adds the `na` option only when no package element.
+const PARTNER_PROGRAM_SUBGATES = Object.freeze({
+  agreement: Object.freeze({
+    header: 'Partner agreement',
+    manifestKey: 'partnerAgreementSigned',
+    question: 'Is your partner agreement signed and active?',
+    yes: 'The partner agreement is signed and program enrollment is active.',
+    no: 'Not signed/active. Nothing can be submitted without program enrollment — this blocks the whole submission.',
+  }),
+  pbo: Object.freeze({
+    header: 'Partner Business Org',
+    manifestKey: 'partnerConsoleAccess',
+    question: 'Does a Partner Business Org (PBO) exist, and do you have Partner Console access?',
+    yes: 'A PBO exists and you can reach the Partner Console.',
+    no: 'No PBO / no Console access. The Security Review Wizard lives in the Partner Console — without it there is nowhere to submit.',
+  }),
+  promoted: Object.freeze({
+    header: 'Package promoted',
+    manifestKey: 'packagePromoted',
+    question: 'Is the package version promoted/released? (a beta 2GP cannot be submitted)',
+    yes: 'The package version is promoted/released. If step 4 ran, sf-autoresolve.json already carries IsReleased — this confirms it.',
+    no: 'Not promoted (still beta). The review attaches to a RELEASED version; a beta 2GP is rejected at intake.',
+    na: 'No package element is in scope (an MCP-server-only or external-app listing), so package promotion does not apply. Recorded as not-applicable, never a blocker.',
+  }),
+  namespace: Object.freeze({
+    header: 'Namespace',
+    manifestKey: 'namespaceRegisteredAndLinked',
+    question: 'Is the namespace registered and linked to the Dev Hub?',
+    yes: 'Registered and linked. (Step 4 can READ the linked namespace; REGISTRATION stays a manual DevHub "Link Namespace" action — NamespaceRegistry is not API-writable.)',
+    no: 'Not registered/linked. Packaging and listing identity both hang off the namespace — this blocks both.',
+  }),
+  listing: Object.freeze({
+    header: 'Listing',
+    manifestKey: 'listingCreated',
+    question: 'Is the listing created in the Partner Console?',
+    yes: 'The listing object exists in the Partner Console.',
+    no: 'No listing. The review attaches to a listing object — without one there is nothing to attach it to.',
+  }),
+  contacts: Object.freeze({
+    header: 'Review contacts',
+    manifestKey: 'reviewContactsDesignated',
+    question: 'Are BOTH a primary and a backup review contact designated?',
+    yes: 'Primary and backup contacts are designated and monitored.',
+    no: 'Missing a primary or backup contact. Reviewer questions to an unmonitored inbox stall the clock silently.',
   }),
 })
 
@@ -278,6 +505,63 @@ export function gateOptions(gateId, facts = {}) {
         decision: 'affirm',
       },
     ]
+  } else if (gateId === 'mcp-probe') {
+    // The URL is operator-supplied free text → a FUNCTION replacer so $&/$'/$`/$$ in it can
+    // never expand the surrounding template (the scanner-install lesson). The operator's choice
+    // of staging vs production IS the environment confirmation — so neither affirm option can be
+    // selected without naming the environment, and production is never probed silently.
+    const url = typeof f.url === 'string' ? f.url.replace(/\s+/g, ' ').trim() : ''
+    if (!url) {
+      throw new Error(
+        'gate-spec: mcp-probe requires facts.url (the endpoint to confirm before probing) — ' +
+          'never probe an endpoint you have not named'
+      )
+    }
+    const fill = (tpl) => tpl.replace('{{URL}}', () => url)
+    options = [
+      { label: 'Probe — this is a STAGING endpoint', description: fill(spec.probeTemplate.staging), decision: 'affirm' },
+      { label: 'Probe — this is a PRODUCTION endpoint', description: fill(spec.probeTemplate.production), decision: 'affirm' },
+    ]
+  } else if (gateId === 'scope-confirm') {
+    options = spec.base.map(pickOption)
+  } else if (gateId === 'partner-program') {
+    const sub = typeof f.subGate === 'string' ? f.subGate : ''
+    const def = PARTNER_PROGRAM_SUBGATES[sub]
+    if (!def) {
+      throw new Error(
+        `gate-spec: partner-program requires facts.subGate ∈ {${Object.keys(PARTNER_PROGRAM_SUBGATES).join(', ')}} — ` +
+          `got '${sub || '(none)'}'`
+      )
+    }
+    header = def.header
+    question = def.question
+    // Yes→affirm / No→deny is the RECORDED POLARITY (this is an answer gate, NOT consent — the
+    // driver records the polarity into manifest operatorConfirmed.<def.manifestKey>, it does not
+    // pipe to record-consent). The 'promoted' gate adds N/A ONLY when no package element exists.
+    options = [
+      { label: 'Yes', description: def.yes, decision: 'affirm' },
+      { label: 'No', description: def.no, decision: 'deny' },
+    ]
+    if (sub === 'promoted' && f.noPackage === true) {
+      options.push({ label: 'N/A — no package in scope', description: def.na, decision: 'deny' })
+    }
+  } else if (gateId === 'clarify-detection') {
+    const element = typeof f.element === 'string' ? f.element.replace(/\s+/g, ' ').trim() : ''
+    if (!element) {
+      throw new Error(
+        'gate-spec: clarify-detection requires facts.element (the ambiguous element to confirm) — ' +
+          'ASK rather than omit'
+      )
+    }
+    const fill = (tpl) => tpl.replace(/\{\{ELEMENT\}\}/g, () => element)
+    question = fill(spec.questionTemplate)
+    options = [
+      { label: 'Present — include it', description: fill(spec.opts.present), decision: 'affirm' },
+      { label: 'Not present — exclude it', description: fill(spec.opts.absent), decision: 'deny' },
+      { label: 'Unsure — investigate first', description: fill(spec.opts.unsure), decision: 'deny' },
+    ]
+  } else if (gateId === 'listing-type' || gateId === 'tenancy') {
+    options = spec.base.map(pickOption)
   } else {
     // A catalog entry exists but has no selector branch — a build error, fail closed.
     throw new Error(`gate-spec: gate '${gateId}' is registered but has no selector branch`)
@@ -295,21 +579,55 @@ export function gateOptions(gateId, facts = {}) {
   // FAIL CLOSED — validate every emitted option (including the injected default).
   for (const o of options) validateOption(gateId, o)
 
-  return { gate: gateId, consent: !!spec.consent, header, question, options }
+  return { gate: gateId, consent: !!spec.consent, kind: spec.kind, header, question, options }
 }
 
-/** Self-check the FROZEN catalog at module load: every static option well-formed. */
+// Representative facts to EXERCISE every gate at module load — calling gateOptions runs
+// validateOption over the FULL emitted option set (including the dynamic, template-filled and
+// force-injected options), the strongest catalog self-check. A new catalog gate MUST register
+// an entry here (the post-loop coverage check throws otherwise), so a gate can never ship
+// un-exercised at load.
+const LOAD_CHECK_FACTS = Object.freeze({
+  'run-mode': [{}],
+  'audit-tier': [{}, { recordedTier: 'standard' }, { recordedTier: 'standard', reelect: true }],
+  'scanner-install': [{ scanners: [{ name: 'x', method: 'pip' }] }],
+  'mcp-probe': [{ url: 'https://example.test/mcp' }],
+  'scope-confirm': [{}],
+  'partner-program': [
+    { subGate: 'agreement' },
+    { subGate: 'pbo' },
+    { subGate: 'promoted' },
+    { subGate: 'promoted', noPackage: true },
+    { subGate: 'namespace' },
+    { subGate: 'listing' },
+    { subGate: 'contacts' },
+  ],
+  'clarify-detection': [{ element: 'mcp-server' }],
+  'listing-type': [{}],
+  'tenancy': [{}],
+})
+
+/** Self-check the FROZEN catalog at module load: every static option well-formed + every gate
+ * exercised through the real selector. */
 function assertCatalogWellFormed() {
   for (const [gateId, spec] of Object.entries(GATE_CATALOG)) {
+    // The `kind` taxonomy is load-bearing — `consent` MUST agree with it, so a future entry
+    // cannot quietly mark an answer gate as consent (or drop a consent gate's decline).
+    if (!['consent', 'election', 'answer'].includes(spec.kind)) {
+      throw new Error(`gate-spec: ${gateId} has an invalid kind '${spec.kind}' (must be consent | election | answer)`)
+    }
+    if (!!spec.consent !== (spec.kind === 'consent')) {
+      throw new Error(`gate-spec: ${gateId} consent=${!!spec.consent} disagrees with kind='${spec.kind}' (consent ⟺ kind:'consent')`)
+    }
     const sets = [spec.base, spec.firstPass].filter(Boolean)
     for (const set of sets) for (const o of set) validateOption(gateId, o)
     if (spec.safeDefault) validateOption(gateId, spec.safeDefault)
     if (spec.consent && !spec.safeDefault) {
       throw new Error(`gate-spec: consent gate '${gateId}' is missing its safeDefault`)
     }
-    // A template-driven gate (no static option array) must carry a usable template —
-    // fail fast at LOAD if a future edit empties it or drops a fill marker, rather
-    // than misrendering (or throwing on undefined.replace) at first render.
+    // A template-driven gate (no static option array) must carry a usable template — fail fast at
+    // LOAD if a future edit empties it or drops a fill marker, rather than misrendering (or
+    // throwing on undefined.replace) at first render.
     if (spec.installTemplate != null) {
       if (
         typeof spec.installTemplate !== 'string' ||
@@ -319,11 +637,48 @@ function assertCatalogWellFormed() {
         throw new Error(`gate-spec: ${gateId} installTemplate must be a string containing {{N}} and {{SCANNERS}}`)
       }
     }
+    if (spec.probeTemplate != null) {
+      for (const k of ['staging', 'production']) {
+        if (typeof spec.probeTemplate[k] !== 'string' || !spec.probeTemplate[k].includes('{{URL}}')) {
+          throw new Error(`gate-spec: ${gateId} probeTemplate.${k} must be a string containing {{URL}}`)
+        }
+      }
+    }
+    if (spec.questionTemplate != null && (typeof spec.questionTemplate !== 'string' || !spec.questionTemplate.includes('{{ELEMENT}}'))) {
+      throw new Error(`gate-spec: ${gateId} questionTemplate must be a string containing {{ELEMENT}}`)
+    }
+    if (spec.opts != null) {
+      for (const k of ['present', 'absent', 'unsure']) {
+        if (typeof spec.opts[k] !== 'string' || !spec.opts[k].trim()) {
+          throw new Error(`gate-spec: ${gateId} opts.${k} must be a non-empty string`)
+        }
+      }
+    }
+  }
+  // The partner-program sub-gate catalog: every entry well-formed (question/yes/no/manifestKey),
+  // 'promoted' carries its N/A clause. Validated here so a malformed sub-gate fails at LOAD too.
+  for (const [sub, def] of Object.entries(PARTNER_PROGRAM_SUBGATES)) {
+    for (const field of ['header', 'manifestKey', 'question', 'yes', 'no']) {
+      if (typeof def[field] !== 'string' || !def[field].trim()) {
+        throw new Error(`gate-spec: PARTNER_PROGRAM_SUBGATES.${sub} is missing '${field}'`)
+      }
+    }
+  }
+  if (typeof PARTNER_PROGRAM_SUBGATES.promoted.na !== 'string' || !PARTNER_PROGRAM_SUBGATES.promoted.na.trim()) {
+    throw new Error("gate-spec: PARTNER_PROGRAM_SUBGATES.promoted is missing its 'na' (N/A) clause")
+  }
+  // EXERCISE every gate through the real selector (validates the dynamic + injected options too).
+  for (const gateId of Object.keys(GATE_CATALOG)) {
+    const factsList = LOAD_CHECK_FACTS[gateId]
+    if (!factsList) {
+      throw new Error(`gate-spec: catalog gate '${gateId}' has no LOAD_CHECK_FACTS entry — add one so the load-time exercise covers it`)
+    }
+    for (const facts of factsList) gateOptions(gateId, facts)
   }
 }
 assertCatalogWellFormed()
 
-export { GATE_CATALOG }
+export { GATE_CATALOG, PARTNER_PROGRAM_SUBGATES }
 
 /** Seed facts from a target repo's recorded consent ledger (audit-tier → confirm). */
 function deriveFacts(gateId, target) {
@@ -375,6 +730,16 @@ function main() {
         return { name: (name || '').trim(), method: (method || '').trim() }
       })
   }
+  // Slice-5 conveniences (an explicit --facts value always wins — only set when absent):
+  //   --sub-gate <name>  partner-program sub-gate · --no-package  promoted N/A
+  //   --url <url>        mcp-probe endpoint        · --element <name>  clarify-detection element
+  const subGate = arg('--sub-gate', null)
+  if (subGate && facts.subGate == null) facts.subGate = subGate
+  if (process.argv.includes('--no-package') && facts.noPackage == null) facts.noPackage = true
+  const url = arg('--url', null)
+  if (url && facts.url == null) facts.url = url
+  const element = arg('--element', null)
+  if (element && facts.element == null) facts.element = element
   let payload
   try {
     payload = gateOptions(gate, facts)

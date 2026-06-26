@@ -6,9 +6,10 @@
 audit recap · 3-tier preflight · scan-status · router status). Slice 4 — **WI-06 REPORTS HALF
 shipped in 0.8.25** (2026-06-26): the scope-submission REPORT renders (detected-elements 15 ·
 applicable-requirements 16 · MCP direction/auth-profile 43 + live-probe 44 · SF-CLI
-auto-resolution 45). **WI-06 is PARTIAL** — the GATES half (scope partner-program gates 05,
-live-endpoint probe 30, NEED-FROM-YOU 31, listing-type/tenancy 32, final summary + confirm 06) is
-Slice 5. WI-07…WI-12 remain backlog.
+auto-resolution 45). Slice 5 — **WI-06 GATES HALF shipped in 0.8.27** (2026-06-26): the
+scope-submission gates (partner-program preflight 05 · live-endpoint probe 30 · NEED-FROM-YOU 31 ·
+listing-type/tenancy 32 · final summary + confirm 06). **WI-06 is now COMPLETE.** WI-07…WI-12
+remain backlog.
 Sequenced AFTER the 0.8.21 cold campaign tags — these are presentation-only changes that do NOT
 touch the finding band, so they ship as post-tag hardening (the 0.8.18→0.8.21
 friction/structure class) and never require re-running the campaign.
@@ -115,7 +116,7 @@ remaining ~50 surfaces.
 | 03 | template the readiness-verdict (fixed skeleton) ✅0.8.23 | 10, 11, 35 | high | M |
 | 04 | pin finding-cluster headline + target-map approval display ✅0.8.24 | 08, 12, 34 | high | M |
 | 05 | pin preflight 3-tier report + scan-status summary ✅0.8.24 | 07, 13, 33 | high | M |
-| 06 | pin scope-submission surfaces — ◐ PARTIAL (reports 15/16/43/44/45 ✅0.8.25; gates 05/30/31/32 + confirm 06 → Slice 5) | 06,15,16,44,45,43,05,32 | high | L |
+| 06 | pin scope-submission surfaces — ✅ DONE (reports 15/16/43/44/45 ✅0.8.25; gates 05/30/31/32 + confirm 06 ✅0.8.27) | 06,15,16,44,45,43,05,32 | high | L |
 | 07 | template reviewer-simulation report | 18 | high | M |
 | 08 | CLI-gated deep-audit gates + verification batteries | 04,28,29,53,46,47,48,54,55 | med | L |
 | 09 | cadence + test-env templates + shared run-log entry | 19,20,21,22,23,24,25,50 | med | L |
@@ -197,9 +198,10 @@ the preflight + router blocks verbatim; `run-scans` Step 11 prints scan-status v
 (5): determinism, the golden skeleton (4-state enum completeness, canonical Family order),
 fail-safe, and skill wiring.
 
-### WI-06 — scope-submission REPORT renders (reports half) — ◐ PARTIAL, reports ✅ DONE (0.8.25)
-WI-06 is SPLIT (auditor + operator decision): this slice ships the REPORT renders
-(INV-15/16/43/44/45); the scope GATES + final confirm (INV-05/30/31/32/06) are Slice 5.
+### WI-06 — scope-submission surfaces — ✅ DONE (reports 0.8.25, gates 0.8.27)
+WI-06 is SPLIT (auditor + operator decision): Slice 4 (0.8.25) shipped the REPORT renders
+(INV-15/16/43/44/45); Slice 5 (0.8.27) ships the scope GATES + final confirm (INV-05/30/31/32/06),
+COMPLETING WI-06.
 `render-detected-elements.mjs` (INV-15) renders `scope-manifest.json` → the fixed
 `{Element | Detected how (evidence)}` table in a frozen `CANONICAL_ELEMENT_ORDER` (unknown
 types appended, never dropped) + the `listingType` line; a no-evidence element gets an honest
@@ -232,6 +234,32 @@ dropping it (M15); and `render-sf-autoresolve.mjs`'s secret guard extends to eve
 producer-is-the-boundary scope (SA6). Presentation/honesty-only, no finding-band change. Suite 50
 files / 471 checks.
 
+### WI-06 GATES half — ✅ DONE (0.8.27, Slice 5) — COMPLETES WI-06
+The last freehand-prompt surfaces in Phase 0, pinned via the gate-spec catalog. Six new gates
+land in TWO semantic classes, encoded by a new `kind` field on every catalog entry
+(`consent | election | answer`, load-validated `consent ⟺ kind:'consent'`): **CONSENT-to-act**
+gates force-inject the decline and pipe the chosen `decision` to `record-consent`; **ANSWER** gates
+record the selected option into the scope manifest (no force-injected decline, not piped).
+`mcp-probe` (INV-30, CONSENT) — the live read-only-probe gate; the `STAGING`/`PRODUCTION` choice IS
+the environment confirmation (production never probed silently), `{{URL}}` the only fillable datum
+via a function-replacer, throws without a url. `scope-confirm` (INV-06, CONSENT) — the final-manifest
+confirm mirroring the WI-02 audit-tier variant `{Confirm & proceed, Correct the scope, Cancel}`, both
+non-confirm options the FAIL-SAFE deny. `partner-program` (INV-05, ANSWER family) — the six preflight
+sub-gates via `facts.subGate`, each `Yes→affirm/No→deny` recorded into `operatorConfirmed.<key>`, the
+`promoted` gate offering `N/A — no package in scope` only when `facts.noPackage`. `clarify-detection`
+(INV-31, ANSWER) — the NEED-FROM-YOU `present/absent/unsure` gate, `{{ELEMENT}}` filled, throws
+without an element. `listing-type` + `tenancy` (INV-32, ANSWER) — the categorical closed choices
+(all-`affirm`, the chosen LABEL recorded; the free-text security-model claims stay un-pinned).
+`render-scope-summary.mjs` (INV-06) renders the fixed Step-9 readout whose `operatorConfirmed` gate
+states are HONEST (✓/✗/not-recorded, never a fabricated ✓) and whose missing-manifest branch reads
+"scope not finalized", never a fabricated "ready". scope-submission Steps 2/3/5/6/9 call gate-spec +
+record-consent + render-scope-summary VERBATIM (the freehand step-5 table-as-prompt is gone).
+**Tests** `test-scope-gates` (17) + `test-render-scope-summary` (11): per-gate determinism + golden
+option snapshots + fail-closed throws + the force-injected-decline-on-CONSENT / none-on-ANSWER split
++ the `kind` semantics + the consent round-trip + the promoted-N/A conditional + the `$`-URL-literal
+guard + the summary skeleton/fail-safe/registration + skill wiring. Presentation-only, no finding-band
+change. Suite 52 files / 499 checks.
+
 *(WI-07…WI-12 detail: see the synthesis result captured for this roadmap;
 each follows the same render-harness-or-template + standing-test pattern.)*
 
@@ -245,8 +273,8 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 02 | scanner-install network-fetch gate | gate | ✓ | H | 01 ✅0.8.22 |
 | 03 | throwaway-DAST consent gate | gate | ◐ | H | 06* |
 | 04 | sf-package-promote permanence consent | gate | ◐ | H | 08 |
-| 05 | scope partner-program preflight gates (6) | gate | ◐ | H | 06 |
-| 06 | final scope-manifest summary + confirm | verdict | ✗ | H | 06 |
+| 05 | scope partner-program preflight gates (6) | gate | ✓ | H | 06 ✅0.8.27 |
+| 06 | final scope-manifest summary + confirm | verdict | ✓ | H | 06 ✅0.8.27 |
 | 07 | one-page preflight 3-tier report | report | ✓ | H | 05 ✅0.8.24 |
 | 08 | finding-cluster triage headline | report | ✓ | H | 04 ✅0.8.24 |
 | 09 | synthesis audit report (§9 body) | report | ◐ | H | 10 |
@@ -270,9 +298,9 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 27 | deployed-org deep-audit consent (3 variants) | gate | ◐ | M | 06* |
 | 28 | sf-deep-audit-ops gate family (4 skills) | gate | ◐ | M | 08 |
 | 29 | sf-cli-setup consent gate | gate | ◐ | M | 08 |
-| 30 | live-endpoint read-only probe gate | gate | ✗ | M | 06* |
-| 31 | NEED-FROM-YOU clarification gate | gate | ✗ | M | 06* |
-| 32 | scope listing-type + tenancy gate | gate | ✗ | M | 06 |
+| 30 | live-endpoint read-only probe gate | gate | ✓ | M | 06 ✅0.8.27 |
+| 31 | NEED-FROM-YOU clarification gate | gate | ✓ | M | 06 ✅0.8.27 |
+| 32 | scope listing-type + tenancy gate | gate | ✓ | M | 06 ✅0.8.27 |
 | 33 | router-mode "where are we?" status | output | ✓ | M | 05 ✅0.8.24 |
 | 34 | end-of-run audit recap + verdict | report | ✓ | M | 04 ✅0.8.24 |
 | 35 | ledger-freshness note | report | ✓ | M | 03 ✅0.8.23 |

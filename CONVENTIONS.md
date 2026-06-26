@@ -170,7 +170,13 @@ Skills write into the PARTNER's repo, never into the plugin:
   option set upstream; `record-consent` pins the decision downstream; the driver improvises
   neither. No silent behavior change — gate-spec only fixes WHICH options appear and their
   wording; the consent semantics (`record-consent` token, `build-audit-engine` fail-closed
-  verify) are unchanged. Guarded by `test-gate-spec.mjs` + `test-tier-no-reask.mjs`.
+  verify) are unchanged. **Slice 5 (0.8.27)** extends the catalog to the scope-submission gates
+  (`mcp-probe`, `scope-confirm`, the `partner-program` six-gate family, `clarify-detection`,
+  `listing-type`, `tenancy`) and adds a `kind` taxonomy (`consent | election | answer`,
+  load-validated as `consent ⟺ kind:'consent'`) encoding TWO semantic classes: a CONSENT-to-act
+  gate force-injects the decline and pipes its `decision` to `record-consent`; an ANSWER gate's
+  selected option is RECORDED into the scope manifest (no force-injected decline, not piped).
+  Guarded by `test-gate-spec.mjs` + `test-tier-no-reask.mjs` + `test-scope-gates.mjs`.
 - **Operator-facing OUTPUT is pinned by render harnesses + `{{SLOT}}` templates,
   rendered VERBATIM by the driver (0.8.23–0.8.24).** The gate-spec rule's twin for the OUTPUT
   class — the readiness verdict / status / target-map renders were driver-improvised
@@ -207,7 +213,11 @@ Skills write into the PARTNER's repo, never into the plugin:
   conflict and NEVER renders a secret), guarded by `test-render-detected-elements`,
   `test-render-mcp-scope`, `test-render-sf-autoresolve`, and the extended
   `test-applicable-requirements`; each asserting determinism + a golden snapshot + fail-safe + the
-  skill-wiring (grants + references + "print verbatim").
+  skill-wiring (grants + references + "print verbatim"). The Slice-5 final scope-summary
+  (0.8.27, WI-06/INV-06: `render-scope-summary.mjs` — the fixed Step-9 readout whose
+  operatorConfirmed gate states render HONESTLY (✓/✗/not-recorded, never a fabricated ✓) and whose
+  missing-manifest branch renders "scope not finalized", never a fabricated "ready") is guarded by
+  `test-render-scope-summary.mjs`.
 - **Irreversible sf/host ops are consent-gated, fail-closed (0.8.11).** The
   deployed-package deep-audit skills run live, irreversible Salesforce / host ops
   (`sf package version promote` — a PERMANENT release — plus package install/uninstall,
@@ -281,7 +291,7 @@ sf-security-review-toolkit/
 │   ├── sequential-fallback.md       # same engine without the Workflow tool
 │   ├── compute-sci.mjs              # deterministic Submission Completeness Index + currency floor + reviewer-reproducible credit rule (WI-18/A3/A4/P1)
 │   ├── record-consent.mjs           # 0.8.4: durable consent COUPLING — record/verify an affirmative answer per gate (.security-review/consent/<gate>.json); the launch path fails closed on a missing token so a skipped ask can't proceed. 0.8.17: controlled `--decision affirm|deny` token (the SELECTED AskUserQuestion option is authoritative — the free-text label is recorded but NOT regex-scanned; deny-precedence; invalid→exit 2)
-│   ├── gate-spec.mjs                # 0.8.22: FROZEN gate catalog + pure gateOptions(gateId,facts) selector — PINS each AskUserQuestion gate's option set so the driver renders label/description VERBATIM + pipes the chosen `decision` to record-consent (the engine owns the options, the driver never improvises them). ALWAYS_ON-style FORCE-INJECTED safe-default decline on every consent gate; FOCUS_MIN-style FAIL CLOSED on an unknown gate / malformed option / non-record-consent decision. Registers run-mode/audit-tier/scanner-install; audit-tier confirms a journey-recorded tier instead of re-asking (WI-02)
+│   ├── gate-spec.mjs                # 0.8.22: FROZEN gate catalog + pure gateOptions(gateId,facts) selector — PINS each AskUserQuestion gate's option set so the driver renders label/description VERBATIM + pipes the chosen `decision` to record-consent (the engine owns the options, the driver never improvises them). ALWAYS_ON-style FORCE-INJECTED safe-default decline on every consent gate; FOCUS_MIN-style FAIL CLOSED on an unknown gate / malformed option / non-record-consent decision. Registers run-mode/audit-tier/scanner-install; audit-tier confirms a journey-recorded tier instead of re-asking (WI-02). 0.8.27: + the scope-submission gates (mcp-probe/scope-confirm/partner-program family/clarify-detection/listing-type/tenancy) + a `kind` taxonomy (consent|election|answer) — CONSENT gates force-inject + pipe to record-consent, ANSWER gates record the selection into the manifest (WI-05/30/31/32/06)
 │   ├── render-stability.mjs         # 0.8.23: VERBATIM Finding-Stability block from recurrence-confidence.json (WI-00B render-harness) — compute-sci-style fixed-block mode; present (n≥2)=bucket table+reliably-recurring blockers+contestable band+mixed-commit note / absent=honest one-liner; informational-only, never a gate input
 │   ├── render-readiness-verdict.mjs # 0.8.23: readiness-verdict FILL ENGINE (WI-00B+WI-03) — STANDING_CAVEAT constant + fillVerdict(template,slots) (force-injects the caveat, FAILS CLOSED on any unfilled {{SLOT}}) + lintRenderVerbatim (flags a hand-built table for a registered surface). REGISTERED_SURFACES extended in 0.8.24 with the six Slice-3 surfaces + 0.8.25 with the four Slice-4 scope-submission surfaces. The output-class twin of gate-spec.mjs
 │   ├── render-target-map.mjs        # 0.8.24: VERBATIM target-map approval display (WI-04/INV-12) — fixed {dimension|applicable|targets|why|confidence|unresolved} table over target-map.json, applicable rows first, unresolved flagged; missing → honest "not resolved yet"
@@ -292,6 +302,7 @@ sf-security-review-toolkit/
 │   ├── render-detected-elements.mjs # 0.8.25: VERBATIM detected-architecture-elements summary (WI-06/INV-15) — fixed {Element|Detected how (evidence)} table in CANONICAL_ELEMENT_ORDER (unknown types appended, never dropped) + listingType line over scope-manifest.json; missing → honest "scope not detected yet"
 │   ├── render-mcp-scope.mjs         # 0.8.25: VERBATIM MCP direction/auth-profile (WI-06/INV-43) + live-probe result (INV-44) — direction caption + authExpectations fields rendered NOT re-derived; probed:false → "recorded from code, NOT live-probed" (never presents an un-probed fact as probed); no MCP surface → honest line
 │   ├── render-sf-autoresolve.mjs    # 0.8.25: VERBATIM SF-CLI auto-resolution (WI-06/INV-45) — rows table + Security flags (http://·wildcard·no-NamedCredential·ViewAll/ModifyAll over-grant, derived+deduped, never dropped) + Conflicts (CLI is evidence not override); gated on manifest sfAutoResolved; NEVER renders a secret (CONVENTIONS §6 redaction)
+│   ├── render-scope-summary.mjs     # 0.8.27: VERBATIM final scope-manifest summary (WI-06/INV-06) — fixed Step-9 readout (listingType·direction·auto-resolution·repoCommit·element list·endpoints WITH env labels·applicable count·operatorConfirmed gate states) over scope-manifest.json; gate states render HONESTLY (✓/✗/not-recorded, never a fabricated ✓); missing/non-JSON manifest → "scope not finalized", never a fabricated "ready"
 │   ├── build-audit-engine.mjs       # extract §4/§5 per dimension + inject run-args → audit-engine.mjs + target-map.json (P2); FAILS CLOSED without verifyConsent(audit-tier)&&audit-targetmap (the durable gate — no engine = no fan-out). 0.8.17: ENGINE-ENFORCED always-on dims (sessionid-egress/secrets-credentials/error-handling-disclosure auto-injected regardless of the driver's scope-input; an always-on key in `na` is forced applicable with a WARN)
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge). 0.8.24: emits the fixed render-recap.mjs operator recap to stdout (WI-04/INV-34)
@@ -325,7 +336,7 @@ sf-security-review-toolkit/
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── README.md
-│   └── test-*.mjs                   # 50 dependency-free standing tests (471 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 52 dependency-free standing tests (499 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
