@@ -1,8 +1,10 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **DESIGN — awaiting operator ratification.** This is the architecture
-> the cold campaign pointed to. No builder work starts until the open decisions
-> (§8) are locked.
+> Status: **RATIFIED (2026-06-26) — Phase 1 cleared to build.** The architecture
+> the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
+> ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
+> findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
+> track (WI-07..12) is **paused**.
 
 ## 1. The problem the campaign proved
 
@@ -155,20 +157,18 @@ probabilistic sample. Phase 1's acceptance is a deterministic assertion: SFGE on
 the frozen Solano fixture surfaces OppController FLS + Contact-PII FLS + the ViewAll
 grant **every run**, severity from class, no LLM in that path. No campaign runs.
 
-## 9. Open decisions (ratify before any builder work)
+## 9. Decisions — RATIFIED 2026-06-26
 
-1. **Phase 1 scope** — the three wobbled classes only (recommended), or a wider
-   first cut?
-2. **SARIF-ingest now or later** — Phase 1 needs a scanner→ledger path. Build the
-   `provenance`-tagged ingest in Phase 1 (recommended), or start with the cheaper
-   "re-home FLS onto the `fail-crud-fls` requirement only" (no ledger ingest) and
-   add ingest in Phase 2?
-3. **SFGE prerequisite** — accept PENDING-OWNER-RUN when `sf`/Code Analyzer is
-   absent (recommended, honest), or make `sf` a hard prerequisite for the journey?
-4. **Presentation backlog** — WI-07..12 (reviewer-sim template, cadence/test-env,
-   compile-submission siblings, generate-artifacts surfaces, the low-risk renders)
-   pause here. Resume after Phase 1/2, or fold the highest-traffic ones in
-   opportunistically?
+1. **Phase 1 scope/ingest** → **Full SARIF ingest.** The three wobbled classes
+   (CRUD/FLS, ViewAll/ModifyAll, sharing) become provenance-tagged `deterministic`
+   ledger findings (engine + ruleId + class-severity), with the LLM rejected from
+   those classes when the engine ran. (Not the requirement-only path; not a wider
+   first cut.)
+2. **SFGE prerequisite** → **PENDING-OWNER-RUN** when `sf`/Code Analyzer is absent;
+   never LLM-fill those classes. Honest, matches existing owner-gated posture.
+3. **Presentation backlog** → **paused.** WI-07..12 resume after Phase 1/2.
 
-Once §9 is locked, this becomes a slice sequence run through the builder/auditor
-split, validated deterministically.
+Phase 1 is now cleared. It runs through the builder/auditor split, validated
+deterministically (run the parser twice → identical; the 3 anchors present with
+`provenance:'deterministic'` + class-severity on the frozen Solano fixture — no
+campaign).
