@@ -176,7 +176,7 @@ confidence | unresolved}` table (applicable rows first, unresolved flagged), pri
 verbatim in the Step-3 approval `AskUserQuestion`. `merge-ledger.mjs` emits a fixed
 `render-recap.mjs` block to stdout — LED BY the cluster headline, then counts · PROCEED/HALT
 · not-covered caveat — printed verbatim at `audit-codebase` Step 7. **Tests**
-`test-finding-clusters-headline` (6), `test-render-target-map` (5), `test-render-recap` (6):
+`test-finding-clusters-headline` (6), `test-render-target-map` (5), `test-render-recap` (7):
 determinism, golden structure, fail-safe, a byte-identical-lead assertion, and skill wiring.
 
 ### WI-05 — preflight 3-tier report + scan-status + router status — ✅ DONE (0.8.24)
