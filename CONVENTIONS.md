@@ -248,6 +248,29 @@ Skills write into the PARTNER's repo, never into the plugin:
   checksums. `cleanup-scanners.mjs` (the asymmetric remover) is manifest-driven and
   likewise reads/removes only what the executor recorded.
 
+- **Findings carry PROVENANCE; a deterministic engine's result is relayed, never
+  re-judged (0.8.28, Phase 1 · Slice 1 of `docs/roadmap-deterministic-findings.md`).** A
+  5-run cold campaign proved the LLM-generated blocker band is unstable run-to-run while
+  Code Analyzer (PMD/SFGE) finds the same CRUD/FLS bugs deterministically every run — its
+  output just never reached the ledger. `harness/ingest-scanner-findings.mjs` is that path:
+  a scanner/metadata finding becomes a `provenance:'deterministic'` ledger finding carrying
+  the `engine` + `ruleId` that fired, with `adjusted_severity` taken from the requirement
+  CLASS (read live from `baseline/requirements-baseline.yaml` via the new canonical
+  `REQ_SEVERITY_TO_FINDING` map — `blocker→critical / major→high / minor→low /
+  informational→info`), never the scanner's own 1–5 number and never an LLM. It is a
+  PLUGGABLE adapter registry (`ingest(raw, adapter)` core + `{name, kind, collect, parse,
+  classify}` adapters) with two KINDS — `file-parser` (Code Analyzer; future Semgrep/OSV/
+  gitleaks/Checkov are new adapter objects, not surgery) and `source-scanner` (the
+  `metadata-viewall` ViewAll/ModifyAll over-grant check, the one class Code Analyzer
+  doesn't cover). The core is pure/byte-deterministic (`collect()` is the only I/O seam),
+  an unmapped rule is still ingested (never dropped) with a documented Code-Analyzer-severity
+  fallback, and re-ingest is idempotent (a deterministic id is stable from
+  `engine+ruleId+file:line`). Scope is INGEST ONLY — the merge-engine enforcement (reject
+  an LLM finding in a class the engine owns and ran), the engine-absent→PENDING fix, and the
+  deterministic-pass-first journey re-sequencing are Slice 2. Guarded by
+  `test-ingest-scanner-findings.mjs` (determinism + severity-from-class + schema conformance
+  over REAL captured Code Analyzer fixtures in `acceptance/fixtures/`).
+
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
 ```
@@ -307,6 +330,7 @@ sf-security-review-toolkit/
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge). 0.8.24: emits the fixed render-recap.mjs operator recap to stdout (WI-04/INV-34)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
+│   ├── ingest-scanner-findings.mjs  # 0.8.28: scanner/metadata output → provenance:'deterministic' ledger findings (roadmap-deterministic-findings.md Phase 1·Slice 1). PLUGGABLE adapter registry — pure ingest(raw,adapter) core + {name,kind,collect,parse,classify} adapters in two KINDS: file-parser (code-analyzer; future Semgrep/OSV/gitleaks) + source-scanner (metadata-viewall ViewAll/ModifyAll over-grant). adjusted_severity from the requirement CLASS (REQ_SEVERITY_TO_FINDING over the baseline), never the scanner number/LLM; unmapped rule still ingested (CA-severity fallback); idempotent merge (id = engine+ruleId+file:line). INGEST ONLY — enforcement/PENDING/re-sequencing = Slice 2
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
 │   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); the ONE network-touching engine (§7)
 │   ├── cleanup-scanners.mjs         # 0.6.0 step 2: asymmetric manifest-driven teardown — remove the tmp tool dir, KEEP the evidence; reuses assertSafeTmpRoot (refuses an unsafe root)
@@ -335,8 +359,9 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # Helios sealed ground-truth plant list (recall grading key)
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
+│   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml
 │   ├── README.md
-│   └── test-*.mjs                   # 52 dependency-free standing tests (499 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 53 dependency-free standing tests (532 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary})
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

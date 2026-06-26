@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Representative source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (metadata-viewall adapter). Synthetic toolkit test data — NOT a partner artifact.
+  It exercises all three branches of the ViewAll/ModifyAll over-grant check:
+    1. Solano_Forecast_Snapshot__c — CUSTOM object + viewAllRecords=true  -> FLAGGED (the C5 over-grant).
+    2. Account                      — STANDARD object + viewAllRecords=true -> NOT flagged
+       (the org admin solely owns the security policy for standard objects).
+    3. Solano_Coaching_Note__c      — CUSTOM object + viewAllRecords=false  -> NOT flagged (no over-grant).
+-->
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Solano Admin</label>
+    <description>Grants forecast-snapshot read across the org for the admin persona.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <objectPermissions>
+        <object>Solano_Forecast_Snapshot__c</object>
+        <allowRead>true</allowRead>
+        <allowCreate>true</allowCreate>
+        <allowEdit>true</allowEdit>
+        <allowDelete>false</allowDelete>
+        <viewAllRecords>true</viewAllRecords>
+        <modifyAllRecords>false</modifyAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Account</object>
+        <allowRead>true</allowRead>
+        <allowCreate>false</allowCreate>
+        <allowEdit>false</allowEdit>
+        <allowDelete>false</allowDelete>
+        <viewAllRecords>true</viewAllRecords>
+        <modifyAllRecords>false</modifyAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Solano_Coaching_Note__c</object>
+        <allowRead>true</allowRead>
+        <allowCreate>true</allowCreate>
+        <allowEdit>true</allowEdit>
+        <allowDelete>false</allowDelete>
+        <viewAllRecords>false</viewAllRecords>
+        <modifyAllRecords>false</modifyAllRecords>
+    </objectPermissions>
+</PermissionSet>

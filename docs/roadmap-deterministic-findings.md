@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — Phase 1 cleared to build.** The architecture
+> Status: **RATIFIED (2026-06-26) — Phase 1 building; Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (enforcement + journey re-sequencing) next.** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -145,6 +145,26 @@ actually running SFGE.
   merge-engine enforcement (reject LLM findings in these classes when the engine
   ran), and the engine-absent→PENDING fix. Proves the pattern on the highest-value
   classes.
+  - **Slice 1 — SHIPPED (0.8.28): the ingest foundation.** `harness/ingest-scanner-findings.mjs`
+    — a pluggable per-scanner adapter registry (`ingest(raw, adapter)` pure core +
+    `{name, kind, collect, parse, classify}` adapters) with two KINDS, both shipped:
+    `code-analyzer` (`file-parser`, parses the captured Code Analyzer JSON) and
+    `metadata-viewall` (`source-scanner`, `engine:'metadata'`, greps the
+    permissionsets for ViewAll/ModifyAll over-grants). Each violation → a
+    `provenance:'deterministic'` ledger finding with `engine` + `ruleId`, severity
+    READ FROM the requirement class (the new canonical `REQ_SEVERITY_TO_FINDING` over
+    `baseline/requirements-baseline.yaml`, never the scanner number/LLM). The
+    `audit-ledger.schema.json` gains `provenance`/`engine`/`ruleId` (additive; default
+    `llm-inferred`). An unmapped rule is still ingested (CA-severity fallback, never
+    dropped); the merge is additive + idempotent. Validated deterministically by
+    `acceptance/test-ingest-scanner-findings.mjs` against REAL captured Solano/Meridian
+    fixtures (the anchor `ApexCRUDViolation` on `SolanoAccountInsightController.cls:19`
+    lands `deterministic`/`pmd`/class-severity `high` every run) — no campaign.
+  - **Slice 2 — NEXT: the enforcement half.** The merge engine REJECTS an LLM finding
+    in a deterministic-owned class when that engine ran; engine-absent →
+    PENDING-OWNER-RUN (never LLM-fill, never drop) — the direct fix for the fixrun4
+    hallucinated hand-off; the deterministic pass runs FIRST in the journey; the
+    deterministic acceptance on the live Solano fixture.
 - **Phase 2 (the full principle).** Extend provenance-typing to every class, scope
   the LLM fan-out to the labelled residual, wire severity-from-class everywhere,
   and the explicit `llm-inferred` rendering tag throughout the output surfaces.

@@ -1,0 +1,550 @@
+#!/usr/bin/env node
+/*
+ * ingest-scanner-findings.mjs — turn DETERMINISTIC scanner / metadata output into
+ * provenance-tagged `deterministic` audit-ledger findings (Phase 1 · Slice 1 of
+ * docs/roadmap-deterministic-findings.md — the ingest foundation).
+ *
+ * WHY this exists. A 5-run cold campaign proved the LLM-generated blocker band is
+ * unstable run-to-run (CRUD/FLS findings flickered high·high·ABSENT·high·high). Yet
+ * Code Analyzer (PMD/SFGE) finds those exact bugs DETERMINISTICALLY every run — its
+ * output just never reached the ledger. This engine is that missing path: a scanner
+ * finding becomes a ledger finding with provenance:'deterministic', the engine +
+ * ruleId that fired, and a severity taken from the REQUIREMENT CLASS (not the LLM,
+ * and not the scanner's own 1-5 number). The LLM stops being the source of truth for
+ * anything an engine already determined.
+ *
+ * PLUGGABLE ADAPTER REGISTRY (so Semgrep / OSV / gitleaks / Checkov land as a new
+ * adapter object, never a rewrite). Every adapter is the SAME shape:
+ *
+ *   { name, kind, collect({input,target}) -> raw|null, parse(raw) -> hits[], classify(ruleId) -> classKey|null }
+ *
+ * Two adapter KINDS, both shipped in Slice 1 to prove the seam handles N>1 and both:
+ *   - file-parser   — collect() reads a scanner's CAPTURED output file (--input).
+ *                     Adapter #1: `code-analyzer` (PMD + SFGE violations JSON).
+ *                     Future: Semgrep, OSV, gitleaks, Checkov — all parse a JSON file.
+ *   - source-scanner — collect() greps the repo source directly (no external tool).
+ *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
+ *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
+ *                     over-grants, the one class Code Analyzer doesn't cover (it's
+ *                     permission-set XML, not Apex).
+ *
+ * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
+ * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
+ * standing test drives `ingest` on in-memory fixtures. Re-ingesting the same scanner
+ * output is idempotent: a deterministic finding's id is stable from engine+ruleId+file:line,
+ * so the merge dedups it (no duplicates).
+ *
+ * SCOPE (Slice 1): ingest ONLY — the three wobbled classes (CRUD/FLS, sharing,
+ * ViewAll/ModifyAll) get provenance + class-severity; an unmapped rule is still
+ * ingested as deterministic (a scanner finding is real — never silently dropped) with
+ * a documented Code-Analyzer-severity fallback. LLM-supersession ENFORCEMENT (reject
+ * an LLM finding in a class the engine owns and ran) + journey re-sequencing are Slice 2.
+ *
+ * Read-only on partner source except the ledger it merges into
+ * (<target>/.security-review/audit-ledger.json).
+ *
+ * Usage:
+ *   node ingest-scanner-findings.mjs --scanner code-analyzer  --input CodeAnalyzer.json --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
+ */
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ----------------------------------------------------------------------------
+// Severity taxonomies. The baseline speaks `blocker/major/minor/informational`
+// (severity_if_missing); the finding schema speaks `critical/high/medium/low/info`.
+// This is the single canonical conversion — there was none before this slice.
+// ----------------------------------------------------------------------------
+export const REQ_SEVERITY_TO_FINDING = {
+  blocker: 'critical',
+  major: 'high',
+  minor: 'low',
+  informational: 'info',
+}
+// Code Analyzer's own 1-5 scale (1 = most severe). Used ONLY as the fallback for a
+// rule with no toolkit class mapping — never for a mapped class (whose severity is
+// the requirement-class severity, full stop).
+export const CA_SEVERITY_TO_FINDING = {
+  1: 'critical',
+  2: 'high',
+  3: 'medium',
+  4: 'low',
+  5: 'info',
+}
+
+// The three wobbled classes Slice 1 re-homes onto the scanners. Each carries the
+// baseline requirement its severity is READ FROM (so "severity from class" literally
+// tracks the baseline), a `fallback` if the baseline can't be read, and the dimension.
+//   viewall-overgrant grounds its severity in fail-sharing-model because a ViewAll/
+//   ModifyAll over-grant IS a sharing-rules bypass (official taxonomy + the Solano C5
+//   adjudication: "viewAllRecords=true ... a sharing bypass", HIGH floor).
+export const CLASS_DEFS = {
+  'crud-fls': { baselineId: 'fail-crud-fls', dimension: 'apex-exposed-surface', fallback: 'high' },
+  'sharing': { baselineId: 'fail-sharing-model', dimension: 'apex-exposed-surface', fallback: 'high' },
+  'viewall-overgrant': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
+}
+const DEFAULT_DIMENSION = 'apex-exposed-surface'
+
+// Scanner rule name -> toolkit class. Extend in Phase 2 (hardcoded secrets, SOQLi,
+// XSS, deps). The prompt named `ApexFlsViolationRule`; the real fixtures emit
+// `ApexFlsViolation` — both alias to crud-fls so neither spelling is ever dropped.
+export const RULE_CLASS = {
+  ApexCRUDViolation: 'crud-fls',
+  ApexFlsViolation: 'crud-fls',
+  ApexFlsViolationRule: 'crud-fls',
+  DatabaseOperationsMustUseWithSharing: 'sharing',
+  ApexSharingViolations: 'sharing',
+}
+
+const VIEWALL_DOC =
+  'https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_code_violation_access_settings.htm'
+const PS_OVERGRANT_FLAGS = ['viewAllRecords', 'modifyAllRecords', 'modifyAllData']
+
+// ----------------------------------------------------------------------------
+// baseline-grounded class severity (cached read of the committed baseline)
+// ----------------------------------------------------------------------------
+let _baselineText
+function baselineText() {
+  if (_baselineText != null) return _baselineText
+  try {
+    _baselineText = readFileSync(new URL('../baseline/requirements-baseline.yaml', import.meta.url), 'utf8')
+  } catch {
+    _baselineText = ''
+  }
+  return _baselineText
+}
+export function baselineSeverityFor(reqId) {
+  const txt = baselineText()
+  if (!txt) return null
+  const lines = txt.split('\n')
+  const i = lines.findIndex((l) => l.replace(/\s+$/, '') === `- id: ${reqId}`)
+  if (i < 0) return null
+  for (let j = i + 1; j < lines.length; j++) {
+    if (/^-\s+id:\s/.test(lines[j])) break // ran into the next entry; not in this block
+    const sm = /^\s*severity_if_missing:\s*([a-z]+)\s*$/.exec(lines[j])
+    if (sm) return sm[1]
+  }
+  return null
+}
+export function classSeverity(classKey) {
+  const def = CLASS_DEFS[classKey]
+  if (!def) return null
+  const reqSev = baselineSeverityFor(def.baselineId)
+  const mapped = reqSev ? REQ_SEVERITY_TO_FINDING[reqSev] : null
+  return { severity: mapped || def.fallback, reqSev, baselineId: def.baselineId, fromBaseline: !!mapped }
+}
+
+// ----------------------------------------------------------------------------
+// small deterministic helpers
+// ----------------------------------------------------------------------------
+function repoRel(p, root) {
+  let s = String(p || '').replace(/\\/g, '/')
+  if (root) {
+    const r = String(root).replace(/\\/g, '/').replace(/\/+$/, '')
+    if (r && s.startsWith(r + '/')) s = s.slice(r.length + 1)
+  }
+  return s.replace(/^\/+/, '')
+}
+const sha256id = (s) => createHash('sha256').update(String(s)).digest('hex').slice(0, 16)
+const oneLine = (s, n = 200) => {
+  const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
+  return t.length > n ? t.slice(0, n - 1) + '…' : t
+}
+// generic secret redaction (CONVENTIONS §6) — values, never names; mirrors merge-ledger.mjs
+const redact = (s) =>
+  String(s == null ? '' : s)
+    .replace(
+      /((?:secret|password|passwd|pwd|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|private[_-]?key|token|bearer|authorization)\s*["']?\s*[:=]\s*)["']?[A-Za-z0-9._\-+/=]{6,}["']?/gi,
+      '$1***redacted***'
+    )
+    .replace(/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b/g, '***redacted-jwt***')
+
+function recommendationFor(classKey) {
+  switch (classKey) {
+    case 'crud-fls':
+      return 'Enforce object- and field-level access before this DML/SOQL (WITH USER_MODE, Security.stripInaccessible, or an explicit describe check) and degrade gracefully when access is denied.'
+    case 'sharing':
+      return 'Perform this data access from a class that declares an explicit sharing model (with sharing, or with inherited sharing where the whole solution is sharing-clean).'
+    case 'viewall-overgrant':
+      return 'Remove the ViewAll/ModifyAll grant on this custom object and scope access through sharing rules; if the broad grant is a documented business requirement, justify it in the false-positive dossier.'
+    default:
+      return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
+  }
+}
+
+// ----------------------------------------------------------------------------
+// the finding builder — shared by every adapter / kind
+// ----------------------------------------------------------------------------
+export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass }) {
+  const passId = Number.isInteger(pass) && pass >= 1 ? pass : 1
+  const rel = repoRel(file, repoRoot)
+  const loc = startLine != null ? `${rel}:${startLine}` : rel
+  const id = sha256id(`${engine}\n${ruleId}\n${loc}`)
+
+  let adjusted, dimension, sevReason
+  if (classKey && CLASS_DEFS[classKey]) {
+    const cs = classSeverity(classKey)
+    adjusted = cs.severity
+    dimension = CLASS_DEFS[classKey].dimension
+    sevReason = `severity fixed from the ${classKey} class (baseline requirement ${cs.baselineId}${cs.reqSev ? ` = ${cs.reqSev}` : ''})`
+  } else {
+    adjusted = (severityNum != null && CA_SEVERITY_TO_FINDING[severityNum]) || 'medium'
+    dimension = DEFAULT_DIMENSION
+    sevReason =
+      `no toolkit class maps rule ${ruleId} yet (Phase 2 extends the class map) — severity falls back to the ` +
+      `Code Analyzer scale (sev ${severityNum == null ? 'n/a' : severityNum} → ${adjusted})`
+  }
+
+  const ref = Array.isArray(resources) && resources[0] ? ` See ${resources[0]}.` : ''
+  const caNote = severityNum != null && classKey && CLASS_DEFS[classKey]
+    ? ` Code Analyzer severity ${severityNum} is recorded for reference, not authoritative.`
+    : ''
+  const reasoning = redact(
+    `${String(engine).toUpperCase()} rule ${ruleId} deterministically flagged this at ${loc}. ${oneLine(message, 240)}${ref} ` +
+      `Provenance: deterministic (scanner-relayed, not an LLM judgment); ${sevReason}.${caNote}`
+  )
+
+  return {
+    id,
+    dimension,
+    title: `${ruleId}: ${oneLine(message, 140)}`,
+    severity: adjusted,
+    adjusted_severity: adjusted,
+    file: loc,
+    status: 'confirmed',
+    first_seen: passId,
+    last_seen: passId,
+    verdict: 'confirmed_real',
+    verdict_reasoning: reasoning,
+    evidence: redact(`${loc} — ${oneLine(message, 240)}`),
+    recommendation: recommendationFor(classKey),
+    resolution_note: oneLine(`${ruleId} (${classKey || 'unmapped rule'}) — ${message}`, 160),
+    provenance: 'deterministic',
+    engine: String(engine),
+    ruleId: String(ruleId),
+  }
+}
+
+// ----------------------------------------------------------------------------
+// the PURE core: raw (already collected) + adapter -> findings. No I/O, no Date.
+// ----------------------------------------------------------------------------
+export function ingest(raw, adapter, opts = {}) {
+  const repoRoot = opts.repoRoot || ''
+  const pass = Number.isInteger(opts.pass) && opts.pass >= 1 ? opts.pass : 1
+  const notes = []
+  if (raw == null) {
+    notes.push(`${adapter.name}: no input collected (missing/unreadable/empty) — no findings`)
+    return { findings: [], notes }
+  }
+  let hits
+  try {
+    hits = adapter.parse(raw)
+  } catch (e) {
+    notes.push(`${adapter.name}: parse failed (${e && e.message}) — no findings`)
+    return { findings: [], notes }
+  }
+  if (!Array.isArray(hits)) hits = []
+  if (!hits.length) notes.push(`${adapter.name}: 0 violations in input — no findings`)
+
+  const findings = []
+  for (const h of hits) {
+    if (!h || !h.file || h.ruleId == null || h.engine == null) {
+      notes.push(`${adapter.name}: skipped a malformed hit (missing engine/ruleId/file)`)
+      continue
+    }
+    let classKey = null
+    try {
+      classKey = adapter.classify(h.ruleId)
+    } catch {
+      classKey = null
+    }
+    findings.push(buildFinding({ ...h, classKey, repoRoot, pass }))
+    if (!classKey) {
+      notes.push(`${adapter.name}: rule ${h.ruleId} is unmapped — ingested as deterministic with the Code-Analyzer-severity fallback`)
+    }
+  }
+  // stable order so the output is byte-identical regardless of scanner emission order
+  findings.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return { findings, notes }
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #1 — code-analyzer (file-parser): parses a captured Code Analyzer v5 JSON
+// ----------------------------------------------------------------------------
+export const codeAnalyzerAdapter = {
+  name: 'code-analyzer',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.violations)) return []
+    const hits = []
+    for (const v of raw.violations) {
+      if (!v || v.rule == null) continue
+      const locs = Array.isArray(v.locations) ? v.locations : []
+      const idx =
+        Number.isInteger(v.primaryLocationIndex) && v.primaryLocationIndex >= 0 && v.primaryLocationIndex < locs.length
+          ? v.primaryLocationIndex
+          : 0
+      const loc = locs[idx] || locs[0] || null
+      if (!loc || !loc.file) continue
+      hits.push({
+        engine: v.engine || 'code-analyzer',
+        ruleId: String(v.rule),
+        severityNum: Number.isInteger(v.severity) ? v.severity : null,
+        file: loc.file,
+        startLine: Number.isInteger(loc.startLine) ? loc.startLine : null,
+        message: v.message == null ? '' : String(v.message),
+        resources: Array.isArray(v.resources) ? v.resources : [],
+        tags: Array.isArray(v.tags) ? v.tags : [],
+      })
+    }
+    return hits
+  },
+  classify(ruleId) {
+    return RULE_CLASS[ruleId] || null
+  },
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #2 — metadata-viewall (source-scanner): greps the repo's permission sets
+// ----------------------------------------------------------------------------
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.security-review'])
+function findPermissionSetFiles(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue
+        walk(join(dir, e.name))
+      } else if (e.isFile() && e.name.endsWith('.permissionset-meta.xml')) {
+        out.push(join(dir, e.name))
+      }
+    }
+  }
+  walk(root)
+  out.sort()
+  return out
+}
+function lineOfIndex(text, idx) {
+  let line = 1
+  for (let i = 0; i < idx && i < text.length; i++) if (text[i] === '\n') line++
+  return line
+}
+// PURE: extract over-granting objectPermissions blocks from one permission set's XML.
+function extractObjectOvergrants(text) {
+  const out = []
+  const re = /<objectPermissions>([\s\S]*?)<\/objectPermissions>/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const block = m[1]
+    const objM = /<object>\s*([^<\s][^<]*?)\s*<\/object>/.exec(block)
+    if (!objM) continue
+    const object = objM[1].trim()
+    // Custom objects only. Standard objects are out of scope — "the org admin solely
+    // owns the security policy for standard objects" (baseline violation-sharing-rules-bypass).
+    if (!/__c$/i.test(object)) continue
+    const flags = PS_OVERGRANT_FLAGS.filter((fl) => new RegExp(`<${fl}>\\s*true\\s*</${fl}>`, 'i').test(block))
+    if (!flags.length) continue
+    const objAbsIdx = m.index + m[0].indexOf(objM[0])
+    out.push({ object, flags, line: lineOfIndex(text, objAbsIdx) })
+  }
+  return out
+}
+export const metadataViewAllAdapter = {
+  name: 'metadata-viewall',
+  kind: 'source-scanner',
+  collect({ target } = {}) {
+    if (!target) return null
+    let files
+    try {
+      files = findPermissionSetFiles(target)
+    } catch {
+      return null
+    }
+    const out = []
+    for (const p of files) {
+      try {
+        out.push({ path: p, text: readFileSync(p, 'utf8') })
+      } catch {
+        /* unreadable file — skip, never crash */
+      }
+    }
+    return { files: out, repoRoot: target }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.files)) return []
+    const hits = []
+    for (const f of raw.files) {
+      if (!f || typeof f.text !== 'string') continue
+      for (const og of extractObjectOvergrants(f.text)) {
+        hits.push({
+          engine: 'metadata',
+          ruleId: 'viewall-overgrant',
+          severityNum: null,
+          file: f.path,
+          startLine: og.line,
+          message: `Permission set grants ${og.flags.join(' + ')}=true on custom object ${og.object} — an all-records sharing bypass on a partner-namespace object.`,
+          resources: [VIEWALL_DOC],
+          tags: ['AppExchange', 'Security', 'Metadata'],
+        })
+      }
+    }
+    return hits
+  },
+  classify() {
+    return 'viewall-overgrant'
+  },
+}
+
+export const ADAPTERS = {
+  'code-analyzer': codeAnalyzerAdapter,
+  'metadata-viewall': metadataViewAllAdapter,
+}
+
+// ----------------------------------------------------------------------------
+// ledger merge (additive + idempotent). LLM-supersession enforcement is Slice 2;
+// here a deterministic finding is keyed by engine+ruleId+file:line and added once
+// (or refreshed in place on re-ingest), never duplicated.
+// ----------------------------------------------------------------------------
+export function loadLedger(ledgerPath) {
+  let ledger
+  try {
+    ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'))
+  } catch {
+    ledger = null
+  }
+  if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
+    ledger = { schema_version: '1', findings: [], passes: [] }
+  }
+  // HONESTY (data-loss guard, mirrors merge-ledger.mjs): a present-but-non-array
+  // `findings` is a corrupted/hand-edited ledger, not an empty one — refuse loudly
+  // rather than overwrite a recoverable file.
+  if (ledger.findings != null && !Array.isArray(ledger.findings)) {
+    throw new Error(
+      'prior ledger `findings` is not an array (corrupted or hand-edited); refusing to overwrite — restore from version control and re-run'
+    )
+  }
+  if (!Array.isArray(ledger.findings)) ledger.findings = []
+  if (!Array.isArray(ledger.passes)) ledger.passes = []
+  if (!ledger.schema_version) ledger.schema_version = '1'
+  return ledger
+}
+export function mergeFindings(ledger, newFindings, pass) {
+  const passId = Number.isInteger(pass) && pass >= 1 ? pass : 1
+  const byId = new Map(ledger.findings.map((f) => [f.id, f]))
+  let added = 0
+  let updated = 0
+  for (const nf of newFindings) {
+    const prev = byId.get(nf.id)
+    if (prev) {
+      // owner-touched lifecycle states are never re-written by an automated re-ingest
+      if (prev.status === 'accepted_risk' || prev.status === 'fixed') {
+        prev.last_seen = passId
+        updated++
+        continue
+      }
+      const firstSeen = prev.first_seen
+      Object.assign(prev, nf, { first_seen: firstSeen, last_seen: passId })
+      updated++
+    } else {
+      ledger.findings.push(nf)
+      byId.set(nf.id, nf)
+      added++
+    }
+  }
+  return { added, updated }
+}
+
+// ----------------------------------------------------------------------------
+// CLI
+// ----------------------------------------------------------------------------
+function arg(flag, def) {
+  const i = process.argv.indexOf(flag)
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def
+}
+function main() {
+  const scanner = arg('--scanner', 'code-analyzer')
+  const input = arg('--input', null)
+  const target = arg('--target', process.cwd())
+  const asJson = process.argv.includes('--json')
+  const dryRun = process.argv.includes('--dry-run')
+  const passArg = parseInt(arg('--pass', ''), 10)
+
+  const adapter = ADAPTERS[scanner]
+  if (!adapter) {
+    console.error(`ingest-scanner-findings: unknown --scanner '${scanner}'. Known: ${Object.keys(ADAPTERS).join(', ')}`)
+    process.exit(2)
+  }
+
+  let raw
+  try {
+    raw = adapter.collect({ input, target })
+  } catch {
+    raw = null
+  }
+
+  const ledgerPath = join(target, '.security-review', 'audit-ledger.json')
+  let ledger = { schema_version: '1', findings: [], passes: [] }
+  let defaultPass = 1
+  if (!dryRun) {
+    try {
+      ledger = loadLedger(ledgerPath)
+    } catch (e) {
+      console.error(`ingest-scanner-findings: ${e.message}`)
+      process.exit(2)
+    }
+    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) : 1
+  }
+  const pass = Number.isInteger(passArg) && passArg >= 1 ? passArg : defaultPass
+
+  const { findings, notes } = ingest(raw, adapter, { repoRoot: target, pass })
+
+  let merged = null
+  if (!dryRun) {
+    merged = mergeFindings(ledger, findings, pass)
+    try {
+      mkdirSync(join(target, '.security-review'), { recursive: true })
+    } catch {
+      /* dir may already exist */
+    }
+    writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2))
+  }
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify({ scanner: adapter.name, kind: adapter.kind, findings, notes, merged }, null, 2) + '\n')
+  } else {
+    process.stdout.write(
+      `ingest-scanner-findings [${adapter.name}/${adapter.kind}]: ${findings.length} deterministic finding(s)` +
+        (dryRun ? ' (dry-run, not merged)' : `; merged +${merged.added} new / ${merged.updated} refreshed → ${ledgerPath}`) +
+        '\n'
+    )
+    for (const n of notes) process.stdout.write(`  note: ${n}\n`)
+  }
+}
+
+function invokedDirectly() {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+  } catch {
+    return fileURLToPath(import.meta.url) === process.argv[1]
+  }
+}
+if (invokedDirectly()) main()

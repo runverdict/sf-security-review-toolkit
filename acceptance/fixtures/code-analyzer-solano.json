@@ -1,0 +1,174 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 6,
+    "sev1": 0,
+    "sev2": 3,
+    "sev3": 3,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "retire-js": "0.35.0",
+    "regex": "0.36.0",
+    "eslint": "0.43.0",
+    "pmd": "0.41.0",
+    "sfge": "0.21.0"
+  },
+  "violations": [
+    {
+      "rule": "ApexCRUDViolation",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "Recommended",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoAccountInsightController.cls",
+          "startLine": 19,
+          "startColumn": 26,
+          "endLine": 25,
+          "endColumn": 10
+        }
+      ],
+      "message": "Validate CRUD permission before SOQL/DML operation or enforce user mode",
+      "resources": [
+        "https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_apex_security.html#apexcrudviolation"
+      ]
+    },
+    {
+      "rule": "ApexCRUDViolation",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "Recommended",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoOpportunityController.cls",
+          "startLine": 21,
+          "startColumn": 25,
+          "endLine": 26,
+          "endColumn": 10
+        }
+      ],
+      "message": "Validate CRUD permission before SOQL/DML operation or enforce user mode",
+      "resources": [
+        "https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_apex_security.html#apexcrudviolation"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInVarDecls",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoSummarizeAction.cls",
+          "startLine": 17,
+          "startColumn": 20,
+          "endLine": 17,
+          "endColumn": 93
+        }
+      ],
+      "message": "Hard coded credentials assigned to variable: token  matched the token: TOKEN",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinvardecls"
+      ]
+    },
+    {
+      "rule": "ApexFlsViolation",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoAccountInsightController.cls",
+          "startLine": 17,
+          "startColumn": 40
+        },
+        {
+          "file": "force-app/main/default/classes/SolanoAccountInsightController.cls",
+          "startLine": 19,
+          "startColumn": 26
+        }
+      ],
+      "message": "FLS validation is missing for [READ] operation on [Contact] with field(s) [Account.OwnerId,Email,MobilePhone,Name,Phone,Title].",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#apexflsviolation"
+      ]
+    },
+    {
+      "rule": "MissingNullCheckOnSoqlVariable",
+      "engine": "sfge",
+      "severity": 3,
+      "tags": [
+        "DevPreview",
+        "Performance",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoCoachingAction.cls",
+          "startLine": 6,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/SolanoCoachingAction.cls",
+          "startLine": 10,
+          "startColumn": 30
+        }
+      ],
+      "message": "Null check is missing for variable uid used in SOQL query.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#missingnullcheckonsoqlvariable"
+      ]
+    },
+    {
+      "rule": "MissingNullCheckOnSoqlVariable",
+      "engine": "sfge",
+      "severity": 3,
+      "tags": [
+        "DevPreview",
+        "Performance",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SolanoForecastService.cls",
+          "startLine": 16,
+          "startColumn": 37
+        },
+        {
+          "file": "force-app/main/default/classes/SolanoForecastService.cls",
+          "startLine": 19,
+          "startColumn": 68
+        }
+      ],
+      "message": "Null check is missing for variable stage used in SOQL query.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#missingnullcheckonsoqlvariable"
+      ]
+    }
+  ]
+}

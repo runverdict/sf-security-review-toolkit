@@ -1,0 +1,260 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 9,
+    "sev1": 0,
+    "sev2": 8,
+    "sev3": 1,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "sfge": "0.21.0"
+  },
+  "violations": [
+    {
+      "rule": "DatabaseOperationsMustUseWithSharing",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 8,
+          "startColumn": 32
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 15,
+          "startColumn": 25
+        }
+      ],
+      "message": "Database operation must be executed from a class that enforces sharing rules.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#databaseoperationsmustusewithsharing"
+      ]
+    },
+    {
+      "rule": "ApexFlsViolation",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 19,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 20,
+          "startColumn": 20
+        }
+      ],
+      "message": "FLS validation is missing for [READ] operation on [Job__c] with field(s) [Technician__c].",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#apexflsviolation"
+      ]
+    },
+    {
+      "rule": "ApexFlsViolation",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 19,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 22,
+          "startColumn": 9
+        }
+      ],
+      "message": "FLS validation is missing for [UPDATE] operation on [Job__c] with field(s) [Technician__c].",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#apexflsviolation"
+      ]
+    },
+    {
+      "rule": "DatabaseOperationsMustUseWithSharing",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 19,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 20,
+          "startColumn": 20
+        }
+      ],
+      "message": "Database operation must be executed from a class that enforces sharing rules.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#databaseoperationsmustusewithsharing"
+      ]
+    },
+    {
+      "rule": "DatabaseOperationsMustUseWithSharing",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 19,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 22,
+          "startColumn": 9
+        }
+      ],
+      "message": "Database operation must be executed from a class that enforces sharing rules.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#databaseoperationsmustusewithsharing"
+      ]
+    },
+    {
+      "rule": "MissingNullCheckOnSoqlVariable",
+      "engine": "sfge",
+      "severity": 3,
+      "tags": [
+        "DevPreview",
+        "Performance",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 19,
+          "startColumn": 24
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianJobController.cls",
+          "startLine": 20,
+          "startColumn": 70
+        }
+      ],
+      "message": "Null check is missing for variable jobId used in SOQL query.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#missingnullcheckonsoqlvariable"
+      ]
+    },
+    {
+      "rule": "ApexFlsViolation",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 8,
+          "startColumn": 17
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 17,
+          "startColumn": 9
+        }
+      ],
+      "message": "FLS validation is missing for [INSERT] operation on [PermissionSetAssignment] with field(s) [AssigneeId,PermissionSetId].",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#apexflsviolation"
+      ]
+    },
+    {
+      "rule": "DatabaseOperationsMustUseWithSharing",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 8,
+          "startColumn": 17
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 10,
+          "startColumn": 28
+        }
+      ],
+      "message": "Database operation must be executed from a class that enforces sharing rules.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#databaseoperationsmustusewithsharing"
+      ]
+    },
+    {
+      "rule": "DatabaseOperationsMustUseWithSharing",
+      "engine": "sfge",
+      "severity": 2,
+      "tags": [
+        "DevPreview",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 1,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 8,
+          "startColumn": 17
+        },
+        {
+          "file": "force-app/main/default/classes/MeridianPostInstall.cls",
+          "startLine": 17,
+          "startColumn": 9
+        }
+      ],
+      "message": "Database operation must be executed from a class that enforces sharing rules.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-sfge.html#databaseoperationsmustusewithsharing"
+      ]
+    }
+  ]
+}

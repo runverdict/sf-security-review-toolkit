@@ -23,6 +23,75 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.28] — 2026-06-26
+
+**Deterministic-findings Phase 1 · Slice 1 — the scanner→ledger ingest foundation
+(docs/roadmap-deterministic-findings.md).** A 5-run cold campaign proved the LLM-generated
+blocker band is unstable run-to-run (the Solano CRUD/FLS anchors flickered
+`high·high·ABSENT·high·high`), while Code Analyzer (PMD/SFGE) finds those exact bugs
+DETERMINISTICALLY every run — its output just never reached the ledger. This slice builds the
+missing path: a scanner finding becomes a `provenance:'deterministic'` ledger finding carrying the
+`engine` + `ruleId` that fired and a severity taken from the requirement CLASS, never the scanner's
+1–5 number and never an LLM. Validated by a unit assertion ("run the parser twice → identical"),
+NOT a campaign. INGEST ONLY — LLM-supersession enforcement (reject an LLM finding in a class the
+engine owns and ran), the engine-absent→PENDING fix, and journey re-sequencing are Slice 2. Suite
+**53 files / 532 checks** (was 52 / 499 — +`test-ingest-scanner-findings` (33)). Tag stays **HELD**.
+
+### Added
+- **`harness/ingest-scanner-findings.mjs`** — a PLUGGABLE per-scanner adapter registry, not a
+  Code-Analyzer-specific parser. The pure core `ingest(raw, adapter, {repoRoot, pass})` (no Date /
+  Math.random / network; byte-deterministic given `raw`) turns scanner/metadata output into ledger
+  findings; `collect()` is the only I/O seam. Every adapter is `{ name, kind, collect, parse,
+  classify }` and declares one of two KINDS, both shipped in Slice 1 to prove the seam handles N>1
+  and both up front:
+  - **`code-analyzer`** (`kind:'file-parser'`) — parses a captured Code Analyzer v5 violations JSON
+    (`--input`); each violation → one finding at `locations[primaryLocationIndex]`. Future Semgrep /
+    OSV / gitleaks / Checkov are new file-parser adapters, not surgery.
+  - **`metadata-viewall`** (`kind:'source-scanner'`, `engine:'metadata'`) — greps the repo's
+    `permissionsets/*.permissionset-meta.xml` directly (no external tool) for `viewAllRecords` /
+    `modifyAllRecords` / `modifyAllData = true` on a CUSTOM object — the one class Code Analyzer
+    doesn't cover (it's permission-set XML, not Apex). Standard objects are out of scope (the org
+    admin owns the standard-object policy).
+  - **Severity from the requirement CLASS, never the scanner number.** A frozen `RULE_CLASS` map
+    homes the three campaign-wobbled classes — `ApexCRUDViolation`/`ApexFlsViolation` → crud-fls,
+    `DatabaseOperationsMustUseWithSharing`/`ApexSharingViolations` → sharing, the metadata grant →
+    viewall-overgrant — and `adjusted_severity` is READ FROM the baseline (`fail-crud-fls` /
+    `fail-sharing-model` = `major` → `high`), grounded by a live read of
+    `baseline/requirements-baseline.yaml`. The new canonical `REQ_SEVERITY_TO_FINDING`
+    (`blocker→critical / major→high / minor→low / informational→info`) is the first conversion
+    between the baseline's `severity_if_missing` taxonomy and the finding-severity taxonomy.
+  - **An unmapped rule is NEVER dropped** — a scanner finding is real. It is still ingested as
+    `deterministic` with a documented Code-Analyzer-severity fallback (`CA_SEVERITY_TO_FINDING`,
+    1→critical … 5→info) and a note that Phase 2 extends the class map.
+  - **Idempotent, additive merge.** A deterministic finding's id is stable from
+    `engine+ruleId+file:line` (one entry per scanner violation at one sink — N distinct sites stay
+    N findings), so re-ingesting yields no duplicates; existing llm-inferred findings survive
+    untouched; a corrupted (non-array `findings`) ledger is refused, never overwritten.
+- **`templates/audit-ledger.schema.json`** — additively extended `$defs/finding` with `provenance`
+  (enum `deterministic|llm-inferred`, **default `llm-inferred`** for back-compat — a finding written
+  before this field validates unchanged), `engine`, and `ruleId`, plus an `allOf` conditional
+  (gated on `provenance` being present) requiring `engine`+`ruleId` when `provenance` is
+  `deterministic`. No existing required field changes.
+- **`acceptance/fixtures/`** — REAL captured scanner output as test data (kills the
+  hand-authored-fixture authorship ceiling): `code-analyzer-solano.json` (the primary — 6 real PMD/
+  SFGE violations incl. the `ApexCRUDViolation` Contact-PII anchor the LLM ledger dropped),
+  `code-analyzer-sfge-meridian.json` (real SFGE `DatabaseOperationsMustUseWithSharing` for the
+  sharing class), and a representative `permissionsets/Solano_Admin.permissionset-meta.xml`
+  exercising the custom-over-grant / standard-object / non-over-grant branches.
+- **`acceptance/test-ingest-scanner-findings.mjs`** (33 checks) — determinism (ingest twice →
+  byte-identical), the anchor landing deterministic with class-severity, severity-from-class
+  invariance under a mutated `violation.severity`, the sharing + ViewAll classes, unmapped-but-kept,
+  idempotent + additive merge, fail-safe on missing/non-JSON/empty input, schema conformance (a
+  focused `$defs/finding` validator: a deterministic finding validates, a legacy llm-inferred
+  finding validates, a deterministic finding missing `engine` fails the conditional), the 2-adapter
+  / 2-kind registry, and the CLI for both adapters.
+
+### Roadmap
+- `docs/roadmap-deterministic-findings.md` — Slice 1 marked shipped under Phase 1. Slice 2 (the
+  enforcement half): the merge engine rejects an LLM finding in a deterministic-owned class when
+  that engine ran; engine-absent → PENDING-OWNER-RUN (never LLM-fill, never drop); deterministic
+  pass FIRST in the journey; the deterministic acceptance on the live Solano fixture.
+
 ## [0.8.27] — 2026-06-26
 
 **Presentation-consistency Slice 5 — WI-06 GATES half (the scope-submission gates + final
