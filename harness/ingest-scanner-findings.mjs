@@ -79,8 +79,19 @@
  *                       supplies the advisory title/url (a STRING via-entry is a transitive chain, an OBJECT via-
  *                       entry is the direct advisory). Unknown/blank severity → medium (judgment call, as OSV).
  *                       With two dep-CVE engines now live, OSV+npm-audit can flag the SAME CVE — the duplicate is
- *                       visible (the SAFE under-merge); collapsing it is §10 extension #3 (Phase-2b). Next: trivy —
- *                       the heavier multi-mode one (container/IaC/SCA/secret), a mode-aware parse.
+ *                       visible (the SAFE under-merge); collapsing it is §10 extension #3 (Phase-2b).
+ *                     Adapter #11 (Phase 2 · 2a #9): `trivy` (IaC-misconfig JSON; engine:'trivy') — the multi-mode
+ *                       scanner, done CONFIG-mode only this slice (the only mode with a captured fixture). A Trivy
+ *                       `Class:'config'` finding is the SAME vuln class as Checkov, so it REUSES the `iac-misconfig`
+ *                       class (NO new CLASS_DEFS, NO buildFinding change — like detect-secrets reused
+ *                       `hardcoded-secrets`): a CLASS-severity adapter at class `high`, NOT a tool→band path. The
+ *                       parse is CLASS-DISPATCH (forward-compatible): it handles `Class:'config'` now and SKIPS the
+ *                       vuln (os-pkgs/lang-pkgs) and `secret` classes (Phase-2b — no fixtures yet). CONSISTENCY CALL:
+ *                       Trivy DOES carry a per-misconfig Severity, but for the same class to be consistent across
+ *                       engines it lands at class-severity exactly like Checkov (its Severity recorded in the message
+ *                       for reference, never moving the band) — a per-tool-severity refinement for `iac-misconfig`
+ *                       (Checkov + Trivy both) is the same Phase-2b item flagged at Checkov. Trivy + Checkov flag the
+ *                       SAME Dockerfile misconfig (DS-0026 ↔ CKV_DOCKER_2) → two visible rows; collapsing = §10 ext #3.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -118,6 +129,7 @@
  *   node ingest-scanner-findings.mjs --scanner detect-secrets  --input detect-secrets.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner npm-audit       --input npm-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner trivy           --input trivy.json          --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -1276,6 +1288,94 @@ export const npmAuditAdapter = {
   // NO securityRelevant — security-by-construction (every npm-audit entry is a known CVE), like osv/checkov/secrets.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #11 — trivy (file-parser, Phase 2 · 2a #9): parses captured Trivy JSON (CONFIG / IaC-misconfig mode).
+// Trivy is the toolkit's multi-mode scanner (run-scans: IaC-misconfig over Dockerfile/Terraform/K8s, plus
+// os-pkgs/lang-pkgs SCA and a secret mode). THIS slice does exactly ONE mode — `Class:'config'` (IaC misconfig) —
+// because that is the only mode with a REAL captured fixture on disk, and that mode is the SAME vuln class as
+// Checkov, so trivy REUSES the `iac-misconfig` class (NO new `CLASS_DEFS` entry, NO `buildFinding` change — like
+// detect-secrets reused `hardcoded-secrets`): a CLASS-severity adapter, severity from the `iac-misconfig` CLASS
+// (scan-iac-misconfig = major → high) via a CONSTANT `classify()`→`'iac-misconfig'`, NO tag filter
+// (security-by-construction, like checkov/metadata). The ONLY shared-file touch is the `ADAPTERS` registry line.
+//
+// THE PARSE IS CLASS-DISPATCH (forward-compatible). Trivy's `Results[]` each carry a `Class`: `'config'`
+// (IaC misconfig), `'os-pkgs'`/`'lang-pkgs'` (a dependency-CVE/SCA list — would reuse Extension A's
+// `dependency-cve` band), or `'secret'` (would reuse the `hardcoded-secrets` class). THIS slice handles ONLY
+// `Class:'config'` and SKIPS the vuln/secret classes — those are **Phase-2b** (no captured fixtures yet) — so the
+// parse is forward-compatible: when a future slice ships the SCA/secret fixtures, the dispatch grows a branch and
+// nothing already-shipped changes. Only `Status:'FAIL'` misconfigurations become findings (a `PASS` is a satisfied
+// check, not a finding).
+//
+// THREE judgment calls (documented in the CHANGELOG + roadmap):
+//   1. **Class-severity, CONSISTENT WITH CHECKOV** — Trivy DOES carry a per-misconfig `Severity`
+//      (LOW/MEDIUM/HIGH/CRITICAL), but Checkov (the OTHER `iac-misconfig` engine) lands EVERY IaC misconfig at the
+//      class `high`. For the same toolkit class to be consistent across engines, Trivy ALSO uses class-severity:
+//      the misconfig's `Severity` is recorded in the message *for reference* (mirroring how Checkov records its
+//      absent tool severity), but it does NOT move the band — a `Severity:'LOW'` misconfig is STILL `high`, exactly
+//      like Checkov. A per-misconfig-tool-severity refinement for the `iac-misconfig` class (Checkov + Trivy both)
+//      stays the SAME Phase-2b item flagged at Checkov — this slice introduces NO tool→band path for IaC. (Hence
+//      `severityNum:null`, no `bandFromTool`: the mapped class-severity branch governs, the tool number never reaches it.)
+//   2. **Config mode only this slice** — the vuln (os-pkgs/lang-pkgs) and secret classes are skipped (Phase-2b),
+//      so there is no fabricated SCA/secret finding from a Trivy run; the dispatch is forward-compatible.
+//   3. **Cross-engine dedup now concrete for IaC too** — Trivy + Checkov both flag the SAME Dockerfile misconfig
+//      (Trivy `DS-0026` "No HEALTHCHECK" ↔ Checkov `CKV_DOCKER_2`) → TWO `iac-misconfig` rows. Neither supersedes
+//      the other (both deterministic; a deterministic finding never supersedes another), so the duplicate is
+//      VISIBLE — the SAFE under-merge; collapsing it is roadmap §10 extension #3 (Phase-2b), NOT this slice.
+//
+// `file` = the Result `Target` (the scanned file); `:StartLine` is appended ONLY when the misconfig's
+// `CauseMetadata.StartLine` is an integer (a file-level misconfig like DS-0026 carries none → the bare Target).
+// `ruleId` prefers `AVDID` (e.g. AVD-DS-0026) and falls back to `ID` (e.g. DS-0026). Input is a JSON OBJECT with `Results[]`.
+export const trivyAdapter = {
+  name: 'trivy',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    const results = raw && Array.isArray(raw.Results) ? raw.Results : null
+    if (!results) return []
+    const hits = []
+    for (const r of results) {
+      if (!r || typeof r !== 'object') continue
+      // CLASS DISPATCH. Only 'config' (IaC misconfig) is handled this slice; the vuln (os-pkgs/lang-pkgs) and
+      // 'secret' classes are Phase-2b (no captured fixtures yet) — skip them, forward-compatible.
+      if (r.Class !== 'config') continue
+      const target = r.Target || ''
+      const miscs = Array.isArray(r.Misconfigurations) ? r.Misconfigurations : []
+      for (const m of miscs) {
+        if (!m || m.ID == null) continue // a malformed misconfig with no rule id is skipped
+        if (String(m.Status || '').toUpperCase() === 'PASS') continue // only FAIL is a finding (a PASS is a satisfied check)
+        const cm = m.CauseMetadata && typeof m.CauseMetadata === 'object' ? m.CauseMetadata : {}
+        hits.push({
+          engine: 'trivy',
+          ruleId: String(m.AVDID || m.ID), // AVD-DS-0026 (preferred) / DS-0026 (fallback)
+          severityNum: null, // class-severity (iac-misconfig → high); Trivy's own Severity is noted below for reference
+          file: target,
+          startLine: Number.isInteger(cm.StartLine) ? cm.StartLine : null,
+          message: `${m.Title || m.ID}${m.Message ? ' — ' + m.Message : ''} [Trivy severity ${m.Severity || 'n/a'}, recorded for reference]`,
+          resources: m.PrimaryURL ? [String(m.PrimaryURL)] : [],
+          tags: [],
+        })
+      }
+    }
+    return hits
+  },
+  // Constant: every Trivy config misconfig is an IaC misconfig — REUSES the `iac-misconfig` class checkov added
+  // (NO new CLASS_DEFS entry), whose severity is the class (scan-iac-misconfig → high) and dimension infrastructure-iac.
+  // One class definition, two engines (checkov + trivy).
+  classify() {
+    return 'iac-misconfig'
+  },
+  // NO securityRelevant — Trivy config findings are security/compliance by construction, like checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -1287,6 +1387,7 @@ export const ADAPTERS = {
   'detect-secrets': detectSecretsAdapter,
   'osv': osvAdapter,
   'npm-audit': npmAuditAdapter,
+  'trivy': trivyAdapter,
 }
 
 // ----------------------------------------------------------------------------

@@ -24,12 +24,13 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 10 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 11 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
- *   CK/SG/BN/NJ/GL/DS/OSV/NPM — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
+ *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
- *        npm-audit dependency-CVE Extension-A reuse, label-only band).
+ *        npm-audit dependency-CVE Extension-A reuse, label-only band · trivy IaC-misconfig config-mode,
+ *        REUSES checkov's iac-misconfig class at class-severity — Trivy's own Severity recorded for reference only).
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -52,6 +53,7 @@ import {
   detectSecretsAdapter,
   osvAdapter,
   npmAuditAdapter,
+  trivyAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -85,6 +87,7 @@ const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-ke
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
 const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 source (mcp/requirements.txt), 3 PyPI pkgs, 11 vulns (1 critical h11 / 3 high / 6 medium / 1 low starlette)
 const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --json` v2: 4 vulnerable pkgs (body-parser/express/path-to-regexp/qs), moderate×2 + high×2
+const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 filesystem scan: 1 Class:'config' Result, 1 FAIL misconfig (DS-0026 No HEALTHCHECK, Severity LOW, no StartLine — the IaC anchor, class-severity high)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -459,8 +462,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 10 adapters (npm-audit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'semgrep'])
+check('AD1 registry has 11 adapters (trivy added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'semgrep', 'trivy'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -471,6 +474,7 @@ check('AD1 registry has 10 adapters (npm-audit added), both KINDS, each {name,ki
   assert.equal(ADAPTERS['detect-secrets'].kind, 'file-parser')
   assert.equal(ADAPTERS['osv'].kind, 'file-parser')
   assert.equal(ADAPTERS['npm-audit'].kind, 'file-parser')
+  assert.equal(ADAPTERS['trivy'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -2230,6 +2234,188 @@ check('NPM-CLI-merge: --scanner npm-audit writes the deterministic findings to t
   execFileSync('node', [CLI, '--scanner', 'npm-audit', '--input', NPM_AUDIT, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'npm-audit').length, 4) // idempotent — no dupes
+})
+
+// ─────────────────────────────── trivy (Phase 2 · 2a #9 — IaC misconfig, CONFIG mode only)
+// Trivy is the multi-mode scanner, done CONFIG-mode only this slice (the only mode with a captured fixture). A Trivy
+// `Class:'config'` finding is the SAME vuln class as Checkov, so it REUSES the `iac-misconfig` class (NO new
+// CLASS_DEFS, NO buildFinding change — like detect-secrets reused `hardcoded-secrets`): a CLASS-severity adapter at
+// class `high`, NOT a tool→band path. The parse is CLASS-DISPATCH (forward-compatible): `Class:'config'` now, the
+// vuln (os-pkgs/lang-pkgs) and `secret` classes SKIPPED (Phase-2b). CONSISTENCY CALL: Trivy DOES carry a per-misconfig
+// Severity, but it lands at class-severity EXACTLY like Checkov (Severity recorded in the message for reference, never
+// moving the band). The real fixture is genuine Trivy 0.71.2 output: 1 `Class:'config'` Result, 1 FAIL misconfig
+// (DS-0026 "No HEALTHCHECK", Severity LOW, no CauseMetadata.StartLine — the same Dockerfile finding Checkov reports as
+// CKV_DOCKER_2). Small INLINE synthetics cover the class dispatch, PASS-skip, AVDID preference, and :line formatting.
+const ingestTrivy = (raw) => ingest(raw === undefined ? readJSON(TRIVY) : raw, trivyAdapter, { repoRoot: '', pass: 1 })
+
+check('TRV-determinism: ingest the real Trivy fixture twice → byte-identical findings', () => {
+  const a = ingestTrivy().findings
+  const b = ingestTrivy().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('TRV-anchor: DS-0026 → one deterministic iac-misconfig finding (trivy/high/Dockerfile, PrimaryURL in reasoning, Trivy severity noted for reference, class-severity not LOW)', () => {
+  const raw = readJSON(TRIVY)
+  const url = raw.Results[0].Misconfigurations[0].PrimaryURL
+  const { findings } = ingestTrivy(raw)
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'trivy')
+  assert.equal(f.ruleId, 'DS-0026') // the real misconfig carries no AVDID → falls back to ID
+  assert.equal(f.class, 'iac-misconfig') // REUSES checkov's class
+  assert.equal(f.dimension, 'infrastructure-iac')
+  assert.equal(f.adjusted_severity, 'high') // from the iac-misconfig class (scan-iac-misconfig=major→high), NOT Trivy's LOW
+  // the real DS-0026 (a file-level "No HEALTHCHECK") carries NO CauseMetadata.StartLine → the locus is the bare Target
+  // (the `:StartLine` path is exercised by TRV-class-dispatch's synthetic, which DOES carry a StartLine)
+  assert.equal(f.file, 'Dockerfile')
+  assert.ok(!/:\d+$/.test(f.file), 'a misconfig with no StartLine must have NO :line')
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.ok(url && f.verdict_reasoning.includes(url), 'the Trivy PrimaryURL must appear in verdict_reasoning')
+  assert.ok(f.verdict_reasoning.includes('[Trivy severity LOW, recorded for reference]'), 'Trivy tool severity is recorded for reference')
+  assert.match(f.verdict_reasoning, /severity fixed from the iac-misconfig class/) // class-severity, not the tool
+})
+
+check('TRV-severity-from-class (the consistency invariant): mutating the misconfig Severity LOW→CRITICAL leaves the band high (class-severity, matching Checkov; the tool number never moves it)', () => {
+  const raw = clone(readJSON(TRIVY))
+  raw.Results[0].Misconfigurations[0].Severity = 'CRITICAL'
+  const { findings } = ingestTrivy(raw)
+  assert.equal(findings.length, 1)
+  // would be 'critical' if it followed Trivy's per-misconfig tier; stays 'high' from the iac-misconfig class
+  assert.equal(findings[0].adjusted_severity, 'high')
+  assert.ok(findings[0].verdict_reasoning.includes('[Trivy severity CRITICAL, recorded for reference]'), 'the (now CRITICAL) tool severity is still only recorded for reference')
+})
+
+check('TRV-class-dispatch: a synthetic with an os-pkgs (Vulnerabilities) Result AND a config (Misconfigurations) Result → only the config misconfig becomes a finding (the vuln class is Phase-2b); AVDID preferred + CauseMetadata.StartLine → :line', () => {
+  const synthetic = {
+    SchemaVersion: 2,
+    ArtifactType: 'filesystem',
+    Results: [
+      // a Class:'os-pkgs' SCA list — SKIPPED this slice (Phase-2b, no fixture)
+      { Target: 'go.sum', Class: 'os-pkgs', Type: 'gobinary', Vulnerabilities: [{ VulnerabilityID: 'CVE-2024-9999', PkgName: 'foo', Severity: 'CRITICAL' }] },
+      // a Class:'config' IaC misconfig — the ONLY finding
+      { Target: 'k8s/deploy.yaml', Class: 'config', Type: 'kubernetes', Misconfigurations: [
+        { ID: 'KSV001', AVDID: 'AVD-KSV-0001', Title: 'Process can elevate its own privileges', Message: 'Set allowPrivilegeEscalation to false', Severity: 'HIGH', PrimaryURL: 'https://avd.aquasec.com/misconfig/ksv001', Status: 'FAIL', CauseMetadata: { StartLine: 12, EndLine: 14 } },
+      ] },
+    ],
+  }
+  const { findings } = ingest(synthetic, trivyAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 1) // only the config misconfig — the os-pkgs vuln class is skipped this slice
+  const f = findings[0]
+  assert.equal(f.ruleId, 'AVD-KSV-0001') // AVDID preferred over ID
+  assert.equal(f.class, 'iac-misconfig')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.ok(f.file.endsWith('k8s/deploy.yaml:12'), `CauseMetadata.StartLine → :line formatting; file was ${f.file}`)
+  assert.ok(!findings.some((x) => /CVE-2024-9999/.test(x.ruleId)), 'the os-pkgs CVE must NOT become a finding this slice')
+  // the parse drops the os-pkgs Result entirely (class dispatch) — only the config Result yields a hit
+  const hits = trivyAdapter.parse(synthetic)
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].engine, 'trivy')
+})
+
+check('TRV-status-pass-skipped: a Misconfiguration with Status:PASS is NOT a finding (only FAIL is)', () => {
+  const synthetic = {
+    Results: [
+      { Target: 'Dockerfile', Class: 'config', Misconfigurations: [
+        { ID: 'DS-0001', Title: 'Use a tagged base image', Severity: 'MEDIUM', Status: 'PASS', CauseMetadata: {} }, // satisfied → not a finding
+        { ID: 'DS-0026', Title: 'No HEALTHCHECK defined', Severity: 'LOW', Status: 'FAIL', CauseMetadata: {} },
+      ] },
+    ],
+  }
+  const { findings } = ingest(synthetic, trivyAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].ruleId, 'DS-0026')
+  // lowercase/whitespace PASS is still skipped (case-insensitive)
+  assert.equal(trivyAdapter.parse({ Results: [{ Target: 'D', Class: 'config', Misconfigurations: [{ ID: 'X', Status: 'pass' }] }] }).length, 0)
+})
+
+check('TRV-reuses-class: trivyAdapter.classify() is the constant iac-misconfig — the SAME CLASS_DEFS entry checkov uses (one definition, two engines); NO new CLASS_DEFS entry was added for trivy', () => {
+  assert.equal(trivyAdapter.classify('x'), 'iac-misconfig')
+  assert.equal(trivyAdapter.classify('AVD-DS-0026'), 'iac-misconfig')
+  assert.equal(checkovAdapter.classify('CKV_DOCKER_2'), 'iac-misconfig') // the other engine maps to the SAME class
+  // ONE definition: the iac-misconfig entry is checkov's, grounded in scan-iac-misconfig / infrastructure-iac
+  assert.equal(CLASS_DEFS['iac-misconfig'].baselineId, 'scan-iac-misconfig')
+  assert.equal(CLASS_DEFS['iac-misconfig'].dimension, 'infrastructure-iac')
+  // NO new CLASS_DEFS entry for trivy — the class map is unchanged (the original 5)
+  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'sharing', 'viewall-overgrant'])
+  assert.equal(CLASS_DEFS['trivy'], undefined)
+})
+
+check('TRV-classify/fail-safe: securityRelevant===undefined; collect() missing → null; parse(null/{}/{Results:null}/{Results:[]}/config-no-Misconfigs/misconfig-no-ID) → []/skipped, no crash; ingest(null) → 0 + honest note', () => {
+  assert.equal(trivyAdapter.securityRelevant, undefined) // Trivy config findings are security/compliance by construction — no tag filter
+  assert.equal(trivyAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-trivy.json') }), null)
+  assert.deepEqual(trivyAdapter.parse(null), [])
+  assert.deepEqual(trivyAdapter.parse({}), []) // no Results key
+  assert.deepEqual(trivyAdapter.parse({ Results: null }), [])
+  assert.deepEqual(trivyAdapter.parse({ Results: [] }), [])
+  assert.deepEqual(trivyAdapter.parse({ Results: [{ Target: 'x', Class: 'config' }] }), []) // a config Result with no Misconfigurations
+  assert.deepEqual(trivyAdapter.parse({ Results: [{ Target: 'x', Class: 'config', Misconfigurations: [{ Title: 'no id', Status: 'FAIL' }] }] }), []) // a misconfig with no ID → skipped
+  assert.deepEqual(trivyAdapter.parse({ Results: [{ Class: 'secret', Secrets: [{ RuleID: 'aws-key' }] }] }), []) // the secret class is Phase-2b → skipped
+  const { findings, notes } = ingest(null, trivyAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('TRV-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: 't'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:9',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const trv = ingestTrivy().findings
+  const r1 = mergeFindings(ledger, trv, 1)
+  assert.equal(r1.added, 1)
+  assert.equal(ledger.findings.length, 2) // 1 llm + 1 trivy
+  const r2 = mergeFindings(ledger, trv, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 2) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === 't'.repeat(16) && !('provenance' in f)))
+})
+
+check('TRV-schema: a Trivy finding (class iac-misconfig, dimension infrastructure-iac) validates against $defs/finding', () => {
+  for (const f of ingestTrivy().findings) assert.deepEqual(validateFinding(f), [])
+})
+
+check('TRV-CLI: --scanner trivy --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'trivy', '--input', TRIVY, '--target', join(tmpdir(), 'nope-trivy'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'trivy')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.equal(parsed.findings.length, 1)
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === 'DS-0026' && f.adjusted_severity === 'high' && f.class === 'iac-misconfig' && f.file === 'Dockerfile')
+  )
+})
+
+check('TRV-CLI-merge: --scanner trivy writes the deterministic finding to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-trivy-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'trivy', '--input', TRIVY, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const t1 = l1.findings.filter((f) => f.engine === 'trivy')
+  assert.equal(t1.length, 1)
+  assert.equal(t1[0].ruleId, 'DS-0026')
+  assert.equal(t1[0].adjusted_severity, 'high')
+  assert.equal(t1[0].class, 'iac-misconfig')
+  execFileSync('node', [CLI, '--scanner', 'trivy', '--input', TRIVY, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'trivy').length, 1) // idempotent — no duplicate
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

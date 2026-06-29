@@ -37,6 +37,66 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.39] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #9 — the trivy adapter (IaC-misconfig / CONFIG mode only; REUSES
+checkov's `iac-misconfig` class at class-severity) (docs/roadmap-deterministic-findings.md §10).** Trivy is the
+toolkit's multi-mode scanner (IaC-misconfig over Dockerfile/Terraform/K8s, plus os-pkgs/lang-pkgs SCA and a
+secret mode). This slice does exactly ONE mode — **`Class:'config'` (IaC misconfig)** — because that is the only
+mode with a REAL captured fixture on disk, and a Trivy `config` finding is the **SAME vuln class as Checkov**, so
+trivy **REUSES the `iac-misconfig` class** (NO new `CLASS_DEFS` entry, NO `buildFinding` change — exactly as
+detect-secrets reused `hardcoded-secrets`): a **CLASS-severity** adapter at class `high` (from `scan-iac-misconfig`
+= `major`), NOT a tool→band path. The **ONLY shared-file touch is the `ADAPTERS` registry line**. The parse is
+**CLASS-DISPATCH** and forward-compatible: it handles `Class:'config'` now and **SKIPS** the vuln (os-pkgs/
+lang-pkgs) and `secret` classes — those are **Phase-2b** (no captured fixtures yet) — so when a future slice ships
+those fixtures the dispatch grows a branch and nothing already-shipped changes. Only `Status:'FAIL'`
+misconfigurations become findings (a `PASS` is a satisfied check). **Severity decision (consistency call):** Trivy
+DOES carry a per-misconfig `Severity` (LOW/MEDIUM/HIGH/CRITICAL), but Checkov — the OTHER `iac-misconfig` engine —
+lands every IaC misconfig at the class `high`; for the same class to be **consistent across engines**, Trivy ALSO
+uses class-severity, with its own `Severity` recorded in the reasoning *for reference* (mirroring how Checkov
+records the absent tool severity). A per-misconfig-tool-severity refinement for the `iac-misconfig` class (Checkov
++ Trivy both) stays the **same Phase-2b item flagged at Checkov** — no tool→band path for IaC is introduced here.
+Trivy + Checkov flag the **SAME Dockerfile misconfig** (Trivy `DS-0026` "No HEALTHCHECK" ↔ Checkov `CKV_DOCKER_2`)
+→ two visible `iac-misconfig` rows; neither supersedes the other (both deterministic), the SAFE under-merge —
+collapsing it is **§10 extension #3** (Phase-2b). Validated by "parse twice → identical" against the real captured
+fixture (genuine Trivy 0.71.2 filesystem scan — 1 `Class:'config'` Result, 1 FAIL misconfig `DS-0026` Severity
+`LOW`, no `CauseMetadata.StartLine`) + the class-severity-consistency mutation (the misconfig `Severity` `LOW→
+CRITICAL` leaves the band `high`, exactly like Checkov) + a class-dispatch synthetic (an `os-pkgs` Vulnerabilities
+Result + a `config` Misconfigurations Result → only the config misconfig becomes a finding; AVDID preferred over
+ID; `CauseMetadata.StartLine` → `:line`) + a `Status:'PASS'`-skipped synthetic + a reuses-class assertion (no new
+`CLASS_DEFS` entry), NO campaign. Suite **55 files / 688 checks** (was 55 / 677; +11 `TRV*` checks folded into
+`test-ingest-scanner-findings`; `AD1` bumped to the 11-adapter registry). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `trivy` adapter** (`file-parser`, `engine:'trivy'`).
+  `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty); `parse()` iterates `Results[]` with
+  a **class dispatch** — only `Class:'config'` Results are read this slice (`os-pkgs`/`lang-pkgs`/`secret` are
+  skipped, Phase-2b), then each `Misconfigurations[]` entry that is a `FAIL` (a `PASS` is skipped) becomes a hit:
+  `ruleId` prefers `AVDID` (e.g. `AVD-DS-0026`) else `ID` (e.g. `DS-0026`); `file` is the Result `Target`, with
+  `:StartLine` appended only when `CauseMetadata.StartLine` is an integer (a file-level misconfig like `DS-0026`
+  carries none → the bare Target); the misconfig's `Severity` is recorded in the message **for reference only**;
+  `PrimaryURL` becomes the reference URL. `severityNum:null`, no `bandFromTool` — `classify()` is the constant
+  **`'iac-misconfig'`** so the **MAPPED class-severity branch governs** (`scan-iac-misconfig` = major → `high`),
+  the tool number never moving it (consistent with Checkov). NO `securityRelevant` (security-by-construction —
+  every config misconfig is a finding). Registered as the **11th** adapter. **No `buildFinding` change, no
+  `CLASS_DEFS` change** — `iac-misconfig` already exists (checkov, 0.8.31); one class definition, two engines.
+- **`acceptance/fixtures/trivy-dockerfile-solano.json`** — genuine Trivy 0.71.2 `filesystem` scan output
+  (`ArtifactType:'filesystem'`), 1 `Class:'config'` Result with 1 `FAIL` Misconfiguration (`DS-0026` "No
+  HEALTHCHECK defined", `Severity:'LOW'`) — the same Dockerfile finding Checkov reports as `CKV_DOCKER_2`. The
+  IaC-misconfig anchor for the `TRV*` checks; leak-clean (no secrets, generic Dockerfile guidance only).
+- **`acceptance/test-ingest-scanner-findings.mjs` — the `TRV*` checks** (11 new): determinism, the `DS-0026`
+  anchor (→ `provenance:'deterministic'`/`engine:'trivy'`/`class:'iac-misconfig'`/`dimension:'infrastructure-iac'`/
+  class-severity **`high`**/`file:'Dockerfile'` with the `PrimaryURL` and the "[Trivy severity LOW, recorded for
+  reference]" note in the reasoning), the **severity-from-class consistency invariant** (mutating the misconfig
+  `Severity` `LOW→CRITICAL` leaves the band `high` — matching Checkov), **class-dispatch** (an `os-pkgs`
+  Vulnerabilities Result is skipped while the `config` Misconfigurations Result yields the only finding; AVDID
+  preferred; `CauseMetadata.StartLine` → `:line`), `Status:'PASS'`-skipped (case-insensitive), **reuses-class**
+  (the constant `classify()`→`iac-misconfig` is the SAME `CLASS_DEFS` entry checkov uses — `Object.keys(CLASS_DEFS)`
+  unchanged at the original 5, no `trivy` entry), classify/fail-safe (`securityRelevant===undefined`; the
+  degenerate `Results`/Misconfiguration/secret-class shapes → `[]`/skipped, no crash), idempotent merge, schema
+  conformance, and the CLI dry-run + merge; `AD1` now asserts the **11-adapter** registry — `trivy` joins as the
+  tenth file-parser.
+
 ## [0.8.38] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #8 — the npm-audit adapter (the EASY Extension-A REUSE: a direct
