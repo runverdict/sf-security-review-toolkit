@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; semgrep next.** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); bandit next.** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -235,13 +235,32 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 | `code-analyzer` (PMD+SFGE) ✅ | file-parser | CRUD/FLS · sharing · (SOQLi/secrets ext.) | fail-crud-fls · fail-sharing-model | ✅ Slice 1 | class |
 | `metadata-viewall` ✅ | source-scanner | ViewAll/ModifyAll over-grant | fail-sharing-model | ✅ Slice 1 | class |
 | `checkov` ✅ | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-solano | class (scan-iac-misconfig) — Slice shipped 0.8.31 |
-| `semgrep` | file-parser | injection (CWE-78…) | scan-external-sast | ✅ coldstart-full | tool→band |
+| `semgrep` ✅ | file-parser | external-sast (tool→band) | scan-external-sast | ✅ coldstart-full + helios | **tool→band** — Slice shipped 0.8.32 |
 | `bandit` / `njsscan` / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | tool→band |
 | `gitleaks` / `detect-secrets` | file-parser | secrets | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) |
 | `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
 | `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
 | `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
 
+> **0.8.32 — `semgrep` row shipped + reconciled (the FIRST realized `tool→band`).** The *Class* cell
+> read `injection (CWE-78…)`; corrected to `external-sast (tool→band)`. Semgrep's general SAST rules
+> map onto NO toolkit class (the 3 wobbled classes are the review's, not Semgrep's), so the adapter's
+> `classify()` is constant `null` and severity comes from the tool's own `ERROR`/`WARNING`/`INFO` band
+> (`SEMGREP_SEVERITY_TO_FINDING` — `ERROR→high` [deliberately NOT critical/blocker: a raw ERROR flags a
+> sink but does not confirm reachability, which is the LLM/human residual], `WARNING→medium`,
+> `INFO→low`, unknown→`info`). This is the *Severity source* `tool→band` finally realized — the first
+> one (Checkov's was reconciled to class-severity because OSS Checkov emits `severity:null`). It
+> required a small ADDITIVE generalization of `buildFinding`: a third severity path on the UNMAPPED
+> side gated on `bandFromTool`/`dimensionHint`/`toolSevLabel`; the MAPPED class-severity branch is
+> UNCHANGED (a mapped `classKey` always wins — `bandit`/`njsscan`/`gosec` reuse this exact path).
+> **Two Phase-2b follow-ups it leaves open (tracked, not silent):** (1) **CWE→injection sub-classing** —
+> the `external-sast` grouping is honest but coarse; a future refinement could read `extra.metadata.cwe`
+> to sub-class a hit into `injection-xss`/`ssrf`/etc. once a methodology dimension warrants it. (2)
+> **Cross-engine dedup = extension #3** — a Semgrep finding owns no class so it SUPERSEDES nothing; a
+> co-located LLM injection finding at the same sink can survive alongside it (the SAFE under-merge — a
+> duplicate in the band, never a dropped scanner finding). De-duplicating those is the `finding-clusters.mjs`
+> cross-engine cluster-key work, deferred to Phase-2b.
+>
 > **0.8.31 — `checkov` row reconciled (Severity source).** The cell read `tool→band`; corrected
 > to `class (scan-iac-misconfig)`. Checkov OSS emits `severity:null` (per-check tool severity is a
 > Prisma/Bridgecrew *enterprise* field), so there is no tool number to band — a literal tool→band
@@ -287,7 +306,10 @@ PENDING-OWNER-RUN until a live host exists.
 **Phase 2 build order** (each one new adapter; the easy ones have real fixtures on disk):
 - **2a (ingest-first, real fixtures):** checkov ✅ (shipped 0.8.31 — the FIRST 2a adapter:
   IaC misconfig, constant `iac-misconfig` class, security-by-construction so NO tag filter,
-  severity from the class not the tool) → semgrep → bandit → njsscan → gitleaks →
+  severity from the class not the tool) → semgrep ✅ (shipped 0.8.32 — the FIRST genuine
+  `tool→band` adapter: multi-language SAST, constant `classify()`→`null` so it owns no class,
+  severity from the tool's `ERROR`/`WARNING`/`INFO` band; established the additive `buildFinding`
+  tool→band path that bandit/njsscan/gosec reuse verbatim) → bandit → njsscan → gitleaks →
   detect-secrets → osv → npm-audit → trivy. (Extension #2's tag filter ✅ shipped with
   Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,

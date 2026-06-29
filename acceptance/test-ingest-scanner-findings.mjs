@@ -41,6 +41,7 @@ import {
   codeAnalyzerAdapter,
   metadataViewAllAdapter,
   checkovAdapter,
+  semgrepAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -49,6 +50,7 @@ import {
   hasSecurityTag,
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
+  SEMGREP_SEVERITY_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -59,6 +61,8 @@ const FIX = join(PLUGIN, 'acceptance', 'fixtures')
 const SOLANO = join(FIX, 'code-analyzer-solano.json')
 const SFGE = join(FIX, 'code-analyzer-sfge-meridian.json')
 const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
+const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib / SSRF)
+const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process / CWE-78)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -433,11 +437,12 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 3 adapters (checkov added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['checkov', 'code-analyzer', 'metadata-viewall'])
+check('AD1 registry has 4 adapters (semgrep added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['checkov', 'code-analyzer', 'metadata-viewall', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
+  assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -691,6 +696,212 @@ check('CK-CLI-merge: --scanner checkov writes the deterministic finding to the t
   execFileSync('node', [CLI, '--scanner', 'checkov', '--input', CHECKOV, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'checkov').length, 1) // idempotent — no duplicate
+})
+
+// ───────────────────────────────────── semgrep (Phase 2 · 2a #2 — external SAST, tool→band)
+// The DECISIVE difference from checkov/code-analyzer: Semgrep carries a real per-result
+// severity (ERROR/WARNING/INFO), so this is the FIRST genuine tool→band adapter — the tool's
+// own band DRIVES the finding severity (the INVERSE of the class-severity adapters). Two REAL
+// fixtures anchor it: coldstart-full (2× WARNING → medium) and helios (1× ERROR → high).
+const ingestSemgrep = (raw) => ingest(raw, semgrepAdapter, { repoRoot: '', pass: 1 })
+const URLLIB_RULE = readJSON(SEMGREP_WARN).results[0].check_id // the dynamic-urllib SSRF rule
+const URLLIB_REF = readJSON(SEMGREP_WARN).results[0].extra.metadata.references[0]
+
+check('SG-determinism: ingest the real coldstart-full fixture twice → byte-identical findings', () => {
+  const a = ingestSemgrep(readJSON(SEMGREP_WARN)).findings
+  const b = ingestSemgrep(readJSON(SEMGREP_WARN)).findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('SG-anchor-WARNING: coldstart urllib (severity WARNING) → deterministic/semgrep/external-sast/MEDIUM, mcp/server.py:76, NO class, ref URL in reasoning', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_WARN))
+  const f = findById(findings, (x) => x.file.endsWith('mcp/server.py:76'))
+  assert.ok(f, 'the :76 WARNING anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'semgrep')
+  assert.equal(f.ruleId, URLLIB_RULE)
+  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.adjusted_severity, 'medium') // WARNING → medium (the TOOL band, not a class)
+  assert.equal(f.status, 'confirmed')
+  assert.equal(f.class, undefined) // owns NO toolkit class
+  assert.ok(!('class' in f), 'a Semgrep finding must carry no `class` key')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.ok(URLLIB_REF && f.verdict_reasoning.includes(URLLIB_REF), 'the metadata reference URL must appear in verdict_reasoning')
+})
+
+check('SG-anchor-ERROR: helios detect-child-process (severity ERROR) → HIGH, server/index.js:28', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_ERR))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.engine, 'semgrep')
+  assert.equal(f.adjusted_severity, 'high') // ERROR → high (the TOOL band)
+  assert.equal(f.dimension, 'external-sast')
+  assert.ok(f.file.endsWith('server/index.js:28'), `file was ${f.file}`)
+  assert.equal(f.class, undefined)
+})
+
+check('SG-two-distinct: the same check_id at lines 76 & 89 → TWO distinct findings (distinct ids)', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_WARN))
+  const urllib = findings.filter((x) => x.ruleId === URLLIB_RULE)
+  assert.equal(urllib.length, 2)
+  assert.notEqual(urllib[0].id, urllib[1].id)
+  const files = urllib.map((x) => x.file).sort()
+  assert.ok(files.some((p) => p.endsWith('mcp/server.py:76')))
+  assert.ok(files.some((p) => p.endsWith('mcp/server.py:89')))
+})
+
+check('SG-severity-FROM-TOOL-BAND: mutating extra.severity WARNING→ERROR MOVES the band medium→high — INTENTIONALLY the INVERSE of S1', () => {
+  // For Semgrep the tool severity DOES drive the band (that is the tool→band design). For
+  // Code-Analyzer/Checkov it must NOT (class-severity, see S1 / CK-severity-from-class). Do NOT
+  // "harmonize" these two checks — the divergence is the whole point of the tool→band adapter.
+  const base = ingestSemgrep(readJSON(SEMGREP_WARN)).findings
+  assert.ok(base.every((f) => f.adjusted_severity === 'medium')) // both WARNING → medium
+  const raw = clone(readJSON(SEMGREP_WARN))
+  for (const r of raw.results) r.extra.severity = 'ERROR' // WARNING → ERROR
+  const bumped = ingestSemgrep(raw).findings
+  assert.ok(bumped.every((f) => f.adjusted_severity === 'high'), 'ERROR must move the band to high — the tool band drives Semgrep severity')
+})
+
+check('SG-no-class / classify: classify() is the constant null, no securityRelevant, finding carries no `class`', () => {
+  assert.equal(semgrepAdapter.classify('anything'), null)
+  assert.equal(semgrepAdapter.classify(URLLIB_RULE), null)
+  assert.equal(semgrepAdapter.securityRelevant, undefined) // security-by-construction — no tag filter
+  const f = ingestSemgrep(readJSON(SEMGREP_ERR)).findings[0]
+  assert.ok(!('class' in f), 'a Semgrep finding owns no class → supersedes nothing (Phase-2b dedup deferred)')
+})
+
+check('SG-unknown-severity: a result with extra.severity:INVENTORY → ingested at INFO with a note, never dropped', () => {
+  const raw = {
+    version: '1.0.0',
+    results: [
+      { check_id: 'python.lang.misc.inventory-rule', path: 'mcp/x.py', start: { line: 3 }, extra: { severity: 'INVENTORY', message: 'an inventory/experiment rule class', metadata: {} } },
+    ],
+  }
+  const { findings, notes } = ingestSemgrep(raw)
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].adjusted_severity, 'info') // unknown band → info (never dropped)
+  assert.ok(notes.some((n) => /tool band/.test(n) && /INVENTORY/.test(n)), `expected an INVENTORY→info band note, got ${JSON.stringify(notes)}`)
+})
+
+check('SG-sev-map: SEMGREP_SEVERITY_TO_FINDING is exactly ERROR→high / WARNING→medium / INFO→low', () => {
+  assert.deepEqual(SEMGREP_SEVERITY_TO_FINDING, { ERROR: 'high', WARNING: 'medium', INFO: 'low' })
+})
+
+check('SG-buildFinding-tool-band: buildFinding with bandFromTool + NO classKey → the tool band, dimensionHint, tool-band reasoning, no class', () => {
+  const f = buildFinding({
+    engine: 'semgrep',
+    ruleId: 'some.semgrep.rule',
+    severityNum: null,
+    file: 'mcp/server.py',
+    startLine: 5,
+    message: 'a SAST hit',
+    resources: [],
+    classKey: null,
+    bandFromTool: 'medium',
+    dimensionHint: 'external-sast',
+    toolSevLabel: 'WARNING',
+    repoRoot: '',
+    pass: 1,
+  })
+  assert.equal(f.adjusted_severity, 'medium')
+  assert.equal(f.severity, 'medium')
+  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.class, undefined)
+  assert.match(f.verdict_reasoning, /tool band \(WARNING → medium\)/)
+})
+
+check('SG-buildFinding-MAPPED-regression: a mapped crud-fls finding is class-severity (high) EVEN WHEN bandFromTool is present — the mapped path is UNCHANGED', () => {
+  // The tool→band generalization is ADDITIVE on the unmapped side only. A mapped classKey must
+  // ALWAYS win: a deliberately-low bandFromTool must NOT pull a crud-fls finding off its class
+  // severity. (This is the unit twin of S1, which proves the same over the real fixture.)
+  const withBand = buildFinding({
+    engine: 'pmd', ruleId: 'ApexCRUDViolation', severityNum: 5, file: 'force-app/x.cls', startLine: 10,
+    message: 'Validate CRUD', resources: [], classKey: 'crud-fls', bandFromTool: 'low', dimensionHint: 'external-sast',
+    toolSevLabel: 'INFO', repoRoot: '', pass: 1,
+  })
+  assert.equal(withBand.adjusted_severity, 'high') // class wins over bandFromTool='low' AND severityNum=5
+  assert.equal(withBand.dimension, 'apex-exposed-surface') // class dimension, NOT the dimensionHint
+  assert.equal(withBand.class, 'crud-fls')
+  // and WITHOUT a band the mapped path is identical (no behavioural drift from the new params)
+  const noBand = buildFinding({
+    engine: 'pmd', ruleId: 'ApexCRUDViolation', severityNum: 5, file: 'force-app/x.cls', startLine: 10,
+    message: 'Validate CRUD', resources: [], classKey: 'crud-fls', repoRoot: '', pass: 1,
+  })
+  assert.equal(noBand.adjusted_severity, 'high')
+})
+
+check('SG-fail-safe: collect() missing → null; parse(null/{}/{results:null}/{results:[]}) → []; a result missing extra/start does not crash; ingest(null) → 0 + note', () => {
+  assert.equal(semgrepAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-semgrep.json') }), null)
+  assert.deepEqual(semgrepAdapter.parse(null), [])
+  assert.deepEqual(semgrepAdapter.parse({}), [])
+  assert.deepEqual(semgrepAdapter.parse({ results: null }), [])
+  assert.deepEqual(semgrepAdapter.parse({ results: [] }), [])
+  // a result with no check_id is skipped in parse; one with no extra/start still parses (no crash)
+  const hits = semgrepAdapter.parse({ results: [{ path: 'a.py' }, { check_id: 'r', path: 'a.py' }] })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].startLine, null)
+  assert.equal(hits[0].message, '')
+  assert.equal(hits[0].bandFromTool, 'info') // no severity → info
+  const { findings, notes } = ingestSemgrep(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('SG-merge-idempotent: ingest the coldstart fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: 'd'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'mcp/server.py:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const sg = ingestSemgrep(readJSON(SEMGREP_WARN)).findings
+  const r1 = mergeFindings(ledger, sg, 1)
+  assert.equal(r1.added, 2)
+  assert.equal(ledger.findings.length, 3) // 1 llm + 2 semgrep
+  const r2 = mergeFindings(ledger, sg, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 3) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === 'd'.repeat(16) && !('provenance' in f)))
+})
+
+check('SG-schema: a Semgrep finding (no class, dimension external-sast) validates against $defs/finding', () => {
+  const f = ingestSemgrep(readJSON(SEMGREP_ERR)).findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('SG-CLI: --scanner semgrep --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'semgrep', '--input', SEMGREP_WARN, '--target', join(tmpdir(), 'nope-sg'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'semgrep')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(parsed.findings.some((f) => f.ruleId === URLLIB_RULE && f.file.endsWith('mcp/server.py:76') && f.adjusted_severity === 'medium'))
+})
+
+check('SG-CLI-merge: --scanner semgrep writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-sg-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'semgrep', '--input', SEMGREP_WARN, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const sg1 = l1.findings.filter((f) => f.engine === 'semgrep')
+  assert.equal(sg1.length, 2)
+  assert.ok(sg1.every((f) => f.adjusted_severity === 'medium' && f.provenance === 'deterministic'))
+  execFileSync('node', [CLI, '--scanner', 'semgrep', '--input', SEMGREP_WARN, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'semgrep').length, 2) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

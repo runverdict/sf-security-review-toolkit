@@ -23,6 +23,79 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.32] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #2 — the Semgrep adapter + the `tool→band`
+severity generalization (docs/roadmap-deterministic-findings.md §10).** Semgrep is the
+multi-language SAST keystone (run-scans Family 7). Its findings cleared the
+`scan-external-sast` requirement in `evidence/index.json` but never became ledger findings;
+this adapter parses Semgrep's JSON into `provenance:'deterministic'` findings. The decisive
+difference from Checkov / Code-Analyzer: Semgrep carries a REAL per-result severity
+(`ERROR`/`WARNING`/`INFO`), so this is the **FIRST genuine `tool→band` adapter** — the tool's
+own band drives the finding severity (the INVERSE of the class-severity adapters). One new
+adapter object in the existing registry **plus a small additive generalization of
+`buildFinding`** — no harness rewrite. Validated by "parse twice → identical" against TWO real
+fixtures (a WARNING anchor + an ERROR anchor), NO campaign. Suite **55 files / 598 checks**
+(was 55 / 583; +15 `SG*` checks folded into `test-ingest-scanner-findings`). Tag stays
+**HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `semgrep` adapter** (`file-parser`,
+  `engine:'semgrep'`). `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty);
+  `parse()` reads `results[]` (defensive on a missing `results`/`extra`/`start`; skips a result
+  with no `check_id`), mapping each to a hit carrying the resolved tool band. `classify()` is the
+  constant **`null`** — a Semgrep finding owns **no toolkit class** (its severity is the tool band,
+  and it must not over-escalate onto a `fail-*` blocker class). NO `securityRelevant`
+  (security-by-construction — the toolkit runs Semgrep with the security rulesets
+  `p/security-audit` / `p/secrets` / `p/<lang>`). `dimension: 'external-sast'` is a
+  deterministic-only grouping label (no `methodology/dimensions/` file, like checkov's
+  `infrastructure-iac`). Registered as the **4th** adapter; `AD1` now asserts the 4-adapter registry.
+- **`SEMGREP_SEVERITY_TO_FINDING`** export — `{ ERROR: 'high', WARNING: 'medium', INFO: 'low' }`;
+  any other/unknown severity (Semgrep's rare `INVENTORY`/`EXPERIMENT` rule classes) maps to `info`
+  with an honest note, never dropped.
+- **`buildFinding` `tool→band` generalization (ADDITIVE).** A THIRD severity path on the
+  **unmapped side only**, gated on a new optional `bandFromTool` (with `dimensionHint` +
+  `toolSevLabel`): when set, the finding's severity IS the resolved tool band and its dimension is
+  the hint, with a `severity from the <engine> tool band (<label> → <band>); … gated by
+  scan-external-sast (major)` reasoning. When absent, the existing `CA_SEVERITY_TO_FINDING`
+  fallback is unchanged (now also honouring `dimensionHint`). **The MAPPED class-severity branch
+  is UNTOUCHED** — a mapped `classKey` always wins (proven by `S1` + the new
+  `SG-buildFinding-MAPPED-regression`: a deliberately-low `bandFromTool` cannot pull a `crud-fls`
+  finding off its class severity). The ingest core's unmapped-hit note is now band-aware (an
+  accurate "the semgrep tool band (WARNING → medium)" instead of the misleading
+  "Code-Analyzer-severity fallback" for a tool→band hit).
+- **`acceptance/fixtures/semgrep-coldstart-full.json`** (2× `WARNING`, dynamic-urllib / SSRF on
+  `mcp/server.py:76` & `:89`; same `check_id`, distinct lines → 2 distinct findings) and
+  **`acceptance/fixtures/semgrep-helios.json`** (1× `ERROR`, `detect-child-process` / CWE-78 on
+  `server/index.js:28`) — genuine captured Semgrep OSS output (both relative-path, leak-clean), the
+  two real anchors covering BOTH tool severities.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — an `SG*` section (+15 checks): determinism,
+  the WARNING anchor (`→ medium`, `external-sast`, no `class`, the metadata reference URL in the
+  reasoning), the ERROR anchor (`→ high`), two-distinct (same `check_id`, lines 76/89), the
+  **tool-band severity** check (mutating `WARNING→ERROR` MOVES the band — explicitly the INVERSE of
+  `S1`/`CK-severity-from-class`, with an in-test comment forbidding "harmonization"), the constant
+  `classify()`→`null` + no `securityRelevant` + no `class` key, unknown-severity (`INVENTORY` → info
+  with a note), the `SEMGREP_SEVERITY_TO_FINDING` shape, two `buildFinding` unit checks (the
+  tool-band path AND the mapped-path regression), fail-safe, idempotent merge, schema conformance,
+  and the CLI (dry-run + merge).
+
+### Decided (two judgment calls — implemented as specified, documented not hidden)
+- **`ERROR → high`, NOT critical/blocker** (calibration-faithful). A raw Semgrep `ERROR` flags a
+  sink but does NOT confirm reachability; escalation to a critical/blocker is a reachability
+  judgment that belongs to the LLM/human residual (the "reachability-is-a-precondition" rule,
+  sessions 120-122), which a mechanical SAST hit lacks. `scan-external-sast` is `major`; a blocker
+  on a confirmed critical in reviewer-reachable code requires that confirmation.
+- **Semgrep owns no class → it supersedes nothing.** De-duplicating a co-located LLM injection
+  finding against a Semgrep finding at the same sink is **cross-engine dedup = roadmap §10
+  extension #3 (Phase-2b)**, NOT this slice — the SAFE under-merge (a duplicate may survive in the
+  band), never a dropped scanner finding. Tracked as a §10 follow-up, not a silent gap.
+- **`tool→band` is NOT a violation of severity-from-class (§9).** Code Analyzer's Apex rules re-home
+  onto the review's 3 wobbled CLASSES whose severity the review defines; Semgrep's general SAST
+  rules map onto NO such class, so the tool's own `ERROR/WARNING/INFO` is the meaningful per-finding
+  signal (a `WARNING` SSRF is genuinely *medium*, not the class-`high` you'd get by collapsing every
+  SAST hit to `scan-external-sast = major`). This is the honest model *for SAST* — and the path
+  `bandit` / `njsscan` / `gosec` will reuse verbatim.
+
 ## [0.8.31] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #1 — the Checkov adapter

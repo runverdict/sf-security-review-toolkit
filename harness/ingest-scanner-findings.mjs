@@ -21,8 +21,11 @@
  * Two adapter KINDS, both shipped in Slice 1 to prove the seam handles N>1 and both:
  *   - file-parser   — collect() reads a scanner's CAPTURED output file (--input).
  *                     Adapter #1: `code-analyzer` (PMD + SFGE violations JSON).
- *                     Adapter #3 (Phase 2 · 2a): `checkov` (IaC-misconfig JSON; engine:'checkov').
- *                     Future: Semgrep, OSV, gitleaks — all parse a JSON file the same way.
+ *                     Adapter #3 (Phase 2 · 2a #1): `checkov` (IaC-misconfig JSON; engine:'checkov').
+ *                     Adapter #4 (Phase 2 · 2a #2): `semgrep` (multi-language SAST JSON;
+ *                       engine:'semgrep') — the FIRST tool→band adapter (severity from the
+ *                       tool's own ERROR/WARNING/INFO, owns no toolkit class).
+ *                     Future: OSV, gitleaks — all parse a JSON file the same way.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -53,6 +56,7 @@
  *   node ingest-scanner-findings.mjs --scanner code-analyzer  --input CodeAnalyzer.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -80,6 +84,21 @@ export const CA_SEVERITY_TO_FINDING = {
   4: 'low',
   5: 'info',
 }
+// Semgrep's per-finding severity (Phase 2 · 2a #2 — the FIRST genuine tool→band adapter,
+// roadmap §10). Semgrep — unlike Code Analyzer / Checkov — carries a REAL per-result
+// severity (`ERROR`/`WARNING`/`INFO`), so for SAST the tool's own band IS the honest
+// per-finding signal: a `WARNING` SSRF is genuinely medium, not the class-`high` you'd get
+// by collapsing every SAST hit to `scan-external-sast` (major). This is NOT a violation of
+// severity-from-class (§9): Code Analyzer's Apex rules re-home onto the review's 3 wobbled
+// CLASSES whose severity the review defines; Semgrep's general SAST rules map onto NO such
+// class, so the tool band is the meaningful source. DELIBERATE calibration choice (documented
+// in the CHANGELOG): `ERROR → high`, NOT critical/blocker — a raw Semgrep ERROR flags a sink
+// but does NOT confirm reachability; escalating to a blocker is a reachability judgment that
+// belongs to the LLM/human residual (the "reachability-is-a-precondition" rule), which a
+// mechanical SAST hit lacks. An unknown/rare severity (Semgrep's `INVENTORY`/`EXPERIMENT` rule
+// classes) maps to `info` — never dropped. (The toolkit's canonical invocation uses the
+// security rulesets p/security-audit / p/secrets / p/<lang>, which emit only ERROR/WARNING/INFO.)
+export const SEMGREP_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', INFO: 'low' }
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -210,7 +229,7 @@ function recommendationFor(classKey) {
 // ----------------------------------------------------------------------------
 // the finding builder — shared by every adapter / kind
 // ----------------------------------------------------------------------------
-export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass }) {
+export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel }) {
   const passId = Number.isInteger(pass) && pass >= 1 ? pass : 1
   const rel = repoRel(file, repoRoot)
   const loc = startLine != null ? `${rel}:${startLine}` : rel
@@ -218,13 +237,30 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
 
   let adjusted, dimension, sevReason
   if (classKey && CLASS_DEFS[classKey]) {
+    // MAPPED CLASS — severity from the class, NEVER the scanner number/band. UNTOUCHED by
+    // the tool→band generalization: a mapped classKey always wins, even if bandFromTool is
+    // also present (class-severity adapters like code-analyzer/checkov never let the tool move
+    // a mapped finding). Guarded by S1 + the buildFinding regression check.
     const cs = classSeverity(classKey)
     adjusted = cs.severity
     dimension = CLASS_DEFS[classKey].dimension
     sevReason = `severity fixed from the ${classKey} class (baseline requirement ${cs.baselineId}${cs.reqSev ? ` = ${cs.reqSev}` : ''})`
+  } else if (bandFromTool) {
+    // TOOL→BAND (Phase 2 · 2a #2 Semgrep — the first genuine tool→band path). The hit owns no
+    // toolkit class, but the scanner carries a real per-finding severity already resolved to a
+    // finding band (via SEMGREP_SEVERITY_TO_FINDING). Use it directly; the requirement gate
+    // (scan-external-sast = major) governs the BAND, not this per-finding severity.
+    adjusted = bandFromTool
+    dimension = dimensionHint || DEFAULT_DIMENSION
+    sevReason =
+      `severity from the ${engine} tool band (${toolSevLabel || 'unknown'} → ${adjusted}); ` +
+      `${engine} carries its own per-finding severity, gated by scan-external-sast (major)`
   } else {
+    // UNMAPPED FALLBACK — the Code-Analyzer 1-5 scale (a security-tagged CA rule with no class
+    // mapping). dimensionHint is honoured so a future no-band adapter can still group, but
+    // Semgrep always supplies a band so it never reaches here.
     adjusted = (severityNum != null && CA_SEVERITY_TO_FINDING[severityNum]) || 'medium'
-    dimension = DEFAULT_DIMENSION
+    dimension = dimensionHint || DEFAULT_DIMENSION
     sevReason =
       `no toolkit class maps rule ${ruleId} yet (Phase 2 extends the class map) — severity falls back to the ` +
       `Code Analyzer scale (sev ${severityNum == null ? 'n/a' : severityNum} → ${adjusted})`
@@ -311,7 +347,14 @@ export function ingest(raw, adapter, opts = {}) {
     }
     findings.push(buildFinding({ ...h, classKey, repoRoot, pass }))
     if (!classKey) {
-      notes.push(`${adapter.name}: rule ${h.ruleId} is unmapped — ingested as deterministic with the Code-Analyzer-severity fallback`)
+      // Honest note on the severity SOURCE of an unmapped hit: a tool→band adapter (Semgrep)
+      // carries its own per-finding band, while a class-severity adapter (code-analyzer) with
+      // an unmapped SECURITY rule uses the Code-Analyzer-severity fallback. Keeps the word
+      // "unmapped" either way (the owned-class is still none).
+      const how = h.bandFromTool
+        ? `the ${adapter.name} tool band (${h.toolSevLabel || 'unknown'} → ${h.bandFromTool})`
+        : 'the Code-Analyzer-severity fallback'
+      notes.push(`${adapter.name}: rule ${h.ruleId} is unmapped (owns no toolkit class) — ingested as deterministic with ${how}`)
     }
   }
   // stable order so the output is byte-identical regardless of scanner emission order
@@ -532,10 +575,81 @@ export const checkovAdapter = {
   // scanner whose every emission is a finding, so the ingest core applies no tag filter.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #4 — semgrep (file-parser, Phase 2 · 2a #2): parses captured Semgrep JSON.
+// Semgrep is the toolkit's multi-language SAST keystone (run-scans Family 7 over each
+// non-package source root, with the security rulesets p/security-audit / p/secrets / p/<lang>).
+// It is the FIRST genuine TOOL→BAND adapter: unlike Code Analyzer (Apex rules → 3 wobbled
+// CLASSES) and Checkov (severity:null → class), Semgrep carries a real per-result severity
+// (`ERROR`/`WARNING`/`INFO`), which IS the honest per-finding signal for general SAST. So a
+// Semgrep hit owns NO toolkit class — `classify()` is constant `null`:
+//   - it must NOT map to a `fail-*` blocker class (that would over-escalate every SAST hit
+//     to a class-high/critical), and
+//   - its severity source is the tool band (SEMGREP_SEVERITY_TO_FINDING), not a class.
+// Owning no class, a Semgrep finding SUPERSEDES nothing (reconcile-provenance only supersedes
+// in an OWNED class) — so de-duplicating a co-located LLM injection finding against a Semgrep
+// finding is cross-engine dedup = roadmap §10 extension #3 (Phase-2b), NOT this slice; the SAFE
+// under-merge (a duplicate may survive in the band), never a dropped scanner finding.
+// dimension 'external-sast' is a DETERMINISTIC-ONLY grouping label (like checkov's
+// 'infrastructure-iac'): Semgrep spans many vuln classes, so an honest "external SAST" grouping
+// beats false-precision dimensioning into injection-xss — the schema declares `dimension` a free
+// kebab-case string, so no methodology/dimensions/ file is needed. Like checkov/metadata it is
+// SECURITY-BY-CONSTRUCTION (the security rulesets), so NO `securityRelevant` — the ingest core
+// keeps every emitted hit. Only `results[]` become findings.
+export const semgrepAdapter = {
+  name: 'semgrep',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.results)) return []
+    const hits = []
+    for (const r of raw.results) {
+      // Skip a malformed result with no check_id (the ingest core also drops a hit with no
+      // file, with an honest note — that is correct).
+      if (!r || r.check_id == null) continue
+      const extra = r && r.extra && typeof r.extra === 'object' ? r.extra : {}
+      const metadata = extra.metadata && typeof extra.metadata === 'object' ? extra.metadata : {}
+      const sev = extra.severity
+      const refs =
+        Array.isArray(metadata.references) && metadata.references[0] ? [String(metadata.references[0])] : []
+      hits.push({
+        engine: 'semgrep',
+        ruleId: String(r.check_id),
+        severityNum: null, // Semgrep has no 1-5 number; the band comes from extra.severity
+        file: r.path,
+        startLine: r.start && Number.isInteger(r.start.line) ? r.start.line : null,
+        message: String((extra && extra.message) || ''),
+        resources: refs,
+        bandFromTool: SEMGREP_SEVERITY_TO_FINDING[sev] || 'info', // unknown/INVENTORY → info, never dropped
+        toolSevLabel: String(sev || 'unknown'),
+        dimensionHint: 'external-sast',
+        tags: [],
+      })
+    }
+    return hits
+  },
+  // Constant null: a Semgrep finding owns NO toolkit class (its severity is the tool band, and
+  // it must not over-escalate onto a fail-* blocker class). Owning no class, it supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (the security rulesets), like checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
   'checkov': checkovAdapter,
+  'semgrep': semgrepAdapter,
 }
 
 // ----------------------------------------------------------------------------
