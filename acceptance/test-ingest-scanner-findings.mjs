@@ -24,11 +24,12 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 9 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 10 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
- *   CK/SG/BN/NJ/GL/DS/OSV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
- *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE, Extension A CVSS→enum).
+ *   CK/SG/BN/NJ/GL/DS/OSV/NPM — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
+ *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
+ *        npm-audit dependency-CVE Extension-A reuse, label-only band).
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -50,6 +51,7 @@ import {
   gitleaksAdapter,
   detectSecretsAdapter,
   osvAdapter,
+  npmAuditAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -63,6 +65,7 @@ import {
   NJSSCAN_SEVERITY_TO_FINDING,
   CVSS_SCORE_TO_FINDING,
   OSV_LABEL_TO_FINDING,
+  NPM_SEVERITY_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -81,6 +84,7 @@ const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secr
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
 const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 source (mcp/requirements.txt), 3 PyPI pkgs, 11 vulns (1 critical h11 / 3 high / 6 medium / 1 low starlette)
+const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --json` v2: 4 vulnerable pkgs (body-parser/express/path-to-regexp/qs), moderate×2 + high×2
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -455,8 +459,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 9 adapters (osv added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'osv', 'semgrep'])
+check('AD1 registry has 10 adapters (npm-audit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -466,6 +470,7 @@ check('AD1 registry has 9 adapters (osv added), both KINDS, each {name,kind,coll
   assert.equal(ADAPTERS['gitleaks'].kind, 'file-parser')
   assert.equal(ADAPTERS['detect-secrets'].kind, 'file-parser')
   assert.equal(ADAPTERS['osv'].kind, 'file-parser')
+  assert.equal(ADAPTERS['npm-audit'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -2001,6 +2006,230 @@ check('GATE-LABEL regression (the buildFinding tweak): an OSV finding says "gate
     classKey: null, bandFromTool: 'medium', dimensionHint: 'external-sast', toolSevLabel: 'WARNING', repoRoot: '', pass: 1,
   })
   assert.match(noGate.verdict_reasoning, /gated by scan-external-sast \(major\)/) // default preserved when gateLabel omitted
+})
+
+// ─────────────────────────────── npm-audit (Phase 2 · 2a #8 — Node dependency CVEs, Extension-A REUSE: label-only band)
+// npm audit is the Node-ecosystem dependency-CVE scanner (run-scans Family 8, alongside OSV). It is the EASY
+// Extension-A REUSE: `npm audit --json` (auditReportVersion 2) gives a DIRECT severity LABEL per vulnerable package
+// (`critical/high/moderate/low/info`) — NO CVSS math — so the band comes straight from NPM_SEVERITY_TO_FINDING,
+// exactly like OSV's label-fallback path. It REUSES buildFinding's `bandFromTool` path, the `gateLabel` param, the
+// `dependency-cve` dimension, and classify()→null EXACTLY like OSV — so NO buildFinding/CLASS_DEFS change (gateLabel
+// already exists), only the ADAPTERS line. Gated by `scan-dependency-vulnerabilities` (applies_to all, major — the
+// npm-deps gate, distinct from OSV's scan-external-sca). One finding per vulnerable package; `via` supplies the
+// advisory title/url (a STRING via-entry is a transitive chain, an OBJECT via-entry is the direct advisory). The real
+// fixture is genuine `npm audit --json` v2: 4 vulnerable packages (body-parser/express/path-to-regexp/qs), moderate×2
+// + high×2. NOTE: the band uses the PACKAGE severity, NOT the first advisory's — qs (package moderate, first advisory
+// low) bands as medium. Unknown/blank severity → medium (judgment call #1, as OSV).
+const ingestNpm = (raw) => ingest(raw === undefined ? readJSON(NPM_AUDIT) : raw, npmAuditAdapter, { repoRoot: '', pass: 1 })
+const NPM_ANCHOR = 'express' // package severity high, via 3 transitive strings → ruleId is the package name (stable HIGH anchor)
+const NPM_ADV_URL = 'https://github.com/advisories/GHSA-37ch-88jc-xwx2' // path-to-regexp's direct OBJECT advisory url (= its ruleId)
+const NPM_QS_URL = 'https://github.com/advisories/GHSA-w7fw-mjwx-w883' // qs's first OBJECT via-advisory url (= its ruleId)
+
+check('NPM-determinism: ingest the real npm-audit fixture twice → byte-identical findings', () => {
+  const a = ingestNpm().findings
+  const b = ingestNpm().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('NPM-count: the real fixture → exactly 4 findings (one per vulnerable package), distinct ids, all npm-audit/dependency-cve/no-class; band mix 2 high·2 medium', () => {
+  const { findings } = ingestNpm()
+  assert.equal(findings.length, 4) // one finding per vulnerable package
+  assert.equal(new Set(findings.map((f) => f.id)).size, 4) // distinct ids
+  assert.ok(findings.every((f) => f.engine === 'npm-audit' && f.provenance === 'deterministic'))
+  assert.ok(findings.every((f) => f.dimension === 'dependency-cve'))
+  assert.ok(findings.every((f) => !('class' in f))) // npm-audit owns no toolkit class
+  assert.ok(findings.every((f) => f.file === 'package-lock.json' && !/:\d+$/.test(f.file))) // lockfile locus, no :line
+  const byBand = {}
+  for (const f of findings) byBand[f.adjusted_severity] = (byBand[f.adjusted_severity] || 0) + 1
+  assert.deepEqual(byBand, { high: 2, medium: 2 }) // matches the fixture metadata {moderate:2, high:2}
+})
+
+check('NPM-anchor: express → deterministic/npm-audit/dependency-cve/no-class/HIGH; package name + range in the title; package-lock.json locus, no :line', () => {
+  const { findings } = ingestNpm()
+  const f = findById(findings, (x) => x.ruleId === NPM_ANCHOR)
+  assert.ok(f, 'the express anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'npm-audit')
+  assert.equal(f.ruleId, NPM_ANCHOR)
+  assert.equal(f.dimension, 'dependency-cve')
+  assert.equal(f.class, undefined) // npm-audit owns no class (classify()→null)
+  assert.equal(f.adjusted_severity, 'high') // package severity high → high (the npm label band, NOT a class)
+  assert.equal(f.severity, 'high')
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.equal(f.file, 'package-lock.json') // npm-audit gives no source path → the lockfile is the locus
+  assert.ok(!/:\d+$/.test(f.file), 'a dep-CVE finding must have NO :line')
+  assert.ok(f.title.includes('express') && f.title.includes('4.0.0-rc1 - 4.22.1'), 'package name + range in the title')
+  assert.ok(f.evidence.includes('express (4.0.0-rc1 - 4.22.1 || 5.0.0-alpha.1 - 5.0.1)'))
+})
+
+check('NPM-label→band: NPM_SEVERITY_TO_FINDING maps each npm label (moderate→medium) + unknown/blank → medium; reaches the finding band end-to-end', () => {
+  // npm's own lowercase spelling — `moderate`, NOT `medium`
+  assert.deepEqual(NPM_SEVERITY_TO_FINDING, { critical: 'critical', high: 'high', moderate: 'medium', low: 'low', info: 'info' })
+  const mk = (severity) => ({ name: 's', severity, range: '1.0.0', via: [] })
+  const raw = {
+    auditReportVersion: 2,
+    vulnerabilities: {
+      crit: mk('critical'),
+      hi: mk('high'),
+      mod: mk('moderate'), // npm spelling → medium
+      lo: mk('low'),
+      inf: mk('info'),
+      blank: mk(''), // blank → medium (judgment call #1)
+      missing: { name: 'missing', range: '1.0.0', via: [] }, // NO severity key → medium
+      bogus: mk('frobnicate'), // unknown label → medium
+    },
+  }
+  const hits = npmAuditAdapter.parse(raw)
+  const band = (id) => hits.find((h) => h.ruleId === id).bandFromTool
+  assert.equal(band('crit'), 'critical')
+  assert.equal(band('hi'), 'high')
+  assert.equal(band('mod'), 'medium') // moderate → medium
+  assert.equal(band('lo'), 'low')
+  assert.equal(band('inf'), 'info')
+  assert.equal(band('blank'), 'medium') // unknown/blank → medium, never dropped
+  assert.equal(band('missing'), 'medium')
+  assert.equal(band('bogus'), 'medium')
+  // and the same bands reach the finding's adjusted_severity end-to-end
+  const { findings } = ingestNpm(raw)
+  assert.equal(findings.length, 8)
+  const sev = (id) => findings.find((f) => f.ruleId === id).adjusted_severity
+  assert.equal(sev('mod'), 'medium')
+  assert.equal(sev('crit'), 'critical')
+  assert.equal(sev('bogus'), 'medium')
+})
+
+check('NPM-via-shapes: a STRING via → "vulnerable via …" (no crash); an OBJECT via → its title in the message + url in resources + as the ruleId; the package severity wins over the first advisory; the CVSS vector never leaks', () => {
+  const { findings } = ingestNpm()
+  // (a) STRING via — body-parser: via:["qs"] → "vulnerable via qs", ruleId is the package name
+  const bp = findById(findings, (f) => f.ruleId === 'body-parser')
+  assert.ok(bp, 'body-parser (string-via) finding missing')
+  assert.ok(bp.evidence.includes('vulnerable via qs'), 'string via → "vulnerable via <pkg>"')
+  assert.equal(bp.adjusted_severity, 'medium') // package moderate → medium
+  // (b) OBJECT via — path-to-regexp: via:[{title,url,…}] → advisory title + url surfaced, url is the ruleId
+  const ptr = findById(findings, (f) => f.ruleId === NPM_ADV_URL)
+  assert.ok(ptr, 'path-to-regexp (object-via) finding missing — ruleId should be the advisory url')
+  assert.equal(ptr.ruleId, NPM_ADV_URL)
+  assert.ok(ptr.evidence.includes('Regular Expression Denial of Service'), 'the advisory title is in the message')
+  assert.ok(ptr.verdict_reasoning.includes(`See ${NPM_ADV_URL}`), 'the advisory url surfaces (from resources) in the reasoning')
+  assert.equal(ptr.adjusted_severity, 'high')
+  // the url lands in the hit-level `resources` (the finding folds resources[0] into the "See …" ref above)
+  const ptrHit = npmAuditAdapter.parse(readJSON(NPM_AUDIT)).find((h) => h.ruleId === NPM_ADV_URL)
+  assert.deepEqual(ptrHit.resources, [NPM_ADV_URL])
+  const bpHit = npmAuditAdapter.parse(readJSON(NPM_AUDIT)).find((h) => h.ruleId === 'body-parser')
+  assert.deepEqual(bpHit.resources, []) // a string-via entry has no advisory url
+  // (c) the band uses the PACKAGE severity, NOT the first advisory's — qs is package `moderate` but its first
+  //     via-advisory is `low`; it must band as medium (the package max), and its ruleId is that first advisory url
+  const qs = findById(findings, (f) => f.ruleId === NPM_QS_URL)
+  assert.ok(qs, 'qs (object-via) finding missing')
+  assert.equal(qs.adjusted_severity, 'medium') // package moderate beats the first advisory's low
+  // (d) no-leak: the raw CVSS vector that a direct advisory carries (via[i].cvss.vectorString) is NEVER dumped
+  const blob = JSON.stringify(findings)
+  assert.ok(!blob.includes('CVSS:3.1/'), 'the raw CVSS vector must never appear in a finding')
+  assert.ok(!/AV:N\/AC:[LH]/.test(blob), 'no CVSS vector components leak')
+})
+
+check('NPM-gate-label: an npm-audit finding says "gated by scan-dependency-vulnerabilities"; OSV STILL says scan-external-sca and semgrep STILL says scan-external-sast', () => {
+  const npmF = ingestNpm().findings.find((f) => f.ruleId === NPM_ANCHOR)
+  assert.match(npmF.verdict_reasoning, /gated by scan-dependency-vulnerabilities \(major\)/)
+  assert.doesNotMatch(npmF.verdict_reasoning, /scan-external-sca/) // npm-audit must NOT use OSV's SCA gate
+  assert.doesNotMatch(npmF.verdict_reasoning, /scan-external-sast/) // nor the SAST gate
+  // cross-engine: the other dep-CVE / SAST gates are unchanged (the gateLabel param is per-adapter)
+  const osvF = ingest(readJSON(OSV), osvAdapter, { repoRoot: '', pass: 1 }).findings[0]
+  assert.match(osvF.verdict_reasoning, /gated by scan-external-sca \(major\)/)
+  const sgF = ingest(readJSON(SEMGREP_WARN), semgrepAdapter, { repoRoot: '', pass: 1 }).findings[0]
+  assert.match(sgF.verdict_reasoning, /gated by scan-external-sast \(major\)/)
+})
+
+check('NPM-classify/no-class: npmAuditAdapter.classify() is constant null; hits carry severityNum:null + gateLabel scan-dependency-vulnerabilities + dimensionHint dependency-cve; no securityRelevant; findings carry no class', () => {
+  assert.equal(npmAuditAdapter.classify('express'), null)
+  assert.equal(npmAuditAdapter.classify('anything'), null)
+  assert.equal(npmAuditAdapter.securityRelevant, undefined) // every npm-audit entry is a known CVE — no tag filter
+  const hits = npmAuditAdapter.parse(readJSON(NPM_AUDIT))
+  assert.equal(hits.length, 4)
+  assert.ok(hits.every((h) => h.severityNum === null))
+  assert.ok(hits.every((h) => h.gateLabel === 'scan-dependency-vulnerabilities' && h.dimensionHint === 'dependency-cve'))
+  assert.ok(ingestNpm().findings.every((f) => !('class' in f)))
+})
+
+check('NPM-fail-safe: collect() missing → null; parse(null/{}/{vulnerabilities:null}/{vulnerabilities:[]}/{} -keyed/null-entry/non-object-entry) → []/skip; missing severity → medium hit; ingest(null) → 0 + note', () => {
+  assert.equal(npmAuditAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-npm.json') }), null)
+  assert.deepEqual(npmAuditAdapter.parse(null), [])
+  assert.deepEqual(npmAuditAdapter.parse({}), []) // no vulnerabilities key
+  assert.deepEqual(npmAuditAdapter.parse({ vulnerabilities: null }), [])
+  assert.deepEqual(npmAuditAdapter.parse({ vulnerabilities: [] }), []) // an ARRAY, not the keyed object → []
+  assert.deepEqual(npmAuditAdapter.parse({ vulnerabilities: {} }), []) // empty keyed object → no hits
+  assert.deepEqual(npmAuditAdapter.parse({ vulnerabilities: { a: null } }), []) // null entry skipped
+  assert.deepEqual(npmAuditAdapter.parse({ vulnerabilities: { a: 'oops' } }), []) // non-object entry skipped
+  // an entry with NO severity anywhere → still a hit at band 'medium' (never dropped), file = the lockfile, no line
+  const hits = npmAuditAdapter.parse({ vulnerabilities: { p: { name: 'p', range: '1.0.0', via: [] } } })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].bandFromTool, 'medium')
+  assert.equal(hits[0].startLine, null)
+  assert.equal(hits[0].file, 'package-lock.json')
+  assert.equal(hits[0].ruleId, 'p') // no advisory → the package name
+  const { findings, notes } = ingestNpm(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('NPM-schema: every npm-audit finding (no class, dimension dependency-cve) validates against $defs/finding', () => {
+  for (const f of ingestNpm().findings) assert.deepEqual(validateFinding(f), [])
+})
+
+check('NPM-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '7'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const npm = ingestNpm().findings
+  const r1 = mergeFindings(ledger, npm, 1)
+  assert.equal(r1.added, 4)
+  assert.equal(ledger.findings.length, 5) // 1 llm + 4 npm-audit
+  const r2 = mergeFindings(ledger, npm, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 5) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '7'.repeat(16) && !('provenance' in f)))
+})
+
+check('NPM-CLI: --scanner npm-audit --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'npm-audit', '--input', NPM_AUDIT, '--target', join(tmpdir(), 'nope-npm'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'npm-audit')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.equal(parsed.findings.length, 4)
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === NPM_ANCHOR && f.adjusted_severity === 'high' && f.dimension === 'dependency-cve' && !('class' in f))
+  )
+})
+
+check('NPM-CLI-merge: --scanner npm-audit writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-npm-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'npm-audit', '--input', NPM_AUDIT, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const o1 = l1.findings.filter((f) => f.engine === 'npm-audit')
+  assert.equal(o1.length, 4)
+  assert.ok(o1.every((f) => f.provenance === 'deterministic' && f.dimension === 'dependency-cve'))
+  execFileSync('node', [CLI, '--scanner', 'npm-audit', '--input', NPM_AUDIT, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'npm-audit').length, 4) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

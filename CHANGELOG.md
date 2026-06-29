@@ -37,6 +37,75 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.38] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #8 — the npm-audit adapter (the EASY Extension-A REUSE: a direct
+severity LABEL per package, no CVSS math) (docs/roadmap-deterministic-findings.md §10).** npm audit is the
+Node-ecosystem dependency-CVE scanner (run-scans Family 8, alongside OSV). `npm audit --json`
+(`auditReportVersion:2`) gives a **DIRECT severity LABEL per vulnerable package** (`critical/high/moderate/low/
+info`) — no CVSS parsing — so the band comes straight from `NPM_SEVERITY_TO_FINDING`, exactly like OSV's
+label-fallback path. It **REUSES `buildFinding`'s `bandFromTool` path, the `gateLabel` parameter (already added
+at 0.8.37), the `dependency-cve` dimension, and `classify()`→`null` EXACTLY like OSV** — the band SOURCE (an npm
+label, not a CVSS) is the only difference — so there is **NO `buildFinding` / `CLASS_DEFS` change** (gateLabel
+already exists); the **ONLY shared-file touch is the `ADAPTERS` registry line**. It is gated by
+`scan-dependency-vulnerabilities` (`applies_to: [all]`, `severity_if_missing: major` — the npm-deps gate,
+**distinct** from OSV's `scan-external-sca`; both `major`). One finding per vulnerable package (npm's
+`vulnerabilities` map is keyed by package; its `severity` is that package's MAX advisory severity); `via`
+supplies the advisory title/url — a `via[i]` that is a **STRING** is a transitive package name ("vulnerable via
+that one"), a `via[i]` that is an **OBJECT** is the direct advisory (`{source,name,title,url,severity,cwe,cvss,
+range}`). Validated by "parse twice → identical" against the real captured fixture (4 vulnerable packages —
+`body-parser`/`express`/`path-to-regexp`/`qs`, `moderate`×2 + `high`×2) + inline label→band synthetics + a
+via-shape matrix (string-via → "vulnerable via …"; object-via → its title in the message, its url as the
+`ruleId` and in `resources`) + the package-severity-wins assertion (`qs` is package `moderate` though its first
+advisory is `low` → bands medium) + a no-CVSS-vector-leak check + a gate-label regression, NO campaign. Suite
+**55 files / 677 checks** (was 55 / 665; +12 `NPM*` checks folded into `test-ingest-scanner-findings`; `AD1`
+bumped to the 10-adapter registry). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `npm-audit` adapter** (`file-parser`, `engine:'npm-audit'`).
+  `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty); `parse()` iterates the
+  `vulnerabilities` OBJECT keyed by package (defensive: a non-object `vulnerabilities` — including an array — a
+  `null`/non-object entry are all skipped, never crash), bands each package from its `severity` LABEL via
+  `NPM_SEVERITY_TO_FINDING` (unknown/blank → `medium`), and derives the advisory title/url from the first OBJECT
+  `via`-entry (string `via`-entries form the "vulnerable via …" chain). dep-CVEs have **no file:line** — `file`
+  is the lockfile `package-lock.json`, `startLine:null`. `ruleId` prefers the advisory url/id, else the package
+  name. `classify()` is constant **`null`** (owns no class, supersedes nothing); NO `securityRelevant`
+  (security-by-construction — every entry is a known CVE). `dimension:'dependency-cve'` (the same
+  deterministic-only grouping label OSV uses — no LLM dependency finder, so no methodology file). Registered as
+  the **10th** adapter. **No `buildFinding` change** (`gateLabel` already exists), **no `CLASS_DEFS` change**.
+- **`harness/ingest-scanner-findings.mjs` — `NPM_SEVERITY_TO_FINDING`** (`{critical, high, moderate→medium, low,
+  info}`). npm's own LOWERCASE spelling, using `moderate` (NOT `medium`); its OWN named map per the per-tool
+  idiom — it does NOT reuse OSV's UPPERCASE `OSV_LABEL_TO_FINDING`. Exported + unit-tested at every label.
+- **`acceptance/fixtures/npm-audit-solano.json`** — genuine captured `npm audit --json` v2 output (4 vulnerable
+  packages, `moderate`×2 + `high`×2). Leak-clean by construction (package names + version ranges + GHSA urls
+  only — no host/partner identifiers). The anchor is `express` (package severity `high`, `via` 3 transitive
+  strings → `ruleId` is the package name).
+- **`acceptance/test-ingest-scanner-findings.mjs`** — an `NPM*` section (+12 checks): determinism, count +
+  band-mix (exactly 4 findings, distinct ids, 2 high · 2 medium, all `npm-audit`/`dependency-cve`/no-class/
+  `package-lock.json` locus), the `express` anchor (deterministic/npm-audit/`dependency-cve`/no-class/`high`,
+  package name + range in the title, no `:line`), the **label→band map** (each npm label + unknown/blank →
+  `medium`) directly and through `parse`, the **via-shape matrix** (string-via → "vulnerable via …"; object-via
+  → advisory title in the message + url as `ruleId` and in hit `resources`; the package severity wins over the
+  first advisory's; no CVSS-vector leak), `classify()`→null/no-class + the `scan-dependency-vulnerabilities`
+  gate on every hit, fail-safe over the degenerate shapes (missing severity → `medium` hit, never dropped),
+  idempotent merge, schema conformance, and the CLI (dry-run + merge). The **NPM-gate-label** check asserts an
+  npm-audit finding says `gated by scan-dependency-vulnerabilities` while OSV STILL says `scan-external-sca` and
+  semgrep STILL says `scan-external-sast`. `AD1` bumped to the 10-adapter registry.
+
+### Decided (four judgment calls — implemented as specified, documented not hidden)
+- **Unknown/blank severity → `medium`** (NOT `info`, NOT the gate's `high`) — consistent with OSV's unscored-CVE
+  rule: a known CVE of unknown severity is real, and the conservative middle neither over- nor under-states it.
+- **One finding per vulnerable package.** npm's `vulnerabilities` map is keyed by package and its `severity` is
+  the package's MAX advisory severity, so one package → one finding; `via` supplies the advisory context. The
+  band uses the PACKAGE severity, **NOT** the first advisory's own (`qs` is package `moderate` though its first
+  via-advisory is `low` → it bands medium). `ruleId` prefers the advisory url/id, else the package name.
+- **`gateLabel:'scan-dependency-vulnerabilities'`** (the npm-deps gate, `applies_to: [all]`, `major`) — DISTINCT
+  from OSV's `scan-external-sca`; both `major`. The two dep-CVE engines name different gates.
+- **`classify()`→null — owns no class, supersedes nothing.** There is no LLM dependency-CVE finder to supersede;
+  npm-audit findings only populate the band. With two dep-CVE engines now live, OSV + npm-audit can flag the
+  SAME CVE — the duplicate is **visible** (the SAFE under-merge); collapsing it is **§10 extension #3
+  (cross-engine dedup), Phase-2b**, NOT this slice.
+
 ## [0.8.37] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #7 — the OSV-Scanner adapter, and with it Extension A: the

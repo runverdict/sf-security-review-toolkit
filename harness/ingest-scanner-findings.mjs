@@ -66,7 +66,21 @@
  *                       `database_specific.severity` LABEL → `medium` (a known CVE of unknown severity is
  *                       still real). dep-CVEs have no file:line (locus = the lockfile/package); classify()→null
  *                       so it owns no class and supersedes nothing (cross-engine dedup with npm/Trivy = §10
- *                       extension #3, Phase-2b). Next: npm-audit — reuses Extension A with a simpler label.
+ *                       extension #3, Phase-2b).
+ *                     Adapter #10 (Phase 2 · 2a #8): `npm-audit` (Node dependency-CVE JSON; engine:'npm-audit') —
+ *                       the EASY Extension-A REUSE. `npm audit --json` (auditReportVersion 2) gives a DIRECT
+ *                       severity LABEL per vulnerable package (`critical/high/moderate/low/info`) — no CVSS math —
+ *                       so the band comes straight from NPM_SEVERITY_TO_FINDING, exactly like OSV's label-fallback
+ *                       path. It REUSES the `bandFromTool` path, the `gateLabel` param, the `dependency-cve`
+ *                       dimension, and classify()→null EXACTLY like OSV — so there is NO buildFinding/CLASS_DEFS
+ *                       change (gateLabel already exists), only the ADAPTERS registry line. It is gated by
+ *                       `scan-dependency-vulnerabilities` (applies_to all, major — the npm-deps gate, distinct from
+ *                       OSV's scan-external-sca). One finding per vulnerable package (npm keys by package); `via`
+ *                       supplies the advisory title/url (a STRING via-entry is a transitive chain, an OBJECT via-
+ *                       entry is the direct advisory). Unknown/blank severity → medium (judgment call, as OSV).
+ *                       With two dep-CVE engines now live, OSV+npm-audit can flag the SAME CVE — the duplicate is
+ *                       visible (the SAFE under-merge); collapsing it is §10 extension #3 (Phase-2b). Next: trivy —
+ *                       the heavier multi-mode one (container/IaC/SCA/secret), a mode-aware parse.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -103,6 +117,7 @@
  *   node ingest-scanner-findings.mjs --scanner gitleaks        --input gitleaks.json      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner detect-secrets  --input detect-secrets.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner npm-audit       --input npm-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -206,6 +221,18 @@ export const CVSS_SCORE_TO_FINDING = (score) => {
   return 'info'
 }
 export const OSV_LABEL_TO_FINDING = { CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' }
+// npm audit's per-package severity LABEL (Phase 2 · 2a #8 — the dependency-CVE scanner for Node, run-scans
+// Family 8 alongside OSV). This is the EASY Extension-A REUSE: `npm audit --json` (auditReportVersion 2) gives a
+// DIRECT severity LABEL per vulnerable package — no CVSS math — so the band comes straight from this map, exactly
+// like OSV's label-fallback path (OSV_LABEL_TO_FINDING) and unlike the SAST tool-tier maps or the class-severity
+// adapters. npm's own spelling is lowercase and uses `moderate` (NOT `medium`); it carries its OWN named map per
+// the per-tool idiom — do NOT reuse OSV's UPPERCASE map. An unknown/blank severity falls through to `medium` in the
+// adapter (judgment call #1, consistent with OSV's unscored-CVE rule — a known CVE of unknown severity is real, and
+// the conservative middle neither over- nor under-states it). Like OSV it REUSES buildFinding's `bandFromTool` path
+// (the band SOURCE is the npm label) with ZERO buildFinding/CLASS_DEFS change — the only shared-file touch is the
+// ADAPTERS registry line — and is gated by `scan-dependency-vulnerabilities` (applies_to all, major), the npm-deps
+// gate (distinct from OSV's scan-external-sca; both major).
+export const NPM_SEVERITY_TO_FINDING = { critical: 'critical', high: 'high', moderate: 'medium', low: 'low', info: 'info' }
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -1154,6 +1181,101 @@ export const osvAdapter = {
   // NO securityRelevant — security-by-construction (every OSV hit is a known CVE), like checkov/semgrep/secrets.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #10 — npm-audit (file-parser, Phase 2 · 2a #8): parses captured `npm audit --json` (v2) output.
+// npm audit is the Node-ecosystem dependency-CVE scanner (run-scans Family 8, alongside OSV). It is the TENTH §10
+// adapter and the EASY **Extension-A REUSE**: `auditReportVersion:2` gives a DIRECT severity LABEL per vulnerable
+// package (`critical/high/moderate/low/info`) — NO CVSS parsing — so the band comes straight from
+// NPM_SEVERITY_TO_FINDING, exactly like OSV's label-fallback path. It REUSES buildFinding's `bandFromTool` path
+// EXACTLY like OSV (classify()→null, no securityRelevant, severityNum:null, dimensionHint 'dependency-cve',
+// gateLabel) — the band SOURCE (an npm label, not a CVSS) is the only difference — so there is NO buildFinding /
+// CLASS_DEFS change (gateLabel already exists since OSV/0.8.37); the ONLY shared-file touch is the ADAPTERS line.
+//
+// FOUR judgment calls (documented in the CHANGELOG + roadmap):
+//   1. Unknown/blank severity → `medium` (not info, not the gate's high) — consistent with OSV's unscored-CVE rule:
+//      a known CVE of unknown severity is real, and the conservative middle is the honest call.
+//   2. ONE finding per vulnerable package — npm's `vulnerabilities` map is keyed by package, and its `severity` is
+//      that package's MAX advisory severity. `via` supplies the advisory title/url: a `via[i]` that is a STRING is a
+//      transitive package name ("vulnerable via that one"); a `via[i]` that is an OBJECT is a direct advisory
+//      (`{source,name,title,url,severity,cwe,cvss,range}`). The first OBJECT via-entry is the advisory; string
+//      via-entries form the "vulnerable via …" chain. `ruleId` prefers the advisory URL/id, else the package name.
+//      NOTE: the band uses the PACKAGE severity (`e.severity`, the max), NOT the first advisory's own severity — so
+//      `qs` (package `moderate`, first advisory `low`) bands as medium, not low.
+//   3. `gateLabel:'scan-dependency-vulnerabilities'` (the npm-deps gate, applies_to all, major) — DISTINCT from
+//      OSV's `scan-external-sca`; both major. npm-audit findings say "gated by scan-dependency-vulnerabilities".
+//   4. `classify()`→null, owns no class, supersedes nothing — there is no LLM dependency-CVE finder to supersede;
+//      npm-audit findings only populate the band. Cross-engine dedup with OSV/Trivy on the SAME CVE (now even more
+//      concrete with two dep-CVE engines — the duplicate is visible, the SAFE under-merge) is §10 extension #3
+//      (Phase-2b), NOT this slice.
+//
+// No file:line — npm-audit gives no source path, so `file` is the lockfile (`package-lock.json`) and
+// `startLine:null`. The raw CVSS vector that a direct advisory MAY carry (`via[i].cvss.vectorString`) is
+// DELIBERATELY never read into any field (only the advisory title/url are) — the band is the npm label.
+// dimension 'dependency-cve' is the same DETERMINISTIC-ONLY grouping label OSV uses (no LLM dep finder → no
+// methodology file). Like the other deterministic scanners it is SECURITY-BY-CONSTRUCTION (every entry is a known
+// CVE), so NO `securityRelevant`. Input is a JSON OBJECT with `vulnerabilities` keyed by package.
+export const npmAuditAdapter = {
+  name: 'npm-audit',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    // `vulnerabilities` MUST be a plain OBJECT keyed by package (NOT an array, NOT null) — npm audit v2's shape
+    const vulns =
+      raw && raw.vulnerabilities && typeof raw.vulnerabilities === 'object' && !Array.isArray(raw.vulnerabilities)
+        ? raw.vulnerabilities
+        : null
+    if (!vulns) return []
+    const hits = []
+    for (const pkg of Object.keys(vulns)) {
+      // one finding per vulnerable package (npm keys by package; severity is the package's MAX advisory severity)
+      const e = vulns[pkg]
+      if (!e || typeof e !== 'object') continue
+      const sev = String(e.severity || '').toLowerCase()
+      // the first OBJECT via-entry is the direct advisory (title/url); a STRING via-entry is a transitive chain
+      const adv = Array.isArray(e.via) ? e.via.find((x) => x && typeof x === 'object') : null
+      const viaChain = Array.isArray(e.via) ? e.via.filter((x) => typeof x === 'string') : []
+      const title =
+        adv && adv.title
+          ? String(adv.title)
+          : viaChain.length
+            ? `vulnerable via ${viaChain.join(', ')}`
+            : 'known dependency vulnerability'
+      hits.push({
+        engine: 'npm-audit',
+        ruleId: String((adv && (adv.url || adv.source)) || pkg), // GHSA url / npm advisory id, else the package name
+        severityNum: null,
+        file: 'package-lock.json', // npm-audit gives no path; the lockfile is the locus
+        startLine: null,
+        message: `${pkg}${e.range ? ' (' + e.range + ')' : ''} — ${sev || 'unknown'} severity npm dependency vulnerability: ${title}`,
+        resources: adv && adv.url ? [String(adv.url)] : [],
+        bandFromTool: NPM_SEVERITY_TO_FINDING[sev] || 'medium', // unknown → medium (judgment call #1, as OSV)
+        toolSevLabel: `npm severity ${sev || 'unknown'}`,
+        gateLabel: 'scan-dependency-vulnerabilities', // the npm-deps gate (applies_to all, major) — NOT scan-external-sca
+        dimensionHint: 'dependency-cve',
+        tags: [],
+      })
+      // DELIBERATELY ABSENT from the hit: the advisory's CVSS vector (via[i].cvss.vectorString), cwe, the affected
+      // `range` of each sub-advisory, `nodes`, `fixAvailable` — the band is the npm severity label, never the vector.
+    }
+    return hits
+  },
+  // Constant null: an npm-audit finding owns NO toolkit class (its severity is the per-package npm band, and the
+  // class governs only the scan-dependency-vulnerabilities gate). Owning no class, it supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (every npm-audit entry is a known CVE), like osv/checkov/secrets.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -1164,6 +1286,7 @@ export const ADAPTERS = {
   'gitleaks': gitleaksAdapter,
   'detect-secrets': detectSecretsAdapter,
   'osv': osvAdapter,
+  'npm-audit': npmAuditAdapter,
 }
 
 // ----------------------------------------------------------------------------
