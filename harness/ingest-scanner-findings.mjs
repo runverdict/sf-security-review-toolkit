@@ -53,7 +53,20 @@
  *                       never the hash or plaintext). With TWO secrets engines now live, the same secret at
  *                       one locus produces TWO deterministic ledger rows — visible, the SAFE under-merge;
  *                       collapsing them is cross-engine dedup = §10 extension #3 (Phase-2b), NOT this slice.
- *                     Future: OSV — parses a JSON file the same way (and forces the CVSS→enum severity fork).
+ *                     Adapter #9 (Phase 2 · 2a #7): `osv` (dependency-CVE / SCA JSON; engine:'osv') — the
+ *                       SEVENTH §10 adapter and **Extension A: the CVSS→enum severity fork**. A dep CVE
+ *                       carries a REAL CVSS base score, while the only CLASS severity (scan-external-sca =
+ *                       major) is a *missing-scan* GATE severity — so the per-FINDING band is PER-ADVISORY
+ *                       (`severityKind:'advisory'`), resolved from the advisory's CVSS via
+ *                       CVSS_SCORE_TO_FINDING, and the class governs ONLY the gate. It REUSES the
+ *                       `bandFromTool` path EXACTLY like semgrep/bandit/njsscan (the band SOURCE is the only
+ *                       difference: CVSS, not a tool tier), so the ONLY shared-code change is the additive
+ *                       `gateLabel` parameter in buildFinding (whose default preserves the SAST output
+ *                       byte-for-byte). Severity priority per vuln: numeric group `max_severity` → the vuln's
+ *                       `database_specific.severity` LABEL → `medium` (a known CVE of unknown severity is
+ *                       still real). dep-CVEs have no file:line (locus = the lockfile/package); classify()→null
+ *                       so it owns no class and supersedes nothing (cross-engine dedup with npm/Trivy = §10
+ *                       extension #3, Phase-2b). Next: npm-audit — reuses Extension A with a simpler label.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -89,6 +102,7 @@
  *   node ingest-scanner-findings.mjs --scanner njsscan         --input njsscan.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner gitleaks        --input gitleaks.json      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner detect-secrets  --input detect-secrets.json --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -160,6 +174,38 @@ export const BANDIT_SEVERITY_TO_FINDING = { HIGH: 'high', MEDIUM: 'medium', LOW:
 // secrets-scanner finding is cross-engine dedup = roadmap §10 extension #3 (Phase-2b), NOT this
 // slice (the SAFE under-merge — a duplicate may survive in the band, never a dropped finding).
 export const NJSSCAN_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', INFO: 'low' }
+// OSV-Scanner's per-advisory severity (Phase 2 · 2a #7 — the dependency-CVE scanner, run-scans Family 8
+// over every lockfile under a non-package source root). This is **Extension A: the CVSS→enum severity fork**
+// (roadmap §10 extension #1) — the FIRST adapter whose severity is neither a toolkit CLASS (checkov/secrets)
+// nor a tool TIER (semgrep/bandit/njsscan's ERROR/WARNING/INFO), but a per-advisory CVSS base score. A dep
+// CVE carries a REAL CVSS, while the only CLASS severity (scan-external-sca = major) is a *missing-scan*
+// GATE severity — so the per-FINDING band comes from the advisory's CVSS, and the class governs ONLY the
+// gate. `CVSS_SCORE_TO_FINDING` is the industry-standard CVSS 3.x qualitative scale (≥9.0 critical · ≥7.0
+// high · ≥4.0 medium · >0 low · 0 info); a non-numeric/absent score → `null` so the caller can fall through.
+// `OSV_LABEL_TO_FINDING` maps OSV's `database_specific.severity` LABEL when no numeric score exists (GitHub's
+// CRITICAL/HIGH/MODERATE/LOW; MEDIUM accepted as a MODERATE synonym). Severity PRIORITY per vulnerability
+// (see osvAdapter): (1) numeric `max_severity` of the package `group` that contains this vuln id →
+// CVSS_SCORE_TO_FINDING; (2) else the vuln's database_specific.severity LABEL → OSV_LABEL_TO_FINDING; (3)
+// else `'medium'` — a known CVE of UNKNOWN severity is still a real finding, and the conservative middle
+// (NOT info, NOT the gate's high) neither over- nor under-states it. This is `severityKind:'advisory'` in
+// roadmap terms; it REUSES `buildFinding`'s `bandFromTool` path (the band is just resolved from CVSS instead
+// of a tool tier), the ONE additive harness tweak being the parameterized `gateLabel` (scan-external-sca).
+export const CVSS_SCORE_TO_FINDING = (score) => {
+  // ABSENT/BLANK → null so the caller FALLS THROUGH to the label → 'medium' path (judgment call #1:
+  // an UNSCORED CVE is 'medium', NOT 'info'). This guard is load-bearing: `Number('') === 0` and
+  // `Number(null) === 0` are both FINITE, so without it an unscored advisory — OSV-Scanner emits
+  // `max_severity:""` when no CVSS exists — would mis-map to 'info' and silently downgrade a real CVE.
+  // An EXPLICIT numeric zero (`'0'`/`'0.0'`, a genuinely 0.0-scored CVE) is NOT blank → still 'info'.
+  if (score == null || String(score).trim() === '') return null
+  const n = Number(score)
+  if (!Number.isFinite(n)) return null
+  if (n >= 9.0) return 'critical'
+  if (n >= 7.0) return 'high'
+  if (n >= 4.0) return 'medium'
+  if (n > 0.0) return 'low'
+  return 'info'
+}
+export const OSV_LABEL_TO_FINDING = { CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' }
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -304,7 +350,7 @@ function recommendationFor(classKey) {
 // ----------------------------------------------------------------------------
 // the finding builder — shared by every adapter / kind
 // ----------------------------------------------------------------------------
-export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel }) {
+export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel, gateLabel }) {
   const passId = Number.isInteger(pass) && pass >= 1 ? pass : 1
   const rel = repoRel(file, repoRoot)
   const loc = startLine != null ? `${rel}:${startLine}` : rel
@@ -323,13 +369,16 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
   } else if (bandFromTool) {
     // TOOL→BAND (Phase 2 · 2a #2 Semgrep — the first genuine tool→band path). The hit owns no
     // toolkit class, but the scanner carries a real per-finding severity already resolved to a
-    // finding band (via SEMGREP_SEVERITY_TO_FINDING). Use it directly; the requirement gate
-    // (scan-external-sast = major) governs the BAND, not this per-finding severity.
+    // finding band (via SEMGREP_SEVERITY_TO_FINDING; OSV's Extension A resolves the band from the
+    // advisory's CVSS instead — same path). Use it directly; the requirement GATE governs the band,
+    // not this per-finding severity. `gateLabel` names that gate — `scan-external-sast` (major) for
+    // the SAST family by default; OSV/SCA passes `scan-external-sca`. The default preserves the
+    // SAST adapters' reasoning byte-for-byte (they never pass gateLabel).
     adjusted = bandFromTool
     dimension = dimensionHint || DEFAULT_DIMENSION
     sevReason =
       `severity from the ${engine} tool band (${toolSevLabel || 'unknown'} → ${adjusted}); ` +
-      `${engine} carries its own per-finding severity, gated by scan-external-sast (major)`
+      `${engine} carries its own per-finding severity, gated by ${gateLabel || 'scan-external-sast'} (major)`
   } else {
     // UNMAPPED FALLBACK — the Code-Analyzer 1-5 scale (a security-tagged CA rule with no class
     // mapping). dimensionHint is honoured so a future no-band adapter can still group, but
@@ -1005,6 +1054,106 @@ export const detectSecretsAdapter = {
   // NO securityRelevant — security-by-construction (every detect-secrets hit is a secret), like gitleaks/checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #9 — osv (file-parser, Phase 2 · 2a #7): parses captured OSV-Scanner JSON.
+// OSV-Scanner is the toolkit's dependency-CVE / SCA scanner (run-scans Family 8, over every lockfile —
+// requirements.txt / package-lock.json / go.sum / … — under a non-package source root). It is the SEVENTH
+// §10 adapter and forces **Extension A: the CVSS→enum severity fork**: unlike the SAST family (tool tier
+// ERROR/WARNING/INFO → band) and the class-severity adapters (checkov/secrets → class), a dep CVE carries a
+// REAL CVSS base score, while the only CLASS severity (scan-external-sca = major) is a *missing-scan* GATE
+// severity. So the per-FINDING band is PER-ADVISORY (`severityKind:'advisory'`) — resolved from the
+// advisory's CVSS via CVSS_SCORE_TO_FINDING — and the class governs ONLY the gate (carried as
+// `gateLabel:'scan-external-sca'` on each hit). It REUSES buildFinding's `bandFromTool` path EXACTLY like
+// semgrep/bandit/njsscan (classify()→null, no securityRelevant, a dimensionHint, severityNum:null) — the
+// band SOURCE is the only difference (CVSS, not a tool tier) — so the ONLY shared-code change is the additive
+// `gateLabel` parameter in buildFinding (whose default preserves the SAST adapters' output byte-for-byte).
+//
+// SEVERITY PRIORITY per vulnerability: (1) the numeric `max_severity` of the package `group` that contains
+// this vuln id → CVSS_SCORE_TO_FINDING (an enum band); (2) else the vuln's `database_specific.severity`
+// LABEL → OSV_LABEL_TO_FINDING; (3) else `'medium'` — a known CVE of unknown severity is still a real
+// finding, and the conservative middle (NOT info, NOT the gate's high) is the honest call.
+//
+// THREE judgment calls (documented in the CHANGELOG + roadmap):
+//   1. Unscored CVE → `medium` (not info, not the gate's high) — over/under-stating an unknown-severity CVE
+//      is dishonest; the conservative middle is the faithful call.
+//   2. No file:line — a dep CVE locates to the lockfile/package, not a code line; `file` = the lockfile
+//      source path (or `ecosystem:name` when OSV gives no source), `startLine:null`. Two vulns of one
+//      package = distinct ids (distinct GHSA/CVE); the SAME CVE under two lockfiles = distinct loci (distinct
+//      `file`) — correct, those are two real install sites.
+//   3. `classify()`→null, owns no class, supersedes nothing — there is no LLM dependency-CVE finder to
+//      supersede; OSV findings only populate the band. Cross-engine dedup with npm-audit/Trivy on the SAME
+//      CVE is §10 extension #3 (Phase-2b), NOT this slice.
+//
+// dimension 'dependency-cve' is a DETERMINISTIC-ONLY grouping label (like checkov's 'infrastructure-iac' and
+// semgrep's 'external-sast'): there is no LLM dependency finder, so it needs no methodology file. Like the
+// other deterministic scanners it is SECURITY-BY-CONSTRUCTION (every OSV hit is a known CVE), so NO
+// `securityRelevant` — the ingest core keeps every emitted hit. Input is a JSON OBJECT with a `results[]`.
+export const osvAdapter = {
+  name: 'osv',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    const results = raw && Array.isArray(raw.results) ? raw.results : null
+    if (!results) return []
+    const hits = []
+    for (const r of results) {
+      const src = (r && r.source && r.source.path) || ''
+      const packages = Array.isArray(r && r.packages) ? r.packages : []
+      for (const p of packages) {
+        const pkg = (p && p.package) || {}
+        const groups = Array.isArray(p && p.groups) ? p.groups : []
+        const vulns = Array.isArray(p && p.vulnerabilities) ? p.vulnerabilities : []
+        for (const v of vulns) {
+          if (!v || v.id == null) continue // need an advisory id (GHSA/CVE/PYSEC)
+          // severity priority: numeric max_severity of THIS vuln's group → label → 'medium'
+          const grp = groups.find((g) => g && Array.isArray(g.ids) && g.ids.includes(v.id))
+          const numBand = grp ? CVSS_SCORE_TO_FINDING(grp.max_severity) : null
+          const lblBand =
+            (v.database_specific && OSV_LABEL_TO_FINDING[String(v.database_specific.severity || '').toUpperCase()]) || null
+          const band = numBand || lblBand || 'medium'
+          const sevLabel = numBand
+            ? `CVSS ${grp.max_severity} (advisory)`
+            : lblBand
+              ? `advisory severity ${v.database_specific.severity}`
+              : 'advisory severity unknown'
+          hits.push({
+            engine: 'osv',
+            ruleId: String(v.id), // GHSA-… / CVE-… / PYSEC-…
+            severityNum: null,
+            file: src || (pkg.ecosystem ? `${pkg.ecosystem}:${pkg.name}` : String(pkg.name || 'dependency')),
+            startLine: null, // dep-CVEs have no file:line — they locate to the lockfile/package
+            message: `${pkg.name || 'dependency'}@${pkg.version || '?'} (${pkg.ecosystem || 'dep'}): ${v.summary || v.id}`,
+            resources: [],
+            bandFromTool: band,
+            toolSevLabel: sevLabel,
+            gateLabel: 'scan-external-sca', // the dep-CVE gate (NOT scan-external-sast)
+            dimensionHint: 'dependency-cve', // deterministic-only grouping label (no LLM dep finder)
+            tags: [],
+          })
+          // DELIBERATELY ABSENT from the hit: the raw CVSS vector (v.severity[].score), affected ranges,
+          // references — the band is the numeric max_severity (or the label), NEVER the vector string.
+        }
+      }
+    }
+    return hits
+  },
+  // Constant null: an OSV finding owns NO toolkit class (its severity is the per-advisory CVSS band, and the
+  // class governs only the scan-external-sca gate). Owning no class, it supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (every OSV hit is a known CVE), like checkov/semgrep/secrets.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -1014,6 +1163,7 @@ export const ADAPTERS = {
   'njsscan': njsscanAdapter,
   'gitleaks': gitleaksAdapter,
   'detect-secrets': detectSecretsAdapter,
+  'osv': osvAdapter,
 }
 
 // ----------------------------------------------------------------------------

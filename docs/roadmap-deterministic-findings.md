@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); 2a #4 `njsscan` SHIPPED 0.8.34 (the THIRD `tool→band` adapter and the FIRST with a different input shape — a nested object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat `results[]`, so its own `parse` reading BOTH sections, still reusing `bandFromTool` with ZERO harness-core change); 2a #5 `gitleaks` SHIPPED 0.8.35 (the DESIGN PIVOT BACK to `class`-severity — secrets have no tool-severity tier, so severity from the `fail-hardcoded-secrets` class; the FIRST adapter to own a class AND a real dimension (`secrets-credentials`) so it SUPERSEDES a co-located LLM secrets finding, built so the live secret + commit PII NEVER reach the ledger); 2a #6 `detect-secrets` SHIPPED 0.8.36 (the secrets SIBLING of gitleaks — REUSES the `hardcoded-secrets` class with NO new `CLASS_DEFS`/`buildFinding` change, only the `ADAPTERS` registry line; its OWN nested-by-file JSON `{results:{<file>:[…]}}` so its own `parse`; the same hash/secret-never-leaks invariant — emits only `type`/file/`line_number`, never the `hashed_secret`/plaintext; with TWO secrets engines now live, cross-engine dedup is concrete but still §10 ext #3 — the duplicate is VISIBLE, the SAFE under-merge); osv next (the dependency-CVE scanner — it forces **Extension A: the CVSS→enum severity fork**, the next real design decision).** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); 2a #4 `njsscan` SHIPPED 0.8.34 (the THIRD `tool→band` adapter and the FIRST with a different input shape — a nested object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat `results[]`, so its own `parse` reading BOTH sections, still reusing `bandFromTool` with ZERO harness-core change); 2a #5 `gitleaks` SHIPPED 0.8.35 (the DESIGN PIVOT BACK to `class`-severity — secrets have no tool-severity tier, so severity from the `fail-hardcoded-secrets` class; the FIRST adapter to own a class AND a real dimension (`secrets-credentials`) so it SUPERSEDES a co-located LLM secrets finding, built so the live secret + commit PII NEVER reach the ledger); 2a #6 `detect-secrets` SHIPPED 0.8.36 (the secrets SIBLING of gitleaks — REUSES the `hardcoded-secrets` class with NO new `CLASS_DEFS`/`buildFinding` change, only the `ADAPTERS` registry line; its OWN nested-by-file JSON `{results:{<file>:[…]}}` so its own `parse`; the same hash/secret-never-leaks invariant — emits only `type`/file/`line_number`, never the `hashed_secret`/plaintext; with TWO secrets engines now live, cross-engine dedup is concrete but still §10 ext #3 — the duplicate is VISIBLE, the SAFE under-merge); 2a #7 `osv` SHIPPED 0.8.37 (the dependency-CVE / SCA scanner — and with it **Extension A: the CVSS→enum advisory-severity fork is REALIZED**: a dep CVE carries a REAL CVSS while the only class severity (scan-external-sca) is a *missing-scan* gate severity, so the per-finding band comes from the advisory's CVSS via `CVSS_SCORE_TO_FINDING` (≥9 critical · ≥7 high · ≥4 medium · >0 low · 0 info), else the `database_specific.severity` label, else `medium` — reusing the `bandFromTool` path with the ONE additive `gateLabel` param (scan-external-sca, default preserves the SAST gate byte-for-byte); classify()→null so it owns no class; npm-audit next — reuses Extension A with a simpler label).** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -238,10 +238,40 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 | `semgrep` ✅ | file-parser | external-sast (tool→band) | scan-external-sast | ✅ coldstart-full + helios | **tool→band** — Slice shipped 0.8.32 |
 | `bandit` ✅ / `njsscan` ✅ / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | **tool→band** — `bandit` shipped 0.8.33; `njsscan` shipped 0.8.34; gosec pending |
 | `gitleaks` ✅ / `detect-secrets` ✅ | file-parser | secrets · `hardcoded-secrets` | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) — `gitleaks` shipped 0.8.35; `detect-secrets` shipped 0.8.36 (REUSES the class) — **secrets row done** |
-| `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
+| `osv` ✅ / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** — `osv` shipped 0.8.37 (**Extension A REALIZED**); npm-audit next |
 | `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
 | `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
 
+> **0.8.37 — `osv` row shipped, and with it Extension A (the CVSS→enum advisory-severity fork) is REALIZED.**
+> OSV-Scanner is the toolkit's dependency-CVE / SCA scanner (run-scans Family 8, over every lockfile under a
+> non-package source root). It is the SEVENTH §10 adapter and the **third design pivot**: unlike the SAST
+> family (`semgrep`/`bandit`/`njsscan` → tool tier ERROR/WARNING/INFO) and the class-severity adapters
+> (`checkov`/`gitleaks`/`detect-secrets` → class), a dep CVE carries a **REAL CVSS base score**, while the
+> only CLASS severity (`scan-external-sca` = `major`) is a *missing-scan* GATE severity. So the per-FINDING
+> band is **PER-ADVISORY** (`severityKind:'advisory'`): resolved from the advisory's CVSS via
+> `CVSS_SCORE_TO_FINDING` (≥9.0 critical · ≥7.0 high · ≥4.0 medium · >0 low · 0 info; blank/non-numeric →
+> `null`), and the class governs **only the gate**. **Severity priority** per vuln: (1) the numeric
+> `max_severity` of the package `group` that contains this vuln id → `CVSS_SCORE_TO_FINDING`; (2) else the
+> vuln's `database_specific.severity` LABEL → `OSV_LABEL_TO_FINDING` (GitHub's `CRITICAL/HIGH/MODERATE/LOW`;
+> `MEDIUM` a `MODERATE` synonym); (3) else **`medium`** — a known CVE of unknown severity is still a real
+> finding, the conservative middle (NOT info, NOT the gate's high). It **REUSES `buildFinding`'s `bandFromTool`
+> path** exactly like the SAST adapters (`classify()`→`null`, owns no class, supersedes nothing;
+> `dimension:'dependency-cve'`, deterministic-only; NO tag filter) — the band SOURCE (CVSS, not a tool tier)
+> is the only difference — so the **ONLY shared-code change is the additive `gateLabel` parameter** on
+> `buildFinding`'s tool→band branch (`scan-external-sca`; the default `scan-external-sast` preserves the SAST
+> adapters' reasoning **byte-for-byte**; `CLASS_DEFS` and the mapped/unmapped branches are untouched).
+> **Three judgment calls** (documented, not hidden): (1) an unscored CVE → `medium` (the blank-input guard in
+> `CVSS_SCORE_TO_FINDING` makes `''`/`null` fall through to the label → `medium`, while an explicit `'0'`/`'0.0'`
+> stays `info`); (2) no file:line — a dep-CVE locates to the lockfile/package (`file` = the lockfile path or
+> `ecosystem:name`, `startLine:null`); (3) `classify()`→null — cross-engine dedup with npm/Trivy on the SAME
+> CVE is **extension #3 (Phase-2b)**, not this slice. Guarded by the `OSV*` checks (one real 11-vuln fixture —
+> 1 critical `h11` · 3 high + 6 medium + 1 low across `starlette`/`idna` — + inline CVSS→enum threshold
+> synthetics, the severity-priority cases, and the load-bearing gate-label-default-preserved regression). Suite
+> **55 files / 665 checks** (was 55 / 651; +14 `OSV*`; `AD1` → the 9-adapter registry). Tag stays **HELD**
+> (0.9.0 reserved). **`npm-audit` is next** — it reuses Extension A but with npm's direct `severity` label
+> (`critical/high/moderate/low/info`), a label-only band (no CVSS parsing); then `trivy`, then 2b
+> (gosec/retire/cross-engine-dedup) + the tls/dast specials.
+>
 > **0.8.36 — `detect-secrets` row shipped (the secrets SIBLING of gitleaks; REUSES the `hardcoded-secrets`
 > class; the nested-by-file parse; cross-engine dedup now concrete → ext #3). The secrets row is now done.**
 > detect-secrets is the toolkit's SECOND hardcoded-secret scanner (run-scans Family 6, alongside gitleaks).
@@ -359,10 +389,16 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 > (CKV-id → severity) refinement is a Phase-2b follow-up.
 
 **Three extensions the new adapters force (the seam supports all; spec them in Phase 2):**
-1. **Severity fork for dep-CVEs.** "Discard the scanner number, take the class
-   severity" works for Apex (the class *is* the severity); but every CVE carries a real
-   CVSS and the only class severity is a *missing-scan* severity. OSV/npm/RetireJS need a
-   per-advisory CVSS→enum path (`severityKind:'advisory'`), class governs only the gate.
+1. **Severity fork for dep-CVEs** *(✅ REALIZED 0.8.37, the `osv` adapter — Extension A).*
+   "Discard the scanner number, take the class severity" works for Apex (the class *is* the
+   severity); but every CVE carries a real CVSS and the only class severity is a *missing-scan*
+   severity. OSV/npm/RetireJS need a per-advisory CVSS→enum path (`severityKind:'advisory'`),
+   class governs only the gate. SHIPPED for `osv`: `CVSS_SCORE_TO_FINDING` (≥9 critical · ≥7 high
+   · ≥4 medium · >0 low · 0 info, blank/non-numeric → null) with priority numeric `max_severity`
+   → `database_specific.severity` LABEL (`OSV_LABEL_TO_FINDING`) → `medium` (unscored is real);
+   it reuses `buildFinding`'s `bandFromTool` path, the ONE additive harness change being the
+   `gateLabel` param (scan-external-sca, default preserves scan-external-sast byte-for-byte).
+   `npm-audit`/`trivy`/`retire` reuse this path with their own label maps (no CVSS parsing).
 2. **Mandatory Security/AppExchange tag filter** *(✅ SHIPPED 0.8.29, Slice 2 — surfaced by
    the off-disk grade).* Raw Code Analyzer output is dominated by non-security rules (one
    fixture: 23/23 ApexDoc/naming/codestyle). Slice 1 ingested an unmapped rule as a
@@ -408,9 +444,13 @@ PENDING-OWNER-RUN until a live host exists.
   `hardcoded-secrets` class with NO new `CLASS_DEFS`/`buildFinding` change [the only shared-file touch is
   the `ADAPTERS` registry line]; its OWN nested-by-file JSON `{results:{<file>:[…]}}` so its own `parse`;
   same hash/secret-never-leaks invariant; cross-engine dedup now concrete but still ext #3 — the duplicate
-  is VISIBLE, the SAFE under-merge) → **osv (next — Extension A: the CVSS→enum severity fork; a dep CVE
-  carries a real CVSS while the only class severity is a missing-scan severity, so osv/npm/RetireJS need a
-  per-advisory `severityKind:'advisory'` path — the next genuine design decision)** → npm-audit → trivy.
+  is VISIBLE, the SAFE under-merge) → osv ✅ (shipped 0.8.37 — the dependency-CVE / SCA scanner and
+  **Extension A: the CVSS→enum advisory-severity fork REALIZED**; a dep CVE carries a real CVSS while the
+  only class severity is a missing-scan gate severity, so the band is per-advisory via `CVSS_SCORE_TO_FINDING`
+  [numeric `max_severity` → `database_specific.severity` label → `medium`], reusing the `bandFromTool` path
+  with the ONE additive `gateLabel` param; classify()→null, owns no class) → **npm-audit (next — reuses
+  Extension A but with npm's direct `severity` label [`critical/high/moderate/low/info`], a label-only band
+  with no CVSS parsing)** → trivy → then 2b (gosec/retire/cross-engine-dedup) + the tls/dast specials.
   (Extension #2's tag filter ✅ shipped with Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,
   trivy SCA/secret modes, the cross-engine dedup (#3).

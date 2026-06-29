@@ -369,10 +369,24 @@ Skills write into the PARTNER's repo, never into the plugin:
   (a SHA) and, under `--show-secrets`, could carry plaintext; the adapter emits from ONLY
   `type`/file/`line_number` and NEVER the hash or plaintext (`redact()` is only a backstop). Guarded by the
   `DS*` checks (one real 24-occurrence / 6-file / 3-type fixture, the load-bearing hash+plaintext leak test,
-  the LLM-supersession test, and the two-deterministic-coexist test). The remaining §10 adapter (build order
-  2b — `osv` next) forces **Extension A (the CVSS→enum severity fork)**: a dep CVE carries a real CVSS while
-  the only class severity is a *missing-scan* severity, so osv/npm/RetireJS need a per-advisory
-  `severityKind:'advisory'` path — the next genuine design decision (like Checkov and gitleaks were).
+  the LLM-supersession test, and the two-deterministic-coexist test). **Phase 2 (0.8.37) ships the seventh §10
+  adapter — `osv`** (file-parser, `engine:'osv'`, dependency-CVE / SCA), and with it **Extension A: the
+  CVSS→enum advisory-severity fork** (§10 extension #1). Unlike the SAST family (tool tier ERROR/WARNING/INFO →
+  band) and the class-severity adapters (checkov/gitleaks/detect-secrets → class), a dep CVE carries a REAL
+  CVSS, while the only CLASS severity (`scan-external-sca` = major) is a *missing-scan* GATE severity — so the
+  per-FINDING band is PER-ADVISORY (`severityKind:'advisory'`): numeric group `max_severity` →
+  `CVSS_SCORE_TO_FINDING` (the CVSS 3.x scale — ≥9.0 critical · ≥7.0 high · ≥4.0 medium · >0 low · 0 info), else
+  the vuln's `database_specific.severity` LABEL → `OSV_LABEL_TO_FINDING`, else `medium` (an unscored CVE is real
+  — the conservative middle, NOT info, NOT the gate's high). It REUSES `buildFinding`'s `bandFromTool` path
+  (`classify()`→`null`, owns no class, supersedes nothing; `dimension:'dependency-cve'`, deterministic-only; NO
+  tag filter) — the band SOURCE (CVSS, not a tool tier) is the only difference — so the **ONLY shared-code change
+  is the additive `gateLabel` parameter** on `buildFinding`'s tool→band branch (`scan-external-sca` for SCA;
+  the default `scan-external-sast` preserves the SAST adapters' reasoning byte-for-byte). dep-CVEs have no
+  file:line (locus = the lockfile/package). Guarded by the `OSV*` checks (one real 11-vuln fixture + inline
+  CVSS→enum threshold synthetics + the severity-priority cases + the load-bearing gate-label-default-preserved
+  regression). The remaining §10 adapters (build order 2b) reuse Extension A: **`npm-audit` next** — npm's
+  direct `severity` LABEL (`critical/high/moderate/low/info`), a label-only band with no CVSS parsing — then
+  `trivy`, then ext #3 (cross-engine dedup: OSV↔npm on the same CVE) + the tls/dast specials.
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -464,9 +478,9 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # Helios sealed ground-truth plant list (recall grading key)
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
-│   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium)
+│   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium). 0.8.35: gitleaks-coldstart-full.json (genuine gitleaks output, secret-never-leaks — 3× generic-api-key, class-severity high). 0.8.36: detect-secrets-solano.json (genuine detect-secrets 1.5.0, nested-by-file — 24 occ / 6 files / 3 types, hash-never-leaks). 0.8.37: osv-coldstart-full.json (genuine OSV-Scanner SCA, lockfile path genericized — 1 source / 3 PyPI pkgs / 11 vulns, Extension A CVSS→enum: 1 critical·3 high·6 medium·1 low)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (651 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (665 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

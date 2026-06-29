@@ -24,11 +24,11 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 8 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 9 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
- *   CK/SG/BN/NJ/GL/DS — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
- *        gitleaks/detect-secrets class-severity hardcoded-secrets).
+ *   CK/SG/BN/NJ/GL/DS/OSV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
+ *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE, Extension A CVSS→enum).
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -49,6 +49,7 @@ import {
   njsscanAdapter,
   gitleaksAdapter,
   detectSecretsAdapter,
+  osvAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -60,6 +61,8 @@ import {
   SEMGREP_SEVERITY_TO_FINDING,
   BANDIT_SEVERITY_TO_FINDING,
   NJSSCAN_SEVERITY_TO_FINDING,
+  CVSS_SCORE_TO_FINDING,
+  OSV_LABEL_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -77,6 +80,7 @@ const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi 
 const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
+const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 source (mcp/requirements.txt), 3 PyPI pkgs, 11 vulns (1 critical h11 / 3 high / 6 medium / 1 low starlette)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -451,8 +455,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 8 adapters (detect-secrets added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'semgrep'])
+check('AD1 registry has 9 adapters (osv added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'osv', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -461,6 +465,7 @@ check('AD1 registry has 8 adapters (detect-secrets added), both KINDS, each {nam
   assert.equal(ADAPTERS['njsscan'].kind, 'file-parser')
   assert.equal(ADAPTERS['gitleaks'].kind, 'file-parser')
   assert.equal(ADAPTERS['detect-secrets'].kind, 'file-parser')
+  assert.equal(ADAPTERS['osv'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -1736,6 +1741,266 @@ check('DS-CLI-merge: --scanner detect-secrets writes the deterministic findings 
   execFileSync('node', [CLI, '--scanner', 'detect-secrets', '--input', DETECT_SECRETS, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'detect-secrets').length, 24) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── osv (Phase 2 · 2a #7 — dependency CVEs, Extension A: CVSS→enum)
+// OSV-Scanner is the dependency-CVE / SCA scanner (run-scans Family 8, lockfiles). It forces **Extension A:
+// the CVSS→enum severity fork** — unlike the SAST tool→band family (ERROR/WARNING/INFO) and the class-severity
+// adapters (checkov/secrets), a dep CVE carries a REAL CVSS, while the only class severity (scan-external-sca)
+// is a *missing-scan* GATE severity. So the per-FINDING band is PER-ADVISORY: numeric group `max_severity` →
+// CVSS_SCORE_TO_FINDING, else the `database_specific.severity` LABEL → OSV_LABEL_TO_FINDING, else 'medium'. It
+// REUSES buildFinding's `bandFromTool` path (the band SOURCE is the CVSS, not a tool tier); the ONLY shared-code
+// change is the additive `gateLabel` (scan-external-sca, not scan-external-sast). classify()→null (owns no
+// class, supersedes nothing). The real fixture is genuine OSV-Scanner output: 1 source (mcp/requirements.txt),
+// 3 PyPI packages, 11 vulns (1 critical h11 · 3 high + 6 medium + 1 low across starlette/idna).
+const ingestOsv = (raw) => ingest(raw === undefined ? readJSON(OSV) : raw, osvAdapter, { repoRoot: '', pass: 1 })
+const OSV_ANCHOR = 'GHSA-82w8-qh3p-5jfq' // starlette@0.38.6, single-id group max_severity 7.5 → high (stable HIGH anchor)
+
+check('OSV-determinism: ingest the real OSV fixture twice → byte-identical findings', () => {
+  const a = ingestOsv().findings
+  const b = ingestOsv().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('OSV-count: the real fixture → exactly 11 findings (one per vuln), distinct ids, all osv/dependency-cve/no-class; band mix 1 critical·3 high·6 medium·1 low', () => {
+  const { findings } = ingestOsv()
+  assert.equal(findings.length, 11) // one finding per vulnerability
+  assert.equal(new Set(findings.map((f) => f.id)).size, 11) // all distinct ids (distinct GHSA/CVE/PYSEC)
+  assert.ok(findings.every((f) => f.engine === 'osv' && f.provenance === 'deterministic'))
+  assert.ok(findings.every((f) => f.dimension === 'dependency-cve'))
+  assert.ok(findings.every((f) => !('class' in f))) // OSV owns no toolkit class
+  const byBand = {}
+  for (const f of findings) byBand[f.adjusted_severity] = (byBand[f.adjusted_severity] || 0) + 1
+  assert.deepEqual(byBand, { critical: 1, high: 3, medium: 6, low: 1 }) // the genuine fixture's distribution
+})
+
+check('OSV-anchor: GHSA-82w8-qh3p-5jfq → deterministic/osv/dependency-cve/no-class/HIGH (CVSS 7.5 advisory); starlette@0.38.6 (PyPI) in title+evidence; no :line', () => {
+  const { findings } = ingestOsv()
+  const f = findById(findings, (x) => x.ruleId === OSV_ANCHOR)
+  assert.ok(f, 'the GHSA-82w8-qh3p-5jfq anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'osv')
+  assert.equal(f.ruleId, OSV_ANCHOR)
+  assert.equal(f.dimension, 'dependency-cve')
+  assert.equal(f.class, undefined) // OSV owns no class (classify()→null)
+  assert.equal(f.adjusted_severity, 'high') // CVSS 7.5 → high (the advisory band, NOT a class)
+  assert.equal(f.severity, 'high')
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.ok(f.file.endsWith('mcp/requirements.txt')) // the lockfile locus
+  assert.ok(!/:\d+$/.test(f.file), 'a dep-CVE finding must have NO :line (it locates to the lockfile/package)')
+  assert.ok(f.title.includes('starlette@0.38.6') && f.title.includes('(PyPI)'), 'package@version + ecosystem in the title')
+  assert.ok(f.evidence.includes('starlette@0.38.6 (PyPI):'))
+  assert.match(f.verdict_reasoning, /CVSS 7\.5 \(advisory\) → high/)
+})
+
+check('OSV-CVSS→enum thresholds (the Extension-A crux): CVSS_SCORE_TO_FINDING maps each band boundary (9.0/7.0/4.0/0.1) + a real 0 → info + unscored/blank → null', () => {
+  // the industry-standard CVSS 3.x qualitative scale
+  assert.equal(CVSS_SCORE_TO_FINDING('9.8'), 'critical')
+  assert.equal(CVSS_SCORE_TO_FINDING('9.0'), 'critical') // ≥9.0 boundary
+  assert.equal(CVSS_SCORE_TO_FINDING('8.99'), 'high')
+  assert.equal(CVSS_SCORE_TO_FINDING('7.5'), 'high')
+  assert.equal(CVSS_SCORE_TO_FINDING('7.0'), 'high') // ≥7.0 boundary
+  assert.equal(CVSS_SCORE_TO_FINDING('6.99'), 'medium')
+  assert.equal(CVSS_SCORE_TO_FINDING('5.0'), 'medium')
+  assert.equal(CVSS_SCORE_TO_FINDING('4.0'), 'medium') // ≥4.0 boundary
+  assert.equal(CVSS_SCORE_TO_FINDING('3.99'), 'low')
+  assert.equal(CVSS_SCORE_TO_FINDING('2.0'), 'low')
+  assert.equal(CVSS_SCORE_TO_FINDING('0.1'), 'low') // >0 boundary
+  assert.equal(CVSS_SCORE_TO_FINDING('0'), 'info') // an EXPLICIT 0.0-scored CVE → info
+  assert.equal(CVSS_SCORE_TO_FINDING('0.0'), 'info')
+  assert.equal(CVSS_SCORE_TO_FINDING(7.5), 'high') // numbers, not just strings
+  // ABSENT/BLANK/non-numeric → null so the caller FALLS THROUGH to label → 'medium' (judgment call #1):
+  // load-bearing — Number('')===0 and Number(null)===0 are finite, so without the guard an UNSCORED advisory
+  // (OSV emits max_severity:'' when no CVSS exists) would silently downgrade to 'info'.
+  assert.equal(CVSS_SCORE_TO_FINDING(''), null)
+  assert.equal(CVSS_SCORE_TO_FINDING('   '), null)
+  assert.equal(CVSS_SCORE_TO_FINDING(null), null)
+  assert.equal(CVSS_SCORE_TO_FINDING(undefined), null)
+  assert.equal(CVSS_SCORE_TO_FINDING('not-a-score'), null)
+  // OSV's database_specific.severity LABEL map (GitHub bands; MEDIUM accepted as a MODERATE synonym)
+  assert.deepEqual(OSV_LABEL_TO_FINDING, { CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' })
+})
+
+check('OSV-CVSS→enum via parse (end-to-end): synthetic groups 9.8→critical, 7.5→high, 5.0→medium, 2.0→low, 0→info each reach the finding band', () => {
+  const mk = (id) => ({ id, summary: `synthetic ${id}` })
+  const raw = {
+    results: [
+      {
+        source: { path: 'requirements.txt' },
+        packages: [
+          {
+            package: { name: 'synthpkg', version: '1.0.0', ecosystem: 'PyPI' },
+            groups: [
+              { ids: ['V-CRIT'], max_severity: '9.8' },
+              { ids: ['V-HIGH'], max_severity: '7.5' },
+              { ids: ['V-MED'], max_severity: '5.0' },
+              { ids: ['V-LOW'], max_severity: '2.0' },
+              { ids: ['V-INFO'], max_severity: '0' },
+            ],
+            vulnerabilities: [mk('V-CRIT'), mk('V-HIGH'), mk('V-MED'), mk('V-LOW'), mk('V-INFO')],
+          },
+        ],
+      },
+    ],
+  }
+  const { findings } = ingestOsv(raw)
+  assert.equal(findings.length, 5)
+  const band = (id) => findings.find((f) => f.ruleId === id).adjusted_severity
+  assert.equal(band('V-CRIT'), 'critical')
+  assert.equal(band('V-HIGH'), 'high')
+  assert.equal(band('V-MED'), 'medium')
+  assert.equal(band('V-LOW'), 'low')
+  assert.equal(band('V-INFO'), 'info') // a genuine 0.0 score → info
+})
+
+check('OSV-severity-priority: (a) numeric max_severity WINS over the label; (b) no group → label used (MODERATE→medium); (c)/(c2) neither & blank-scored → medium (an unscored CVE is real, conservative middle)', () => {
+  const pkg = { name: 'p', version: '1.0', ecosystem: 'PyPI' }
+  const one = (groups, v) => ingestOsv({ results: [{ source: { path: 'r.txt' }, packages: [{ package: pkg, groups, vulnerabilities: [v] }] }] }).findings
+  // (a) numeric 7.5 (→high) WINS over a LOW label
+  const a = one([{ ids: ['A'], max_severity: '7.5' }], { id: 'A', database_specific: { severity: 'LOW' }, summary: 'x' })
+  assert.equal(a.length, 1)
+  assert.equal(a[0].adjusted_severity, 'high') // numeric beats the LOW label
+  assert.match(a[0].verdict_reasoning, /CVSS 7\.5 \(advisory\)/)
+  // (b) NO group → the database_specific.severity LABEL is used
+  const b = one([], { id: 'B', database_specific: { severity: 'HIGH' }, summary: 'x' })
+  assert.equal(b[0].adjusted_severity, 'high')
+  assert.match(b[0].verdict_reasoning, /advisory severity HIGH/)
+  const bm = one([], { id: 'BM', database_specific: { severity: 'MODERATE' }, summary: 'x' })
+  assert.equal(bm[0].adjusted_severity, 'medium') // MODERATE → medium (the GitHub synonym)
+  // (c) NEITHER a group NOR a label → 'medium'
+  const c = one([], { id: 'C', summary: 'x' })
+  assert.equal(c[0].adjusted_severity, 'medium')
+  assert.match(c[0].verdict_reasoning, /advisory severity unknown/)
+  // (c2) an UNSCORED group (blank max_severity) ALSO falls through to medium, NOT info (judgment call #1)
+  const c2 = one([{ ids: ['C2'], max_severity: '' }], { id: 'C2', summary: 'x' })
+  assert.equal(c2[0].adjusted_severity, 'medium')
+})
+
+check('OSV-no-leak-of-vector: the title/evidence carry package@version + summary; the raw CVSS vector (CVSS:3.1/…) is NEVER dumped anywhere in a finding', () => {
+  const { findings } = ingestOsv()
+  const blob = JSON.stringify(findings)
+  assert.ok(!blob.includes('CVSS:3.1/'), 'the raw CVSS vector must never appear in a finding')
+  assert.ok(!/AV:N\/AC:[LH]/.test(blob), 'no CVSS vector components leak')
+  const f = findById(findings, (x) => x.ruleId === OSV_ANCHOR)
+  assert.ok(f.title.includes('starlette@0.38.6 (PyPI):'), 'title carries package@version (ecosystem): summary')
+  assert.ok(f.evidence.includes('starlette@0.38.6 (PyPI):'))
+  assert.match(f.verdict_reasoning, /CVSS 7\.5 \(advisory\)/) // the band label is the qualitative phrase, not the vector
+})
+
+check('OSV-classify/no-class: osvAdapter.classify() is constant null; hits carry severityNum:null + gateLabel scan-external-sca + dimensionHint dependency-cve; no securityRelevant; findings carry no class', () => {
+  assert.equal(osvAdapter.classify('GHSA-x'), null)
+  assert.equal(osvAdapter.classify('anything'), null)
+  assert.equal(osvAdapter.securityRelevant, undefined) // every OSV hit is a known CVE — no tag filter
+  const hits = osvAdapter.parse(readJSON(OSV))
+  assert.equal(hits.length, 11)
+  assert.ok(hits.every((h) => h.severityNum === null))
+  assert.ok(hits.every((h) => h.gateLabel === 'scan-external-sca' && h.dimensionHint === 'dependency-cve'))
+  assert.ok(ingestOsv().findings.every((f) => !('class' in f)))
+})
+
+check('OSV-fail-safe: collect() missing → null; parse(null/{}/{results:null}/{results:[]}/no-pkgs/no-vulns/no-id) → []/skip; no-severity-anywhere → medium; no-source → ecosystem:name; ingest(null) → 0 + note', () => {
+  assert.equal(osvAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-osv.json') }), null)
+  assert.deepEqual(osvAdapter.parse(null), [])
+  assert.deepEqual(osvAdapter.parse({}), [])
+  assert.deepEqual(osvAdapter.parse({ results: null }), [])
+  assert.deepEqual(osvAdapter.parse({ results: [] }), [])
+  assert.deepEqual(osvAdapter.parse({ results: [{ source: { path: 'r' } }] }), []) // a result with no packages
+  assert.deepEqual(osvAdapter.parse({ results: [{ packages: [{ package: { name: 'p' } }] }] }), []) // a package with no vulnerabilities
+  assert.deepEqual(osvAdapter.parse({ results: [{ packages: [{ package: { name: 'p' }, vulnerabilities: [] }] }] }), [])
+  assert.deepEqual(osvAdapter.parse({ results: [{ packages: [{ package: { name: 'p' }, vulnerabilities: [{ summary: 'no id' }, null] }] }] }), []) // vuln with no id / null vuln → skipped
+  // a vuln with NO severity anywhere (no group, no label) → still a hit at band 'medium'
+  const hits = osvAdapter.parse({ results: [{ source: { path: 'r' }, packages: [{ package: { name: 'p', version: '1', ecosystem: 'PyPI' }, vulnerabilities: [{ id: 'X', summary: 's' }] }] }] })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].bandFromTool, 'medium')
+  assert.equal(hits[0].startLine, null)
+  // a package with NO source path → file falls back to ecosystem:name
+  const hits2 = osvAdapter.parse({ results: [{ packages: [{ package: { name: 'p', version: '1', ecosystem: 'PyPI' }, vulnerabilities: [{ id: 'Y', summary: 's' }] }] }] })
+  assert.equal(hits2[0].file, 'PyPI:p')
+  const { findings, notes } = ingestOsv(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('OSV-schema: every osv finding (no class, dimension dependency-cve) validates against $defs/finding', () => {
+  for (const f of ingestOsv().findings) assert.deepEqual(validateFinding(f), [])
+})
+
+check('OSV-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '5'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const osv = ingestOsv().findings
+  const r1 = mergeFindings(ledger, osv, 1)
+  assert.equal(r1.added, 11)
+  assert.equal(ledger.findings.length, 12) // 1 llm + 11 osv
+  const r2 = mergeFindings(ledger, osv, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 12) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '5'.repeat(16) && !('provenance' in f)))
+})
+
+check('OSV-CLI: --scanner osv --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'osv', '--input', OSV, '--target', join(tmpdir(), 'nope-osv'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'osv')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.equal(parsed.findings.length, 11)
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === OSV_ANCHOR && f.adjusted_severity === 'high' && f.dimension === 'dependency-cve' && !('class' in f))
+  )
+})
+
+check('OSV-CLI-merge: --scanner osv writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-osv-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'osv', '--input', OSV, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const o1 = l1.findings.filter((f) => f.engine === 'osv')
+  assert.equal(o1.length, 11)
+  assert.ok(o1.every((f) => f.provenance === 'deterministic' && f.dimension === 'dependency-cve'))
+  execFileSync('node', [CLI, '--scanner', 'osv', '--input', OSV, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'osv').length, 11) // idempotent — no dupes
+})
+
+check('GATE-LABEL regression (the buildFinding tweak): an OSV finding says "gated by scan-external-sca"; a semgrep finding STILL says "gated by scan-external-sast" (default preserved byte-for-byte)', () => {
+  // an OSV finding through the real adapter → the new gate label
+  const osvF = ingestOsv().findings.find((f) => f.ruleId === OSV_ANCHOR)
+  assert.match(osvF.verdict_reasoning, /gated by scan-external-sca \(major\)/)
+  assert.doesNotMatch(osvF.verdict_reasoning, /scan-external-sast/) // OSV must NOT use the SAST gate
+  // a semgrep finding through the real adapter → the DEFAULT gate label is UNCHANGED
+  const sgF = ingest(readJSON(SEMGREP_WARN), semgrepAdapter, { repoRoot: '', pass: 1 }).findings[0]
+  assert.match(sgF.verdict_reasoning, /gated by scan-external-sast \(major\)/)
+  assert.doesNotMatch(sgF.verdict_reasoning, /scan-external-sca/)
+  // buildFinding unit: gateLabel parameterizes the clause; OMITTING it preserves scan-external-sast byte-for-byte
+  const withGate = buildFinding({
+    engine: 'osv', ruleId: 'CVE-X', severityNum: null, file: 'r.txt', startLine: null, message: 'm', resources: [],
+    classKey: null, bandFromTool: 'high', dimensionHint: 'dependency-cve', toolSevLabel: 'CVSS 7.5 (advisory)', gateLabel: 'scan-external-sca', repoRoot: '', pass: 1,
+  })
+  assert.match(withGate.verdict_reasoning, /gated by scan-external-sca \(major\)/)
+  const noGate = buildFinding({
+    engine: 'semgrep', ruleId: 'r', severityNum: null, file: 'r', startLine: 1, message: 'm', resources: [],
+    classKey: null, bandFromTool: 'medium', dimensionHint: 'external-sast', toolSevLabel: 'WARNING', repoRoot: '', pass: 1,
+  })
+  assert.match(noGate.verdict_reasoning, /gated by scan-external-sast \(major\)/) // default preserved when gateLabel omitted
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

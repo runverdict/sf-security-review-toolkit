@@ -37,6 +37,77 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.37] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #7 — the OSV-Scanner adapter, and with it Extension A: the
+CVSS→enum advisory-severity fork (docs/roadmap-deterministic-findings.md §10 extension #1).** OSV-Scanner is
+the toolkit's dependency-CVE / SCA scanner (run-scans Family 8, over every lockfile under a non-package
+source root). It is the SEVENTH `§10` adapter and forces the **third design pivot**: unlike the SAST family
+(`semgrep`/`bandit`/`njsscan` → ERROR/WARNING/INFO tool tier) and the class-severity adapters
+(`checkov`/`gitleaks`/`detect-secrets` → class), a dep CVE carries a **REAL CVSS base score**, while the only
+CLASS severity (`scan-external-sca` = `major`) is a *missing-scan* GATE severity. So the per-FINDING band is
+**PER-ADVISORY** (`severityKind:'advisory'`): resolved from the advisory's CVSS via `CVSS_SCORE_TO_FINDING`
+(the industry-standard CVSS 3.x scale — ≥9.0 critical · ≥7.0 high · ≥4.0 medium · >0 low · 0 info), and the
+class governs **only the gate**. It **REUSES `buildFinding`'s `bandFromTool` path** exactly like the SAST
+adapters (`classify()`→`null`, no `securityRelevant`, a `dimensionHint`, `severityNum:null`) — the band
+SOURCE is the only difference (CVSS, not a tool tier). The **ONE additive shared-code change** is a
+`gateLabel` parameter on `buildFinding`'s tool→band branch (`${gateLabel || 'scan-external-sast'}`): OSV/SCA
+passes `scan-external-sca`; because the SAST adapters never pass `gateLabel`, the default preserves their
+severity-reasoning **byte-for-byte** (`CLASS_DEFS` and the mapped/unmapped branches are untouched). Validated
+by "parse twice → identical" against the real captured fixture (1 source `mcp/requirements.txt`, 3 PyPI
+packages, 11 vulns: 1 critical `h11` · 3 high + 6 medium + 1 low across `starlette`/`idna`) + inline CVSS→enum
+threshold synthetics + a gate-label-default-preserved regression, NO campaign. Suite **55 files / 665 checks**
+(was 55 / 651; +14 `OSV*` checks folded into `test-ingest-scanner-findings`; `AD1` bumped to the 9-adapter
+registry). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `osv` adapter** (`file-parser`, `engine:'osv'`). `collect()`
+  reads the `--input` JSON (null-safe on missing/non-JSON/empty); `parse()` iterates `results[] → packages[]
+  → vulnerabilities[]` (defensive at every level — missing `results`/`packages`/`groups`/`vulnerabilities`,
+  a `null` vuln, or a vuln with no `id` are all skipped, never crash), and resolves each vuln's band by the
+  **severity priority** (1) the numeric `max_severity` of the package `group` that contains this vuln id →
+  `CVSS_SCORE_TO_FINDING`; (2) else the vuln's `database_specific.severity` LABEL → `OSV_LABEL_TO_FINDING`;
+  (3) else `'medium'`. dep-CVEs have **no file:line** — `file` = the lockfile `source.path` (or
+  `ecosystem:name` when OSV gives no source), `startLine:null`. `classify()` is constant **`null`** (owns no
+  class, supersedes nothing); NO `securityRelevant` (security-by-construction — every hit is a known CVE).
+  `dimension:'dependency-cve'` (a deterministic-only grouping label, like `external-sast`/`infrastructure-iac`
+  — no LLM dependency finder, so no methodology file). Registered as the **9th** adapter.
+- **`harness/ingest-scanner-findings.mjs` — `CVSS_SCORE_TO_FINDING` + `OSV_LABEL_TO_FINDING`** (Extension A).
+  `CVSS_SCORE_TO_FINDING(score)` maps a CVSS base score to a toolkit band; `OSV_LABEL_TO_FINDING` maps OSV's
+  `database_specific.severity` LABEL (GitHub's `CRITICAL/HIGH/MODERATE/LOW`; `MEDIUM` accepted as a `MODERATE`
+  synonym). Both exported + unit-tested at every band boundary.
+- **`harness/ingest-scanner-findings.mjs` — the `gateLabel` parameter on `buildFinding`** (the only shared-code
+  edit). The tool→band branch's gate clause now reads `gated by ${gateLabel || 'scan-external-sast'} (major)`.
+  Additive: omitting `gateLabel` (semgrep/bandit/njsscan) preserves their reasoning byte-for-byte; OSV passes
+  `scan-external-sca`. No change to the mapped-class branch, the unmapped fallback, or `CLASS_DEFS`.
+- **`acceptance/fixtures/osv-coldstart-full.json`** — genuine captured OSV-Scanner output (1 source, 3 PyPI
+  packages, 11 vulnerabilities), genericized per CONVENTIONS §3 (the one host-absolute lockfile path →
+  repo-relative `mcp/requirements.txt`; no other partner identifiers). The anchor is `GHSA-82w8-qh3p-5jfq`
+  (`starlette@0.38.6`, single-id group `max_severity` 7.5 → `high`).
+- **`acceptance/test-ingest-scanner-findings.mjs`** — an `OSV*` section (+14 checks): determinism, count +
+  band-mix (exactly 11 findings, distinct ids, 1 critical · 3 high · 6 medium · 1 low), the `GHSA-82w8-qh3p-5jfq`
+  anchor (deterministic/osv/`dependency-cve`/no-class/`high`, package@version + ecosystem in the title, no
+  `:line`), the **CVSS→enum thresholds** (each band boundary 9.0/7.0/4.0/0.1 + a real `0`→`info` + blank/absent
+  →`null`) both directly and through `parse`, the **severity priority** (numeric wins over label · no group →
+  label · neither/blank-scored → `medium`), no-vector-leak, `classify()`→null/no-class, fail-safe over the
+  degenerate shapes, idempotent merge, schema conformance, the CLI (dry-run + merge), and the **load-bearing
+  GATE-LABEL regression** (an OSV finding says `gated by scan-external-sca`, a semgrep finding STILL says
+  `gated by scan-external-sast`). `AD1` bumped to the 9-adapter registry.
+
+### Decided (three judgment calls — implemented as specified, documented not hidden)
+- **An unscored CVE → `medium`** (NOT `info`, NOT the gate's `high`). A known CVE with no resolvable CVSS is
+  still a real finding; over- or under-stating it is dishonest, so the conservative middle is the faithful
+  call. Load-bearing detail: `Number('') === 0` and `Number(null) === 0` are both *finite*, so `CVSS_SCORE_TO_FINDING`
+  guards blank/absent input → `null` (falls through to the label → `medium` path) BEFORE the numeric coercion;
+  an EXPLICIT numeric zero (`'0'`/`'0.0'`, a genuinely 0.0-scored CVE) is not blank → still `info`.
+- **No file:line for a dep-CVE.** A dependency CVE locates to the lockfile/package, not a code line, so `file`
+  is the lockfile path (or `ecosystem:name`) and `startLine` is `null`. Two vulns of one package = distinct ids
+  (distinct GHSA/CVE); the SAME CVE under two lockfiles = distinct loci (distinct `file`) — correct, two real
+  install sites.
+- **`classify()`→null — owns no class, supersedes nothing.** There is no LLM dependency-CVE finder to supersede;
+  OSV findings only populate the band. Cross-engine dedup with npm-audit/Trivy on the SAME CVE is
+  **§10 extension #3 (cross-engine dedup), Phase-2b**, NOT this slice.
+
 ## [0.8.36] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #6 — the detect-secrets adapter (the secrets SIBLING of
