@@ -40,6 +40,7 @@ import {
   buildFinding,
   codeAnalyzerAdapter,
   metadataViewAllAdapter,
+  checkovAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -57,6 +58,7 @@ const CLI = join(PLUGIN, 'harness', 'ingest-scanner-findings.mjs')
 const FIX = join(PLUGIN, 'acceptance', 'fixtures')
 const SOLANO = join(FIX, 'code-analyzer-solano.json')
 const SFGE = join(FIX, 'code-analyzer-sfge-meridian.json')
+const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -431,10 +433,11 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 2 adapters, both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['code-analyzer', 'metadata-viewall'])
+check('AD1 registry has 3 adapters (checkov added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['checkov', 'code-analyzer', 'metadata-viewall'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
+  assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -507,6 +510,187 @@ check('CLI3 --scanner metadata-viewall runs the source-scanner over --target and
   assert.ok(va, 'viewall-overgrant finding not written')
   assert.equal(va.engine, 'metadata')
   assert.equal(va.adjusted_severity, 'high')
+})
+
+// ───────────────────────────────────── checkov (Phase 2 · 2a #1 — IaC misconfig)
+// The REAL fixture (genuine Checkov 3.3.2 dockerfile output, host path genericized) is the
+// anchor; small INLINE synthetic JSON covers shape edge cases (array shape, enterprise sev).
+const ingestCheckov = (raw) => ingest(raw || readJSON(CHECKOV), checkovAdapter, { repoRoot: '', pass: 1 })
+
+check('CK-determinism: ingest the real Checkov fixture twice → byte-identical findings', () => {
+  const a = ingestCheckov().findings
+  const b = ingestCheckov().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('CK-anchor: CKV_DOCKER_2 → one deterministic iac-misconfig finding (checkov/high/Dockerfile:1, guideline in reasoning)', () => {
+  const raw = readJSON(CHECKOV)
+  const guideline = raw.results.failed_checks[0].guideline
+  const { findings } = ingestCheckov(raw)
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'checkov')
+  assert.equal(f.ruleId, 'CKV_DOCKER_2')
+  assert.equal(f.class, 'iac-misconfig')
+  assert.equal(f.dimension, 'infrastructure-iac')
+  assert.equal(f.adjusted_severity, 'high') // from the iac-misconfig class (scan-iac-misconfig=major→high)
+  assert.ok(f.file.endsWith('Dockerfile:1'), `file was ${f.file}`)
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.ok(guideline && f.verdict_reasoning.includes(guideline), 'the Checkov guideline URL must appear in verdict_reasoning')
+})
+
+check('CK-failed-only: the 24 passed_checks produce 0 findings (only the 1 failed_check does)', () => {
+  const raw = readJSON(CHECKOV)
+  assert.equal(raw.results.passed_checks.length, 24)
+  assert.equal(raw.results.failed_checks.length, 1)
+  assert.equal(ingestCheckov(raw).findings.length, 1)
+})
+
+check('CK-severity-from-class: a failed check carrying enterprise severity:LOW is STILL high (class, not tool)', () => {
+  const synthetic = {
+    check_type: 'dockerfile',
+    results: {
+      passed_checks: [],
+      failed_checks: [
+        { check_id: 'CKV_DOCKER_2', check_name: 'Healthcheck', file_path: 'Dockerfile', file_line_range: [1, 7], severity: 'LOW', guideline: 'https://example.test/g' },
+      ],
+      skipped_checks: [],
+      parsing_errors: [],
+    },
+  }
+  const { findings } = ingest(synthetic, checkovAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 1)
+  // would be 'low' if it followed the tool's enterprise severity; stays 'high' from the class
+  assert.equal(findings[0].adjusted_severity, 'high')
+})
+
+check('CK-array-shape: an ARRAY of two framework result objects → two distinct findings (multi-framework run)', () => {
+  const arr = [
+    { check_type: 'dockerfile', results: { passed_checks: [], skipped_checks: [], parsing_errors: [], failed_checks: [
+      { check_id: 'CKV_DOCKER_2', check_name: 'Healthcheck', file_path: 'Dockerfile', file_line_range: [1, 7], guideline: 'https://example.test/a' },
+    ] } },
+    { check_type: 'terraform', results: { passed_checks: [], skipped_checks: [], parsing_errors: [], failed_checks: [
+      { check_id: 'CKV_AWS_18', check_name: 'Ensure S3 bucket has access logging', file_path: 'main.tf', file_line_range: [10, 20], guideline: 'https://example.test/b' },
+    ] } },
+  ]
+  const { findings } = ingest(arr, checkovAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 2)
+  assert.notEqual(findings[0].id, findings[1].id)
+  assert.ok(findings.every((f) => f.class === 'iac-misconfig' && f.adjusted_severity === 'high' && f.engine === 'checkov'))
+  assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['CKV_AWS_18', 'CKV_DOCKER_2'])
+})
+
+check('CK-multiple-and-skip: 2 failed + 1 skipped + 1 passed → exactly 2 findings', () => {
+  const fw = {
+    check_type: 'dockerfile',
+    results: {
+      passed_checks: [{ check_id: 'CKV_DOCKER_5', check_name: 'Update alone', file_path: 'Dockerfile', file_line_range: [1, 7] }],
+      failed_checks: [
+        { check_id: 'CKV_DOCKER_2', check_name: 'Healthcheck', file_path: 'Dockerfile', file_line_range: [1, 7] },
+        { check_id: 'CKV_DOCKER_3', check_name: 'No root user', file_path: 'Dockerfile', file_line_range: [3, 3] },
+      ],
+      skipped_checks: [{ check_id: 'CKV_DOCKER_7', check_name: 'Skipped', file_path: 'Dockerfile', file_line_range: [1, 1] }],
+      parsing_errors: [],
+    },
+  }
+  const { findings } = ingest(fw, checkovAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 2)
+  assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['CKV_DOCKER_2', 'CKV_DOCKER_3'])
+})
+
+check('CK-classify: classify() is the constant iac-misconfig; no securityRelevant (security-by-construction)', () => {
+  assert.equal(checkovAdapter.classify('CKV_AWS_123'), 'iac-misconfig')
+  assert.equal(checkovAdapter.classify('anything-at-all'), 'iac-misconfig')
+  assert.equal(checkovAdapter.securityRelevant, undefined) // no tag filter — every failed check is a finding
+})
+
+check('CK-malformed: parse skips a check with no check_id; ingest drops a hit with no file_path (with a note)', () => {
+  const mixed = {
+    results: {
+      failed_checks: [
+        { check_name: 'no id', file_path: 'Dockerfile', file_line_range: [1, 1] }, // no check_id → skipped in parse
+        { check_id: 'CKV_X', check_name: 'no file', file_line_range: [1, 1] }, // no file_path → dropped by ingest core
+        { check_id: 'CKV_Y', check_name: 'ok', file_path: 'Dockerfile', file_line_range: [2, 2] },
+      ],
+    },
+  }
+  const hits = checkovAdapter.parse(mixed)
+  assert.equal(hits.length, 2) // the no-check_id one is skipped in parse
+  const { findings, notes } = ingest(mixed, checkovAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 1) // CKV_X dropped by the ingest core (no file)
+  assert.equal(findings[0].ruleId, 'CKV_Y')
+  assert.ok(notes.some((n) => /malformed hit/.test(n)))
+})
+
+check('CK-fail-safe: collect() missing → null; parse(null/{}/{results:null}/[]) → []; ingest(null) → 0 + honest note', () => {
+  assert.equal(checkovAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-checkov.json') }), null)
+  assert.deepEqual(checkovAdapter.parse(null), [])
+  assert.deepEqual(checkovAdapter.parse({}), [])
+  assert.deepEqual(checkovAdapter.parse({ results: null }), [])
+  assert.deepEqual(checkovAdapter.parse([]), [])
+  const { findings, notes } = ingest(null, checkovAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('CK-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: 'c'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:7',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const ck = ingestCheckov().findings
+  const r1 = mergeFindings(ledger, ck, 1)
+  assert.equal(r1.added, 1)
+  assert.equal(ledger.findings.length, 2) // 1 llm + 1 checkov
+  const r2 = mergeFindings(ledger, ck, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 2) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === 'c'.repeat(16) && !('provenance' in f)))
+})
+
+check('CK-schema: a Checkov finding validates against $defs/finding', () => {
+  const f = ingestCheckov().findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('CK-CLI: --scanner checkov --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'checkov', '--input', CHECKOV, '--target', join(tmpdir(), 'nope-ck'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'checkov')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(parsed.findings.some((f) => f.ruleId === 'CKV_DOCKER_2' && f.file.endsWith('Dockerfile:1')))
+})
+
+check('CK-CLI-merge: --scanner checkov writes the deterministic finding to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-ck-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'checkov', '--input', CHECKOV, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const ck1 = l1.findings.filter((f) => f.engine === 'checkov')
+  assert.equal(ck1.length, 1)
+  assert.equal(ck1[0].ruleId, 'CKV_DOCKER_2')
+  assert.equal(ck1[0].adjusted_severity, 'high')
+  execFileSync('node', [CLI, '--scanner', 'checkov', '--input', CHECKOV, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'checkov').length, 1) // idempotent — no duplicate
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

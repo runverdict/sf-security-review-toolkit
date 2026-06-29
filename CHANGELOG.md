@@ -23,6 +23,52 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.31] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #1 — the Checkov adapter
+(docs/roadmap-deterministic-findings.md §10).** Phase 1 made the three wobbled blocker classes
+(CRUD/FLS, sharing, ViewAll/ModifyAll) deterministic; Phase 2 rolls the §10 per-scanner adapters,
+one new adapter object per scanner. This is the FIRST: **Checkov** (IaC misconfig — run-scans
+Family 8 over the Dockerfile / Terraform / CloudFormation / K8s). Checkov's `failed_checks` now
+become `provenance:'deterministic'` ledger findings grounded in the new `iac-misconfig` class
+(baseline `scan-iac-misconfig`). No harness rewrite — it is one new adapter in the existing
+registry, validated by "parse twice → identical", NO campaign. Suite **55 files / 583 checks**
+(was 55 / 570; +13 `CK*` checks folded into `test-ingest-scanner-findings`). Tag stays **HELD**
+(0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `checkov` adapter** (`file-parser`, `engine:'checkov'`).
+  `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty); `parse()` handles
+  BOTH Checkov shapes — a single framework result OBJECT *and* an ARRAY of result objects (Checkov
+  emits an array when several frameworks run) — reading only `results.failed_checks` (defensive on
+  a missing `results`/`failed_checks`); each failed check → an `iac-misconfig` finding. `classify()`
+  is the constant `iac-misconfig` (every Checkov failed check is an IaC misconfig — Checkov is NOT
+  in `RULE_CLASS`). Like `metadata-viewall` it is **security-by-construction**: NO `securityRelevant`
+  predicate (no ApexDoc-style noise to filter — the ingest core keeps every emitted hit). Only
+  `failed_checks` become findings; `passed_checks` / `skipped_checks` / `parsing_errors` never do.
+- **`acceptance/fixtures/checkov-dockerfile-solano.json`** — genuine Checkov 3.3.2 dockerfile
+  output (host path prefix genericized per CONVENTIONS §3; the adapter never reads it). The anchor
+  `CKV_DOCKER_2` (missing HEALTHCHECK) over `passed=24 / failed=1` is the deterministic test ground.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — a `CK*` section (+13 checks): determinism,
+  the `CKV_DOCKER_2` anchor (deterministic/checkov/iac-misconfig/`infrastructure-iac`/high/`Dockerfile:1`,
+  guideline URL in reasoning), failed-only (the 24 passed → 0), severity-from-class (an enterprise
+  `severity:LOW` stays high), the multi-framework ARRAY shape, multiple-and-skip, the constant
+  `classify()` + no `securityRelevant`, malformed-check skip, fail-safe, idempotent merge, schema
+  conformance, and the CLI (dry-run + merge). `AD1` now asserts the 3-adapter registry.
+
+### Decided
+- **Severity = the `iac-misconfig` CLASS, never the tool number** (faithful to the ratified
+  severity-from-class decision, roadmap §9). It is also the only deterministic option in practice:
+  Checkov OSS emits `severity: null` (per-check severity is a Prisma/Bridgecrew enterprise field), so
+  a literal tool→band mapping has no input cold. The roadmap §10 `checkov` row's *Severity source*
+  is reconciled from `tool→band` to `class (scan-iac-misconfig)`.
+- **Precision trade-off (documented, not hidden):** every Checkov failed check lands at the class
+  band (high), so a hygiene-only check (the fixture's missing-HEALTHCHECK `CKV_DOCKER_2`) surfaces
+  as a high the owner dispositions in the FP dossier — consistent with how `metadata-viewall` lands
+  every over-grant at high. A curated per-check (CKV-id → severity) refinement, or an enterprise
+  `severity` / Prisma `severityKind:'advisory'` fork, is a **Phase-2b follow-up** (deferred with the
+  OSV/npm CVSS fork).
+
 ## [0.8.30] — 2026-06-26
 
 **Deterministic-findings Phase 1 · Slice 3 — journey integration + live acceptance

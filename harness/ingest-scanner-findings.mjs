@@ -21,7 +21,8 @@
  * Two adapter KINDS, both shipped in Slice 1 to prove the seam handles N>1 and both:
  *   - file-parser   — collect() reads a scanner's CAPTURED output file (--input).
  *                     Adapter #1: `code-analyzer` (PMD + SFGE violations JSON).
- *                     Future: Semgrep, OSV, gitleaks, Checkov — all parse a JSON file.
+ *                     Adapter #3 (Phase 2 · 2a): `checkov` (IaC-misconfig JSON; engine:'checkov').
+ *                     Future: Semgrep, OSV, gitleaks — all parse a JSON file the same way.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -51,6 +52,7 @@
  * Usage:
  *   node ingest-scanner-findings.mjs --scanner code-analyzer  --input CodeAnalyzer.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -102,10 +104,17 @@ export function hasSecurityTag(tags) {
 //   viewall-overgrant grounds its severity in fail-sharing-model because a ViewAll/
 //   ModifyAll over-grant IS a sharing-rules bypass (official taxonomy + the Solano C5
 //   adjudication: "viewAllRecords=true ... a sharing bypass", HIGH floor).
+//   iac-misconfig (Phase 2 · adapter 2a #1, Checkov) grounds its severity in scan-iac-misconfig
+//   (severity_if_missing: major → high). Its `dimension` 'infrastructure-iac' is a
+//   DETERMINISTIC-ONLY grouping label: IaC misconfig is fully deterministic (Checkov/Trivy),
+//   so it has NO LLM finder dimension and deliberately NO methodology/dimensions/ file — the
+//   schema declares `dimension` a free kebab-case string (not an enum), and nothing validates a
+//   finding's dimension against the methodology-file set, so this label needs no dimension doc.
 export const CLASS_DEFS = {
   'crud-fls': { baselineId: 'fail-crud-fls', dimension: 'apex-exposed-surface', fallback: 'high' },
   'sharing': { baselineId: 'fail-sharing-model', dimension: 'apex-exposed-surface', fallback: 'high' },
   'viewall-overgrant': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
+  'iac-misconfig': { baselineId: 'scan-iac-misconfig', dimension: 'infrastructure-iac', fallback: 'high' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -191,6 +200,8 @@ function recommendationFor(classKey) {
       return 'Perform this data access from a class that declares an explicit sharing model (with sharing, or with inherited sharing where the whole solution is sharing-clean).'
     case 'viewall-overgrant':
       return 'Remove the ViewAll/ModifyAll grant on this custom object and scope access through sharing rules; if the broad grant is a documented business requirement, justify it in the false-positive dossier.'
+    case 'iac-misconfig':
+      return 'Remediate the flagged infrastructure-as-code misconfiguration (or document a justified false positive in the dossier — scan-iac-misconfig). Follow the linked Checkov guideline.'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -458,9 +469,73 @@ export const metadataViewAllAdapter = {
   },
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #3 — checkov (file-parser, Phase 2 · 2a): parses captured Checkov JSON.
+// Checkov is the toolkit's IaC-misconfig scanner (run-scans Family 8 over the Dockerfile /
+// Terraform / CloudFormation / K8s). Like metadata-viewall it is SECURITY-BY-CONSTRUCTION —
+// every `failed_check` is an IaC misconfig, there is no ApexDoc-style noise — so it has a
+// CONSTANT classify() and NO `securityRelevant` (the ingest core keeps every emitted hit).
+// Severity comes from the iac-misconfig CLASS (scan-iac-misconfig = major → high), NEVER the
+// tool: Checkov OSS emits `severity: null` (per-check severity is a Prisma/Bridgecrew
+// enterprise field), so a literal tool→band mapping has no input anyway — class-severity is the
+// faithful AND the only deterministic option. Only `failed_checks` become findings;
+// passed/skipped/parsing_errors never do.
+export const checkovAdapter = {
+  name: 'checkov',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (raw == null) return []
+    // Checkov emits a single result OBJECT for one framework, or an ARRAY of result objects
+    // when several frameworks run (dockerfile + terraform + k8s). Normalize to a list.
+    const frameworks = Array.isArray(raw) ? raw : [raw]
+    const hits = []
+    for (const fw of frameworks) {
+      if (!fw || typeof fw !== 'object') continue
+      const results = fw.results
+      const failed = results && Array.isArray(results.failed_checks) ? results.failed_checks : []
+      for (const check of failed) {
+        // Skip a malformed check with no rule id (the ingest core also drops a hit with no
+        // file_path, with an honest note — that is correct).
+        if (!check || check.check_id == null) continue
+        const range = Array.isArray(check.file_line_range) ? check.file_line_range : null
+        const startLine = range && Number.isInteger(range[0]) ? range[0] : null
+        hits.push({
+          engine: 'checkov',
+          ruleId: String(check.check_id),
+          severityNum: null, // Checkov OSS severity is null; we never use it (severity is from the class)
+          file: check.file_path,
+          startLine,
+          message: String(check.check_name || ''),
+          resources: check.guideline ? [String(check.guideline)] : [],
+          tags: [],
+        })
+      }
+    }
+    return hits
+  },
+  // Constant: every Checkov failed check is an IaC misconfig (like metadata-viewall's constant).
+  // Checkov is NOT in RULE_CLASS (that map is the code-analyzer rule→class table).
+  classify() {
+    return 'iac-misconfig'
+  },
+  // NO securityRelevant — security-by-construction (mirror metadata-viewall): a compliance
+  // scanner whose every emission is a finding, so the ingest core applies no tag filter.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
+  'checkov': checkovAdapter,
 }
 
 // ----------------------------------------------------------------------------

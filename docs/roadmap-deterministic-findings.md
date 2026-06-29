@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) next.** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; semgrep next.** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -234,13 +234,24 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 |---|---|---|---|---|---|
 | `code-analyzer` (PMD+SFGE) ✅ | file-parser | CRUD/FLS · sharing · (SOQLi/secrets ext.) | fail-crud-fls · fail-sharing-model | ✅ Slice 1 | class |
 | `metadata-viewall` ✅ | source-scanner | ViewAll/ModifyAll over-grant | fail-sharing-model | ✅ Slice 1 | class |
-| `checkov` | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-helios | tool→band |
+| `checkov` ✅ | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-solano | class (scan-iac-misconfig) — Slice shipped 0.8.31 |
 | `semgrep` | file-parser | injection (CWE-78…) | scan-external-sast | ✅ coldstart-full | tool→band |
 | `bandit` / `njsscan` / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | tool→band |
 | `gitleaks` / `detect-secrets` | file-parser | secrets | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) |
 | `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
 | `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
 | `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
+
+> **0.8.31 — `checkov` row reconciled (Severity source).** The cell read `tool→band`; corrected
+> to `class (scan-iac-misconfig)`. Checkov OSS emits `severity:null` (per-check tool severity is a
+> Prisma/Bridgecrew *enterprise* field), so there is no tool number to band — a literal tool→band
+> mapping has no input cold, and class-severity is both the faithful (severity-from-class, §9) and
+> the only deterministic option. A per-check tool severity (or enterprise `severity`) would be an
+> Extension #1 `severityKind:'advisory'` fork, deferred with OSV/npm. Consequence (documented, not
+> hidden): every Checkov failed check lands at the class band (high) — e.g. the fixture's
+> hygiene-only missing-HEALTHCHECK `CKV_DOCKER_2` surfaces as a high the owner dispositions in the
+> FP dossier, mirroring how `metadata-viewall` lands every over-grant at high. A curated per-check
+> (CKV-id → severity) refinement is a Phase-2b follow-up.
 
 **Three extensions the new adapters force (the seam supports all; spec them in Phase 2):**
 1. **Severity fork for dep-CVEs.** "Discard the scanner number, take the class
@@ -274,7 +285,9 @@ similar but simpler: a property-assertion adapter (HTTPS-only / TLS-floor / HSTS
 PENDING-OWNER-RUN until a live host exists.
 
 **Phase 2 build order** (each one new adapter; the easy ones have real fixtures on disk):
-- **2a (ingest-first, real fixtures):** checkov → semgrep → bandit → njsscan → gitleaks →
+- **2a (ingest-first, real fixtures):** checkov ✅ (shipped 0.8.31 — the FIRST 2a adapter:
+  IaC misconfig, constant `iac-misconfig` class, security-by-construction so NO tag filter,
+  severity from the class not the tool) → semgrep → bandit → njsscan → gitleaks →
   detect-secrets → osv → npm-audit → trivy. (Extension #2's tag filter ✅ shipped with
   Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,

@@ -291,8 +291,16 @@ Skills write into the PARTNER's repo, never into the plugin:
   Code Analyzer fixtures), `test-reconcile-provenance.mjs` (supersession is precise,
   conservative, idempotent), `test-deterministic-integration.mjs` (the real CLI sequence
   end-to-end + the journey/audit-codebase grant+invoke+order wiring), and a
-  `test-calibration-fp-patterns.mjs` presence guard on the engine-absent → KEEP clause. Phase 2
-  = the §10 per-scanner adapters (build order 2a/2b).
+  `test-calibration-fp-patterns.mjs` presence guard on the engine-absent → KEEP clause. **Phase 2
+  (0.8.31) ships the first §10 per-scanner adapter — `checkov`** (file-parser, `engine:'checkov'`,
+  IaC misconfig): Checkov `failed_checks` (single-object OR multi-framework array shape) become
+  `provenance:'deterministic'` `iac-misconfig` findings (baseline `scan-iac-misconfig` = major →
+  high), via a CONSTANT `classify()` and NO tag filter (security-by-construction, like
+  `metadata-viewall`). Severity is the CLASS, never the tool — Checkov OSS emits `severity:null`,
+  so a literal tool→band map has no input (a curated per-check / enterprise-severity refinement is
+  a Phase-2b follow-up). One new adapter object in the existing registry, never a rewrite; guarded
+  by the `CK*` checks in `test-ingest-scanner-findings.mjs`. The remaining §10 adapters (build order
+  2a/2b — semgrep next) follow the same shape.
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -353,7 +361,7 @@ sf-security-review-toolkit/
 │   ├── build-artifact-engine.mjs    # 0.8.21: P2 ARTIFACT assembler (mirror of build-audit-engine.mjs) — reads {artifacts:[{key,tmpl,out,focus}],facts,gate} DATA, attaches each pre-read template (THROWS on missing), validates focus, ENGINE-ENFORCES the gate (drops gate.suppress keys → a withheld doc can't be drafted), injects into artifact-workflow-template.mjs → artifact-engine.mjs. Ends the hand-authored-Workflow escaping class
 │   ├── merge-ledger.mjs             # mechanical incremental ledger merge: dedup, regression flip, redact, audited_commit (P2). 0.8.18: --result accepts the RAW Workflow task-output envelope ({summary,result,workflowProgress}) OR a pre-extracted {ledger_updates} — unwraps .result automatically; clear exit-2 error naming BOTH shapes when neither is present (no silent empty merge). 0.8.24: emits the fixed render-recap.mjs operator recap to stdout (WI-04/INV-34)
 │   ├── build-evidence-index.mjs     # deterministic evidence index producer + the credit rule (reviewer-reproducible vs statically-cleared) (P1/P2)
-│   ├── ingest-scanner-findings.mjs  # 0.8.28: scanner/metadata output → provenance:'deterministic' ledger findings (roadmap-deterministic-findings.md Phase 1·Slice 1). PLUGGABLE adapter registry — pure ingest(raw,adapter) core + {name,kind,collect,parse,classify} adapters in two KINDS: file-parser (code-analyzer; future Semgrep/OSV/gitleaks) + source-scanner (metadata-viewall ViewAll/ModifyAll over-grant). adjusted_severity from the requirement CLASS (REQ_SEVERITY_TO_FINDING over the baseline), never the scanner number/LLM; unmapped rule still ingested (CA-severity fallback); idempotent merge (id = engine+ruleId+file:line). 0.8.29 (Slice 2): Security/AppExchange tag filter (hasSecurityTag — only a security-tagged CA rule becomes a finding; non-security noise filtered, an unmapped SECURITY rule still kept) + a mapped finding carries its owned-`class` label
+│   ├── ingest-scanner-findings.mjs  # 0.8.28: scanner/metadata output → provenance:'deterministic' ledger findings (roadmap-deterministic-findings.md Phase 1·Slice 1). PLUGGABLE adapter registry — pure ingest(raw,adapter) core + {name,kind,collect,parse,classify} adapters in two KINDS: file-parser (code-analyzer; future Semgrep/OSV/gitleaks) + source-scanner (metadata-viewall ViewAll/ModifyAll over-grant). adjusted_severity from the requirement CLASS (REQ_SEVERITY_TO_FINDING over the baseline), never the scanner number/LLM; unmapped rule still ingested (CA-severity fallback); idempotent merge (id = engine+ruleId+file:line). 0.8.29 (Slice 2): Security/AppExchange tag filter (hasSecurityTag — only a security-tagged CA rule becomes a finding; non-security noise filtered, an unmapped SECURITY rule still kept) + a mapped finding carries its owned-`class` label. 0.8.31 (Phase 2·2a #1): the `checkov` adapter (file-parser, engine:'checkov', IaC misconfig) — parses Checkov failed_checks (single-object OR multi-framework array) into iac-misconfig findings, CONSTANT classify() (not in RULE_CLASS), NO tag filter (security-by-construction like metadata-viewall), severity from the iac-misconfig CLASS (scan-iac-misconfig=major→high; Checkov OSS severity is null so tool→band has no input — per-check/enterprise severity deferred to Phase 2b); only failed_checks become findings
 │   ├── reconcile-provenance.mjs     # 0.8.29 (Slice 2): LLM-supersession ENFORCEMENT (roadmap-deterministic-findings.md §3). A `deterministic` finding in the SAME owned class at the SAME locus (reuses finding-clusters.mjs sameLocation) demotes a co-located `llm-inferred` finding → status:'superseded' + superseded_by(det id). PURE + IDEMPOTENT; conservative (only an OWNED class supersedes; precise class match, dimension fallback; mark-not-delete). The LLM can never re-report/re-judge what an engine determined
 │   #   (Slice 2 also conditions apex-exposed-surface.md §5/§6 defer-to-SFGE on a code-analyzer-*.json proving the engine ran — engine-absent → KEEP llm-inferred + PENDING-OWNER-RUN, never a phantom hand-off)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
@@ -384,9 +392,9 @@ sf-security-review-toolkit/
 │   ├── expected-findings.md         # Helios sealed ground-truth plant list (recall grading key)
 │   ├── solano-adjudication-key.md   # Solano sealed adjudications (grading key; off-fixture; re-isolated off-repo for a cold run — see acceptance/README)
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
-│   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml
+│   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (570 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (583 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
