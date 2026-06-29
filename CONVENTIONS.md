@@ -406,7 +406,7 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (583 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (598 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
