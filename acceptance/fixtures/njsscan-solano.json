@@ -1,0 +1,51 @@
+{
+  "errors": [],
+  "njsscan_version": "0.4.3",
+  "nodejs": {
+    "helmet_feature_disabled": {
+      "files": [
+        {
+          "file_path": "server/index.js",
+          "match_lines": [
+            14,
+            14
+          ],
+          "match_position": [
+            9,
+            32
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-693: Protection Mechanism Failure",
+        "description": "One or more Security Response header is explicitly disabled in Helmet.",
+        "owasp-web": "A6: Security Misconfiguration",
+        "severity": "WARNING"
+      }
+    },
+    "node_secret": {
+      "files": [
+        {
+          "file_path": "server/index.js",
+          "match_lines": [
+            23,
+            26
+          ],
+          "match_position": [
+            15,
+            4
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-798: Use of Hard-coded Credentials",
+        "description": "A hardcoded secret is identified. Store it properly in an environment variable.",
+        "owasp-web": "A3: Sensitive Data Exposure",
+        "severity": "ERROR"
+      }
+    }
+  },
+  "templates": {}
+}

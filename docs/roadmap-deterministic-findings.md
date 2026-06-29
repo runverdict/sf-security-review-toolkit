@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); njsscan next.** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); 2a #4 `njsscan` SHIPPED 0.8.34 (the THIRD `tool→band` adapter and the FIRST with a different input shape — a nested object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat `results[]`, so its own `parse` reading BOTH sections, still reusing `bandFromTool` with ZERO harness-core change); gitleaks next (the secrets scanners — a DIFFERENT severity model: `class`-severity via `fail-hardcoded-secrets`, not `tool→band`).** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -236,12 +236,30 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 | `metadata-viewall` ✅ | source-scanner | ViewAll/ModifyAll over-grant | fail-sharing-model | ✅ Slice 1 | class |
 | `checkov` ✅ | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-solano | class (scan-iac-misconfig) — Slice shipped 0.8.31 |
 | `semgrep` ✅ | file-parser | external-sast (tool→band) | scan-external-sast | ✅ coldstart-full + helios | **tool→band** — Slice shipped 0.8.32 |
-| `bandit` ✅ / `njsscan` / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | **tool→band** — `bandit` shipped 0.8.33; njsscan/gosec pending |
+| `bandit` ✅ / `njsscan` ✅ / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | **tool→band** — `bandit` shipped 0.8.33; `njsscan` shipped 0.8.34; gosec pending |
 | `gitleaks` / `detect-secrets` | file-parser | secrets | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) |
 | `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
 | `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
 | `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
 
+> **0.8.34 — `njsscan` row shipped (the THIRD `tool→band` adapter, the FIRST with a different input
+> shape).** njsscan is the Node language-gate SAST tool (run-scans Family 7, alongside
+> Semgrep/Bandit/gosec). It carries a real per-finding `severity` (`ERROR`/`WARNING`/`INFO`, via
+> `NJSSCAN_SEVERITY_TO_FINDING` — `ERROR→high` [the same calibration call as Semgrep/Bandit: a
+> mechanical SAST hit flags a sink but does not confirm reachability], `WARNING→medium`, `INFO→low`,
+> unknown/missing→`info`), owns no toolkit class (`classify()`→`null`), and groups under
+> `external-sast` — exactly Semgrep's/Bandit's shape. So it REUSES `buildFinding`'s `bandFromTool` path
+> with **ZERO harness-core change** (one new adapter object + one severity map + tests; no `buildFinding`
+> and no `CLASS_DEFS` edit). The ONE new thing is njsscan's **nested-object JSON** (`{nodejs:{…},
+> templates:{…}}`, each section keyed by rule_id), NOT a flat `results[]`, so it has its own `parse`
+> that reads BOTH sections (a rule can list multiple files → one finding per file occurrence) and
+> derives the CWE reference URL from a `CWE-###` prefix. **One Phase-2b note it leaves open (tracked,
+> not silent):** njsscan's `node_secret` rule (CWE-798 hardcoded secret) OVERLAPS the secrets class the
+> future `gitleaks`/`detect-secrets` (`fail-hardcoded-secrets`) adapters will own; here it ingests as an
+> `external-sast` `tool→band` finding, and de-duplicating it against a co-located secrets-scanner finding
+> is cross-engine dedup = extension #3 (Phase-2b) — the SAFE under-merge (a duplicate may survive in the
+> band, never a dropped finding).
+>
 > **0.8.33 — `bandit` row shipped (the proof the `tool→band` path GENERALIZES).** Bandit is the
 > Python language-gate SAST tool. It carries a real per-result `issue_severity`
 > (`HIGH`/`MEDIUM`/`LOW`, via `BANDIT_SEVERITY_TO_FINDING` — `HIGH→high` [the same calibration call as
@@ -326,9 +344,12 @@ PENDING-OWNER-RUN until a live host exists.
   tool→band path that bandit/njsscan/gosec reuse verbatim) → bandit ✅ (shipped 0.8.33 — the SECOND
   tool→band adapter, Python SAST: the PROOF the Semgrep generalization GENERALIZES — reused the
   `bandFromTool` path with ZERO harness-core change, one new adapter + the `BANDIT_SEVERITY_TO_FINDING`
-  map) → njsscan (next — Node SAST, a DIFFERENT JSON shape `{nodejs:{…},templates:{…}}` not a flat
-  `results[]`, so its own `parse`, still tool→band) → gitleaks → detect-secrets → osv → npm-audit →
-  trivy. (Extension #2's tag filter ✅ shipped with Slice 2, 0.8.29.)
+  map) → njsscan ✅ (shipped 0.8.34 — Node SAST, the THIRD tool→band adapter and the FIRST with a
+  DIFFERENT JSON shape `{nodejs:{…},templates:{…}}` not a flat `results[]`, so its own `parse` reading
+  BOTH sections, still reusing `bandFromTool` with ZERO harness-core change) → gitleaks (next — the
+  secrets scanners, a DIFFERENT severity model: `class`-severity via `fail-hardcoded-secrets`, NOT
+  tool→band, like Checkov's class-severity call) → detect-secrets → osv → npm-audit → trivy.
+  (Extension #2's tag filter ✅ shipped with Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,
   trivy SCA/secret modes, the cross-engine dedup (#3).
 - **Special:** tls (property-assertion, PENDING), dast (`dast-runtime` kind, conditional).

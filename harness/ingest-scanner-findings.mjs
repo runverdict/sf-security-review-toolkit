@@ -28,7 +28,11 @@
  *                     Adapter #5 (Phase 2 · 2a #3): `bandit` (Python SAST JSON; engine:'bandit')
  *                       — the SECOND tool→band adapter, the proof the Semgrep tool→band path
  *                       GENERALIZES (severity from HIGH/MEDIUM/LOW, owns no class, NO harness change).
- *                     Future: njsscan, OSV, gitleaks — all parse a JSON file the same way.
+ *                     Adapter #6 (Phase 2 · 2a #4): `njsscan` (Node SAST JSON; engine:'njsscan')
+ *                       — the THIRD tool→band adapter (severity from ERROR/WARNING/INFO, owns no
+ *                       class, NO harness change), the FIRST with a DIFFERENT input shape: a nested
+ *                       object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat results[].
+ *                     Future: OSV, gitleaks — all parse a JSON file the same way.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -61,6 +65,7 @@
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner njsscan         --input njsscan.json       --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -115,6 +120,23 @@ export const SEMGREP_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', I
 // `issue_severity`, confidence is recorded only for reference) — a confidence-weighted refinement is
 // a Phase-2b note, like Checkov's per-check-severity deferral.
 export const BANDIT_SEVERITY_TO_FINDING = { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' }
+// njsscan's per-finding severity (Phase 2 · 2a #4 — the THIRD genuine tool→band adapter, the
+// FIRST with a DIFFERENT input shape). njsscan is the Node language-gate SAST tool (run-scans
+// Family 7, alongside Semgrep/Bandit/gosec). It carries a REAL per-finding `severity`
+// (`ERROR`/`WARNING`/`INFO`), owns no toolkit class, and groups under `external-sast` — the same
+// severity model as Semgrep, so it REUSES `buildFinding`'s `bandFromTool` path with ZERO
+// harness-core change. The ONLY new shape is njsscan's nested-object JSON (`{nodejs:{…},
+// templates:{…}}`, each section keyed by rule_id), NOT a flat `results[]` — hence its own `parse`.
+// Same calibration call as Semgrep/Bandit: `ERROR → high`, NOT critical/blocker — a mechanical SAST
+// hit flags a sink but does NOT confirm reachability, which is the LLM/human residual. An
+// unknown/missing `severity` → `info`, never dropped. (Even though this map EQUALS
+// SEMGREP_SEVERITY_TO_FINDING, njsscan is a distinct tool, so it carries its own named map per the
+// per-tool idiom.) NOTE: njsscan's `node_secret` rule (CWE-798 hardcoded secret) OVERLAPS the
+// secrets class the future gitleaks/detect-secrets (`fail-hardcoded-secrets`) adapters will own;
+// here it ingests as an `external-sast` tool→band finding — de-duplicating it against a co-located
+// secrets-scanner finding is cross-engine dedup = roadmap §10 extension #3 (Phase-2b), NOT this
+// slice (the SAFE under-merge — a duplicate may survive in the band, never a dropped finding).
+export const NJSSCAN_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', INFO: 'low' }
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -729,12 +751,90 @@ export const banditAdapter = {
   // NO securityRelevant — security-by-construction (Bandit is a security scanner), like semgrep/checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #6 — njsscan (file-parser, Phase 2 · 2a #4): parses captured njsscan JSON.
+// njsscan is the toolkit's Node language-gate SAST tool (run-scans Family 7, alongside
+// Semgrep/Bandit/gosec). It is the THIRD genuine TOOL→BAND adapter — it reuses buildFinding's
+// `bandFromTool` path with ZERO harness-core change (one new adapter + the NJSSCAN_SEVERITY_TO_FINDING
+// map). Like Semgrep/Bandit it carries a real per-finding severity (`ERROR`/`WARNING`/`INFO`, via
+// NJSSCAN_SEVERITY_TO_FINDING) which IS the honest per-finding signal for general SAST, so an njsscan
+// hit owns NO toolkit class — `classify()` is constant `null` (it must not over-escalate onto a
+// `fail-*` blocker class; its severity source is the tool band, gated by scan-external-sast = major).
+// Owning no class, an njsscan finding SUPERSEDES nothing (cross-engine dedup is roadmap §10 ext #3,
+// Phase-2b — the SAFE under-merge). dimension 'external-sast' is the same deterministic-only grouping
+// label as Semgrep/Bandit. Like them it is SECURITY-BY-CONSTRUCTION (njsscan is a security scanner),
+// so NO `securityRelevant` — the ingest core keeps every emitted hit.
+//
+// THE ONE NEW SHAPE: njsscan's JSON is a NESTED OBJECT, not a flat `results[]`. The top level is
+// `{ errors, njsscan_version, nodejs:{…}, templates:{…} }`; `nodejs` and `templates` are each an
+// OBJECT keyed by rule_id, whose value is `{ files:[{file_path, match_lines:[start,end], …}],
+// metadata:{ cwe, description, "owasp-web", severity } }`. BOTH sections are read; a rule can list
+// MULTIPLE files (multiple occurrences) → each file occurrence is a distinct finding. The CWE
+// reference URL is derived from a `CWE-###` prefix in `metadata.cwe` when present (else no resource).
+export const njsscanAdapter = {
+  name: 'njsscan',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!raw || typeof raw !== 'object') return []
+    const hits = []
+    // iterate BOTH sections; each is an object keyed by rule_id (defensive: may be absent/null/non-object)
+    for (const section of ['nodejs', 'templates']) {
+      const rules = raw[section]
+      if (!rules || typeof rules !== 'object') continue
+      for (const ruleId of Object.keys(rules)) {
+        const ruleObj = rules[ruleId]
+        if (!ruleObj || typeof ruleObj !== 'object') continue
+        const md = ruleObj.metadata && typeof ruleObj.metadata === 'object' ? ruleObj.metadata : {}
+        const sev = md.severity
+        const files = Array.isArray(ruleObj.files) ? ruleObj.files : []
+        for (const f of files) {
+          if (!f || !f.file_path) continue // a hit with no file is dropped here (mirrors the ingest core)
+          const ml = Array.isArray(f.match_lines) ? f.match_lines : null
+          // derive the CWE reference URL from "CWE-###: …" if present, else no resource
+          const cweNum = typeof md.cwe === 'string' ? (md.cwe.match(/CWE-(\d+)/) || [])[1] : null
+          hits.push({
+            engine: 'njsscan',
+            ruleId: String(ruleId),
+            severityNum: null, // njsscan has no 1-5 number; the band comes from metadata.severity
+            file: f.file_path,
+            startLine: ml && Number.isInteger(ml[0]) ? ml[0] : null,
+            message: String(md.description || ruleId),
+            resources: cweNum ? [`https://cwe.mitre.org/data/definitions/${cweNum}.html`] : [],
+            bandFromTool: NJSSCAN_SEVERITY_TO_FINDING[sev] || 'info', // unknown/missing → info, never dropped
+            toolSevLabel: String(sev || 'unknown'),
+            dimensionHint: 'external-sast',
+            tags: [],
+          })
+        }
+      }
+    }
+    return hits
+  },
+  // Constant null: an njsscan finding owns NO toolkit class (its severity is the tool band, and it
+  // must not over-escalate onto a fail-* blocker class). Owning no class, it supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (njsscan is a security scanner), like semgrep/bandit/checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
   'bandit': banditAdapter,
+  'njsscan': njsscanAdapter,
 }
 
 // ----------------------------------------------------------------------------

@@ -23,6 +23,67 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.34] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #4 — the njsscan adapter (the THIRD `tool→band`
+adapter, the FIRST with a different input shape) (docs/roadmap-deterministic-findings.md §10).**
+njsscan is the Node language-gate SAST tool (run-scans Family 7, alongside Semgrep/Bandit/gosec).
+It carries a real per-finding `severity` (`ERROR`/`WARNING`/`INFO`), owns no toolkit class, and
+groups under `external-sast` — the same severity model as Semgrep/Bandit — so it **reuses
+`buildFinding`'s `bandFromTool` path with ZERO harness-core change** (one new adapter object + one
+severity map + tests; **no `buildFinding` edit, no `CLASS_DEFS` edit**). The ONE new thing is
+njsscan's **nested-object JSON** (`{nodejs:{…},templates:{…}}`, each section keyed by rule_id), NOT
+a flat `results[]`, so it has its own `parse` that reads BOTH sections (a rule can list multiple
+files → one finding per file occurrence) and derives the CWE reference URL from a `CWE-###` prefix.
+Validated by "parse twice → identical" against the real captured fixture (2 nodejs findings — one
+`ERROR`, one `WARNING`), NO campaign. Suite **55 files / 627 checks** (was 55 / 611; +16 `NJ*`
+checks folded into `test-ingest-scanner-findings`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `njsscan` adapter** (`file-parser`,
+  `engine:'njsscan'`). `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty);
+  `parse()` iterates BOTH the `nodejs` and `templates` sections — each an object keyed by rule_id —
+  defensively (an absent/null/non-object section, a null rule object, a missing `files`/`metadata`,
+  a file with no `file_path` are all skipped, never a crash), mapping each file occurrence to a hit
+  carrying the resolved tool band and a CWE reference URL derived from `metadata.cwe`. `classify()`
+  is the constant **`null`** — an njsscan finding owns **no toolkit class** (its severity is the tool
+  band, and it must not over-escalate onto a `fail-*` blocker class). NO `securityRelevant`
+  (security-by-construction — njsscan is a security scanner). `dimension: 'external-sast'` (the same
+  deterministic-only grouping label as Semgrep/Bandit). Registered as the **6th** adapter; `AD1` now
+  asserts the 6-adapter registry.
+- **`NJSSCAN_SEVERITY_TO_FINDING`** export — `{ ERROR: 'high', WARNING: 'medium', INFO: 'low' }`; any
+  other/unknown or missing `severity` maps to `info` with an honest note, never dropped. (It equals
+  `SEMGREP_SEVERITY_TO_FINDING`, but njsscan is a distinct tool so it carries its own named map per the
+  per-tool idiom.)
+- **`acceptance/fixtures/njsscan-solano.json`** — genuine captured njsscan 0.4.3 output (2 nodejs
+  findings; relative-path, leak-clean): the ERROR anchor `node_secret` (CWE-798 hardcoded secret) on
+  `server/index.js:23` and the WARNING anchor `helmet_feature_disabled` (CWE-693) on
+  `server/index.js:14`. Because the real fixture has no `templates`-section / multi-file / `INFO`
+  occurrences, those cases use small INLINE synthetic input.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — an `NJ*` section (+16 checks): determinism, the
+  `ERROR→high` anchor (`external-sast`, no `class`, the derived CWE URL in the reasoning), the
+  `WARNING→medium` anchor, count (exactly 2), the **templates-section** + **multi-file** synthetics
+  (proves BOTH sections are read and one finding lands per file occurrence), the inline
+  `INFO→low`/`CRITICAL→info-never-dropped` band synthetics, the **tool→band severity** check (mutating
+  `WARNING→ERROR` MOVES the band — the same deliberate behaviour as `SG`/`BN`, the INVERSE of
+  `S1`/`CK-severity-from-class`), the constant `classify()`→`null` + no `securityRelevant` + no `class`
+  key, the `NJSSCAN_SEVERITY_TO_FINDING` shape, the **no-CWE** case (missing/non-CWE `metadata.cwe` →
+  `resources:[]`, still ingested), fail-safe over every degenerate nested shape
+  (`parse(null/{}/{nodejs:null}/{nodejs:{}}`/ a null rule / no `files` / no `file_path`)), idempotent
+  merge, schema conformance, and the CLI (dry-run + merge). `AD1` bumped to the 6-adapter registry.
+
+### Decided (one judgment call — implemented as specified, documented not hidden)
+- **`ERROR → high`, NOT critical/blocker** (the same calibration call as Semgrep `ERROR→high` /
+  Bandit `HIGH→high`). A mechanical SAST hit flags a sink but does NOT confirm reachability;
+  escalating to a critical/blocker is the reachability judgment that belongs to the LLM/human residual.
+  `scan-external-sast` is `major`; that requirement gate governs the band, not the per-finding tool
+  severity.
+- **`node_secret` ↔ secrets-class dedup is deferred.** njsscan's `node_secret` rule (CWE-798 hardcoded
+  secret) OVERLAPS the secrets class the future `gitleaks`/`detect-secrets` (`fail-hardcoded-secrets`)
+  adapters will own. Here it ingests as an `external-sast` `tool→band` finding; de-duplicating it
+  against a co-located secrets-scanner finding is **cross-engine dedup = §10 extension #3 (Phase-2b)**,
+  not this slice — the SAFE under-merge (a duplicate may survive in the band, never a dropped finding).
+
 ## [0.8.33] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #3 — the Bandit adapter (the proof the `tool→band`

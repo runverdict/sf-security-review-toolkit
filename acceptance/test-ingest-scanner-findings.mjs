@@ -24,8 +24,10 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 2 adapters, both kinds (file-parser + source-scanner).
- *   CLI — the CLI runs both adapters, --json + merge, idempotent on the ledger.
+ *   AD — the pluggable adapter registry: 6 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan + source-scanner: metadata-viewall).
+ *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
+ *   CK/SG/BN/NJ — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band).
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -43,6 +45,7 @@ import {
   checkovAdapter,
   semgrepAdapter,
   banditAdapter,
+  njsscanAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -53,6 +56,7 @@ import {
   CA_SEVERITY_TO_FINDING,
   SEMGREP_SEVERITY_TO_FINDING,
   BANDIT_SEVERITY_TO_FINDING,
+  NJSSCAN_SEVERITY_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -66,6 +70,7 @@ const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
 const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib / SSRF)
 const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process / CWE-78)
 const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi anchor + 2× B310 + B104)
+const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -440,13 +445,14 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 5 adapters (bandit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'metadata-viewall', 'semgrep'])
+check('AD1 registry has 6 adapters (njsscan added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'metadata-viewall', 'njsscan', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
+  assert.equal(ADAPTERS['njsscan'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -1074,6 +1080,241 @@ check('BN-CLI-merge: --scanner bandit writes the deterministic findings to the t
   execFileSync('node', [CLI, '--scanner', 'bandit', '--input', BANDIT, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'bandit').length, 4) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── njsscan (Phase 2 · 2a #4 — Node SAST, tool→band)
+// The THIRD tool→band adapter and the FIRST with a DIFFERENT input shape: njsscan's JSON is a
+// NESTED OBJECT (`{nodejs:{…},templates:{…}}` keyed by rule_id), NOT a flat `results[]` — so it
+// needs its own `parse`, but everything downstream (the bandFromTool path, external-sast, classify
+// → null) is the established tool→band pattern. The real fixture covers BOTH severities: node_secret
+// (ERROR → high) and helmet_feature_disabled (WARNING → medium). The templates-section, multi-file,
+// and INFO/unknown band cases use small INLINE synthetic input.
+const ingestNjsscan = (raw) => ingest(raw, njsscanAdapter, { repoRoot: '', pass: 1 })
+
+check('NJ-determinism: ingest the real njsscan fixture twice → byte-identical findings', () => {
+  const a = ingestNjsscan(readJSON(NJSSCAN)).findings
+  const b = ingestNjsscan(readJSON(NJSSCAN)).findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('NJ-anchor-ERROR: node_secret (severity ERROR, CWE-798) → deterministic/njsscan/external-sast/HIGH, server/index.js:23, NO class, CWE URL in reasoning', () => {
+  const { findings } = ingestNjsscan(readJSON(NJSSCAN))
+  const f = findById(findings, (x) => x.ruleId === 'node_secret')
+  assert.ok(f, 'the node_secret ERROR anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'njsscan')
+  assert.equal(f.ruleId, 'node_secret')
+  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.adjusted_severity, 'high') // ERROR → high (the TOOL band, not a class)
+  assert.equal(f.status, 'confirmed')
+  assert.equal(f.class, undefined) // owns NO toolkit class
+  assert.ok(!('class' in f), 'an njsscan finding must carry no `class` key')
+  assert.ok(f.file.endsWith('server/index.js:23'), `file was ${f.file}`) // match_lines[0] = 23
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  // the CWE reference URL is DERIVED from the "CWE-798: …" prefix, not present verbatim in the fixture
+  assert.ok(f.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/798.html'), 'the derived CWE-798 URL must appear in verdict_reasoning')
+})
+
+check('NJ-anchor-WARNING: helmet_feature_disabled (severity WARNING, CWE-693) → MEDIUM, server/index.js:14', () => {
+  const { findings } = ingestNjsscan(readJSON(NJSSCAN))
+  const f = findById(findings, (x) => x.ruleId === 'helmet_feature_disabled')
+  assert.ok(f, 'the helmet_feature_disabled WARNING anchor is not present')
+  assert.equal(f.engine, 'njsscan')
+  assert.equal(f.adjusted_severity, 'medium') // WARNING → medium (the TOOL band)
+  assert.equal(f.dimension, 'external-sast')
+  assert.ok(f.file.endsWith('server/index.js:14'), `file was ${f.file}`) // match_lines[0] = 14
+  assert.equal(f.class, undefined)
+  assert.ok(f.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/693.html'), 'the derived CWE-693 URL must appear in verdict_reasoning')
+})
+
+check('NJ-count: the real fixture → exactly 2 findings (node_secret high + helmet_feature_disabled medium)', () => {
+  const { findings } = ingestNjsscan(readJSON(NJSSCAN))
+  assert.equal(findings.length, 2)
+  assert.ok(findings.every((f) => f.engine === 'njsscan' && f.dimension === 'external-sast'))
+  const bySev = Object.fromEntries(findings.map((f) => [f.ruleId, f.adjusted_severity]))
+  assert.deepEqual(bySev, { node_secret: 'high', helmet_feature_disabled: 'medium' })
+})
+
+check('NJ-templates-section: an inline finding under `templates` (not `nodejs`) is ingested — BOTH sections are read', () => {
+  const raw = {
+    errors: [],
+    njsscan_version: '0.4.3',
+    nodejs: {},
+    templates: {
+      template_xss: {
+        files: [{ file_path: 'views/profile.hbs', match_lines: [5, 5], match_position: [1, 9] }],
+        metadata: { cwe: 'CWE-79: Improper Neutralization of Input', description: 'Unescaped template output', 'owasp-web': 'A7', severity: 'WARNING' },
+      },
+    },
+  }
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].ruleId, 'template_xss')
+  assert.equal(findings[0].adjusted_severity, 'medium')
+  assert.ok(findings[0].file.endsWith('views/profile.hbs:5'), `file was ${findings[0].file}`)
+})
+
+check('NJ-multi-file: one rule with 2 entries in `files` (distinct file_path/lines) → 2 distinct findings', () => {
+  const raw = {
+    nodejs: {
+      path_traversal: {
+        files: [
+          { file_path: 'server/a.js', match_lines: [10, 10], match_position: [1, 2] },
+          { file_path: 'server/b.js', match_lines: [20, 22], match_position: [1, 2] },
+        ],
+        metadata: { cwe: 'CWE-22: Path Traversal', description: 'Path traversal sink', severity: 'ERROR' },
+      },
+    },
+    templates: {},
+  }
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 2)
+  assert.notEqual(findings[0].id, findings[1].id)
+  assert.ok(findings.every((f) => f.ruleId === 'path_traversal' && f.adjusted_severity === 'high'))
+  const files = findings.map((f) => f.file).sort()
+  assert.ok(files.some((p) => p.endsWith('server/a.js:10')))
+  assert.ok(files.some((p) => p.endsWith('server/b.js:20'))) // match_lines[0] = 20
+})
+
+check('NJ-band/unknown (inline synthetic): INFO→low, CRITICAL(not a real njsscan level)→info-never-dropped', () => {
+  const raw = {
+    nodejs: {
+      info_rule: {
+        files: [{ file_path: 'server/a.js', match_lines: [1, 1] }],
+        metadata: { cwe: 'CWE-1004: x', description: 'an info-level note', severity: 'INFO' },
+      },
+      crit_rule: {
+        files: [{ file_path: 'server/b.js', match_lines: [2, 2] }],
+        metadata: { cwe: 'CWE-2: y', description: 'a synthetic out-of-range severity', severity: 'CRITICAL' },
+      },
+    },
+    templates: {},
+  }
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 2) // none dropped
+  const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
+  assert.equal(byRule.info_rule.adjusted_severity, 'low') // INFO → low
+  assert.equal(byRule.crit_rule.adjusted_severity, 'info') // unknown CRITICAL → info, never dropped
+})
+
+check('NJ-severity-FROM-TOOL-BAND: mutating metadata.severity WARNING→ERROR MOVES the band medium→high (the tool→band behaviour, same as SG/BN)', () => {
+  // For njsscan (like Semgrep/Bandit) the tool severity DOES drive the band. For Code-Analyzer/Checkov
+  // it must NOT (class-severity, see S1 / CK-severity-from-class). The divergence is the tool→band point.
+  const base = ingestNjsscan(readJSON(NJSSCAN)).findings
+  const helmet = findById(base, (f) => f.ruleId === 'helmet_feature_disabled')
+  assert.equal(helmet.adjusted_severity, 'medium') // WARNING → medium
+  const raw = clone(readJSON(NJSSCAN))
+  raw.nodejs.helmet_feature_disabled.metadata.severity = 'ERROR' // WARNING → ERROR
+  const bumped = findById(ingestNjsscan(raw).findings, (f) => f.ruleId === 'helmet_feature_disabled')
+  assert.equal(bumped.adjusted_severity, 'high', 'ERROR must move the band to high — the tool band drives njsscan severity')
+})
+
+check('NJ-no-class / classify: classify() is the constant null, no securityRelevant, finding carries no `class`', () => {
+  assert.equal(njsscanAdapter.classify('x'), null)
+  assert.equal(njsscanAdapter.classify('node_secret'), null)
+  assert.equal(njsscanAdapter.securityRelevant, undefined) // security-by-construction — no tag filter
+  const f = ingestNjsscan(readJSON(NJSSCAN)).findings[0]
+  assert.ok(!('class' in f), 'an njsscan finding owns no class → supersedes nothing (Phase-2b dedup deferred)')
+})
+
+check('NJ-sev-map: NJSSCAN_SEVERITY_TO_FINDING is exactly ERROR→high / WARNING→medium / INFO→low', () => {
+  assert.deepEqual(NJSSCAN_SEVERITY_TO_FINDING, { ERROR: 'high', WARNING: 'medium', INFO: 'low' })
+})
+
+check('NJ-no-cwe: a rule whose metadata.cwe is missing or non-CWE → resources:[], no crash, still ingested', () => {
+  const raw = {
+    nodejs: {
+      missing_cwe: {
+        files: [{ file_path: 'server/a.js', match_lines: [3, 3] }],
+        metadata: { description: 'no cwe field at all', severity: 'WARNING' },
+      },
+      non_cwe: {
+        files: [{ file_path: 'server/b.js', match_lines: [4, 4] }],
+        metadata: { cwe: 'not-a-cwe-string', description: 'cwe present but no CWE-### prefix', severity: 'ERROR' },
+      },
+    },
+    templates: {},
+  }
+  const hits = njsscanAdapter.parse(raw)
+  assert.equal(hits.length, 2)
+  for (const h of hits) assert.deepEqual(h.resources, []) // no derivable CWE → no resource
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 2) // still ingested
+  assert.deepEqual(findings.map((f) => f.adjusted_severity).sort(), ['high', 'medium'])
+})
+
+check('NJ-fail-safe: collect() missing → null; defensive parse over every degenerate shape → []/skip; ingest(null) → 0 + note', () => {
+  assert.equal(njsscanAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-njsscan.json') }), null)
+  assert.deepEqual(njsscanAdapter.parse(null), [])
+  assert.deepEqual(njsscanAdapter.parse({}), [])
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: null }), [])
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: {} }), [])
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: 'not-an-object' }), [])
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: { r: null } }), []) // a null rule object → skipped
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: { r: { metadata: { severity: 'ERROR' } } } }), []) // no files → []
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: { r: { files: 'nope', metadata: {} } } }), []) // non-array files → []
+  assert.deepEqual(njsscanAdapter.parse({ nodejs: { r: { files: [{ match_lines: [1, 1] }], metadata: { severity: 'ERROR' } } } }), []) // a file with no file_path → skipped
+  const { findings, notes } = ingestNjsscan(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('NJ-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: 'f'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const nj = ingestNjsscan(readJSON(NJSSCAN)).findings
+  const r1 = mergeFindings(ledger, nj, 1)
+  assert.equal(r1.added, 2)
+  assert.equal(ledger.findings.length, 3) // 1 llm + 2 njsscan
+  const r2 = mergeFindings(ledger, nj, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 3) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === 'f'.repeat(16) && !('provenance' in f)))
+})
+
+check('NJ-schema: an njsscan finding (no class, dimension external-sast) validates against $defs/finding', () => {
+  const f = ingestNjsscan(readJSON(NJSSCAN)).findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('NJ-CLI: --scanner njsscan --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'njsscan', '--input', NJSSCAN, '--target', join(tmpdir(), 'nope-nj'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'njsscan')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(parsed.findings.some((f) => f.ruleId === 'node_secret' && f.file.endsWith('server/index.js:23') && f.adjusted_severity === 'high'))
+})
+
+check('NJ-CLI-merge: --scanner njsscan writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-nj-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'njsscan', '--input', NJSSCAN, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const nj1 = l1.findings.filter((f) => f.engine === 'njsscan')
+  assert.equal(nj1.length, 2)
+  assert.ok(nj1.every((f) => f.provenance === 'deterministic'))
+  assert.deepEqual(nj1.map((f) => f.adjusted_severity).sort(), ['high', 'medium'])
+  execFileSync('node', [CLI, '--scanner', 'njsscan', '--input', NJSSCAN, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'njsscan').length, 2) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup
