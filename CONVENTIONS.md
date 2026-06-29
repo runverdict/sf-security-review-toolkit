@@ -458,3 +458,28 @@ sf-security-review-toolkit/
 Dense, specific, failure-encoded — match the sibling MCP toolkit. Tables for
 matrices, prose for reasoning. No marketing language, no "simply", no unexplained
 acronyms on first use. American spelling.
+
+## 10. Docs lifecycle (prevent roadmap rot)
+
+`docs/` stays current and tracked, never a graveyard of half-built plans. The rules:
+
+- **`docs/INDEX.md` is the canonical index** — one row per doc: state · purpose (and the
+  shipped version, if delivered). **Every file in `docs/` MUST have an INDEX row; a doc with
+  no row is the rot signal.** Update it in the same changeset that adds or retires a doc.
+- **Doc states:**
+  - `REFERENCE` — documents current shipped behavior or architecture (e.g. `ARCHITECTURE.md`,
+    the sf-ops gate, a shipped-engine spec, a live acceptance runbook).
+  - `HONEST-ARTIFACT` — a published result that is part of the toolkit's credibility (e.g.
+    the ceiling test). Preserved verbatim; a negative result is never edited away.
+  - `ACTIVE` — a roadmap driving in-progress work.
+  - `DESIGN` — a roadmap spec **not yet built**. MUST appear in `INDEX.md` so an unbuilt plan
+    can never become an untracked half-done doc.
+  - `DELIVERED vX.Y` — a roadmap whose work shipped. Kept as design-of-record (harness /
+    acceptance file headers cite it by path), carries a `DELIVERED in vX.Y` banner, and is
+    never mistaken for active work. Delivered roadmaps are **not** deleted and **not** moved
+    without updating every file that cites them.
+- **Every `roadmap-*.md` opens with a status header**: state, shipped-version (if any), and a
+  build-order checklist — so each slice's completion is visible at a glance.
+- **Honesty extends to docs (§2):** if a doc's thesis is later refuted by a published result,
+  it MUST link the refutation. A doc may not present, unqualified, a claim the repo has
+  falsified.

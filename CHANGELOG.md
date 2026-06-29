@@ -11,6 +11,20 @@ follow semantic versioning.
   `file:line` refs) so the "deterministic engines, not model goodwill" claim is verifiable in five minutes
   without a clone; surfaced from the README trust section. Docs-only, no engine change (prompted by an
   external audit noting the source was hard to verify from a browser).
+- `docs/INDEX.md` — the canonical docs-lifecycle index (one row per doc: state · purpose ·
+  shipped-version; every file in `docs/` must have a row), plus `CONVENTIONS.md` §10 "Docs lifecycle"
+  defining the states (`REFERENCE` / `HONEST-ARTIFACT` / `ACTIVE` / `DESIGN` / `DELIVERED`) and the
+  rule that a doc whose thesis was later refuted must link the refutation. Docs-only governance, no
+  engine change (prompted by a docs-hygiene audit before public release).
+
+### Fixed (docs currency)
+- `docs/recurrence-confidence.md` — status banner said skill-wiring was "still pending"; it wired
+  end-to-end at 0.8.10 (live in audit-codebase step 9 + compile-submission). Corrected.
+- `docs/roadmap-middle-band-judgment-fixture.md` — presented the middle-band judgment as a validated
+  differentiator; added a THESIS-SUPERSEDED banner linking `docs/ceiling-test.md` (the 2026-06-23
+  refutation) + the recurrence-confidence engine, so no doc contradicts the published falsification.
+- `docs/roadmap-0.7.0-throwaway-dast-harness.md` — build-order marked slice 7 (cold-validation → tag)
+  "← next" though `v0.7.0` is the published cold-validated tag; marked ✅, leaving slice-5b as the remnant.
 
 ---
 

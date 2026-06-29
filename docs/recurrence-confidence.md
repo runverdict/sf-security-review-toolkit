@@ -1,8 +1,9 @@
 # Recurrence-confidence — classifying findings by how reliably they recur
 
-**Status: ENGINE SHIPPED on `main` (0.8.7, UNTAGGED, 2026-06-23).** Skill wiring and a
-cold-validation run are still pending; the release tag stays HELD with the rest of the
-0.8.x arc.
+**Status: ENGINE SHIPPED + SKILL-WIRED on `main` (built 0.8.7, wired end-to-end 0.8.10, UNTAGGED).**
+Invoked live by `audit-codebase` (step 9) and read by `compile-submission`; the release tag stays
+HELD with the rest of the 0.8.x arc (the claim that holds the tag is the [ceiling test](ceiling-test.md),
+not this engine).
 
 This is the contract for `harness/recurrence-confidence.mjs` — the deterministic engine
 that takes N independent audit-ledgers of the **same** codebase and classifies each

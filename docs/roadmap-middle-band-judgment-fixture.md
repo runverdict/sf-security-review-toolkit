@@ -11,6 +11,14 @@ mostly-compliant in CODE — a re-audit now surfaces ONLY the six contestable is
 zero open critical/high — and did the namespace honest-fix (`needs-build`, C5 reframed as a
 source-permset finding).
 
+> **THESIS SUPERSEDED (2026-06-23) — read this first.** The run-to-run *stability* of the
+> middle-band judgment — the "differentiating value" in this doc's title — was **refuted** by the
+> cold-at-exhaustive campaign; see [`ceiling-test.md`](ceiling-test.md). The honest response that
+> shipped is the recurrence-confidence engine ([`recurrence-confidence.md`](recurrence-confidence.md)),
+> which makes run-to-run variance a *visible output* rather than a certified-stable claim. This
+> fixture remains valuable as the seeded contestable-call test ground (C1–C6) — but read every
+> "proves the differentiating value" framing below through that refutation.
+
 > **PHASE B — PENDING (deferred, separate cycle).** Phase A makes the JUDGMENT gradeable,
 > but the SCI completeness stays LOW / `BLOCKED` because it is dominated by owner-completable
 > requirements the fixture does not yet carry (the 9% lesson). Phase B pre-populates the owner

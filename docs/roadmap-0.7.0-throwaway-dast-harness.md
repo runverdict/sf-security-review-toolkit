@@ -185,10 +185,10 @@ malformed manifest, and "keep the evidence" as a structural invariant.
    in tmp, deterministic filled-check) + `standup-stack --env-file`.
 7. **Cold-validate against `~/srt-coldstart-full` (Atlas)** — the full
    `standup → run-dast → teardown` through the journey gate → real evidence → torn down,
-   evidence kept. Pre-committed pass condition; grade cold off disk → tag. **← next.**
+   evidence kept. Pre-committed pass condition; grade cold off disk → tag. **✅ DONE — cold-validated 2026-06-19, tagged `v0.7.0`.**
 
 **Slices 2–6 built + committed + validated (the engine chain is real and Atlas-smoked
-end-to-end). Remaining: the cold-validation (slice 7) + the slice-5b authenticated depth.**
+end-to-end). Remaining: only the slice-5b authenticated-DAST depth — slice 7 (cold-validation → tag) shipped as `v0.7.0`.**
 
 ## Open questions to settle during the build
 
