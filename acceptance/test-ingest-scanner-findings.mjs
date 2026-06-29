@@ -42,6 +42,7 @@ import {
   metadataViewAllAdapter,
   checkovAdapter,
   semgrepAdapter,
+  banditAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -51,6 +52,7 @@ import {
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
   SEMGREP_SEVERITY_TO_FINDING,
+  BANDIT_SEVERITY_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -63,6 +65,7 @@ const SFGE = join(FIX, 'code-analyzer-sfge-meridian.json')
 const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
 const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib / SSRF)
 const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process / CWE-78)
+const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi anchor + 2× B310 + B104)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -437,12 +440,13 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 4 adapters (semgrep added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['checkov', 'code-analyzer', 'metadata-viewall', 'semgrep'])
+check('AD1 registry has 5 adapters (bandit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'metadata-viewall', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
+  assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -902,6 +906,174 @@ check('SG-CLI-merge: --scanner semgrep writes the deterministic findings to the 
   execFileSync('node', [CLI, '--scanner', 'semgrep', '--input', SEMGREP_WARN, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'semgrep').length, 2) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── bandit (Phase 2 · 2a #3 — Python SAST, tool→band)
+// The PROOF the Semgrep tool→band path GENERALIZES: bandit reuses buildFinding's bandFromTool
+// path with ZERO harness-core change (one new adapter + one severity map). Same shape as Semgrep
+// (real per-result severity HIGH/MEDIUM/LOW, owns no class, external-sast). The real fixture is
+// all-MEDIUM, so the HIGH/LOW/unknown band cases use small INLINE synthetic results.
+const ingestBandit = (raw) => ingest(raw, banditAdapter, { repoRoot: '', pass: 1 })
+
+check('BN-determinism: ingest the real coldstart-full fixture twice → byte-identical findings', () => {
+  const a = ingestBandit(readJSON(BANDIT)).findings
+  const b = ingestBandit(readJSON(BANDIT)).findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('BN-anchor: B608 hardcoded_sql_expressions (severity MEDIUM) → deterministic/bandit/external-sast/MEDIUM, mcp/server.py:46, NO class, more_info URL in reasoning', () => {
+  const raw = readJSON(BANDIT)
+  const moreInfo = raw.results.find((r) => r.test_id === 'B608').more_info
+  const { findings } = ingestBandit(raw)
+  const f = findById(findings, (x) => x.file.endsWith('mcp/server.py:46'))
+  assert.ok(f, 'the B608 :46 anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'bandit')
+  assert.equal(f.ruleId, 'B608')
+  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.adjusted_severity, 'medium') // MEDIUM → medium (the TOOL band, not a class)
+  assert.equal(f.status, 'confirmed')
+  assert.equal(f.class, undefined) // owns NO toolkit class
+  assert.ok(!('class' in f), 'a Bandit finding must carry no `class` key')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.ok(moreInfo && f.verdict_reasoning.includes(moreInfo), 'the more_info URL must appear in verdict_reasoning')
+})
+
+check('BN-count: the real fixture → exactly 4 findings, all medium (all 4 results are MEDIUM)', () => {
+  const { findings } = ingestBandit(readJSON(BANDIT))
+  assert.equal(findings.length, 4)
+  assert.ok(findings.every((f) => f.adjusted_severity === 'medium'), 'every real-fixture finding is medium')
+  assert.ok(findings.every((f) => f.engine === 'bandit' && f.dimension === 'external-sast'))
+  assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['B104', 'B310', 'B310', 'B608'])
+})
+
+check('BN-two-distinct: B310 at lines 76 & 89 → TWO distinct findings (same test_id, distinct ids)', () => {
+  const { findings } = ingestBandit(readJSON(BANDIT))
+  const b310 = findings.filter((x) => x.ruleId === 'B310')
+  assert.equal(b310.length, 2)
+  assert.notEqual(b310[0].id, b310[1].id)
+  const files = b310.map((x) => x.file).sort()
+  assert.ok(files.some((p) => p.endsWith('mcp/server.py:76')))
+  assert.ok(files.some((p) => p.endsWith('mcp/server.py:89')))
+})
+
+check('BN-band HIGH/LOW/unknown (inline synthetic): HIGH→high, LOW→low, CRITICAL(not a real bandit level)→info-never-dropped', () => {
+  const raw = {
+    errors: [],
+    results: [
+      // HIGH carries more_info → resources[0] is the more_info URL
+      { test_id: 'B602', test_name: 'subprocess_popen_with_shell_equals_true', issue_severity: 'HIGH', issue_confidence: 'HIGH', filename: 'mcp/a.py', line_number: 10, more_info: 'https://bandit.example/b602', issue_cwe: { id: 78, link: 'https://cwe.mitre.org/data/definitions/78.html' } },
+      // LOW carries NO more_info → resources falls back to issue_cwe.link
+      { test_id: 'B311', test_name: 'random', issue_severity: 'LOW', issue_confidence: 'HIGH', filename: 'mcp/b.py', line_number: 20, issue_cwe: { id: 330, link: 'https://cwe.mitre.org/data/definitions/330.html' } },
+      // CRITICAL is NOT a Bandit severity level → unknown band → info (never dropped); no more_info/cwe → empty resources
+      { test_id: 'B999', test_name: 'synthetic_unknown', issue_severity: 'CRITICAL', issue_confidence: 'LOW', filename: 'mcp/c.py', line_number: 30, issue_text: 'a synthetic out-of-range severity' },
+    ],
+  }
+  const { findings } = ingestBandit(raw)
+  assert.equal(findings.length, 3) // none dropped
+  const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
+  assert.equal(byRule.B602.adjusted_severity, 'high') // HIGH → high
+  assert.ok(byRule.B602.verdict_reasoning.includes('https://bandit.example/b602'), 'more_info URL preferred for resources')
+  assert.equal(byRule.B311.adjusted_severity, 'low') // LOW → low
+  assert.ok(byRule.B311.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/330.html'), 'issue_cwe.link is the fallback when no more_info')
+  assert.equal(byRule.B999.adjusted_severity, 'info') // unknown CRITICAL → info, never dropped
+})
+
+check('BN-severity-FROM-TOOL-BAND: mutating issue_severity MEDIUM→HIGH MOVES the band medium→high (the tool→band behaviour, same as SG)', () => {
+  // For Bandit (like Semgrep) the tool severity DOES drive the band. For Code-Analyzer/Checkov it
+  // must NOT (class-severity, see S1 / CK-severity-from-class). The divergence is the tool→band point.
+  const base = ingestBandit(readJSON(BANDIT)).findings
+  assert.ok(base.every((f) => f.adjusted_severity === 'medium')) // all MEDIUM → medium
+  const raw = clone(readJSON(BANDIT))
+  for (const r of raw.results) r.issue_severity = 'HIGH' // MEDIUM → HIGH
+  const bumped = ingestBandit(raw).findings
+  assert.ok(bumped.every((f) => f.adjusted_severity === 'high'), 'HIGH must move the band to high — the tool band drives Bandit severity')
+})
+
+check('BN-no-class / classify: classify() is the constant null, no securityRelevant, finding carries no `class`', () => {
+  assert.equal(banditAdapter.classify('x'), null)
+  assert.equal(banditAdapter.classify('B608'), null)
+  assert.equal(banditAdapter.securityRelevant, undefined) // security-by-construction — no tag filter
+  const f = ingestBandit(readJSON(BANDIT)).findings[0]
+  assert.ok(!('class' in f), 'a Bandit finding owns no class → supersedes nothing (Phase-2b dedup deferred)')
+})
+
+check('BN-sev-map: BANDIT_SEVERITY_TO_FINDING is exactly HIGH→high / MEDIUM→medium / LOW→low', () => {
+  assert.deepEqual(BANDIT_SEVERITY_TO_FINDING, { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' })
+})
+
+check('BN-fail-safe: collect() missing → null; parse(null/{}/{results:null}/{results:[]}) → []; a result missing line_number/test_id is handled; ingest(null) → 0 + note', () => {
+  assert.equal(banditAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-bandit.json') }), null)
+  assert.deepEqual(banditAdapter.parse(null), [])
+  assert.deepEqual(banditAdapter.parse({}), [])
+  assert.deepEqual(banditAdapter.parse({ results: null }), [])
+  assert.deepEqual(banditAdapter.parse({ results: [] }), [])
+  // a result with no test_id is skipped in parse; one with no line_number still parses (no crash)
+  const hits = banditAdapter.parse({ results: [{ filename: 'a.py', issue_severity: 'MEDIUM' }, { test_id: 'B1', filename: 'a.py', issue_severity: 'MEDIUM' }] })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].startLine, null)
+  assert.equal(hits[0].message, '') // no issue_text/test_name → ''
+  assert.equal(hits[0].bandFromTool, 'medium')
+  const { findings, notes } = ingestBandit(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('BN-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: 'e'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'mcp/server.py:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const bn = ingestBandit(readJSON(BANDIT)).findings
+  const r1 = mergeFindings(ledger, bn, 1)
+  assert.equal(r1.added, 4)
+  assert.equal(ledger.findings.length, 5) // 1 llm + 4 bandit
+  const r2 = mergeFindings(ledger, bn, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 5) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === 'e'.repeat(16) && !('provenance' in f)))
+})
+
+check('BN-schema: a Bandit finding (no class, dimension external-sast) validates against $defs/finding', () => {
+  const f = ingestBandit(readJSON(BANDIT)).findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('BN-CLI: --scanner bandit --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'bandit', '--input', BANDIT, '--target', join(tmpdir(), 'nope-bn'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'bandit')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(parsed.findings.some((f) => f.ruleId === 'B608' && f.file.endsWith('mcp/server.py:46') && f.adjusted_severity === 'medium'))
+})
+
+check('BN-CLI-merge: --scanner bandit writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-bn-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'bandit', '--input', BANDIT, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const bn1 = l1.findings.filter((f) => f.engine === 'bandit')
+  assert.equal(bn1.length, 4)
+  assert.ok(bn1.every((f) => f.adjusted_severity === 'medium' && f.provenance === 'deterministic'))
+  execFileSync('node', [CLI, '--scanner', 'bandit', '--input', BANDIT, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'bandit').length, 4) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

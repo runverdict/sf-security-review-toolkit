@@ -25,7 +25,10 @@
  *                     Adapter #4 (Phase 2 · 2a #2): `semgrep` (multi-language SAST JSON;
  *                       engine:'semgrep') — the FIRST tool→band adapter (severity from the
  *                       tool's own ERROR/WARNING/INFO, owns no toolkit class).
- *                     Future: OSV, gitleaks — all parse a JSON file the same way.
+ *                     Adapter #5 (Phase 2 · 2a #3): `bandit` (Python SAST JSON; engine:'bandit')
+ *                       — the SECOND tool→band adapter, the proof the Semgrep tool→band path
+ *                       GENERALIZES (severity from HIGH/MEDIUM/LOW, owns no class, NO harness change).
+ *                     Future: njsscan, OSV, gitleaks — all parse a JSON file the same way.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -57,6 +60,7 @@
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -99,6 +103,18 @@ export const CA_SEVERITY_TO_FINDING = {
 // classes) maps to `info` — never dropped. (The toolkit's canonical invocation uses the
 // security rulesets p/security-audit / p/secrets / p/<lang>, which emit only ERROR/WARNING/INFO.)
 export const SEMGREP_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', INFO: 'low' }
+// Bandit's per-finding severity (Phase 2 · 2a #3 — the THIRD tool→band adapter, the proof the
+// Semgrep `tool→band` generalization GENERALIZES with ZERO harness-core change). Bandit is the
+// Python language-gate SAST tool (run-scans Family 7, alongside Semgrep/njsscan/gosec). It carries
+// a REAL per-result `issue_severity` (`HIGH`/`MEDIUM`/`LOW`), owns no toolkit class, and groups
+// under `external-sast` — exactly Semgrep's shape, so it reuses `buildFinding`'s `bandFromTool`
+// path verbatim. Same calibration call as Semgrep `ERROR→high`: `HIGH → high`, NOT critical/blocker
+// — a mechanical SAST hit flags a sink but does NOT confirm reachability; blocker-escalation is the
+// LLM/human residual. An unknown/missing `issue_severity` → `info`, never dropped. NOTE: Bandit also
+// emits `issue_confidence` (HIGH/MEDIUM/LOW); it is NOT used for the band in this slice (the band is
+// `issue_severity`, confidence is recorded only for reference) — a confidence-weighted refinement is
+// a Phase-2b note, like Checkov's per-check-severity deferral.
+export const BANDIT_SEVERITY_TO_FINDING = { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' }
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -645,11 +661,80 @@ export const semgrepAdapter = {
   // NO securityRelevant — security-by-construction (the security rulesets), like checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #5 — bandit (file-parser, Phase 2 · 2a #3): parses captured Bandit JSON.
+// Bandit is the toolkit's Python language-gate SAST tool (run-scans Family 7, alongside
+// Semgrep/njsscan/gosec). It is the THIRD adapter and the SECOND genuine TOOL→BAND adapter —
+// the PROOF the Semgrep tool→band generalization GENERALIZES: bandit reuses buildFinding's
+// `bandFromTool` path with ZERO harness-core change (one new adapter + one severity map). Like
+// Semgrep it carries a real per-result severity (`HIGH`/`MEDIUM`/`LOW`, via
+// BANDIT_SEVERITY_TO_FINDING) which IS the honest per-finding signal for general SAST, so a Bandit
+// hit owns NO toolkit class — `classify()` is constant `null`:
+//   - it must NOT map to a `fail-*` blocker class (that would over-escalate every SAST hit), and
+//   - its severity source is the tool band, not a class (gated by scan-external-sast = major).
+// Owning no class, a Bandit finding SUPERSEDES nothing (cross-engine dedup is roadmap §10 ext #3,
+// Phase-2b — the SAFE under-merge). dimension 'external-sast' is the same deterministic-only
+// grouping label as Semgrep (Python SAST belongs to the same external-endpoint SAST grouping). Like
+// semgrep/checkov/metadata it is SECURITY-BY-CONSTRUCTION (Bandit is a security scanner), so NO
+// `securityRelevant` — the ingest core keeps every emitted hit. Only `results[]` become findings.
+// `issue_confidence` is recorded by Bandit but deliberately NOT band-weighting here (Phase-2b note).
+export const banditAdapter = {
+  name: 'bandit',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.results)) return []
+    const hits = []
+    for (const r of raw.results) {
+      // Skip a malformed result with no test_id (the ingest core also drops a hit with no
+      // file, with an honest note — that is correct).
+      if (!r || r.test_id == null) continue
+      const cwe = r.issue_cwe && typeof r.issue_cwe === 'object' ? r.issue_cwe : null
+      const resources = r.more_info
+        ? [String(r.more_info)]
+        : cwe && cwe.link
+          ? [String(cwe.link)]
+          : []
+      const sev = r.issue_severity
+      hits.push({
+        engine: 'bandit',
+        ruleId: String(r.test_id),
+        severityNum: null, // Bandit has no 1-5 number; the band comes from issue_severity
+        file: r.filename,
+        startLine: Number.isInteger(r.line_number) ? r.line_number : null,
+        message: String(r.issue_text || r.test_name || ''),
+        resources,
+        bandFromTool: BANDIT_SEVERITY_TO_FINDING[sev] || 'info', // unknown/missing → info, never dropped
+        toolSevLabel: String(sev || 'unknown'),
+        dimensionHint: 'external-sast',
+        tags: [],
+      })
+    }
+    return hits
+  },
+  // Constant null: a Bandit finding owns NO toolkit class (its severity is the tool band, and it
+  // must not over-escalate onto a fail-* blocker class). Owning no class, it supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (Bandit is a security scanner), like semgrep/checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
+  'bandit': banditAdapter,
 }
 
 // ----------------------------------------------------------------------------

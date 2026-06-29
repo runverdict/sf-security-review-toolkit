@@ -23,6 +23,57 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.33] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #3 — the Bandit adapter (the proof the `tool→band`
+path GENERALIZES) (docs/roadmap-deterministic-findings.md §10).** Bandit is the Python language-gate
+SAST tool (run-scans Family 7, alongside Semgrep/njsscan/gosec). It is the SECOND genuine `tool→band`
+adapter and the proof the 0.8.32 Semgrep generalization GENERALIZES: Bandit carries a real per-finding
+`issue_severity` (`HIGH`/`MEDIUM`/`LOW`), owns no toolkit class, and groups under `external-sast` —
+exactly Semgrep's shape — so it **reuses `buildFinding`'s `bandFromTool` path with ZERO harness-core
+change**. One new adapter object + one severity map + tests; **no `buildFinding` edit, no `CLASS_DEFS`
+edit**. Validated by "parse twice → identical" against the real captured fixture (4 results, all
+`MEDIUM`), NO campaign. Suite **55 files / 611 checks** (was 55 / 598; +13 `BN*` checks folded into
+`test-ingest-scanner-findings`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `bandit` adapter** (`file-parser`, `engine:'bandit'`).
+  `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty); `parse()` reads
+  `results[]` (defensive on a missing `results`/`line_number`; skips a result with no `test_id`),
+  mapping each to a hit carrying the resolved tool band (`more_info` URL preferred for `resources`,
+  falling back to `issue_cwe.link`). `classify()` is the constant **`null`** — a Bandit finding owns
+  **no toolkit class** (its severity is the tool band, and it must not over-escalate onto a `fail-*`
+  blocker class). NO `securityRelevant` (security-by-construction — Bandit is a security scanner).
+  `dimension: 'external-sast'` (the same deterministic-only grouping label as Semgrep). Registered as
+  the **5th** adapter; `AD1` now asserts the 5-adapter registry.
+- **`BANDIT_SEVERITY_TO_FINDING`** export — `{ HIGH: 'high', MEDIUM: 'medium', LOW: 'low' }`; any
+  other/unknown or missing `issue_severity` maps to `info` with an honest note, never dropped.
+- **`acceptance/fixtures/bandit-coldstart-full.json`** — genuine captured Bandit output (4 results,
+  all `MEDIUM`; relative-path, leak-clean): the anchor `B608` (`hardcoded_sql_expressions`, CWE-89) on
+  `mcp/server.py:46`, plus 2× `B310` (urllib at `:76` & `:89`, same `test_id` → 2 distinct findings)
+  and `B104` (bind-all-interfaces). Because the real fixture is all-`MEDIUM`, the `HIGH`/`LOW`/unknown
+  band cases use small INLINE synthetic results.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — a `BN*` section (+13 checks): determinism, the
+  `MEDIUM` anchor (`→ medium`, `external-sast`, no `class`, the `more_info` URL in the reasoning),
+  count (4 medium), two-distinct (same `test_id`, lines 76/89), the inline `HIGH→high`/`LOW→low`/
+  `CRITICAL→info-never-dropped` band synthetics (also exercising the `more_info`-vs-`issue_cwe.link`
+  resources fallback), the **tool→band severity** check (mutating `MEDIUM→HIGH` MOVES the band —
+  the same deliberate behaviour as `SG`, the INVERSE of `S1`/`CK-severity-from-class`), the constant
+  `classify()`→`null` + no `securityRelevant` + no `class` key, the `BANDIT_SEVERITY_TO_FINDING`
+  shape, fail-safe (missing file / `parse(null/{}/{results:null}/{results:[]})` / missing
+  `line_number`/`test_id`), idempotent merge, schema conformance, and the CLI (dry-run + merge).
+
+### Decided (two judgment calls — implemented as specified, documented not hidden)
+- **`HIGH → high`, NOT critical/blocker** (the same calibration call as Semgrep `ERROR→high`). A
+  mechanical SAST hit flags a sink but does NOT confirm reachability; escalating to a critical/blocker
+  is a reachability judgment that belongs to the LLM/human residual (the
+  "reachability-is-a-precondition" rule). `scan-external-sast` is `major`; that requirement gate
+  governs the band, not the per-finding tool severity.
+- **`issue_confidence` is NOT used for the band** in this slice. Bandit emits an `issue_confidence`
+  (`HIGH`/`MEDIUM`/`LOW`) alongside `issue_severity`; the band is taken from `issue_severity` only, and
+  confidence is recorded for reference. A confidence-weighted refinement is a deliberate, tracked
+  **Phase-2b** deferral (mirrors Checkov's per-check-severity deferral) — not an oversight.
+
 ## [0.8.32] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #2 — the Semgrep adapter + the `tool→band`
