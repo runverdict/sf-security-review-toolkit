@@ -37,6 +37,68 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.36] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #6 — the detect-secrets adapter (the secrets SIBLING of
+gitleaks; REUSES the `hardcoded-secrets` class; the nested-by-file parse; the hash/secret-never-leaks
+invariant; cross-engine dedup now concrete → ext #3) (docs/roadmap-deterministic-findings.md §10).**
+detect-secrets is the toolkit's SECOND hardcoded-secret scanner (run-scans Family 6, alongside gitleaks).
+It is the same vuln class — a hardcoded secret — so it **REUSES the `hardcoded-secrets` class** gitleaks
+added: **NO new `CLASS_DEFS` entry, NO `buildFinding`/`recommendationFor` change** — a `class`-severity
+adapter (like Checkov/gitleaks, NOT `tool→band`), severity from the `fail-hardcoded-secrets` CLASS
+(`severity_if_missing: major` → **high**) via a CONSTANT `classify()`→`'hardcoded-secrets'` and NO tag
+filter (security-by-construction). The **only shared-file touch is the `ADAPTERS` registry line**. Like
+gitleaks it owns a class AND the REAL `secrets-credentials` methodology dimension, so it **SUPERSEDES a
+co-located LLM `secrets-credentials` finding**. Two things are new vs gitleaks: (1) detect-secrets' **OWN
+nested-object JSON** — `{ results: { <file>: [occurrence, …] } }`, keyed by FILE (each value an array),
+NOT gitleaks' flat top-level array — so its own `parse`; (2) with **TWO secrets engines now live**, the
+same secret at one locus produces TWO deterministic ledger rows (one per engine), which `reconcile-provenance`
+does NOT collapse (it only supersedes an `llm-inferred` finding; a deterministic finding never supersedes
+another deterministic finding) — so the cross-engine duplicate is **visible** (the SAFE under-merge);
+collapsing it is cross-engine dedup = **§10 extension #3 (cross-engine dedup), Phase-2b**, NOT this slice.
+The **hash/secret-never-leaks invariant** applies again: an occurrence carries a `hashed_secret` (a SHA —
+leak-safe by detect-secrets' design) and, under `--show-secrets`, could carry plaintext; the adapter emits
+from ONLY `type`/file/`line_number` and **never** the hash or plaintext. Validated by "parse twice →
+identical" against the real captured fixture (24 occurrences across 6 files, 3 detector types) + a
+load-bearing hash+plaintext leak test, NO campaign. Suite **55 files / 651 checks** (was 55 / 639; +12 `DS*`
+checks folded into `test-ingest-scanner-findings`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `detect-secrets` adapter** (`file-parser`,
+  `engine:'detect-secrets'`). `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty);
+  `parse()` reads detect-secrets' **nested-by-file** `results` object (`{<file>: [occurrence, …]}`),
+  iterating the file keys then each occurrence, skipping any with no `type` or no file, and builds each hit
+  from ONLY the non-sensitive fields — `type` (as `ruleId`), the file path, and `line_number`. It
+  **DELIBERATELY never reads `hashed_secret`, `is_verified`, or any plaintext field** (the hash/secret-never-
+  leaks invariant; the PRIMARY, structural control — `buildFinding`'s `redact()` is only a backstop);
+  `message` names the `type` only — never the hash. `classify()` is the constant **`'hardcoded-secrets'`**,
+  **reusing the SAME class gitleaks added** (one `CLASS_DEFS` entry, two adapters). NO `securityRelevant`
+  (security-by-construction). Registered as the **8th** adapter; `AD1` now asserts the 8-adapter registry.
+- **`acceptance/fixtures/detect-secrets-solano.json`** — genuine captured detect-secrets 1.5.0 output (the
+  `results` object keyed by 6 files; 24 occurrences; 3 detector types: `Secret Keyword` / `Hex High Entropy
+  String` / `Base64 High Entropy String`), **leak-safe by detect-secrets' design** — every occurrence carries
+  only a `hashed_secret` SHA (no plaintext), and all paths are relative (no partner paths). The anchor is the
+  first `Secret Keyword` occurrence (`.security-review/audit-engine.mjs:181`).
+- **`acceptance/test-ingest-scanner-findings.mjs`** — a `DS*` section (+12 checks): determinism, the
+  `Secret Keyword` anchor (`.security-review/audit-engine.mjs:181` → deterministic/detect-secrets/
+  `hardcoded-secrets`/`secrets-credentials`/class-severity `high`), count + multi-file (exactly 24 findings
+  spanning 6 distinct files + ≥2 detector types, distinct ids), the **load-bearing DS-HASH/SECRET-NEVER-LEAKS**
+  (a synthetic occurrence with a fake `hashed_secret` AND a synthetic `--show-secrets` plaintext leaks NEITHER
+  into any finding field), **DS-reuses-class** (`classify()`→`hardcoded-secrets` is the SAME entry gitleaks
+  uses, no new `CLASS_DEFS`; class-severity, `severityNum:null`), **DS-supersedes-LLM** (a detect-secrets
+  finding supersedes a co-located LLM `secrets-credentials` finding), **DS-two-deterministic-coexist** (a
+  detect-secrets finding AND a gitleaks finding at the SAME locus both stay `confirmed` — neither supersedes
+  the other; the deferred §3 behaviour captured as a test), fail-safe over the nested/degenerate shapes,
+  idempotent merge, schema conformance, and the CLI (dry-run + merge). `AD1` bumped to the 8-adapter registry.
+
+### Decided (one judgment call — implemented as specified, documented not hidden)
+- **Cross-engine dedup is now CONCRETE but stays §10 extension #3 (Phase-2b).** With gitleaks AND
+  detect-secrets both emitting `hardcoded-secrets` findings, the same secret at one locus now produces two
+  deterministic ledger rows. `reconcile-provenance` leaves BOTH `confirmed` (it only supersedes `llm-inferred`
+  findings) — the correct, conservative behaviour: no engine's finding silently hides another's, the duplicate
+  is visible (the SAFE under-merge). Collapsing gitleaks↔detect-secrets↔njsscan `node_secret` into one row is
+  extension #3 (cross-engine dedup), captured as the `DS-two-deterministic-coexist` test, NOT this slice.
+
 ## [0.8.35] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #5 — the gitleaks adapter (the DESIGN PIVOT BACK to

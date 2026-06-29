@@ -42,7 +42,18 @@
  *                       the LIVE secret (Match/Secret) plus commit PII (Author/Email/Message), so the
  *                       adapter is built to emit a finding from ONLY non-sensitive fields and NEVER pass
  *                       any of those downstream (§3 of the slice — the secret-never-leaks invariant).
- *                     Future: OSV, detect-secrets — all parse a JSON file the same way.
+ *                     Adapter #8 (Phase 2 · 2a #6): `detect-secrets` (hardcoded-secrets JSON;
+ *                       engine:'detect-secrets') — the secrets SIBLING of gitleaks. It REUSES the
+ *                       `hardcoded-secrets` class (NO new CLASS_DEFS entry, NO buildFinding change): a
+ *                       class-severity adapter, severity from `fail-hardcoded-secrets` (major → high). Two
+ *                       new things only: (a) detect-secrets' OWN nested-object JSON `{results:{<file>:[…]}}`
+ *                       keyed by FILE (NOT gitleaks' flat array), so its own `parse`; (b) it carries a
+ *                       `hashed_secret` (a SHA) and, under `--show-secrets`, could carry plaintext — the
+ *                       same secret-never-leaks invariant applies (emit ONLY `type`/file/`line_number`,
+ *                       never the hash or plaintext). With TWO secrets engines now live, the same secret at
+ *                       one locus produces TWO deterministic ledger rows — visible, the SAFE under-merge;
+ *                       collapsing them is cross-engine dedup = §10 extension #3 (Phase-2b), NOT this slice.
+ *                     Future: OSV — parses a JSON file the same way (and forces the CVSS→enum severity fork).
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -77,6 +88,7 @@
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner njsscan         --input njsscan.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner gitleaks        --input gitleaks.json      --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner detect-secrets  --input detect-secrets.json --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -918,6 +930,81 @@ export const gitleaksAdapter = {
   // NO securityRelevant — security-by-construction (every gitleaks hit is a secret), like checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #8 — detect-secrets (file-parser, Phase 2 · 2a #6): parses captured detect-secrets JSON.
+// detect-secrets is the toolkit's SECOND hardcoded-secret scanner (run-scans Family 6, alongside
+// gitleaks). It is the same vuln class — a hardcoded secret — so it REUSES the `hardcoded-secrets` class
+// gitleaks added (NO new `CLASS_DEFS` entry, NO `buildFinding` change): a CLASS-severity adapter (like
+// checkov/gitleaks, NOT the SG/BN/NJ tool→band path), severity from the `fail-hardcoded-secrets` CLASS
+// (major → high) via a CONSTANT `classify()`→`'hardcoded-secrets'`, NO tag filter (security-by-construction).
+// Like gitleaks it OWNS a class AND the REAL `secrets-credentials` methodology dimension, so it SUPERSEDES a
+// co-located LLM `secrets-credentials` finding. The ONLY shared-file touch is the `ADAPTERS` registry line.
+// TWO things make it distinct from gitleaks:
+//   (1) detect-secrets' OWN nested-object JSON: `{ results: { <file>: [occurrence, …] } }` — `results` is an
+//       OBJECT keyed by FILE (each value an array of occurrences), NOT gitleaks' flat top-level ARRAY. Hence
+//       its own `parse` that iterates the file keys then each occurrence; no harness-core change.
+//   (2) with TWO secrets engines now live, the same secret at one locus produces TWO deterministic ledger
+//       rows (one per engine). `reconcile-provenance` does NOT collapse them — it only supersedes an
+//       `llm-inferred` finding, and a deterministic finding never supersedes another deterministic finding —
+//       so the cross-engine duplicate is VISIBLE (the SAFE under-merge — no engine silently hides another's
+//       finding). Collapsing gitleaks↔detect-secrets↔njsscan `node_secret` is cross-engine dedup = §10
+//       extension #3 (Phase-2b), NOT this slice. (detect-secrets DOES still supersede a co-located *LLM*
+//       secrets finding — that part is wired via the shared `hardcoded-secrets` class, same as gitleaks.)
+// THE SECRET/HASH-NEVER-LEAKS INVARIANT (same as gitleaks). A detect-secrets occurrence carries a
+// `hashed_secret` (a SHA of the secret — leak-safe by detect-secrets' design) and, if scanned with
+// `--show-secrets`, could carry plaintext. The adapter builds each hit from ONLY `type`, the file path, and
+// `line_number`, and DELIBERATELY never passes `hashed_secret` (or any plaintext field) into ANY finding
+// field; `message` names the `type` only — never the hash. (`buildFinding`'s `redact()` is a defense-in-
+// depth BACKSTOP, not the primary control.) Input is a JSON OBJECT (`{ results: {<file>: [...] } }`).
+export const detectSecretsAdapter = {
+  name: 'detect-secrets',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    const results = raw && typeof raw === 'object' ? raw.results : null
+    // `results` MUST be an object keyed by file (NOT an array, NOT null) — detect-secrets' own shape
+    if (!results || typeof results !== 'object' || Array.isArray(results)) return []
+    const hits = []
+    for (const filePath of Object.keys(results)) {
+      const occs = Array.isArray(results[filePath]) ? results[filePath] : []
+      for (const o of occs) {
+        if (!o || o.type == null) continue // need a detector type (e.g. 'Secret Keyword')
+        const file = o.filename || filePath // they match; prefer the occurrence's own filename
+        if (!file) continue // the ingest core also drops a hit with no file
+        hits.push({
+          engine: 'detect-secrets',
+          ruleId: String(o.type), // e.g. 'Secret Keyword', 'Hex High Entropy String', 'Base64 High Entropy String'
+          severityNum: null, // no tool tier — class-severity (fail-hardcoded-secrets → high)
+          file,
+          startLine: Number.isInteger(o.line_number) ? o.line_number : null,
+          message: `detect-secrets flagged a possible ${o.type} (hardcoded secret).`, // NEVER hashed_secret/plaintext
+          resources: [], // detect-secrets gives no reference URL
+          tags: [],
+        })
+        // DELIBERATELY ABSENT from the hit: hashed_secret, is_verified, any plaintext (--show-secrets) — the
+        // secret/hash-never-leaks invariant. Do NOT add any of those here, even "for context".
+      }
+    }
+    return hits
+  },
+  // Constant: every detect-secrets hit is a hardcoded secret — REUSES the `hardcoded-secrets` class gitleaks
+  // added (NO new CLASS_DEFS entry), whose severity is the class (fail-hardcoded-secrets → high) and whose
+  // real dimension is secrets-credentials. One class definition, two adapters.
+  classify() {
+    return 'hardcoded-secrets'
+  },
+  // NO securityRelevant — security-by-construction (every detect-secrets hit is a secret), like gitleaks/checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -926,6 +1013,7 @@ export const ADAPTERS = {
   'bandit': banditAdapter,
   'njsscan': njsscanAdapter,
   'gitleaks': gitleaksAdapter,
+  'detect-secrets': detectSecretsAdapter,
 }
 
 // ----------------------------------------------------------------------------

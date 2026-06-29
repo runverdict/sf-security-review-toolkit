@@ -24,10 +24,11 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 6 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 8 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
- *   CK/SG/BN/NJ — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band).
+ *   CK/SG/BN/NJ/GL/DS — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
+ *        gitleaks/detect-secrets class-severity hardcoded-secrets).
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -47,6 +48,7 @@ import {
   banditAdapter,
   njsscanAdapter,
   gitleaksAdapter,
+  detectSecretsAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -74,6 +76,7 @@ const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-
 const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi anchor + 2× B310 + B104)
 const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
+const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -448,8 +451,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 7 adapters (gitleaks added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'gitleaks', 'metadata-viewall', 'njsscan', 'semgrep'])
+check('AD1 registry has 8 adapters (detect-secrets added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -457,6 +460,7 @@ check('AD1 registry has 7 adapters (gitleaks added), both KINDS, each {name,kind
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
   assert.equal(ADAPTERS['njsscan'].kind, 'file-parser')
   assert.equal(ADAPTERS['gitleaks'].kind, 'file-parser')
+  assert.equal(ADAPTERS['detect-secrets'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -1516,6 +1520,222 @@ check('GL-CLI-merge: --scanner gitleaks writes the deterministic findings to the
   execFileSync('node', [CLI, '--scanner', 'gitleaks', '--input', GITLEAKS, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'gitleaks').length, 3) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── detect-secrets (Phase 2 · 2a #6 — hardcoded secrets, class-severity)
+// The SECRETS SIBLING of gitleaks: same vuln class, so it REUSES the `hardcoded-secrets` class (NO new
+// CLASS_DEFS entry, NO buildFinding change) — a class-severity adapter, severity from `fail-hardcoded-secrets`
+// (major → high). TWO new things vs gitleaks: (1) detect-secrets' OWN nested-object JSON `{results:{<file>:[…]}}`
+// keyed by FILE (its own `parse`); (2) with TWO secrets engines now live, the same secret at one locus yields
+// TWO deterministic ledger rows — reconcile leaves BOTH confirmed (cross-engine dedup = §10 ext #3, deferred).
+// The HASH/SECRET-NEVER-LEAKS invariant applies again: an occurrence carries a `hashed_secret` (a SHA) and,
+// under --show-secrets, could carry plaintext — the adapter emits NEITHER. The real fixture is genuine
+// detect-secrets 1.5.0 output: 24 occurrences across 6 files, 3 types (Secret Keyword / Hex / Base64 High Entropy).
+const ingestDetectSecrets = (raw) => ingest(raw === undefined ? readJSON(DETECT_SECRETS) : raw, detectSecretsAdapter, { repoRoot: '', pass: 1 })
+const DS_ANCHOR = '.security-review/audit-engine.mjs:181' // the first Secret Keyword occurrence (stable anchor)
+
+check('DS-determinism: ingest the real detect-secrets fixture twice → byte-identical findings', () => {
+  const a = ingestDetectSecrets().findings
+  const b = ingestDetectSecrets().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('DS-anchor: Secret Keyword @ .security-review/audit-engine.mjs:181 → deterministic/detect-secrets/hardcoded-secrets/secrets-credentials/HIGH (class, from fail-hardcoded-secrets)', () => {
+  const { findings } = ingestDetectSecrets()
+  const f = findById(findings, (x) => x.ruleId === 'Secret Keyword' && x.file.endsWith(DS_ANCHOR))
+  assert.ok(f, 'the audit-engine.mjs:181 Secret Keyword anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'detect-secrets')
+  assert.equal(f.ruleId, 'Secret Keyword')
+  assert.equal(f.class, 'hardcoded-secrets') // REUSES the hardcoded-secrets class
+  assert.equal(f.dimension, 'secrets-credentials') // a REAL methodology dimension
+  assert.equal(f.adjusted_severity, 'high') // from the class (fail-hardcoded-secrets=major→high), NOT a tool tier
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+})
+
+check('DS-count + multi-file: the real fixture → exactly 24 findings spanning 6 distinct files + ≥2 types (distinct ids)', () => {
+  const { findings } = ingestDetectSecrets()
+  assert.equal(findings.length, 24)
+  assert.ok(findings.every((f) => f.engine === 'detect-secrets' && f.class === 'hardcoded-secrets' && f.dimension === 'secrets-credentials' && f.adjusted_severity === 'high'))
+  assert.equal(new Set(findings.map((f) => f.id)).size, 24) // all distinct ids
+  const files = new Set(findings.map((f) => f.file.replace(/:\d+$/, ''))) // strip the trailing :line → the file
+  assert.equal(files.size, 6) // 6 distinct files (the nested-by-file parse spanned all of them)
+  assert.ok(files.size >= 2)
+  const types = new Set(findings.map((f) => f.ruleId))
+  assert.ok(types.size >= 2, `expected ≥2 detector types, got ${[...types].join(', ')}`)
+  assert.ok(types.has('Secret Keyword') && types.has('Hex High Entropy String') && types.has('Base64 High Entropy String'))
+})
+
+check('DS-HASH/SECRET-NEVER-LEAKS: an occurrence carrying a fake hashed_secret + a synthetic --show-secrets plaintext leaks NEITHER (the load-bearing invariant)', () => {
+  const HASH = 'HASHZZZ_DO_NOT_SHIP'
+  const PLAIN = 'PLAINZZZ_DO_NOT_SHIP'
+  // an inline synthetic detect-secrets occurrence with a fake hash AND a synthetic plaintext field
+  const raw = {
+    version: '1.5.0',
+    results: {
+      'src/config.py': [
+        {
+          type: 'Secret Keyword',
+          filename: 'src/config.py',
+          hashed_secret: HASH,
+          plaintext: PLAIN, // as if `detect-secrets scan --show-secrets` ran — MUST NOT leak
+          is_verified: true,
+          line_number: 12,
+        },
+      ],
+    },
+  }
+  const { findings } = ingestDetectSecrets(raw)
+  assert.equal(findings.length, 1)
+  const blob = JSON.stringify(findings[0])
+  assert.ok(!blob.includes(HASH), 'the hashed_secret leaked into a finding field — the adapter must never read hashed_secret')
+  assert.ok(!blob.includes(PLAIN), 'the plaintext secret leaked into a finding field — the adapter must never read a plaintext field')
+  // …and it is STILL a well-formed deterministic hardcoded-secrets finding built from the safe fields
+  assert.equal(findings[0].class, 'hardcoded-secrets')
+  assert.equal(findings[0].ruleId, 'Secret Keyword')
+  assert.equal(findings[0].dimension, 'secrets-credentials')
+  assert.ok(findings[0].file.endsWith('src/config.py:12'))
+  assert.deepEqual(validateFinding(findings[0]), [])
+})
+
+check('DS-reuses-class (no new CLASS_DEFS): classify() is the constant hardcoded-secrets, the SAME class entry gitleaks uses (one definition, two adapters); no securityRelevant', () => {
+  assert.equal(detectSecretsAdapter.classify('x'), 'hardcoded-secrets')
+  assert.equal(detectSecretsAdapter.classify('Secret Keyword'), 'hardcoded-secrets')
+  // the SAME single class serves BOTH adapters — gitleaks and detect-secrets resolve to one CLASS_DEFS entry
+  assert.equal(detectSecretsAdapter.classify('a'), gitleaksAdapter.classify('a'))
+  assert.ok(CLASS_DEFS['hardcoded-secrets'], 'the hardcoded-secrets class exists (added by gitleaks, reused here)')
+  assert.equal(CLASS_DEFS['hardcoded-secrets'].baselineId, 'fail-hardcoded-secrets')
+  assert.equal(CLASS_DEFS['hardcoded-secrets'].dimension, 'secrets-credentials')
+  // class-severity (like gitleaks/checkov), NOT a tool→band: every hit has severityNum:null, finding is class-high
+  assert.equal(baselineSeverityFor('fail-hardcoded-secrets'), 'major')
+  assert.equal(classSeverity('hardcoded-secrets').severity, 'high')
+  const hits = detectSecretsAdapter.parse(readJSON(DETECT_SECRETS))
+  assert.ok(hits.length === 24 && hits.every((h) => h.severityNum === null))
+  assert.equal(detectSecretsAdapter.securityRelevant, undefined) // every detect-secrets hit is a secret — no tag filter
+})
+
+check('DS-supersedes-LLM: a detect-secrets finding supersedes a co-located LLM secrets-credentials finding; the deterministic finding is untouched', () => {
+  const det = ingestDetectSecrets().findings.find((f) => f.file.endsWith(DS_ANCHOR))
+  assert.ok(det && det.class === 'hardcoded-secrets' && det.dimension === 'secrets-credentials')
+  // an llm-inferred secrets-credentials finding (no `class`, dimension fallback), overlapping :181
+  const llm = {
+    id: '3'.repeat(16),
+    dimension: 'secrets-credentials',
+    title: 'Hardcoded credential literal in audit-engine.mjs',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: '.security-review/audit-engine.mjs:179-184', // overlaps det's :181
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned the literal looks like a credential',
+  }
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 1)
+  const outLlm = findings.find((f) => f.id === llm.id)
+  const outDet = findings.find((f) => f.id === det.id)
+  assert.equal(outLlm.status, 'superseded')
+  assert.equal(outLlm.superseded_by, det.id)
+  assert.deepEqual(supersededIds, [llm.id])
+  // the deterministic detect-secrets finding is never superseded
+  assert.equal(outDet.status, 'confirmed')
+  assert.equal(outDet.provenance, 'deterministic')
+})
+
+check('DS-two-deterministic-coexist (§3): a detect-secrets finding AND a gitleaks finding at the SAME locus both stay confirmed — neither supersedes the other (cross-engine dedup = ext #3, Phase-2b)', () => {
+  const ds = ingestDetectSecrets().findings.find((f) => f.file.endsWith(DS_ANCHOR))
+  // a gitleaks finding at the SAME file:line (built through the real gitleaks adapter for fidelity)
+  const gl = ingest(
+    [{ RuleID: 'generic-api-key', File: '.security-review/audit-engine.mjs', StartLine: 181, Description: 'Detected a hardcoded credential.' }],
+    gitleaksAdapter,
+    { repoRoot: '', pass: 1 }
+  ).findings[0]
+  assert.ok(ds && gl)
+  assert.equal(ds.file, gl.file) // same locus
+  assert.notEqual(ds.id, gl.id) // distinct ids (engine differs) → two ledger rows
+  assert.ok(ds.class === 'hardcoded-secrets' && gl.class === 'hardcoded-secrets')
+  const { findings, superseded } = reconcileProvenance([ds, gl])
+  assert.equal(superseded, 0) // a deterministic finding never supersedes another deterministic finding
+  assert.ok(findings.every((f) => f.status === 'confirmed')) // the cross-engine duplicate is VISIBLE (safe under-merge)
+})
+
+check('DS-fail-safe: collect() missing → null; parse(null/{}/{results:null}/{results:[]}/{results:{f:non-array}}/occ-missing-type) → []/skip; ingest(null) → 0 + note', () => {
+  assert.equal(detectSecretsAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-detect-secrets.json') }), null)
+  assert.deepEqual(detectSecretsAdapter.parse(null), [])
+  assert.deepEqual(detectSecretsAdapter.parse({}), [])
+  assert.deepEqual(detectSecretsAdapter.parse({ results: null }), [])
+  assert.deepEqual(detectSecretsAdapter.parse({ results: [] }), []) // results must be an OBJECT keyed by file, not an array
+  assert.deepEqual(detectSecretsAdapter.parse({ results: 'nope' }), [])
+  assert.deepEqual(detectSecretsAdapter.parse({ results: { 'a.py': 'not-an-array' } }), []) // non-array occurrences → skipped
+  assert.deepEqual(detectSecretsAdapter.parse({ results: { 'a.py': [{ filename: 'a.py', line_number: 1 }] } }), []) // occurrence missing type → skipped
+  // an occurrence missing line_number still parses (startLine null); a null occurrence is skipped; no crash
+  const hits = detectSecretsAdapter.parse({ results: { 'a.py': [{ type: 'Secret Keyword', filename: 'a.py' }, null] } })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].startLine, null)
+  const { findings, notes } = ingestDetectSecrets(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('DS-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '4'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const ds = ingestDetectSecrets().findings
+  const r1 = mergeFindings(ledger, ds, 1)
+  assert.equal(r1.added, 24)
+  assert.equal(ledger.findings.length, 25) // 1 llm + 24 detect-secrets
+  const r2 = mergeFindings(ledger, ds, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 25) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '4'.repeat(16) && !('provenance' in f)))
+})
+
+check('DS-schema: a detect-secrets finding (class hardcoded-secrets, dimension secrets-credentials) validates against $defs/finding', () => {
+  const f = ingestDetectSecrets().findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('DS-CLI: --scanner detect-secrets --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'detect-secrets', '--input', DETECT_SECRETS, '--target', join(tmpdir(), 'nope-ds'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'detect-secrets')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === 'Secret Keyword' && f.file.endsWith(DS_ANCHOR) && f.adjusted_severity === 'high' && f.class === 'hardcoded-secrets')
+  )
+})
+
+check('DS-CLI-merge: --scanner detect-secrets writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-ds-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'detect-secrets', '--input', DETECT_SECRETS, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const ds1 = l1.findings.filter((f) => f.engine === 'detect-secrets')
+  assert.equal(ds1.length, 24)
+  assert.ok(ds1.every((f) => f.adjusted_severity === 'high' && f.class === 'hardcoded-secrets' && f.provenance === 'deterministic'))
+  execFileSync('node', [CLI, '--scanner', 'detect-secrets', '--input', DETECT_SECRETS, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'detect-secrets').length, 24) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

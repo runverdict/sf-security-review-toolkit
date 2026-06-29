@@ -352,9 +352,27 @@ Skills write into the PARTNER's repo, never into the plugin:
   control). Cross-engine dedup of the same secret found by gitleaks AND njsscan's `node_secret` is still
   §10 ext #3 (Phase-2b — the SAFE under-merge). Guarded by the `GL*` checks (one real 3×
   `generic-api-key` fixture, the load-bearing secret-never-leaks test, and the LLM-supersession test).
-  The remaining §10 adapter (build order 2b — `detect-secrets` next, the secrets sibling with a
-  DIFFERENT JSON shape `{results:{<file>:[…]}}` but the same `hardcoded-secrets` class) follows the
-  same shape.
+  **Phase 2 (0.8.36) ships the sixth §10 adapter — `detect-secrets`** (file-parser,
+  `engine:'detect-secrets'`, hardcoded secrets), the secrets SIBLING of gitleaks: the same vuln class, so
+  it **REUSES the `hardcoded-secrets` class** gitleaks added — **NO new `CLASS_DEFS` entry, NO
+  `buildFinding`/`recommendationFor` change** (a `class`-severity adapter, severity from
+  `fail-hardcoded-secrets` → high via a CONSTANT `classify()`→`'hardcoded-secrets'`, NO tag filter,
+  security-by-construction). The ONLY shared-file touch is the `ADAPTERS` registry line. Like gitleaks it
+  owns a class AND the real `secrets-credentials` dimension, so it SUPERSEDES a co-located LLM secrets
+  finding. TWO things are new vs gitleaks: (1) detect-secrets' OWN **nested-by-file** JSON
+  (`{results:{<file>:[occurrence,…]}}`, `results` keyed by FILE, NOT gitleaks' flat array), so its own
+  `parse`; (2) with TWO secrets engines now live, the same secret at one locus produces TWO deterministic
+  ledger rows — `reconcile-provenance` does NOT collapse them (it only supersedes an `llm-inferred` finding;
+  a deterministic finding never supersedes another deterministic finding), so the cross-engine duplicate is
+  VISIBLE (the SAFE under-merge) — collapsing it is cross-engine dedup = §10 ext #3 (Phase-2b), now
+  concrete. The **hash/secret-never-leaks invariant** applies again: an occurrence carries a `hashed_secret`
+  (a SHA) and, under `--show-secrets`, could carry plaintext; the adapter emits from ONLY
+  `type`/file/`line_number` and NEVER the hash or plaintext (`redact()` is only a backstop). Guarded by the
+  `DS*` checks (one real 24-occurrence / 6-file / 3-type fixture, the load-bearing hash+plaintext leak test,
+  the LLM-supersession test, and the two-deterministic-coexist test). The remaining §10 adapter (build order
+  2b — `osv` next) forces **Extension A (the CVSS→enum severity fork)**: a dep CVE carries a real CVSS while
+  the only class severity is a *missing-scan* severity, so osv/npm/RetireJS need a per-advisory
+  `severityKind:'advisory'` path — the next genuine design decision (like Checkov and gitleaks were).
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -448,7 +466,7 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (639 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (651 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
