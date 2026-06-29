@@ -1,6 +1,6 @@
 # Roadmap — Deterministic-engine-grounded findings (provenance-typed blocker band)
 
-> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); 2a #4 `njsscan` SHIPPED 0.8.34 (the THIRD `tool→band` adapter and the FIRST with a different input shape — a nested object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat `results[]`, so its own `parse` reading BOTH sections, still reusing `bandFromTool` with ZERO harness-core change); gitleaks next (the secrets scanners — a DIFFERENT severity model: `class`-severity via `fail-hardcoded-secrets`, not `tool→band`).** The architecture
+> Status: **RATIFIED (2026-06-26) — PHASE 1 COMPLETE. Slice 1 (the ingest foundation) SHIPPED 0.8.28; Slice 2 (the correctness core — tag filter + LLM-supersession enforcement + engine-absent→KEEP) SHIPPED 0.8.29; Slice 3 (deterministic-pass-first journey re-sequencing + the reconcile wired into the merge pipeline + the live Solano acceptance runbook) SHIPPED 0.8.30. The three wobbled blocker classes are now deterministic end-to-end, validated without a campaign. Phase 2 (the §10 per-scanner adapters, build order 2a/2b) IN PROGRESS — adapter 2a #1 `checkov` SHIPPED 0.8.31; 2a #2 `semgrep` SHIPPED 0.8.32 (the FIRST genuine `tool→band` adapter + the additive `buildFinding` generalization that path reuses); 2a #3 `bandit` SHIPPED 0.8.33 (the SECOND `tool→band` adapter — the PROOF the generalization GENERALIZES: reuses the `bandFromTool` path with ZERO harness-core change); 2a #4 `njsscan` SHIPPED 0.8.34 (the THIRD `tool→band` adapter and the FIRST with a different input shape — a nested object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat `results[]`, so its own `parse` reading BOTH sections, still reusing `bandFromTool` with ZERO harness-core change); 2a #5 `gitleaks` SHIPPED 0.8.35 (the DESIGN PIVOT BACK to `class`-severity — secrets have no tool-severity tier, so severity from the `fail-hardcoded-secrets` class; the FIRST adapter to own a class AND a real dimension (`secrets-credentials`) so it SUPERSEDES a co-located LLM secrets finding, built so the live secret + commit PII NEVER reach the ledger); detect-secrets next (the secrets sibling — a DIFFERENT JSON shape `{results:{<file>:[…]}}`, same `hardcoded-secrets` class).** The architecture
 > the cold campaign pointed to. Operator ratified §9: Phase 1 = **full SARIF
 > ingest** of the 3 wobbled classes as provenance-tagged `deterministic` ledger
 > findings; SFGE absent → **PENDING-OWNER-RUN** (never LLM-fill); the presentation
@@ -237,11 +237,37 @@ every adapter is testable against genuine scanner output, no authorship ceiling)
 | `checkov` ✅ | file-parser | IaC misconfig | scan-iac-misconfig | ✅ srt-solano | class (scan-iac-misconfig) — Slice shipped 0.8.31 |
 | `semgrep` ✅ | file-parser | external-sast (tool→band) | scan-external-sast | ✅ coldstart-full + helios | **tool→band** — Slice shipped 0.8.32 |
 | `bandit` ✅ / `njsscan` ✅ / `gosec` | file-parser | py/node/go SAST | scan-external-sast | ✅ / ✅ / ❌ no Go | **tool→band** — `bandit` shipped 0.8.33; `njsscan` shipped 0.8.34; gosec pending |
-| `gitleaks` / `detect-secrets` | file-parser | secrets | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) |
+| `gitleaks` ✅ / `detect-secrets` | file-parser | secrets · `hardcoded-secrets` | fail-hardcoded-secrets | ✅ / ✅ | class (no tool sev) — `gitleaks` shipped 0.8.35; detect-secrets pending |
 | `osv` / `npm-audit` / `trivy` / `retire` | file-parser | dep-CVE · container/IaC | scan-external-sca · scan-dependency-vulnerabilities | ✅ / ✅ / partial / ❌ | **CVSS→enum (fork)** |
 | `tls` (SSL Labs / testssl) | property-assert | host TLS grade | endpoint-ssl-labs-a-grade | ❌ live host | **PENDING-OWNER-RUN** |
 | `dast` (ZAP / nuclei / schemathesis) | runtime | runtime web-vulns | dast-self-run-required | partial (1 loopback) | **`dast-runtime` kind** |
 
+> **0.8.35 — `gitleaks` row shipped (the DESIGN PIVOT BACK to `class`-severity; the FIRST adapter to
+> SUPERSEDE an LLM finding for its class; the secret-never-leaks invariant).** gitleaks is the toolkit's
+> hardcoded-secret scanner (run-scans Family 6, tree + git-history). UNLIKE the SAST family it carries
+> NO per-finding severity tier — every hit is "a secret is present" — so it is a **`class`-severity**
+> adapter (like Checkov): severity from the `fail-hardcoded-secrets` baseline class (major → **high**),
+> via a CONSTANT `classify()`→`'hardcoded-secrets'`, NO tag filter (security-by-construction), and **ZERO
+> `buildFinding`/`CLASS_DEFS`-machinery change** beyond one new `CLASS_DEFS` entry + one adapter object +
+> one `recommendationFor` arm — it rides the existing MAPPED-class severity path. **Two things make it
+> distinct.** (1) A hardcoded-secret maps cleanly onto the REAL `secrets-credentials` methodology
+> dimension, so — unlike the deterministic-only `external-sast` label — gitleaks OWNS a class AND a real
+> dimension and therefore **SUPERSEDES a co-located LLM `secrets-credentials` finding** (the first
+> adapter to enforce, for its class, that the LLM does not re-report what the scanner determined). The
+> bounded over-supersede risk (a DIFFERENT secrets-credentials issue at the same overlapping line) is the
+> same already-accepted dimension-fallback risk as `crud-fls`/`sharing` (both share `apex-exposed-surface`);
+> hardening is tracked under extension #3. (2) gitleaks output CONTAINS the live secret (`Match`/`Secret`)
+> plus commit PII on history scans (`Author`/`Email`/`Message`), so **the secret must NEVER reach the
+> ledger** — the defining requirement of the slice. The PRIMARY control is structural: `parse()` emits a
+> hit from ONLY the non-sensitive fields (`RuleID`/`File`/`StartLine`/`Description`) and DELIBERATELY
+> never reads `Match`/`Secret`/`Message`/`Author`/`Email` into any field; `buildFinding`'s `redact()` is a
+> defense-in-depth BACKSTOP, not the primary control. **One Phase-2b note it leaves open (tracked, not
+> silent):** the same secret found by gitleaks AND njsscan's `node_secret` (and later detect-secrets)
+> produces N ledger rows — that cross-DETERMINISTIC-engine collapse is extension #3, the SAFE under-merge,
+> NOT this slice. Guarded by the `GL*` checks (one real 3× `generic-api-key` fixture, the load-bearing
+> secret-never-leaks test that feeds a fake secret + PII into every sensitive field and greps the finding
+> for any leak, and the LLM-supersession test).
+>
 > **0.8.34 — `njsscan` row shipped (the THIRD `tool→band` adapter, the FIRST with a different input
 > shape).** njsscan is the Node language-gate SAST tool (run-scans Family 7, alongside
 > Semgrep/Bandit/gosec). It carries a real per-finding `severity` (`ERROR`/`WARNING`/`INFO`, via
@@ -346,9 +372,12 @@ PENDING-OWNER-RUN until a live host exists.
   `bandFromTool` path with ZERO harness-core change, one new adapter + the `BANDIT_SEVERITY_TO_FINDING`
   map) → njsscan ✅ (shipped 0.8.34 — Node SAST, the THIRD tool→band adapter and the FIRST with a
   DIFFERENT JSON shape `{nodejs:{…},templates:{…}}` not a flat `results[]`, so its own `parse` reading
-  BOTH sections, still reusing `bandFromTool` with ZERO harness-core change) → gitleaks (next — the
-  secrets scanners, a DIFFERENT severity model: `class`-severity via `fail-hardcoded-secrets`, NOT
-  tool→band, like Checkov's class-severity call) → detect-secrets → osv → npm-audit → trivy.
+  BOTH sections, still reusing `bandFromTool` with ZERO harness-core change) → gitleaks ✅ (shipped
+  0.8.35 — the secrets scanner, a DESIGN PIVOT BACK to `class`-severity via `fail-hardcoded-secrets`, NOT
+  tool→band, like Checkov's class-severity call; the FIRST adapter that owns a class AND a real dimension
+  so it SUPERSEDES a co-located LLM secrets finding, built so the live secret + commit PII never reach the
+  ledger) → detect-secrets (next — the secrets sibling, a DIFFERENT JSON shape `{results:{<file>:[…]}}`,
+  same `hardcoded-secrets` class) → osv → npm-audit → trivy.
   (Extension #2's tag filter ✅ shipped with Slice 2, 0.8.29.)
 - **2b (needs a fixture / branch first):** gosec (capture a Go run), retire standalone,
   trivy SCA/secret modes, the cross-engine dedup (#3).

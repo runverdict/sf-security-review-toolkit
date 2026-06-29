@@ -32,7 +32,17 @@
  *                       — the THIRD tool→band adapter (severity from ERROR/WARNING/INFO, owns no
  *                       class, NO harness change), the FIRST with a DIFFERENT input shape: a nested
  *                       object `{nodejs:{…},templates:{…}}` keyed by rule_id, NOT a flat results[].
- *                     Future: OSV, gitleaks — all parse a JSON file the same way.
+ *                     Adapter #7 (Phase 2 · 2a #5): `gitleaks` (hardcoded-secrets JSON;
+ *                       engine:'gitleaks') — a DESIGN PIVOT BACK to CLASS-severity (like checkov, NOT
+ *                       tool→band): a secret carries no tool-severity tier, so severity comes from the
+ *                       `fail-hardcoded-secrets` CLASS (major → high). UNIQUE in two ways: (1) it owns a
+ *                       class AND a REAL methodology dimension (`secrets-credentials`), so it SUPERSEDES
+ *                       a co-located LLM secrets finding — the first adapter to enforce "the LLM does not
+ *                       re-report what the scanner determined" for its class; (2) gitleaks output carries
+ *                       the LIVE secret (Match/Secret) plus commit PII (Author/Email/Message), so the
+ *                       adapter is built to emit a finding from ONLY non-sensitive fields and NEVER pass
+ *                       any of those downstream (§3 of the slice — the secret-never-leaks invariant).
+ *                     Future: OSV, detect-secrets — all parse a JSON file the same way.
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -66,6 +76,7 @@
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner njsscan         --input njsscan.json       --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner gitleaks        --input gitleaks.json      --target <repo> [--json] [--dry-run] [--pass N]
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -167,11 +178,23 @@ export function hasSecurityTag(tags) {
 //   so it has NO LLM finder dimension and deliberately NO methodology/dimensions/ file — the
 //   schema declares `dimension` a free kebab-case string (not an enum), and nothing validates a
 //   finding's dimension against the methodology-file set, so this label needs no dimension doc.
+//   hardcoded-secrets (Phase 2 · adapter 2a #5, gitleaks) grounds its severity in
+//   fail-hardcoded-secrets (severity_if_missing: major → high). UNLIKE iac-misconfig's
+//   deterministic-only label, its `dimension` 'secrets-credentials' is a REAL methodology
+//   dimension (methodology/dimensions/secrets-credentials.md — it owns secret custody), so a
+//   gitleaks finding OWNS a class AND a real dimension and therefore SUPERSEDES a co-located LLM
+//   secrets-credentials finding (reconcile-provenance reads the owned class, falling back to the
+//   dimension when the LLM finding carries no class). This is the same real-dimension pattern as
+//   crud-fls→apex-exposed-surface, NOT the deterministic-only external-sast label — gitleaks maps
+//   cleanly to one dimension, so it uses the real one. The bounded over-supersede risk (a DIFFERENT
+//   secrets-credentials issue at the same overlapping line) is the same already-accepted dimension-
+//   fallback risk as crud-fls/sharing (both share apex-exposed-surface); hardening is §10 ext #3.
 export const CLASS_DEFS = {
   'crud-fls': { baselineId: 'fail-crud-fls', dimension: 'apex-exposed-surface', fallback: 'high' },
   'sharing': { baselineId: 'fail-sharing-model', dimension: 'apex-exposed-surface', fallback: 'high' },
   'viewall-overgrant': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
   'iac-misconfig': { baselineId: 'scan-iac-misconfig', dimension: 'infrastructure-iac', fallback: 'high' },
+  'hardcoded-secrets': { baselineId: 'fail-hardcoded-secrets', dimension: 'secrets-credentials', fallback: 'high' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -259,6 +282,8 @@ function recommendationFor(classKey) {
       return 'Remove the ViewAll/ModifyAll grant on this custom object and scope access through sharing rules; if the broad grant is a documented business requirement, justify it in the false-positive dossier.'
     case 'iac-misconfig':
       return 'Remediate the flagged infrastructure-as-code misconfiguration (or document a justified false positive in the dossier — scan-iac-misconfig). Follow the linked Checkov guideline.'
+    case 'hardcoded-secrets':
+      return 'Remove the hardcoded credential and move it to an approved store (named credential, protected custom metadata/settings, or an env var/vault); rotate the exposed secret. Do not rely on code obscurity — it is explicitly not a defense.'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -828,6 +853,71 @@ export const njsscanAdapter = {
   // NO securityRelevant — security-by-construction (njsscan is a security scanner), like semgrep/bandit/checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #7 — gitleaks (file-parser, Phase 2 · 2a #5): parses captured gitleaks JSON.
+// gitleaks is the toolkit's hardcoded-secret scanner (run-scans Family 6, tree + git-history). It is
+// a DESIGN PIVOT BACK to CLASS-severity (like checkov, NOT the semgrep/bandit/njsscan tool→band path):
+// a secret carries no per-finding severity tier — every hit is "a secret is present" — so severity
+// comes from the `fail-hardcoded-secrets` CLASS (major → high), exactly as Checkov grounds in
+// scan-iac-misconfig. So `classify()` is the CONSTANT 'hardcoded-secrets' (every gitleaks hit is one),
+// there is no `securityRelevant` (security-by-construction), and there is NO `buildFinding`/`CLASS_DEFS`-
+// machinery change — it rides the existing MAPPED-class severity path. Two things make it distinct:
+//   (1) a hardcoded-secret maps cleanly onto a REAL methodology dimension (`secrets-credentials`), so —
+//       unlike the deterministic-only `external-sast` label — this adapter OWNS a class AND a real
+//       dimension and therefore SUPERSEDES a co-located LLM `secrets-credentials` finding (the first
+//       adapter to enforce, for its class, that the LLM never re-reports what the scanner determined).
+//   (2) gitleaks output CONTAINS THE LIVE SECRET — `Match` (the matched line) and `Secret` (the raw
+//       value) — plus commit PII on history scans (`Author`/`Email`/`Message`). THE SECRET MUST NEVER
+//       REACH THE LEDGER (the defining requirement of this slice). The PRIMARY control is structural:
+//       `parse()` builds each hit from ONLY the non-sensitive fields (RuleID, File, StartLine,
+//       Description) and DELIBERATELY NEVER reads Match/Secret/Message/Author/Email into ANY field, so
+//       no secret/PII is ever handed to `buildFinding`. `buildFinding`'s `redact()` is a defense-in-
+//       depth BACKSTOP, not the primary control. `message` is the rule `Description` (a generic rule
+//       sentence — it never contains the secret). gitleaks gives no reference URL → resources is [].
+// Cross-DETERMINISTIC-engine dedup (the same secret found by gitleaks AND njsscan's `node_secret`) is
+// roadmap §10 extension #3 (Phase-2b — the safe under-merge), NOT this slice. Input is a JSON ARRAY.
+export const gitleaksAdapter = {
+  name: 'gitleaks',
+  kind: 'file-parser',
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!Array.isArray(raw)) return [] // gitleaks output is a JSON ARRAY of findings
+    const hits = []
+    for (const f of raw) {
+      if (!f || f.RuleID == null || !f.File) continue // the ingest core also drops a hit with no file
+      hits.push({
+        engine: 'gitleaks',
+        ruleId: String(f.RuleID),
+        severityNum: null, // no tool tier — class-severity (fail-hardcoded-secrets → high)
+        file: f.File,
+        startLine: Number.isInteger(f.StartLine) ? f.StartLine : null,
+        message: String(f.Description || f.RuleID), // Description ONLY — NEVER Match/Secret/Message
+        resources: [], // gitleaks gives no reference URL
+        tags: [],
+      })
+      // DELIBERATELY ABSENT from the hit: Match, Secret, Message, Author, Email — the secret-never-
+      // leaks invariant. The adapter must never hand a secret/PII to buildFinding (redact() is only a
+      // backstop). Do NOT add any of those fields here, even "for context".
+    }
+    return hits
+  },
+  // Constant: every gitleaks hit is a hardcoded secret — owns the `hardcoded-secrets` class, whose
+  // severity is the class (fail-hardcoded-secrets → high) and whose real dimension is secrets-credentials.
+  classify() {
+    return 'hardcoded-secrets'
+  },
+  // NO securityRelevant — security-by-construction (every gitleaks hit is a secret), like checkov/metadata.
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -835,6 +925,7 @@ export const ADAPTERS = {
   'semgrep': semgrepAdapter,
   'bandit': banditAdapter,
   'njsscan': njsscanAdapter,
+  'gitleaks': gitleaksAdapter,
 }
 
 // ----------------------------------------------------------------------------

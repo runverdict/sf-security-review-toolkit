@@ -46,6 +46,7 @@ import {
   semgrepAdapter,
   banditAdapter,
   njsscanAdapter,
+  gitleaksAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -60,6 +61,7 @@ import {
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
+import { reconcileProvenance } from '../harness/reconcile-provenance.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'ingest-scanner-findings.mjs')
@@ -71,6 +73,7 @@ const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dy
 const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process / CWE-78)
 const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi anchor + 2× B310 + B104)
 const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
+const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -445,14 +448,15 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 6 adapters (njsscan added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'metadata-viewall', 'njsscan', 'semgrep'])
+check('AD1 registry has 7 adapters (gitleaks added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'gitleaks', 'metadata-viewall', 'njsscan', 'semgrep'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
   assert.equal(ADAPTERS['njsscan'].kind, 'file-parser')
+  assert.equal(ADAPTERS['gitleaks'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -1315,6 +1319,203 @@ check('NJ-CLI-merge: --scanner njsscan writes the deterministic findings to the 
   execFileSync('node', [CLI, '--scanner', 'njsscan', '--input', NJSSCAN, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'njsscan').length, 2) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)
+// The DESIGN PIVOT BACK to class-severity (like checkov, NOT the SG/BN/NJ tool→band path): a secret
+// has no tool-severity tier, so severity comes from the `fail-hardcoded-secrets` CLASS (major → high).
+// TWO things make gitleaks distinct from every prior adapter: (1) it owns a class AND a REAL methodology
+// dimension (`secrets-credentials`), so it SUPERSEDES a co-located LLM secrets finding (GL-supersedes-LLM);
+// (2) its raw output CONTAINS the live secret (Match/Secret) + commit PII (Author/Email/Message), so the
+// adapter is built to NEVER pass any of those downstream — the secret-never-leaks invariant, the
+// load-bearing test of this slice (GL-SECRET-NEVER-LEAKS). The real fixture is 3× generic-api-key.
+const ingestGitleaks = (raw) => ingest(raw === undefined ? readJSON(GITLEAKS) : raw, gitleaksAdapter, { repoRoot: '', pass: 1 })
+
+check('GL-determinism: ingest the real gitleaks fixture twice → byte-identical findings', () => {
+  const a = ingestGitleaks().findings
+  const b = ingestGitleaks().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('GL-anchor: generic-api-key @ mcp/server.py:27 → deterministic/gitleaks/hardcoded-secrets/secrets-credentials/HIGH (class, from fail-hardcoded-secrets)', () => {
+  const { findings } = ingestGitleaks()
+  const f = findById(findings, (x) => x.file.endsWith('mcp/server.py:27'))
+  assert.ok(f, 'the mcp/server.py:27 anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'gitleaks')
+  assert.equal(f.ruleId, 'generic-api-key')
+  assert.equal(f.class, 'hardcoded-secrets') // owns the hardcoded-secrets class
+  assert.equal(f.dimension, 'secrets-credentials') // a REAL methodology dimension
+  assert.equal(f.adjusted_severity, 'high') // from the class (fail-hardcoded-secrets=major→high), NOT a tool tier
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+})
+
+check('GL-count: the real fixture → exactly 3 generic-api-key findings, all gitleaks/hardcoded-secrets/high', () => {
+  const { findings } = ingestGitleaks()
+  assert.equal(findings.length, 3)
+  assert.deepEqual(findings.map((f) => f.ruleId), ['generic-api-key', 'generic-api-key', 'generic-api-key'])
+  assert.ok(findings.every((f) => f.engine === 'gitleaks' && f.class === 'hardcoded-secrets' && f.dimension === 'secrets-credentials' && f.adjusted_severity === 'high'))
+  const files = findings.map((f) => f.file).sort()
+  assert.ok(files.some((p) => p.endsWith('mcp/server.py:27')))
+  assert.equal(files.filter((p) => p.endsWith('ops/deploy-notes.md:7') || p.endsWith('ops/deploy-notes.md:9')).length, 2)
+})
+
+check('GL-SECRET-NEVER-LEAKS: a finding carrying a live secret + PII in Match/Secret/Message/Author/Email leaks NONE of it (the load-bearing invariant)', () => {
+  const SECRET = 'ZZZsk_live_FAKE_DO_NOT_SHIP_999'
+  // an inline synthetic gitleaks finding with the fake secret in EVERY sensitive field + commit PII
+  const raw = [
+    {
+      RuleID: 'aws-access-token',
+      Description: 'Detected a hardcoded credential.', // the rule's generic description — never the secret
+      StartLine: 5,
+      EndLine: 5,
+      File: 'src/config.js',
+      Match: `API_KEY = "${SECRET}"`,
+      Secret: SECRET,
+      Message: `commit leaked ${SECRET}`,
+      Author: 'Jane Dev',
+      Email: 'jane@x.com',
+      Commit: 'deadbeefcafe',
+    },
+  ]
+  const { findings } = ingestGitleaks(raw)
+  assert.equal(findings.length, 1)
+  const blob = JSON.stringify(findings[0])
+  assert.ok(!blob.includes(SECRET), 'the secret VALUE leaked into a finding field — the adapter must never read Match/Secret/Message')
+  assert.ok(!blob.includes('Jane Dev'), 'the commit author (PII) leaked into a finding field')
+  assert.ok(!blob.includes('jane@x.com'), 'the commit email (PII) leaked into a finding field')
+  // …and it is STILL a well-formed deterministic hardcoded-secrets finding built from the safe fields
+  assert.equal(findings[0].class, 'hardcoded-secrets')
+  assert.equal(findings[0].ruleId, 'aws-access-token')
+  assert.equal(findings[0].dimension, 'secrets-credentials')
+  assert.ok(findings[0].file.endsWith('src/config.js:5'))
+  assert.deepEqual(validateFinding(findings[0]), [])
+})
+
+check('GL-severity-from-class: severity is the class high — gitleaks carries NO tool number to move it', () => {
+  // class-severity, like CK-severity-from-class — NOT the SG/BN/NJ tool→band path.
+  assert.equal(baselineSeverityFor('fail-hardcoded-secrets'), 'major')
+  const cs = classSeverity('hardcoded-secrets')
+  assert.equal(cs.severity, 'high')
+  assert.equal(cs.baselineId, 'fail-hardcoded-secrets')
+  assert.equal(cs.fromBaseline, true)
+  assert.equal(CLASS_DEFS['hardcoded-secrets'].dimension, 'secrets-credentials')
+  // every parsed hit has severityNum:null (there is no tool tier); the finding is still high (the class)
+  const hits = gitleaksAdapter.parse(readJSON(GITLEAKS))
+  assert.ok(hits.length === 3 && hits.every((h) => h.severityNum === null))
+  assert.ok(ingestGitleaks().findings.every((f) => f.adjusted_severity === 'high' && f.severity === 'high'))
+})
+
+check('GL-supersedes-LLM: a gitleaks finding supersedes a co-located LLM secrets-credentials finding; the deterministic finding is untouched', () => {
+  const det = ingestGitleaks().findings.find((f) => f.file.endsWith('mcp/server.py:27'))
+  assert.ok(det && det.class === 'hardcoded-secrets' && det.dimension === 'secrets-credentials')
+  // an llm-inferred secrets-credentials finding (no `class`, dimension fallback), overlapping :27
+  const llm = {
+    id: '2'.repeat(16),
+    dimension: 'secrets-credentials',
+    title: 'Hardcoded API key literal in mcp/server.py',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'mcp/server.py:25-30', // overlaps det's :27
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned the literal looks like a credential',
+  }
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 1)
+  const outLlm = findings.find((f) => f.id === llm.id)
+  const outDet = findings.find((f) => f.id === det.id)
+  assert.equal(outLlm.status, 'superseded')
+  assert.equal(outLlm.superseded_by, det.id)
+  assert.deepEqual(supersededIds, [llm.id])
+  // the deterministic gitleaks finding is never superseded
+  assert.equal(outDet.status, 'confirmed')
+  assert.equal(outDet.provenance, 'deterministic')
+})
+
+check('GL-classify / no-filter: classify() is the constant hardcoded-secrets; no securityRelevant (security-by-construction)', () => {
+  assert.equal(gitleaksAdapter.classify('anything'), 'hardcoded-secrets')
+  assert.equal(gitleaksAdapter.classify('generic-api-key'), 'hardcoded-secrets')
+  assert.equal(gitleaksAdapter.securityRelevant, undefined) // every gitleaks hit is a secret — no tag filter
+})
+
+check('GL-fail-safe: collect() missing → null; parse(null/{}/"x"/[]) → []; a hit missing File/RuleID → skipped; ingest(null) → 0 + note', () => {
+  assert.equal(gitleaksAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-gitleaks.json') }), null)
+  assert.deepEqual(gitleaksAdapter.parse(null), [])
+  assert.deepEqual(gitleaksAdapter.parse({}), []) // gitleaks output is an ARRAY — a non-array is []
+  assert.deepEqual(gitleaksAdapter.parse('x'), [])
+  assert.deepEqual(gitleaksAdapter.parse([]), [])
+  assert.deepEqual(gitleaksAdapter.parse([{ RuleID: 'generic-api-key', StartLine: 1 }]), []) // no File → skipped
+  assert.deepEqual(gitleaksAdapter.parse([{ File: 'a.js', StartLine: 1 }]), []) // no RuleID → skipped
+  // a valid hit alongside malformed entries still parses (no crash)
+  const hits = gitleaksAdapter.parse([{ RuleID: 'x', File: 'a.js', StartLine: 3 }, null, { RuleID: 'y' }])
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].startLine, 3)
+  const { findings, notes } = ingestGitleaks(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('GL-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '1'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'mcp/server.py:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const gl = ingestGitleaks().findings
+  const r1 = mergeFindings(ledger, gl, 1)
+  assert.equal(r1.added, 3)
+  assert.equal(ledger.findings.length, 4) // 1 llm + 3 gitleaks
+  const r2 = mergeFindings(ledger, gl, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 4) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '1'.repeat(16) && !('provenance' in f)))
+})
+
+check('GL-schema: a gitleaks finding (class hardcoded-secrets, dimension secrets-credentials) validates against $defs/finding', () => {
+  const f = ingestGitleaks().findings[0]
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('GL-CLI: --scanner gitleaks --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'gitleaks', '--input', GITLEAKS, '--target', join(tmpdir(), 'nope-gl'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'gitleaks')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === 'generic-api-key' && f.file.endsWith('mcp/server.py:27') && f.adjusted_severity === 'high' && f.class === 'hardcoded-secrets')
+  )
+})
+
+check('GL-CLI-merge: --scanner gitleaks writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-gl-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'gitleaks', '--input', GITLEAKS, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const gl1 = l1.findings.filter((f) => f.engine === 'gitleaks')
+  assert.equal(gl1.length, 3)
+  assert.ok(gl1.every((f) => f.adjusted_severity === 'high' && f.class === 'hardcoded-secrets' && f.provenance === 'deterministic'))
+  execFileSync('node', [CLI, '--scanner', 'gitleaks', '--input', GITLEAKS, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'gitleaks').length, 3) // idempotent — no dupes
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

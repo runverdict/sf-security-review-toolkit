@@ -37,6 +37,68 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.35] — 2026-06-29
+
+**Deterministic-findings Phase 2 · adapter 2a #5 — the gitleaks adapter (the DESIGN PIVOT BACK to
+`class`-severity; the FIRST adapter to SUPERSEDE an LLM finding for its class; the secret-never-leaks
+invariant) (docs/roadmap-deterministic-findings.md §10).** gitleaks is the toolkit's hardcoded-secret
+scanner (run-scans Family 6, tree + git-history). UNLIKE the SAST family (semgrep/bandit/njsscan) it
+carries NO per-finding severity tier — every hit is "a secret is present" — so it is a
+**`class`-severity** adapter (like Checkov, NOT `tool→band`): severity comes from the
+`fail-hardcoded-secrets` CLASS (`severity_if_missing: major` → **high**), via a CONSTANT
+`classify()`→`'hardcoded-secrets'` and NO tag filter (security-by-construction). **No
+`buildFinding`/`CLASS_DEFS`-machinery change** — one new `CLASS_DEFS` entry + one adapter object + one
+`recommendationFor` arm; it rides the existing MAPPED-class severity path. Two things make it distinct:
+(1) it owns a class AND a **real methodology dimension** (`secrets-credentials`), so it **SUPERSEDES a
+co-located LLM `secrets-credentials` finding** — the first adapter to enforce, for its class, that the
+LLM does not re-report what the scanner determined; (2) gitleaks output CONTAINS the live secret
+(`Match`/`Secret`) + commit PII (`Author`/`Email`/`Message`), so the adapter is built so **none of it
+ever reaches the ledger** (the load-bearing requirement of the slice). Validated by "parse twice →
+identical" against the real captured fixture (3 `generic-api-key` findings) + a load-bearing leak test,
+NO campaign. Suite **55 files / 639 checks** (was 55 / 627; +12 `GL*` checks folded into
+`test-ingest-scanner-findings`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — the `gitleaks` adapter** (`file-parser`,
+  `engine:'gitleaks'`). `collect()` reads the `--input` JSON (null-safe on missing/non-JSON/empty);
+  `parse()` iterates the JSON ARRAY of gitleaks findings, skipping any hit with no `RuleID`/`File`, and
+  builds each hit from ONLY the non-sensitive fields — `RuleID`, `File`, `StartLine`, and `Description`
+  (as `message`). It **DELIBERATELY never reads `Match`, `Secret`, `Message`, `Author`, or `Email`** —
+  the secret-never-leaks invariant (the PRIMARY, structural control; `buildFinding`'s `redact()` is only
+  a backstop). `classify()` is the constant **`'hardcoded-secrets'`** (every gitleaks hit is a hardcoded
+  secret). NO `securityRelevant` (security-by-construction). Registered as the **7th** adapter; `AD1` now
+  asserts the 7-adapter registry.
+- **`CLASS_DEFS['hardcoded-secrets']`** — `{ baselineId: 'fail-hardcoded-secrets', dimension:
+  'secrets-credentials', fallback: 'high' }`. `fail-hardcoded-secrets` is `severity_if_missing: major`
+  → **high**. Unlike `iac-misconfig`'s deterministic-only label, `secrets-credentials` is a REAL
+  methodology dimension (`methodology/dimensions/secrets-credentials.md`), so a gitleaks finding owns a
+  class AND a real dimension and therefore supersedes a co-located LLM secrets finding. Plus a
+  `recommendationFor` arm (remove the credential → approved store, rotate the secret; code obscurity is
+  explicitly not a defense).
+- **`acceptance/fixtures/gitleaks-coldstart-full.json`** — genuine captured gitleaks output (3
+  `generic-api-key` findings: the anchor on `mcp/server.py:27` + 2× on `ops/deploy-notes.md`),
+  **leak-clean by construction**: secret values are synthetic placeholders and `Author`/`Email`/`Message`
+  are blanked (no real secret, no commit PII); `RuleID`/`File`/`StartLine`/`Description`/`Commit` kept.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — a `GL*` section (+12 checks): determinism, the
+  `generic-api-key` anchor (`mcp/server.py:27` → deterministic/gitleaks/`hardcoded-secrets`/
+  `secrets-credentials`/class-severity `high`), count (exactly 3), the **load-bearing
+  GL-SECRET-NEVER-LEAKS** (a synthetic finding with a fake secret + PII in EVERY sensitive field —
+  `Match`/`Secret`/`Message`/`Author`/`Email` — leaks NONE of it into any finding field),
+  severity-FROM-CLASS (no tool number exists to move it), **GL-supersedes-LLM** (a gitleaks finding
+  supersedes a co-located LLM `secrets-credentials` finding via `reconcileProvenance`), the constant
+  `classify()`→`hardcoded-secrets` + no `securityRelevant`, fail-safe over non-array/degenerate input,
+  idempotent merge, schema conformance, and the CLI (dry-run + merge). `AD1` bumped to the 7-adapter
+  registry.
+
+### Decided (two judgment calls — implemented as specified, documented not hidden)
+- **gitleaks SUPERSEDES a co-located LLM `secrets-credentials` finding** (desired — it enforces the core
+  principle for its class). The bounded over-supersede risk (a DIFFERENT secrets-credentials issue at the
+  same overlapping line) is the same already-accepted dimension-fallback risk as `crud-fls`/`sharing`
+  (both share `apex-exposed-surface`); hardening is tracked under §10 extension #3 (Phase-2b).
+- **Cross-DETERMINISTIC-engine dedup stays §10 extension #3 (Phase-2b).** The same secret found by
+  gitleaks AND njsscan's `node_secret` (and later detect-secrets) produces N ledger rows; that
+  cross-engine collapse is extension #3 — the SAFE under-merge — NOT this slice.
+
 ## [0.8.34] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #4 — the njsscan adapter (the THIRD `tool→band`

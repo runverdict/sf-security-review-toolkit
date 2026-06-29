@@ -334,9 +334,27 @@ Skills write into the PARTNER's repo, never into the plugin:
   secrets class the future gitleaks/detect-secrets adapters will own; de-duplicating it is cross-engine
   dedup = §10 ext #3 (Phase-2b), not this slice (the SAFE under-merge). Guarded by the `NJ*` checks
   (one real fixture — an ERROR anchor + a WARNING anchor — plus templates-section / multi-file /
-  no-CWE / band synthetics). The remaining §10 adapters (build order 2a/2b — gitleaks next, the
-  secrets scanners with a DIFFERENT severity model: `class`-severity via `fail-hardcoded-secrets`,
-  not `tool→band`) follow the same shape.
+  no-CWE / band synthetics). **Phase 2 (0.8.35) ships the fifth §10 adapter — `gitleaks`**
+  (file-parser, `engine:'gitleaks'`, hardcoded secrets), a DESIGN PIVOT BACK to **`class`-severity**
+  (like checkov, NOT `tool→band`): a secret has no tool-severity tier, so severity comes from the
+  `fail-hardcoded-secrets` CLASS (major → high) via a CONSTANT `classify()`→`'hardcoded-secrets'` and
+  NO tag filter (security-by-construction), with **ZERO `buildFinding`/`CLASS_DEFS`-machinery change**
+  beyond one new `CLASS_DEFS` entry + one adapter + one `recommendationFor` arm. TWO things make
+  gitleaks distinct: (1) it owns a class AND a REAL methodology dimension (`secrets-credentials`), so —
+  unlike the deterministic-only `external-sast` label — it **SUPERSEDES a co-located LLM
+  `secrets-credentials` finding** (the first adapter to enforce, for its class, that the LLM does not
+  re-report what the scanner determined; the bounded over-supersede risk is the same already-accepted
+  dimension-fallback risk as `crud-fls`/`sharing`, hardening tracked under §10 ext #3); (2) gitleaks
+  output CONTAINS the live secret (`Match`/`Secret`) + commit PII (`Author`/`Email`/`Message`), so the
+  adapter is built to emit a finding from ONLY the non-sensitive fields
+  (`RuleID`/`File`/`StartLine`/`Description`) and NEVER pass any secret/PII downstream — the
+  **secret-never-leaks invariant** (`buildFinding`'s `redact()` is only a backstop, not the primary
+  control). Cross-engine dedup of the same secret found by gitleaks AND njsscan's `node_secret` is still
+  §10 ext #3 (Phase-2b — the SAFE under-merge). Guarded by the `GL*` checks (one real 3×
+  `generic-api-key` fixture, the load-bearing secret-never-leaks test, and the LLM-supersession test).
+  The remaining §10 adapter (build order 2b — `detect-secrets` next, the secrets sibling with a
+  DIFFERENT JSON shape `{results:{<file>:[…]}}` but the same `hardcoded-secrets` class) follows the
+  same shape.
 
 ## 8. Repository layout (canonical — keep cross-references consistent)
 
@@ -430,7 +448,7 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (627 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (639 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
