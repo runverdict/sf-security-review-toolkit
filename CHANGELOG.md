@@ -25,6 +25,13 @@ follow semantic versioning.
   refutation) + the recurrence-confidence engine, so no doc contradicts the published falsification.
 - `docs/roadmap-0.7.0-throwaway-dast-harness.md` — build-order marked slice 7 (cold-validation → tag)
   "← next" though `v0.7.0` is the published cold-validated tag; marked ✅, leaving slice-5b as the remnant.
+- `README.md` — the "what it can't run for you" line listed **Code Analyzer** as owner-run ("you run it
+  via the `sf` CLI"). Stale since the 0.8.40 `--all` journey-wiring + the 0.8.41/0.8.42 `code-analyzer-stack`
+  cold-install: Code Analyzer is now run *for* you — agent-side when `sf` is present, or cold-installed on
+  consent — so it produces the deterministic CRUD/FLS band, not a prediction. Corrected the owner/agent map:
+  the genuinely owner-run set is the **Checkmarx portal scan** (web-only, no CLI/API) + the **live-prod
+  authenticated DAST** (the toolkit automates a throwaway-mirror ZAP; the production submission scan is the
+  owner's). Docs-only, no engine change.
 
 ---
 

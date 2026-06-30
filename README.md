@@ -80,7 +80,9 @@ Most of what the security review asks for is *scan evidence*: SAST, software-com
 - **Writes real evidence files** into `.security-review/evidence/`, folds them into the readiness verdict and the Submission Completeness Index, and dispositions findings into the false-positive dossier.
 - **Then wipes the slate clean** — removes the installed binaries and tears down the mirror, **keeping only the evidence.** Asymmetric by design: tools out, evidence stays.
 
-It's honest about what it can't run for you: **Code Analyzer** (you run it via the `sf` CLI — it's the scanner Salesforce itself runs) and the **Checkmarx portal scan** (partner-portal-gated). For those it hands you the exact commands and *predicts* the findings, so your real runs come back with no surprises.
+**Code Analyzer is run *for* you** — agent-side when the `sf` CLI is already present, or cold-installed on consent (the pinned `@salesforce/cli` + the `code-analyzer` plugin + a JDK, sha256-verified before extract, removed at cleanup). It's the exact static engine Salesforce runs for the #1 review-failure class — Apex CRUD/FLS — so the toolkit produces that band **deterministically** instead of guessing it.
+
+What genuinely stays yours to run: the **Checkmarx portal scan** (a web-only Partner Security Portal upload — no CLI or API exists) and the **live-prod authenticated DAST** (the real scan against your production endpoint with real credentials — the toolkit automates a throwaway-*mirror* ZAP against a disposable copy, but the production submission scan is yours). For those it hands you the exact steps and *predicts* the findings, so your real runs come back with no surprises.
 
 ## Install
 
