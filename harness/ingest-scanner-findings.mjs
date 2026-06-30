@@ -130,6 +130,14 @@
  *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner npm-audit       --input npm-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner trivy           --input trivy.json          --target <repo> [--json] [--dry-run] [--pass N]
+ *
+ *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
+ *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs metadata-viewall (source scan) +
+ *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
+ *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
+ *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
+ *     what the audit Step 4b and the run-scans tail invoke so a cold run actually ingests the
+ *     full OSS scanner set, not just code-analyzer + metadata.
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -387,6 +395,42 @@ function recommendationFor(classKey) {
 }
 
 // ----------------------------------------------------------------------------
+// CONTENT-SHAPE RECOGNITION (Phase 2 journey-wiring, 0.8.40 — the `--all` ingest mode).
+// Evidence filenames are heterogeneous AND ambiguous across real runs: `iac-<date>.json`
+// is checkov in one run and carries no "checkov" token; `secret-scan-detect-secrets-*`
+// collides with gitleaks' `secret-scan-*` prefix; `deps-npm-*` is sometimes raw `npm audit`
+// and sometimes a toolkit disposition WRAPPER. Filename routing misroutes silently, so
+// `--all` routes each evidence file to its adapter by CONTENT SHAPE. The recognizer was
+// proven against 40 real evidence files across 4 captured runs (40/40 correct, 0 mismatch):
+// every scanner output → exactly one adapter, every non-adapter file (index.json, openapi-*,
+// retire-*, the deps-npm WRAPPER, portal-scan/checkmarx) → none.
+//
+// Each FILE-PARSER adapter carries a `detect(raw) -> boolean` predicate (below, on the
+// adapter object); the source-scanner (metadata-viewall) has NO evidence file → NO detect.
+// `recognizeScanner` returns the SINGLE matching adapter name (the shapes are provably
+// disjoint), null if none match, or `{ambiguous:[names]}` if >1 match (a recognizer bug —
+// NEVER guess). The shared shape helpers:
+//   _resultsArr — the `results[]`-array trio (semgrep/bandit/osv) is disambiguated by the
+//     ELEMENT key when results is non-empty (check_id / test_id / packages) and by the
+//     TOP-LEVEL markers below when results is EMPTY. A clean scan (`results:[]`) is still that
+//     scanner's output — recognize it for honest accounting (it just yields 0 findings).
+//   _semgrepMarks / _banditMarks / _osvMarks — the empty-results disambiguators; the bandit
+//     and osv detects AND-NOT the higher-priority marks so at most one of the trio matches.
+// A top-level ARRAY is gitleaks (or a checkov multi-framework array; disambiguated by
+// `RuleID` vs `check_type` on the first element). An empty top-level `[]` → gitleaks (a clean
+// secret scan; 0 findings, harmless). [NOTE: the per-adapter `detect` table is reproduced in
+// the auditor's proof; do not chase the degenerate empty-output tail with fragile heuristics —
+// an unrecognized empty output is skipped harmlessly (0 findings either way).]
+// ----------------------------------------------------------------------------
+const _isObj = (x) => x && typeof x === 'object' && !Array.isArray(x)
+const _resultsArr = (r) => (_isObj(r) && Array.isArray(r.results) ? r.results : null)
+// top-level markers that disambiguate the results[]-array trio when results is EMPTY
+const _semgrepMarks = (r) =>
+  'engine_requested' in r || 'skipped_rules' in r || 'profiling_results' in r || ('paths' in r && 'version' in r)
+const _banditMarks = (r) => 'metrics' in r && 'generated_at' in r
+const _osvMarks = (r) => 'experimental_config' in r
+
+// ----------------------------------------------------------------------------
 // the finding builder — shared by every adapter / kind
 // ----------------------------------------------------------------------------
 export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel, gateLabel }) {
@@ -531,6 +575,8 @@ export function ingest(raw, adapter, opts = {}) {
 export const codeAnalyzerAdapter = {
   name: 'code-analyzer',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a Code Analyzer v5 run is an object with a violations[] array.
+  detect: (r) => _isObj(r) && Array.isArray(r.violations),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -689,6 +735,11 @@ export const metadataViewAllAdapter = {
 export const checkovAdapter = {
   name: 'checkov',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a single-framework object (check_type + results.failed_checks[])
+  // OR a multi-framework ARRAY whose first element carries check_type (disambiguates vs gitleaks' RuleID).
+  detect: (r) =>
+    (_isObj(r) && r.check_type != null && _isObj(r.results) && Array.isArray(r.results.failed_checks)) ||
+    (Array.isArray(r) && r[0] && _isObj(r[0]) && r[0].check_type != null),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -762,6 +813,12 @@ export const checkovAdapter = {
 export const semgrepAdapter = {
   name: 'semgrep',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a results[] array whose elements carry `check_id` (the SAST
+  // trio is keyed by element when non-empty); an EMPTY results[] is still semgrep via its top markers.
+  detect: (r) => {
+    const a = _resultsArr(r)
+    return !!a && (a.length > 0 ? a[0] && a[0].check_id !== undefined : _semgrepMarks(r))
+  },
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -828,6 +885,12 @@ export const semgrepAdapter = {
 export const banditAdapter = {
   name: 'bandit',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a results[] array whose elements carry `test_id`; an EMPTY
+  // results[] is bandit via metrics+generated_at top markers, AND-NOT semgrep's (priority order).
+  detect: (r) => {
+    const a = _resultsArr(r)
+    return !!a && (a.length > 0 ? a[0] && a[0].test_id !== undefined : _banditMarks(r) && !_semgrepMarks(r))
+  },
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -899,6 +962,9 @@ export const banditAdapter = {
 export const njsscanAdapter = {
   name: 'njsscan',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: njsscan's nested object — `njsscan_version` present, or both
+  // the `nodejs` and `templates` sections present (its rule_id-keyed shape, NOT a flat results[]).
+  detect: (r) => _isObj(r) && (r.njsscan_version != null || (_isObj(r.nodejs) && _isObj(r.templates))),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -979,6 +1045,10 @@ export const njsscanAdapter = {
 export const gitleaksAdapter = {
   name: 'gitleaks',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a top-level ARRAY whose first element carries `RuleID`
+  // (disambiguates vs a checkov multi-framework array's `check_type`); an empty `[]` → gitleaks
+  // (a clean secret scan; 0 findings, harmless).
+  detect: (r) => Array.isArray(r) && (r.length === 0 || (_isObj(r[0]) && r[0].RuleID != null)),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -1047,6 +1117,9 @@ export const gitleaksAdapter = {
 export const detectSecretsAdapter = {
   name: 'detect-secrets',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: detect-secrets' `plugins_used` present with a `results` OBJECT
+  // (keyed by file — NOT an array, so the SAST trio's _resultsArr never matches it).
+  detect: (r) => _isObj(r) && r.plugins_used != null && _isObj(r.results),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -1130,6 +1203,12 @@ export const detectSecretsAdapter = {
 export const osvAdapter = {
   name: 'osv',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: a results[] array whose elements carry `packages`; an EMPTY
+  // results[] is osv via `experimental_config`, AND-NOT semgrep's/bandit's marks (lowest priority).
+  detect: (r) => {
+    const a = _resultsArr(r)
+    return !!a && (a.length > 0 ? a[0] && a[0].packages !== undefined : _osvMarks(r) && !_semgrepMarks(r) && !_banditMarks(r))
+  },
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -1229,6 +1308,11 @@ export const osvAdapter = {
 export const npmAuditAdapter = {
   name: 'npm-audit',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: npm audit v2's `auditReportVersion` present with a
+  // `vulnerabilities` OBJECT (keyed by package). This is what disambiguates the raw `npm audit`
+  // output from the toolkit's `deps-npm` disposition WRAPPER (which has neither field) — the proof
+  // content-recognition beats filename routing.
+  detect: (r) => _isObj(r) && r.auditReportVersion != null && _isObj(r.vulnerabilities),
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -1328,6 +1412,9 @@ export const npmAuditAdapter = {
 export const trivyAdapter = {
   name: 'trivy',
   kind: 'file-parser',
+  // CONTENT-SHAPE recognizer for --all: Trivy's `Results` array (capital R — distinct from the SAST
+  // trio's lowercase `results`) plus `SchemaVersion`.
+  detect: (r) => _isObj(r) && Array.isArray(r.Results) && r.SchemaVersion != null,
   collect({ input } = {}) {
     if (!input) return null
     try {
@@ -1391,6 +1478,33 @@ export const ADAPTERS = {
 }
 
 // ----------------------------------------------------------------------------
+// recognizeScanner — content-shape routing for the --all journey-wiring mode.
+// Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
+// match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
+// logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
+// carry a `detect` fn (metadata-viewall, the source-scanner, has none). Each `detect` is
+// wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
+// crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
+// match is the norm; the >1 branch exists so a future shape collision fails LOUD, not silent.
+// ----------------------------------------------------------------------------
+export function recognizeScanner(raw) {
+  const matched = []
+  for (const [name, adapter] of Object.entries(ADAPTERS)) {
+    if (typeof adapter.detect !== 'function') continue
+    let ok = false
+    try {
+      ok = !!adapter.detect(raw)
+    } catch {
+      ok = false
+    }
+    if (ok) matched.push(name)
+  }
+  if (matched.length === 1) return matched[0]
+  if (matched.length === 0) return null
+  return { ambiguous: matched }
+}
+
+// ----------------------------------------------------------------------------
 // ledger merge (additive + idempotent). LLM-supersession enforcement is Slice 2;
 // here a deterministic finding is keyed by engine+ruleId+file:line and added once
 // (or refreshed in place on re-ingest), never duplicated.
@@ -1442,6 +1556,137 @@ export function mergeFindings(ledger, newFindings, pass) {
     }
   }
   return { added, updated }
+}
+
+// ----------------------------------------------------------------------------
+// ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
+// makes the whole Phase-2 build run in the real journey: it ALWAYS runs metadata-viewall, then
+// recognizes + ingests every scanner output present under <target>/.security-review/evidence/
+// by CONTENT SHAPE, and merges the whole deterministic band into the ledger in ONE pass. It
+// reuses the pure ingest() (per scanner) + loadLedger/mergeFindings verbatim; the existing
+// per-`--scanner` path is untouched. Byte-deterministic: the evidence list is sorted and the
+// combined band is id-sorted before merge, so `--all` twice on the same evidence dir → a
+// byte-identical ledger (no Date / Math.random anywhere on the path).
+// ----------------------------------------------------------------------------
+export function ingestAll({ target, pass, dryRun } = {}) {
+  const root = target || process.cwd()
+  const ledgerPath = join(root, '.security-review', 'audit-ledger.json')
+  const evidenceDir = join(root, '.security-review', 'evidence')
+
+  let ledger = { schema_version: '1', findings: [], passes: [] }
+  let defaultPass = 1
+  if (!dryRun) {
+    ledger = loadLedger(ledgerPath) // may throw on a corrupted ledger — mainAll surfaces it
+    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) : 1
+  }
+  const passId = Number.isInteger(pass) && pass >= 1 ? pass : defaultPass
+
+  const notes = []
+  const scanners = [] // { scanner, kind, [file], findings, status:'ran'|'clean' }
+  const skipped = [] // { file, reason }
+  const allFindings = []
+  const recognized = new Set()
+
+  // (1) ALWAYS run the metadata source scan — it needs no evidence file, no `sf`, no network
+  // (greps the repo's *.permissionset-meta.xml for ViewAll/ModifyAll over-grants).
+  let metaRaw = null
+  try {
+    metaRaw = metadataViewAllAdapter.collect({ target: root })
+  } catch {
+    metaRaw = null
+  }
+  const metaRes = ingest(metaRaw, metadataViewAllAdapter, { repoRoot: root, pass: passId })
+  notes.push(...metaRes.notes)
+  allFindings.push(...metaRes.findings)
+  scanners.push({
+    scanner: 'metadata-viewall',
+    kind: metadataViewAllAdapter.kind,
+    findings: metaRes.findings.length,
+    status: metaRes.findings.length ? 'ran' : 'clean',
+  })
+
+  // (2) enumerate evidence/*.json — TOP LEVEL only (skip subdirs like dast/), sorted for determinism.
+  let files = []
+  try {
+    files = readdirSync(evidenceDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+      .map((e) => e.name)
+      .sort()
+  } catch {
+    files = [] // no evidence dir yet — fine; the band is metadata-only this pass
+  }
+
+  for (const name of files) {
+    const rel = `evidence/${name}`
+    let raw
+    try {
+      const txt = readFileSync(join(evidenceDir, name), 'utf8')
+      if (!txt.trim()) {
+        skipped.push({ file: rel, reason: 'empty file' })
+        notes.push(`${rel} is empty — skipped`)
+        continue
+      }
+      raw = JSON.parse(txt)
+    } catch (e) {
+      skipped.push({ file: rel, reason: 'unparseable JSON' })
+      notes.push(`${rel} is not valid JSON (${e && e.message}) — skipped`)
+      continue
+    }
+    const rec = recognizeScanner(raw)
+    if (rec == null) {
+      skipped.push({ file: rel, reason: 'not recognized by any adapter' })
+      notes.push(`${rel} not recognized by any adapter — skipped`)
+      continue
+    }
+    if (_isObj(rec) && Array.isArray(rec.ambiguous)) {
+      skipped.push({ file: rel, reason: `ambiguous — matched ${rec.ambiguous.join(', ')}` })
+      notes.push(`${rel} matched MULTIPLE adapters (${rec.ambiguous.join(', ')}) — recognizer bug, skipped (never guess)`)
+      continue
+    }
+    const adapter = ADAPTERS[rec]
+    const res = ingest(raw, adapter, { repoRoot: root, pass: passId })
+    notes.push(...res.notes)
+    allFindings.push(...res.findings)
+    recognized.add(rec)
+    scanners.push({
+      scanner: rec,
+      kind: adapter.kind,
+      file: rel,
+      findings: res.findings.length,
+      status: res.findings.length ? 'ran' : 'clean',
+    })
+  }
+
+  // (3) deterministic combined order, independent of file-iteration order (ingest already
+  // sorts each adapter's findings; this re-sorts the union so the merged ledger is stable).
+  allFindings.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+
+  // (4) PENDING accounting — preserve the Step-4b contract: Code Analyzer absent ⇒ the CRUD/FLS +
+  // sharing classes stay PENDING-OWNER-RUN (never LLM-filled, never dropped). Now the HARNESS
+  // reports it deterministically instead of the prose.
+  const pending = []
+  if (!recognized.has('code-analyzer')) {
+    pending.push('crud-fls', 'sharing')
+    notes.push(
+      'Code Analyzer output absent (no code-analyzer evidence recognized) — CRUD/FLS + sharing classes remain ' +
+        'PENDING-OWNER-RUN; run `sf` + the Code Analyzer plugin to make them deterministic. The LLM fan-out keeps ' +
+        'its co-located findings as llm-inferred (never dropped, never LLM-filled into the deterministic band).'
+    )
+  }
+
+  // (5) merge the whole band into the ledger once (idempotent — stable ids dedup on re-run).
+  let merged = null
+  if (!dryRun) {
+    merged = mergeFindings(ledger, allFindings, passId)
+    try {
+      mkdirSync(join(root, '.security-review'), { recursive: true })
+    } catch {
+      /* dir may already exist */
+    }
+    writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2))
+  }
+
+  return { mode: 'all', pass: passId, scanners, skipped, pending, findings: allFindings, notes, merged }
 }
 
 // ----------------------------------------------------------------------------
@@ -1511,6 +1756,50 @@ function main() {
   }
 }
 
+// --all CLI mode (journey-wiring). Thin wrapper over ingestAll(): resolve flags, run, print
+// the honest summary (per recognized scanner → N findings; clean → "ran clean, 0 findings";
+// unrecognized → skipped, named; Code-Analyzer-absent → PENDING-OWNER-RUN). `main()` above is
+// byte-unchanged — the dispatch at module bottom routes --all here, so the per-`--scanner` path
+// is untouched.
+function mainAll() {
+  const target = arg('--target', process.cwd())
+  const asJson = process.argv.includes('--json')
+  const dryRun = process.argv.includes('--dry-run')
+  const passArg = parseInt(arg('--pass', ''), 10)
+  const pass = Number.isInteger(passArg) && passArg >= 1 ? passArg : undefined
+
+  let result
+  try {
+    result = ingestAll({ target, pass, dryRun })
+  } catch (e) {
+    console.error(`ingest-scanner-findings --all: ${e.message}`)
+    process.exit(2)
+  }
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+    return
+  }
+  process.stdout.write(
+    `ingest-scanner-findings --all [${target}]: ${result.findings.length} deterministic finding(s) from ` +
+      `${result.scanners.length} scanner(s)` +
+      (dryRun ? ' (dry-run, not merged)' : `; merged +${result.merged.added} new / ${result.merged.updated} refreshed`) +
+      '\n'
+  )
+  for (const s of result.scanners) {
+    const tag = s.status === 'clean' ? ' — ran clean, 0 findings' : ''
+    process.stdout.write(`  ${s.scanner} [${s.kind}]: ${s.findings} finding(s)${tag}${s.file ? ` (${s.file})` : ''}\n`)
+  }
+  for (const sk of result.skipped) process.stdout.write(`  skipped ${sk.file}: ${sk.reason}\n`)
+  if (result.pending.length) {
+    process.stdout.write(
+      `  PENDING-OWNER-RUN: ${result.pending.join(' + ')} — Code Analyzer output absent; run sf + the Code ` +
+        `Analyzer plugin to make these deterministic (the LLM keeps its co-located findings as llm-inferred).\n`
+    )
+  }
+  for (const n of result.notes) process.stdout.write(`  note: ${n}\n`)
+}
+
 function invokedDirectly() {
   if (!process.argv[1]) return false
   try {
@@ -1519,4 +1808,4 @@ function invokedDirectly() {
     return fileURLToPath(import.meta.url) === process.argv[1]
   }
 }
-if (invokedDirectly()) main()
+if (invokedDirectly()) (process.argv.includes('--all') ? mainAll() : main())

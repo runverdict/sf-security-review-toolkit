@@ -28,17 +28,21 @@
  *     I7  the reconciled OPEN band (what the headline + recap read) excludes the superseded
  *         finding and still carries the deterministic owner — supersession propagates.
  *
- *   WIRING (read the two skills off disk — the invocation lives in audit-codebase, the phase
+ *   WIRING (read the skills off disk — the invocation lives in audit-codebase, the phase
  *   that actually runs the engines; the journey wires that phase by reference, since it
- *   delegates via the Skill tool):
+ *   delegates via the Skill tool; run-scans seeds the band at its own scan tail):
  *     W1/W2  audit-codebase GRANTS both harnesses in allowed-tools.
- *     W3     audit-codebase INVOKES ingest (metadata-viewall AND code-analyzer).
+ *     W3     audit-codebase INVOKES the deterministic pass via `--all` (one call subsuming
+ *            metadata-viewall + code-analyzer + the OSS scanner families).
  *     W4     audit-codebase INVOKES reconcile-provenance --target.
- *     W5     ORDER: the ingest invocation precedes the LLM fan-out (build-audit-engine.mjs).
+ *     W5     ORDER: the --all ingest invocation precedes the LLM fan-out (build-audit-engine.mjs).
  *     W6     ORDER: the reconcile invocation follows the merge (merge-ledger.mjs).
  *     W7     audit-codebase carries the sf-absent → PENDING-OWNER-RUN (never LLM-fill) note.
  *     W8     the journey REFERENCES both harnesses by name.
  *     W9     the journey carries the sf-absent → PENDING note + the before/after ordering.
+ *     W10    run-scans GRANTS both harnesses in allowed-tools.
+ *     W11    run-scans INVOKES `--all` then reconcile-provenance --target at the scan tail
+ *            (in that order) + carries the PENDING-when-absent note.
  *
  * Dependency-free, hermetic (only the committed real fixtures under acceptance/fixtures/, no
  * network, no sf, no LLM): `node acceptance/test-deterministic-integration.mjs`.
@@ -58,6 +62,7 @@ const CA_FIXTURE = join(FIX, 'code-analyzer-solano.json')
 const PS_FIXTURE = join(FIX, 'permissionsets', 'Solano_Admin.permissionset-meta.xml')
 const AUDIT_SKILL = join(PLUGIN, 'skills', 'audit-codebase', 'SKILL.md')
 const JOURNEY_SKILL = join(PLUGIN, 'skills', 'security-review-journey', 'SKILL.md')
+const RUNSCANS_SKILL = join(PLUGIN, 'skills', 'run-scans', 'SKILL.md')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
 const node = (args, cwd) => execFileSync('node', args, { encoding: 'utf8', stdio: 'pipe', cwd })
@@ -92,11 +97,12 @@ const ledgerPath = (T) => join(T, '.security-review', 'audit-ledger.json')
 const findings = (T) => readJSON(ledgerPath(T)).findings
 const byClass = (T, cls) => findings(T).filter((f) => f.provenance === 'deterministic' && f.class === cls)
 
-// Run the deterministic pass exactly as Step 4b does: metadata-viewall ALWAYS + code-analyzer
-// when the evidence json exists. Returns the seeded ledger's findings.
+// Run the deterministic pass exactly as Step 4b does: ONE `--all` invocation, which ALWAYS runs
+// the metadata source scan and content-recognizes the `code-analyzer-*.json` under evidence/
+// (the same single-pass band Step 4b now seeds — `--all` subsumes the old two `--scanner` calls).
+// Returns the seeded ledger's findings.
 function runDeterministicPass(T) {
-  node([INGEST, '--scanner', 'metadata-viewall', '--target', T])
-  node([INGEST, '--scanner', 'code-analyzer', '--input', join(T, '.security-review', 'evidence', 'code-analyzer-2026-06-26.json'), '--target', T])
+  node([INGEST, '--all', '--target', T])
   return findings(T)
 }
 
@@ -216,9 +222,12 @@ check('I7 the reconciled OPEN band excludes the superseded finding and keeps the
 
 const auditText = readFileSync(AUDIT_SKILL, 'utf8')
 const journeyText = readFileSync(JOURNEY_SKILL, 'utf8')
+const runScansText = readFileSync(RUNSCANS_SKILL, 'utf8')
 // frontmatter allowed-tools line (between the leading --- fences)
 const fm = auditText.split('---')[1] || ''
 const allowedTools = (fm.split('\n').find((l) => l.startsWith('allowed-tools:')) || '')
+const runScansFm = runScansText.split('---')[1] || ''
+const runScansAllowed = runScansFm.split('\n').find((l) => l.startsWith('allowed-tools:')) || ''
 // body = everything after the frontmatter (so a grant in allowed-tools isn't mistaken for an invocation)
 const auditBody = auditText.slice(auditText.indexOf('# Audit Codebase'))
 
@@ -230,17 +239,16 @@ check('W2 audit-codebase GRANTS reconcile-provenance.mjs in allowed-tools', () =
   assert.ok(allowedTools.includes('Bash(node *harness/reconcile-provenance.mjs *)'), 'reconcile grant present')
 })
 
-check('W3 audit-codebase INVOKES the ingest (metadata-viewall AND code-analyzer)', () => {
-  assert.ok(/ingest-scanner-findings\.mjs --scanner metadata-viewall/.test(auditBody), 'metadata-viewall invocation present')
-  assert.ok(/ingest-scanner-findings\.mjs --scanner code-analyzer/.test(auditBody), 'code-analyzer invocation present')
+check('W3 audit-codebase INVOKES the deterministic pass via --all (subsumes metadata-viewall + code-analyzer)', () => {
+  assert.ok(/ingest-scanner-findings\.mjs --all/.test(auditBody), '--all invocation present')
 })
 
 check('W4 audit-codebase INVOKES reconcile-provenance --target', () => {
   assert.ok(/reconcile-provenance\.mjs --target/.test(auditBody), 'reconcile invocation present')
 })
 
-check('W5 ORDER — the ingest invocation precedes the LLM fan-out (build-audit-engine.mjs --plugin)', () => {
-  const ingestAt = auditBody.indexOf('ingest-scanner-findings.mjs --scanner')
+check('W5 ORDER — the --all ingest invocation precedes the LLM fan-out (build-audit-engine.mjs --plugin)', () => {
+  const ingestAt = auditBody.indexOf('ingest-scanner-findings.mjs --all')
   // the ACTUAL fan-out command (Step 5) is the assembler invocation `build-audit-engine.mjs
   // --plugin …` — distinct from the bare `build-audit-engine.mjs` prose in the Step 2 consent
   // gate, which is not the fan-out. Anchor on the command so the order check is meaningful.
@@ -272,6 +280,20 @@ check('W9 the journey carries the sf-absent → PENDING note + the before/after 
   assert.ok(/never LLM-fill/.test(journeyText), '"never LLM-fill" present in the journey')
   assert.ok(/BEFORE its LLM fan-out/.test(journeyText), 'the deterministic-pass-before-fan-out ordering is stated')
   assert.ok(/AFTER its merge/.test(journeyText), 'the reconcile-after-merge ordering is stated')
+})
+
+check('W10 run-scans GRANTS both ingest-scanner-findings.mjs + reconcile-provenance.mjs in allowed-tools', () => {
+  assert.ok(runScansAllowed.includes('Bash(node *harness/ingest-scanner-findings.mjs *)'), 'ingest grant present in run-scans')
+  assert.ok(runScansAllowed.includes('Bash(node *harness/reconcile-provenance.mjs *)'), 'reconcile grant present in run-scans')
+})
+
+check('W11 run-scans INVOKES --all then reconcile-provenance --target at the scan tail (in order) + the PENDING-when-absent note', () => {
+  const allAt = runScansText.indexOf('ingest-scanner-findings.mjs --all')
+  const recAt = runScansText.indexOf('reconcile-provenance.mjs --target')
+  assert.ok(allAt > -1, '--all invocation present in run-scans')
+  assert.ok(recAt > -1, 'reconcile --target invocation present in run-scans')
+  assert.ok(allAt < recAt, '--all seeds the band BEFORE reconcile demotes the LLM dupes')
+  assert.ok(runScansText.includes('PENDING-OWNER-RUN'), 'the PENDING-when-absent note is present in run-scans')
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

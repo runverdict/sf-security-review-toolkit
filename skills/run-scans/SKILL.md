@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. Use after artifacts exist; the scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -485,6 +485,37 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    (RetireJS over packaged static resources + the reviewer's pen test are the
    complements).
 
+9b. **Seed the deterministic band IN THIS PASS — `--all` ingest, then reconcile**
+   (Phase 1/2 of `docs/roadmap-deterministic-findings.md`). Families 1–8 above have now
+   written their evidence JSONs under `.security-review/evidence/`. Fold every recognized
+   scanner output into the deterministic band right here — so a SINGLE cold run is
+   meaningful, instead of waiting for the next `/sf-security-review-toolkit:audit-codebase`
+   re-audit to ingest them:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --all --target <target>
+   node ${CLAUDE_PLUGIN_ROOT}/harness/reconcile-provenance.mjs --target <target>
+   ```
+
+   `--all` ALWAYS runs the metadata source scan and recognizes every other scanner output
+   present by CONTENT SHAPE (never filename) — Code Analyzer + the OSS SAST / secret /
+   dependency-CVE / IaC-misconfig families this phase just produced — ingesting each as a
+   `provenance:'deterministic'` finding. `reconcile-provenance.mjs` then demotes any
+   co-located `llm-inferred` finding a scanner now OWNS (gitleaks / detect-secrets own
+   `hardcoded-secrets`; Code Analyzer / metadata own crud-fls / sharing / viewall; the
+   SAST + dependency-CVE adapters own no class, so they only ADD to the band). **When no
+   `code-analyzer-*.json` is present, `--all` reports CRUD/FLS + sharing as
+   PENDING-OWNER-RUN (never LLM-fill, never drop) — exactly the audit-codebase Step 4b
+   contract.**
+
+   **Design note (run-scans-tail ingest+reconcile, NOT a re-audit).** Seeding the band at
+   the scan tail is the deliberate choice over re-running the whole `audit-codebase` pass
+   after scans, which would double the expensive LLM fan-out for no new signal. Both
+   harnesses are pure + idempotent and finding-neutral on re-run (stable ids dedup;
+   reconcile only demotes, and a deterministic finding never supersedes another
+   deterministic one), so running `--all` + reconcile HERE and again at audit Step 4b /
+   Step 6 is safe — the band is byte-stable run-to-run.
+
 10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
    `<target>/docs/security-review/fp-dossier.md` (or update it
@@ -565,11 +596,12 @@ attacks the same endpoints the DAST did, with the credentials that phase
 stages. Findings fixed here belong in the audit ledger so the next
 `/sf-security-review-toolkit:audit-codebase` pass doesn't re-report them.
 
-Family 1's `evidence/code-analyzer-<date>.json` is also consumed by
-audit-codebase's **deterministic pass** (`harness/ingest-scanner-findings.mjs
---scanner code-analyzer`): on the next audit it becomes `provenance:'deterministic'`
-CRUD/FLS + sharing findings, and `harness/reconcile-provenance.mjs` supersedes the
-co-located LLM duplicates (`docs/roadmap-deterministic-findings.md` Phase 1). So
-running THIS phase is what flips those classes from PENDING-OWNER-RUN to
-deterministic — the deterministic band then recurs identically run-to-run, the
-replacement for the unstable LLM-only blocker sample.
+Step 9b already seeded the deterministic band IN THIS PASS — `--all` ingested
+every scanner output Families 1–8 produced and `reconcile-provenance.mjs` demoted the
+co-located LLM duplicates — so a single cold run is already meaningful. The SAME
+evidence (`evidence/code-analyzer-<date>.json` et al.) is re-ingested INCREMENTALLY by
+audit-codebase's **deterministic pass** (`harness/ingest-scanner-findings.mjs --all`) on
+the next audit: stable ids dedup, so re-ingest never duplicates and the band recurs
+identically run-to-run (`docs/roadmap-deterministic-findings.md` Phase 1). So running
+THIS phase is what flips the CRUD/FLS + sharing classes from PENDING-OWNER-RUN to
+deterministic — the replacement for the unstable LLM-only blocker sample.

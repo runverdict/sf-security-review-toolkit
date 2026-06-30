@@ -161,28 +161,32 @@ regardless of anything this engine produces.
    verifier defers to it (the Slice-2 "defer to the engine ONLY when it actually
    ran" rule in `apex-exposed-surface.md` §5/§6 keys off exactly this evidence):
 
-   - **Always** run the metadata source scan — it needs neither `sf` nor the
-     network (it greps the repo's `*.permissionset-meta.xml` for ViewAll/ModifyAll
-     over-grants on custom objects):
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --scanner metadata-viewall --target <target>`.
-   - **When `<target>/.security-review/evidence/code-analyzer-*.json` exists** — the
-     owner ran `sf code-analyzer`, or `/sf-security-review-toolkit:run-scans` Family 1
-     produced it on a prior pass — ingest it too; this is what makes the CRUD/FLS +
-     sharing classes deterministic:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --scanner code-analyzer --input <that code-analyzer-*.json> --target <target>`.
-     Each security-tagged violation becomes a `provenance:'deterministic'` finding
-     carrying its `engine` + `ruleId`, severity READ FROM the requirement class —
-     relayed verbatim, never re-judged or re-severitied by the LLM.
+   - **One deterministic pass — `--all` — ingests every recognized scanner output
+     present.** It ALWAYS runs the metadata source scan (no `sf`, no network — it
+     greps the repo's `*.permissionset-meta.xml` for ViewAll/ModifyAll over-grants on
+     custom objects), then recognizes and ingests every OTHER scanner output sitting
+     under `<target>/.security-review/evidence/` by CONTENT SHAPE (never filename, which
+     is heterogeneous and ambiguous across runs) — Code Analyzer (the CRUD/FLS + sharing
+     track), plus the OSS SAST (Semgrep / Bandit / njsscan), secret (gitleaks /
+     detect-secrets), dependency-CVE (OSV / npm-audit), and IaC-misconfig (Checkov /
+     Trivy) families that `/sf-security-review-toolkit:run-scans` produced on a prior
+     pass (or that the owner ran `sf code-analyzer` to land):
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --all --target <target>`.
+     Each recognized violation becomes a `provenance:'deterministic'` finding carrying
+     its `engine` + `ruleId`, severity READ FROM the requirement class (or, for the
+     class-less SAST / dependency-CVE families, the tool/CVSS band) — relayed verbatim,
+     never re-judged or re-severitied by the LLM. An unrecognized evidence file is
+     skipped with a named note, never guessed. Keep this BEFORE Step 5's LLM fan-out.
    - **`sf`/Code Analyzer absent → PENDING-OWNER-RUN, never LLM-fill, never drop.**
-     When no `code-analyzer-*.json` exists, Code Analyzer has not run, so the
-     CRUD/FLS + sharing classes stay **PENDING-OWNER-RUN** (prompt the owner to
-     install `sf` + the Code Analyzer plugin and run
+     When no `code-analyzer-*.json` is present in `evidence/`, Code Analyzer has not
+     run, so `--all` reports the CRUD/FLS + sharing classes as **PENDING-OWNER-RUN**
+     (prompt the owner to install `sf` + the Code Analyzer plugin and run
      `/sf-security-review-toolkit:run-scans` to make these deterministic). The LLM
-     fan-out still audits those classes and **KEEPS** its findings as
-     `llm-inferred` — it is NOT licensed to defer to an engine that never ran (that
-     phantom hand-off, dropping a real FLS blocker to a scanner with no output, is
-     the fixrun4 failure the Slice-2 methodology fix closed). The metadata scan
-     above is unconditional; only the Code-Analyzer-owned classes go PENDING.
+     fan-out still audits those classes and **KEEPS its findings as `llm-inferred`** —
+     it is NOT licensed to defer to an engine that never ran (that phantom hand-off,
+     dropping a real FLS blocker to a scanner with no output, is the fixrun4 failure the
+     Slice-2 methodology fix closed). The metadata scan is unconditional; only the
+     Code-Analyzer-owned classes go PENDING.
 
    Read-only on the partner source except the ledger it seeds. Re-ingest is
    idempotent (a deterministic id is stable from `engine+ruleId+file:line`), so

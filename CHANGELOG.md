@@ -37,6 +37,87 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.40] — 2026-06-30
+
+**Deterministic-findings Phase 2 · JOURNEY WIRING — the 11 ingest adapters now actually RUN in the journey
+(the `--all` ingest mode + a content-shape recognizer) (docs/roadmap-deterministic-findings.md §10).** Through
+0.8.39 the `ADAPTERS` registry held all 11 adapters built + unit-tested, but the journey only ever invoked **2**
+of them: audit-codebase Step 4b hardcoded `--scanner metadata-viewall` + `--scanner code-analyzer`, so the OTHER
+9 Phase-2 adapters (checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy) were never called
+on a real run — their evidence JSONs were produced by `run-scans` but never ingested into the deterministic band.
+This slice closes that with two ADDITIVE parts. **(A) Content-shape recognition.** Each file-parser adapter gains
+a `detect(raw)→boolean` predicate, and a new exported `recognizeScanner(raw)` routes every `evidence/*.json` to
+its adapter by **CONTENT SHAPE, never filename** — filenames are heterogeneous AND ambiguous (`iac-<date>.json`
+is checkov with no "checkov" token; `secret-scan-*` collides between gitleaks and detect-secrets; `deps-npm-*` is
+sometimes raw `npm audit` and sometimes a toolkit disposition WRAPPER). The recognizer was proven **40/40 on real
+evidence across 4 captured runs**, returns the SINGLE matching name / `null` / `{ambiguous:[…]}` (>1 match fails
+LOUD, never guesses), and is fail-safe (a `detect` that throws → false). **(B) `--all` mode + the two wiring
+points.** A new `ingestAll({target})` + `--all` CLI mode ALWAYS runs metadata-viewall then recognizes + ingests
+every evidence file into the band in ONE byte-deterministic pass (sorted file list + id-sorted union), reporting
+Code-Analyzer-absent → CRUD/FLS + sharing **PENDING-OWNER-RUN** (never LLM-fill). `--all` is wired at **audit-codebase
+Step 4b** (replacing the two `--scanner` calls) AND the **run-scans scan tail** (new step 9b: `--all` then
+`reconcile-provenance`). **Design note (flagged):** seeding the band at the run-scans tail is the deliberate choice
+over re-running the whole `audit-codebase` pass after scans — a re-audit would double the expensive LLM fan-out for
+no new signal. Both harnesses are pure + idempotent + finding-neutral on re-run (stable ids dedup; reconcile only
+demotes and a deterministic finding never supersedes another), so running `--all` + reconcile at the run-scans tail
+AND again at audit Step 4b / Step 6 is safe and byte-stable. **Additive-only:** `buildFinding` / `ingest` /
+`CLASS_DEFS` / the per-`--scanner` CLI dispatch are **byte-unchanged** (verified by direct HEAD-vs-tree diff);
+`AD1` stays at **11 adapters** (no new adapter — the recognizer routes the existing ten file-parsers). **Judgment
+call (flagged):** the builder spec's `RC-failsafe` case listed `[]`→`null`, but the proven gitleaks `detect`
+predicate + the design note recognize an empty top-level array as a CLEAN gitleaks scan (0 findings, harmless) —
+the predicate is authoritative, so `recognizeScanner([]) → 'gitleaks'`; the standing test asserts this and notes
+the resolved contradiction. Validated by the new `RC*` (recognizer disjointness/failsafe/ambiguous) + `ALL*`
+(`--all` behavior: filename-independent ingest, index.json skipped, byte-determinism, PENDING accounting,
+secret-never-leaks) checks in `test-ingest-scanner-findings.mjs`, and updated/new W3/W5/**W10/W11** wiring assertions
+in `test-deterministic-integration.mjs`. Suite **55 files / 700 checks** (was 55 / 688; +10 `RC*`/`ALL*` in
+`test-ingest-scanner-findings`, +2 `W10`/`W11` in `test-deterministic-integration`). Tag stays **HELD** (0.9.0 reserved).
+
+### Added
+- **`harness/ingest-scanner-findings.mjs` — content-shape recognition.** A `detect(raw)→boolean` predicate on each
+  of the 10 file-parser adapters (the source-scanner `metadata-viewall` has no evidence file → no `detect`), using
+  the shared `_isObj`/`_resultsArr`/`_semgrepMarks`/`_banditMarks`/`_osvMarks` shape helpers. The `results[]`-array
+  trio (semgrep/bandit/osv) is disambiguated by the element key (`check_id`/`test_id`/`packages`) when non-empty and
+  by top-level markers (AND-NOT the higher-priority members) when empty; a top-level array is gitleaks (or a checkov
+  multi-framework array, by `RuleID` vs `check_type`); an empty `[]` is a clean gitleaks scan.
+- **`recognizeScanner(raw)`** (exported) — iterates the `detect`-bearing adapters, returns the single matching name,
+  `null` if none, or `{ambiguous:[names]}` if >1 (each `detect` wrapped try/catch → false on throw).
+- **`ingestAll({target, pass, dryRun})`** (exported) + the **`--all` CLI mode** — always runs metadata-viewall, then
+  recognizes + ingests every top-level `evidence/*.json` (subdirs like `dast/` skipped; unparseable/empty/
+  unrecognized files skipped with a named note), merges the id-sorted union into the ledger once, and emits an honest
+  summary (per scanner → N findings; clean → "ran clean, 0 findings"; skipped files named; Code-Analyzer-absent →
+  PENDING-OWNER-RUN) with a `--json` structured form. Mutually exclusive with `--scanner`; routed at module bottom so
+  `main()` is byte-unchanged.
+- **`acceptance/test-ingest-scanner-findings.mjs`** — the `RC*` recognizer block (every committed fixture → its own
+  adapter; clean `results:[]` still recognized; non-adapter shapes incl. the `deps-npm` WRAPPER → `null`; a synthetic
+  2-match → `{ambiguous}`; failsafe) + the `ALL*` `--all`-behavior block (renamed-evidence content routing, index.json
+  skipped, byte-determinism, PENDING accounting with/without Code Analyzer, secret-never-leaks through `--all`). +10 checks.
+- **`acceptance/test-deterministic-integration.mjs`** — `W10` (run-scans grants both harnesses) + `W11` (run-scans
+  invokes `--all` then `reconcile-provenance --target` at the scan tail, in order, + the PENDING note). +2 checks.
+
+### Changed
+- **`skills/audit-codebase/SKILL.md` Step 4b** — the two `--scanner metadata-viewall` / `--scanner code-analyzer`
+  invocations replaced by a single `--all` call that ingests every recognized scanner output present; same ordering
+  (deterministic pass BEFORE the LLM fan-out), same PENDING-when-absent contract (Code-Analyzer-absent → CRUD/FLS +
+  sharing PENDING-OWNER-RUN, the LLM **KEEPS its findings as `llm-inferred`**). The existing `Bash(node
+  *harness/ingest-scanner-findings.mjs *)` grant already covers `--all`.
+- **`skills/run-scans/SKILL.md`** — new **step 9b** at the scan tail runs `--all` then `reconcile-provenance --target`
+  so a single cold run seeds the deterministic band in-pass; **both grants added to `allowed-tools`**
+  (`Bash(node *harness/ingest-scanner-findings.mjs *)` + `Bash(node *harness/reconcile-provenance.mjs *)`); the
+  "what feeds the next skill" note updated to reflect in-pass seeding + incremental re-ingest by audit-codebase.
+- **`acceptance/test-deterministic-integration.mjs`** — `runDeterministicPass` switched to ONE `--all` call; `W3`
+  now asserts the `--all` invocation (subsumes metadata-viewall + code-analyzer); `W5` anchors the order check on
+  `--all`. (W6/W7 unchanged.)
+- **`docs/deterministic-findings-acceptance.md`** — B2 + B5's `run_once()` use the single `--all` command; B5 adds
+  that with the full OSS scanner set present, `--all` makes the WHOLE band reproducible run-to-run; cross-references
+  note the run-scans tail.
+- **`docs/roadmap-deterministic-findings.md`**, **`CONVENTIONS.md`**, **`acceptance/README.md`** — journey-wiring
+  milestone + 0.8.40 note; current-state suite counts bumped 688 → **700** (historical version-stamped lines left as-is).
+
+### Unchanged (additive-only proof)
+- `buildFinding`, `ingest`, `CLASS_DEFS`, and the per-`--scanner` `main()` dispatch are **byte-identical to HEAD**
+  (confirmed by direct HEAD-vs-working-tree extraction). The `--all` mode, `detect` predicates, `recognizeScanner`,
+  and `ingestAll` are all NEW code; the existing per-scanner CLI keeps every prior unit test passing.
+
 ## [0.8.39] — 2026-06-29
 
 **Deterministic-findings Phase 2 · adapter 2a #9 — the trivy adapter (IaC-misconfig / CONFIG mode only; REUSES

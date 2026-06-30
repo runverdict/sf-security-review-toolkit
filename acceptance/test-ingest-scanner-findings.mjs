@@ -31,6 +31,12 @@
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
  *        npm-audit dependency-CVE Extension-A reuse, label-only band · trivy IaC-misconfig config-mode,
  *        REUSES checkov's iac-misconfig class at class-severity — Trivy's own Severity recorded for reference only).
+ *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
+ *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
+ *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
+ *   ALL — the --all journey-wiring mode (0.8.40): recognizes + ingests every RENAMED scanner output by content
+ *        shape (filename-independent), skips the non-adapter index.json (named), is byte-deterministic run-to-run,
+ *        reports Code-Analyzer-absent → PENDING-OWNER-RUN, and preserves the secret-never-leaks invariant.
  *
  * Dependency-free: `node acceptance/test-ingest-scanner-findings.mjs`.
  */
@@ -59,6 +65,8 @@ import {
   baselineSeverityFor,
   mergeFindings,
   loadLedger,
+  recognizeScanner,
+  ingestAll,
   hasSecurityTag,
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
@@ -2416,6 +2424,167 @@ check('TRV-CLI-merge: --scanner trivy writes the deterministic finding to the ta
   execFileSync('node', [CLI, '--scanner', 'trivy', '--input', TRIVY, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'trivy').length, 1) // idempotent — no duplicate
+})
+
+// ───────────────────────────────── recognizer (RC*) — content-shape routing for --all
+// Drives recognizeScanner() on the REAL committed fixtures + synthetic non-adapter shapes. The
+// shapes are provably disjoint (40/40 on real evidence); these guards lock that contract so a
+// regression in any `detect` predicate (or a new collision) is caught.
+const RC_FIXMAP = {
+  'code-analyzer': SOLANO,
+  'checkov': CHECKOV,
+  'semgrep': SEMGREP_WARN,
+  'bandit': BANDIT,
+  'njsscan': NJSSCAN,
+  'gitleaks': GITLEAKS,
+  'detect-secrets': DETECT_SECRETS,
+  'osv': OSV,
+  'npm-audit': NPM_AUDIT,
+  'trivy': TRIVY,
+}
+check('RC-each: every committed fixture recognizes as its OWN adapter (content shape, not filename)', () => {
+  for (const [name, path] of Object.entries(RC_FIXMAP)) {
+    assert.equal(recognizeScanner(readJSON(path)), name, `${path} → ${name}`)
+  }
+  // the second code-analyzer (SFGE) + the second semgrep (helios) fixtures also route correctly
+  assert.equal(recognizeScanner(readJSON(SFGE)), 'code-analyzer')
+  assert.equal(recognizeScanner(readJSON(SEMGREP_ERR)), 'semgrep')
+})
+
+check('RC-empty: a clean (results:[]) scan is STILL recognized as its scanner (honest accounting)', () => {
+  // an EMPTY results[] is disambiguated by the top-level markers, AND-NOT the higher-priority trio members
+  assert.equal(
+    recognizeScanner({ version: '1.55.0', results: [], paths: { scanned: [] }, errors: [], engine_requested: 'OSS', skipped_rules: [] }),
+    'semgrep'
+  )
+  assert.equal(recognizeScanner({ errors: [], generated_at: '2026-06-30T00:00:00Z', metrics: { _totals: {} }, results: [] }), 'bandit')
+  assert.equal(recognizeScanner({ results: [], experimental_config: { call_analysis_params: {} } }), 'osv')
+})
+
+check('RC-none: non-adapter evidence shapes → null (incl. the deps-npm WRAPPER ≠ npm-audit — content beats filename)', () => {
+  assert.equal(recognizeScanner({ satisfied: ['fail-crud-fls'], cleared: [], na: [], collected_by: 'build-evidence-index' }), null) // index.json
+  assert.equal(recognizeScanner({ version: '5.2.4', data: [{ file: 'x.js', results: [] }] }), null) // retire
+  assert.equal(recognizeScanner({ openapi: '3.0.3', paths: {} }), null) // an openapi-mcp-* spec
+  // the toolkit's own `deps-npm` disposition WRAPPER — has NO auditReportVersion/vulnerabilities, so it is
+  // NOT recognized as npm-audit even though its FILENAME (deps-npm-*.json) collides — the proof of content routing
+  assert.equal(
+    recognizeScanner({ family: 'deps', tool: 'npm', osv_scanner_result: {}, gap: 'x', disposition: 'documented', honest_ceiling: 'declared-only' }),
+    null
+  )
+})
+
+check('RC-ambiguous: a raw matching TWO detects returns {ambiguous:[…]}, NEVER a single guessed name', () => {
+  // a synthetic Frankenstein object carrying BOTH code-analyzer's violations[] AND trivy's Results[]+SchemaVersion
+  const both = recognizeScanner({ violations: [], Results: [], SchemaVersion: 2 })
+  assert.equal(typeof both, 'object')
+  assert.ok(both && Array.isArray(both.ambiguous), 'returns the {ambiguous:[…]} sentinel, not a string')
+  assert.deepEqual([...both.ambiguous].sort(), ['code-analyzer', 'trivy'])
+  // structural property: a bare adapter NAME is returned ONLY when exactly one detect matches
+  assert.equal(recognizeScanner(readJSON(TRIVY)), 'trivy')
+})
+
+check('RC-failsafe: null/{}/{results:null}/non-object → null, NO throw ([] → gitleaks per the proven predicate)', () => {
+  for (const raw of [null, undefined, {}, { results: null }, 5, 'x']) {
+    assert.equal(recognizeScanner(raw), null, `${JSON.stringify(raw)} → null, no throw`)
+  }
+  // NOTE (documented in the 0.8.40 CHANGELOG): the BUILDER prompt's RC-failsafe line lists `[]`→null, but the
+  // PROVEN gitleaks predicate + the design note recognize an empty top-level array as a CLEAN gitleaks scan
+  // (0 findings, harmless). The predicate is authoritative, so `[]` → 'gitleaks' — never a throw either way.
+  assert.equal(recognizeScanner([]), 'gitleaks')
+})
+
+// ───────────────────────────────── --all (journey-wiring mode) BEHAVIOR
+// Build a tmp target whose evidence/ carries SEVERAL real fixtures RENAMED to plausible evidence names
+// (checkov→iac-*, gitleaks→secret-scan-*, npm-audit→deps-npm-*, …) to exercise filename-independence, PLUS a
+// non-adapter index.json and a permissionset over-grant fixture. Then run `--all --json` via the CLI.
+function setupAllTarget({ withCodeAnalyzer = true } = {}) {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-all-'))
+  dirs.push(T)
+  const ev = join(T, '.security-review', 'evidence')
+  mkdirSync(ev, { recursive: true })
+  mkdirSync(join(T, 'force-app', 'permissionsets'), { recursive: true })
+  writeFileSync(
+    join(T, 'force-app', 'permissionsets', 'Solano_Admin.permissionset-meta.xml'),
+    readFileSync(join(FIX, 'permissionsets', 'Solano_Admin.permissionset-meta.xml'), 'utf8')
+  )
+  const cp = (src, asName) => writeFileSync(join(ev, asName), readFileSync(src, 'utf8'))
+  cp(CHECKOV, 'iac-dockerfile-2026-06-30.json') // checkov under a name with NO "checkov" token
+  cp(SEMGREP_WARN, 'semgrep-2026-06-30.json')
+  cp(GITLEAKS, 'secret-scan-history-2026-06-30.json') // gitleaks under the secret-scan-* prefix
+  cp(DETECT_SECRETS, 'secret-scan-detect-secrets-2026-06-30.json') // collides with gitleaks' prefix — disambiguated by shape
+  cp(OSV, 'osv-2026-06-30.json')
+  cp(NPM_AUDIT, 'deps-npm-2026-06-30.json') // the real npm audit output under the deps-npm-* name (NOT the wrapper)
+  cp(BANDIT, 'bandit-2026-06-30.json')
+  cp(NJSSCAN, 'njsscan-2026-06-30.json')
+  cp(TRIVY, 'trivy-2026-06-30.json')
+  if (withCodeAnalyzer) cp(SOLANO, 'code-analyzer-2026-06-30.json')
+  // a non-adapter evidence-index file MUST be skipped (named), never ingested
+  writeFileSync(join(ev, 'index.json'), JSON.stringify({ satisfied: ['fail-crud-fls'], cleared: [], na: [], collected_by: 'build-evidence-index' }))
+  return T
+}
+const runAll = (T) => JSON.parse(execFileSync('node', [CLI, '--all', '--target', T, '--json'], { encoding: 'utf8' }))
+
+check('ALL1 --all recognizes + ingests every renamed scanner output by content shape; each engine lands deterministic', () => {
+  const out = runAll(setupAllTarget())
+  const engines = new Set(out.findings.map((f) => f.engine))
+  for (const e of ['metadata', 'pmd', 'sfge', 'checkov', 'semgrep', 'gitleaks', 'detect-secrets', 'osv', 'npm-audit', 'bandit', 'njsscan', 'trivy']) {
+    assert.ok(engines.has(e), `engine ${e} present in the --all band`)
+  }
+  assert.ok(out.findings.length >= 12, 'a full band across all families')
+  assert.ok(out.findings.every((f) => f.provenance === 'deterministic'), 'every --all finding is provenance:deterministic')
+  // the always-on metadata source scan landed its over-grant
+  assert.ok(out.findings.some((f) => f.engine === 'metadata' && f.ruleId === 'viewall-overgrant'), 'metadata-viewall over-grant present')
+  // spot-check the engine tagging routed correctly (checkov→checkov, gitleaks→gitleaks, osv→osv)
+  assert.ok(out.findings.some((f) => f.engine === 'checkov' && f.class === 'iac-misconfig'))
+  assert.ok(out.findings.some((f) => f.engine === 'gitleaks' && f.class === 'hardcoded-secrets'))
+})
+
+check('ALL2 the non-adapter index.json is SKIPPED (named) — no findings, no scanner row, no engine named after it', () => {
+  const out = runAll(setupAllTarget())
+  assert.ok(out.skipped.some((s) => s.file === 'evidence/index.json'), 'index.json is named in skipped[]')
+  assert.ok(!out.findings.some((f) => /index/i.test(String(f.engine))), 'no engine named after index.json')
+  assert.ok(!out.scanners.some((s) => /index\.json/.test(s.file || '')), 'index.json is not counted as a scanner')
+})
+
+check('ALL3 --all is byte-deterministic — two runs on the same target → identical ledger', () => {
+  const T = setupAllTarget()
+  const lp = join(T, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--all', '--target', T], { encoding: 'utf8' })
+  const l1 = readFileSync(lp, 'utf8')
+  execFileSync('node', [CLI, '--all', '--target', T], { encoding: 'utf8' })
+  assert.equal(readFileSync(lp, 'utf8'), l1, 'the ledger is byte-identical on the second --all run')
+})
+
+check('ALL4 PENDING accounting: Code Analyzer absent → crud-fls+sharing PENDING; present → crud-fls findings appear', () => {
+  const outNo = runAll(setupAllTarget({ withCodeAnalyzer: false }))
+  assert.deepEqual([...outNo.pending].sort(), ['crud-fls', 'sharing'])
+  assert.ok(!outNo.findings.some((f) => f.class === 'crud-fls'), 'no crud-fls band when Code Analyzer is absent')
+  assert.ok(outNo.notes.some((n) => /PENDING-OWNER-RUN/.test(n)), 'an explicit PENDING-OWNER-RUN note is emitted')
+  const outYes = runAll(setupAllTarget({ withCodeAnalyzer: true }))
+  assert.deepEqual(outYes.pending, [], 'no PENDING when Code Analyzer is present')
+  assert.ok(outYes.findings.some((f) => f.class === 'crud-fls' && f.provenance === 'deterministic'), 'crud-fls appears when Code Analyzer is present')
+})
+
+check('ALL5 secret-never-leaks holds THROUGH --all — no secret/PII/hash token reaches the ledger', () => {
+  const T = setupAllTarget()
+  execFileSync('node', [CLI, '--all', '--target', T], { encoding: 'utf8' })
+  const ledgerText = readFileSync(join(T, '.security-review', 'audit-ledger.json'), 'utf8')
+  // gitleaks fixture: its Match line + raw Secret are deliberately never read by the adapter
+  for (const f of readJSON(GITLEAKS)) {
+    if (f.Match) assert.ok(!ledgerText.includes(f.Match), `a gitleaks Match line never reaches the ledger`)
+    if (f.Secret) assert.ok(!ledgerText.includes(f.Secret), `a gitleaks raw Secret value never reaches the ledger`)
+  }
+  // detect-secrets fixture: the hashed_secret SHA is deliberately never read
+  const ds = readJSON(DETECT_SECRETS)
+  for (const occs of Object.values(ds.results)) {
+    for (const o of occs) {
+      if (o.hashed_secret) assert.ok(!ledgerText.includes(o.hashed_secret), `a detect-secrets hashed_secret never reaches the ledger`)
+    }
+  }
+  // belt-and-suspenders: no canonical live-secret pattern survives
+  for (const re of [/AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /ghp_[A-Za-z0-9]{20,}/, /xox[baprs]-[A-Za-z0-9-]{10,}/]) {
+    assert.ok(!re.test(ledgerText), `no secret matching ${re} in the ledger`)
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

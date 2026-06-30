@@ -106,10 +106,13 @@ major-version transition changed the command shape once.
 
 ### B2 — run the deterministic pass (agent-runnable; what audit-codebase Step 4b does)
 
+One `--all` invocation ingests EVERY recognized scanner output present under `evidence/` (the
+metadata over-grant scan is always-on; the `code-analyzer-$DATE.json` you produced in B1 — plus any
+OSS SAST / secret / dep-CVE / IaC evidence from `run-scans` — is recognized by content shape and
+ingested in the same pass):
+
 ```bash
-node "$SRT"/harness/ingest-scanner-findings.mjs --scanner metadata-viewall --target ~/srt-solano
-node "$SRT"/harness/ingest-scanner-findings.mjs --scanner code-analyzer \
-  --input ~/srt-solano/.security-review/evidence/code-analyzer-$DATE.json --target ~/srt-solano
+node "$SRT"/harness/ingest-scanner-findings.mjs --all --target ~/srt-solano
 ```
 
 ### B3 — confirm the three anchors are `provenance:'deterministic'`, severity-from-class, NO LLM
@@ -173,9 +176,7 @@ run_once() {
   D=$(mktemp -d); mkdir -p "$D/.security-review/evidence" "$D/force-app/permissionsets"
   find ~/srt-solano -name '*.permissionset-meta.xml' -exec cp {} "$D/force-app/permissionsets/" \;
   cp "$CA" "$D/.security-review/evidence/"
-  node "$SRT"/harness/ingest-scanner-findings.mjs --scanner metadata-viewall --target "$D" >/dev/null
-  node "$SRT"/harness/ingest-scanner-findings.mjs --scanner code-analyzer \
-    --input "$D/.security-review/evidence/$(basename "$CA")" --target "$D" >/dev/null
+  node "$SRT"/harness/ingest-scanner-findings.mjs --all --target "$D" >/dev/null
   extract "$D/.security-review/audit-ledger.json"
 }
 
@@ -192,6 +193,11 @@ engines, ruleIds, loci) is identical run-to-run. This is the end-to-end "run the
 → identical" that replaces the 5-run union-convergence campaign. (For a stronger check, re-run
 `sf code-analyzer` itself between the two ingests and confirm the same band — Code Analyzer's
 SAST output is deterministic over unchanged source.)
+
+With the full OSS scanner set present in `evidence/` (Semgrep/Bandit/njsscan SAST, gitleaks/
+detect-secrets, OSV/npm-audit dep-CVE, Checkov/Trivy IaC alongside Code Analyzer + the metadata
+over-grant), `--all` makes the WHOLE deterministic band reproducible run-to-run — not just the
+three originally-wobbled CRUD-FLS / sharing / ViewAll classes.
 
 ---
 
@@ -211,9 +217,11 @@ SAST output is deterministic over unchanged source.)
 
 ## Cross-references
 
-- Engines: `harness/ingest-scanner-findings.mjs` (Slice 1/2), `harness/reconcile-provenance.mjs` (Slice 2).
-- Wiring: `skills/audit-codebase/SKILL.md` (Step 4b + the reconcile at the end of Step 6),
-  `skills/security-review-journey/SKILL.md` (Audit step), `skills/run-scans/SKILL.md` (Family 1 feeds the ingest).
+- Engines: `harness/ingest-scanner-findings.mjs` (Slice 1/2 + the 0.8.40 `--all` content-recognizer ingest),
+  `harness/reconcile-provenance.mjs` (Slice 2).
+- Wiring: `skills/audit-codebase/SKILL.md` (Step 4b — now ONE `--all` call — plus the reconcile at the end of
+  Step 6), `skills/security-review-journey/SKILL.md` (Audit step), `skills/run-scans/SKILL.md` (Family 1 feeds
+  the ingest, AND step 9b now runs `--all` + reconcile at the scan tail so a single cold run seeds the band).
 - Standing guards: `acceptance/test-deterministic-integration.mjs` (this slice),
   `acceptance/test-ingest-scanner-findings.mjs`, `acceptance/test-reconcile-provenance.mjs`,
   `acceptance/test-calibration-fp-patterns.mjs` (engine-absent → KEEP).
