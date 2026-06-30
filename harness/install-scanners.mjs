@@ -138,6 +138,40 @@ const NPM_TOOLS = { retire: { pkg: 'retire', bin: 'retire' } }
 // git tools: shallow clone; the runnable lives at <clone>/<bin>
 const GIT_TOOLS = { testssl: { repo: 'https://github.com/testssl/testssl.sh.git', dir: 'testssl.sh', bin: 'testssl.sh' } }
 
+// ── Code-Analyzer cold-install stack (0.8.41) ─────────────────────────────────
+// CRUD/FLS is the #1 AppExchange review-failure class, and Salesforce Code Analyzer
+// (PMD ApexCRUDViolation/ApexFlsViolation + the SFGE dataflow engine) is the exact
+// static engine the reviewer runs for it. When `sf`+plugin+JDK are already present the
+// agent runs it as-is; on a TRULY-COLD box this stack provisions them to the tmp root
+// (`code-analyzer-stack` method), so CRUD/FLS is deterministic-by-default rather than
+// PENDING-OWNER-RUN. Determinism of the resulting ledger band depends on these pins —
+// they pin the analyzer (and thus the rule set / engine versions) the spike validated.
+const CA_STACK_PINS = {
+  cli:    { pkg: '@salesforce/cli', version: '2.140.6' },         // sf at <cliDir>/node_modules/.bin/sf
+  // oclif plugin SHORT name `code-analyzer` → npm `@salesforce/plugin-code-analyzer`;
+  // 5.14.0 bundles code-analyzer-pmd-engine 0.43.0 + code-analyzer-sfge-engine 0.22.0.
+  plugin: { name: 'code-analyzer', version: '5.14.0', npm: '@salesforce/plugin-code-analyzer' },
+}
+
+// Temurin (Eclipse Adoptium) JDK 17 — the JRE PMD/SFGE need (JDK 11+). Mirrors
+// BINARY_PINS: a per-platform { file, sha256 }, sha256-verified BEFORE extract; an
+// unpinned platform (and no present java≥11) FAILS CLOSED → PENDING-OWNER-RUN, never
+// extracted unverified. Bumping = re-pin the version AND every per-platform sha256 from
+// Adoptium's published checksums. Note `%2B` is the URL-encoding of the `+` in the
+// `jdk-17.0.19+10` release tag (the file names themselves use `17.0.19_10`).
+export const JDK_PINS = {
+  version: '17.0.19+10',
+  dirName: 'jdk-17.0.19+10', // the tarball's top dir; JAVA_HOME = <extractDir>/<dirName> (+ /Contents/Home on darwin)
+  archive: 'tar.gz',
+  urlBase: 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.19%2B10/',
+  assets: {
+    'linux-x64':    { file: 'OpenJDK17U-jdk_x64_linux_hotspot_17.0.19_10.tar.gz',     sha256: 'd8afc263758141a66e0e3aafc321e783f7016696f4eaea067d340a269037d331' },
+    'linux-arm64':  { file: 'OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.19_10.tar.gz', sha256: '83a52172678ec8975164648654869cb2e71d7c748b47aca94b29bbfa10c18e81' },
+    'darwin-x64':   { file: 'OpenJDK17U-jdk_x64_mac_hotspot_17.0.19_10.tar.gz',       sha256: '03632d1fbf139ab3719a9f4b47dc206251449b87557143c822336dbf8c06560f' },
+    'darwin-arm64': { file: 'OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.19_10.tar.gz',   sha256: '8fa1eff40bb637a33613b2ccb8b12c70dc3661cc22cf8e784943715769a05336' },
+  },
+}
+
 const HEX64 = /^[0-9a-f]{64}$/
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/ // a non-trivial run-id token (never '', '.', '..', or a path)
 export const GROUP_DIR = 'sf-srt-scanners'        // the per-run grouping container under the temp base
@@ -197,13 +231,46 @@ export function installCommands(inst) {
           ? `extract '${inst.archiveBin}' from ${inst.download} → ${inst.expectedBin} (scratch _pkg/, aux files discarded)`
           : `install ${inst.expectedBin} (chmod +x)`,
       ]
+    case 'code-analyzer-stack':
+      return [
+        `# hermetic env (under ${inst.targetDir}): HOME SF_DATA_DIR SF_CACHE_DIR SF_CONFIG_DIR TMPDIR npm_config_cache + SF_DISABLE_TELEMETRY/AUTOUPDATE`,
+        inst.jdk.mode === 'reuse'
+          ? `reuse present JDK (JAVA_HOME=${inst.jdk.javaHome})`
+          : `curl -fsSL ${inst.jdk.source} → verify sha256(${inst.jdk.checksum}) → extract Temurin JDK ${inst.jdk.version} (JAVA_HOME=${inst.jdk.javaHome})`,
+        `npm install --prefix ${inst.cliDir} --no-audit --no-fund ${inst.cli.pkg}@${inst.cli.version}`,
+        `${join(inst.cliBinDir, 'sf')} plugins install ${inst.plugin.name}@${inst.plugin.version}`,
+      ]
     default:
       return []
   }
 }
 
+/**
+ * Resolve the JDK side of the CA stack. PURE given its inputs. Reuses a present
+ * java≥11 (read-only — its JAVA_HOME stays OUTSIDE the tmp root, never written) when
+ * the impure caller detected one; otherwise provisions the pinned Temurin INTO the
+ * tmp root (every byte under `jdkDir` ⊂ tmpRoot, so cleanup's structural rm reaches it).
+ */
+function resolveJdk({ presentJavaHome, jdkDir, platKey }) {
+  if (presentJavaHome) {
+    const home = resolve(String(presentJavaHome))
+    return { mode: 'reuse', version: null, javaHome: home, binDir: join(home, 'bin') }
+  }
+  const asset = JDK_PINS.assets[platKey]
+  if (!asset) return { mode: 'unsupported' }
+  // darwin tarballs nest the runtime under Contents/Home; linux uses the top dir directly.
+  const home = platKey.startsWith('darwin')
+    ? join(jdkDir, JDK_PINS.dirName, 'Contents', 'Home')
+    : join(jdkDir, JDK_PINS.dirName)
+  return {
+    mode: 'provision', version: JDK_PINS.version, archive: JDK_PINS.archive,
+    source: JDK_PINS.urlBase + asset.file, download: join(jdkDir, asset.file),
+    checksum: asset.sha256, extractDir: jdkDir, javaHome: home, binDir: join(home, 'bin'),
+  }
+}
+
 /** Resolve one installable tool → a concrete install plan, or a skip reason. PURE. */
-function resolveTool(t, tmpRoot, platKey) {
+function resolveTool(t, tmpRoot, platKey, presentJavaHome) {
   const name = t.name
   const family = t.family
   const targetDir = join(tmpRoot, name)
@@ -242,6 +309,44 @@ function resolveTool(t, tmpRoot, platKey) {
       },
     }
   }
+  if (t.install === 'code-analyzer-stack') {
+    const cliDir = join(targetDir, 'cli')
+    const cliBinDir = join(cliDir, 'node_modules', '.bin')
+    const jdkDir = join(targetDir, 'jdk')
+    const jdk = resolveJdk({ presentJavaHome, jdkDir, platKey })
+    if (jdk.mode === 'unsupported') {
+      return { skip: { name, family, method: t.install, reason: `no pinned Temurin JDK for ${platKey} and no present java≥11 — PENDING-OWNER-RUN` } }
+    }
+    // ── HERMETICITY CONTRACT (load-bearing — the 0.8.41 spike's central finding) ──
+    // cleanup tears down with one structural `rm -rf <tmpRoot>`, so EVERY path the
+    // install WRITES must live under targetDir (⊂ tmpRoot). SF_* alone is NOT enough:
+    // `~/.sf`, the npm cache, and @salesforce/cli's postinstall hooks (which fire during
+    // `npm install`) write under HOME/TMPDIR/npm_config_cache — so those are first-class
+    // contained paths too, set BEFORE the npm install and passed to every exec.
+    const env = {
+      HOME: join(targetDir, 'home'),
+      SF_DATA_DIR: join(targetDir, 'sfdata'),
+      SF_CACHE_DIR: join(targetDir, 'sfcache'),
+      SF_CONFIG_DIR: join(targetDir, 'sfconfig'),
+      TMPDIR: join(targetDir, 'runtmp'),
+      npm_config_cache: join(targetDir, 'npmcache'),
+      JAVA_HOME: jdk.javaHome,
+      SF_DISABLE_TELEMETRY: 'true',
+      SF_DISABLE_AUTOUPDATE: 'true',
+      SF_AUTOUPDATE_DISABLE: 'true',
+    }
+    const pathPrepend = [cliBinDir, jdk.binDir]
+    return {
+      install: {
+        ...base, version: CA_STACK_PINS.cli.version,
+        source: `npm:${CA_STACK_PINS.cli.pkg}@${CA_STACK_PINS.cli.version}`,
+        checksum: null, archive: null,
+        cliDir, cliBinDir, binDir: cliBinDir, expectedBin: join(cliBinDir, 'sf'),
+        cli: { ...CA_STACK_PINS.cli }, plugin: { ...CA_STACK_PINS.plugin }, jdk,
+        env, pathPrepend,
+      },
+    }
+  }
   return { skip: { name, family, method: t.install, reason: `unsupported install method '${t.install}'` } }
 }
 
@@ -249,10 +354,12 @@ function resolveTool(t, tmpRoot, platKey) {
  * Compute the full install plan from tool-detect's installable set.
  * `installableMissing`: array of { name, family, install }. Deterministic +
  * byte-identical for a given (installableMissing, runId, tmpRoot, platform, arch,
- * only): no mutation, no network. (It does one read-only `realpath` of the temp/
- * home base inside the tmp-root safety check — not "no I/O", but no writes. audit #12)
+ * only, presentJavaHome): no mutation, no network. (It does one read-only `realpath`
+ * of the temp/home base inside the tmp-root safety check — not "no I/O", but no
+ * writes. audit #12). `presentJavaHome` is threaded in (not probed here, to keep the
+ * planner pure) so the CA-stack JDK step is a deterministic reuse-or-provision decision.
  */
-export function planInstalls(installableMissing, { runId, tmpRoot, platform, arch, only } = {}) {
+export function planInstalls(installableMissing, { runId, tmpRoot, platform, arch, only, presentJavaHome } = {}) {
   if (!runId || !RUN_ID_OK.test(String(runId))) {
     throw new Error(`planInstalls: run-id must be a non-trivial [A-Za-z0-9._-] token, got '${runId}' (an empty/'.'/path run-id would collapse the tmp dir onto the shared base)`)
   }
@@ -267,7 +374,7 @@ export function planInstalls(installableMissing, { runId, tmpRoot, platform, arc
     if (!t || !t.name || seen.has(t.name)) continue
     seen.add(t.name)
     if (onlySet && !onlySet.has(t.name)) continue
-    const r = resolveTool(t, tmpRoot, platKey)
+    const r = resolveTool(t, tmpRoot, platKey, presentJavaHome)
     if (r.skip) skipped.push(r.skip)
     else installs.push({ ...r.install, commands: installCommands(r.install) })
   }
@@ -282,6 +389,9 @@ export function planInstalls(installableMissing, { runId, tmpRoot, platform, arc
 
 const sha256File = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+// Like `run`, but with an explicit env (the CA-stack hermetic env). A separate helper
+// so the pip/npm/git/binary branches' `run(...)` call sites stay byte-identical.
+const runEnv = (cmd, args, cwd, env) => execFileSync(cmd, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
 /** Execute one install. Returns a manifest record. Throws nothing — failures are recorded. */
 function executeOne(inst) {
@@ -290,6 +400,13 @@ function executeOne(inst) {
     targetDir: inst.targetDir, binDir: inst.binDir, expectedBin: inst.expectedBin,
     source: inst.source, checksum: inst.checksum || null, commands: inst.commands,
     status: 'planned', runnable: false, createdPaths: [inst.targetDir], log: '',
+  }
+  // The CA stack carries the hermetic env + the 2-dir PATH-prepend (sf + java) + the JDK
+  // decision onto the manifest record, so run-scans can export them for the scan run.
+  if (inst.method === 'code-analyzer-stack') {
+    rec.env = inst.env
+    rec.pathPrepend = inst.pathPrepend
+    rec.jdk = { mode: inst.jdk.mode, version: inst.jdk.version || null, javaHome: inst.jdk.javaHome }
   }
   try {
     mkdirSync(inst.targetDir, { recursive: true, mode: 0o700 }) // 0700: not world-readable (audit #2)
@@ -327,6 +444,38 @@ function executeOne(inst) {
         renameSync(inst.download, inst.expectedBin)
       }
       try { chmodSync(inst.expectedBin, 0o755) } catch {} // archive extraction can drop the exec bit
+    } else if (inst.method === 'code-analyzer-stack') {
+      // Contain EVERY write under targetDir (the hermeticity contract). Pre-create the
+      // dirs the tools write into so npm/sf never fall back to the real ~ during the
+      // @salesforce/cli postinstall hooks that fire mid-`npm install`.
+      for (const d of [inst.env.HOME, inst.env.SF_DATA_DIR, inst.env.SF_CACHE_DIR, inst.env.SF_CONFIG_DIR, inst.env.TMPDIR, inst.env.npm_config_cache, inst.cliDir]) {
+        mkdirSync(d, { recursive: true, mode: 0o700 })
+      }
+      const env = { ...process.env, ...inst.env }
+      // (1) JDK — reuse a present java≥11, or download+VERIFY(sha256)+extract the pinned Temurin.
+      if (inst.jdk.mode === 'provision') {
+        mkdirSync(inst.jdk.extractDir, { recursive: true, mode: 0o700 })
+        runEnv('curl', ['-fsSL', '-o', inst.jdk.download, inst.jdk.source], inst.targetDir, env)
+        const got = sha256File(inst.jdk.download)
+        if (!HEX64.test(String(inst.jdk.checksum)) || got !== inst.jdk.checksum) {
+          rec.status = 'failed'
+          rec.log = `JDK checksum mismatch: expected ${inst.jdk.checksum}, got ${got} — refusing to extract an unverified JDK`
+          try { rmSync(inst.jdk.download, { force: true }) } catch {}
+          return rec
+        }
+        runEnv('tar', ['-xzf', inst.jdk.download, '-C', inst.jdk.extractDir], inst.targetDir, env)
+        rmSync(inst.jdk.download, { force: true }) // ~184MB tarball, deletable after extract
+      }
+      if (!isExecutable(join(inst.jdk.javaHome, 'bin', 'java'))) {
+        rec.status = 'failed'
+        rec.log = `JDK not runnable at ${join(inst.jdk.javaHome, 'bin', 'java')} (mode: ${inst.jdk.mode})`
+        return rec
+      }
+      // (2) the pinned Salesforce CLI into cliDir; PATH carries the contained JAVA_HOME/bin.
+      const stepEnv = { ...env, PATH: [...inst.pathPrepend, env.PATH || ''].join(delimiter) }
+      rec.log = clampLog(runEnv('npm', ['install', '--prefix', inst.cliDir, '--no-audit', '--no-fund', `${inst.cli.pkg}@${inst.cli.version}`], inst.targetDir, stepEnv), 2000)
+      // (3) the pinned code-analyzer plugin via the just-installed sf.
+      runEnv(join(inst.cliBinDir, 'sf'), ['plugins', 'install', `${inst.plugin.name}@${inst.plugin.version}`], inst.targetDir, stepEnv)
     } else {
       rec.status = 'failed'; rec.log = `unsupported method '${inst.method}'`; return rec
     }
@@ -357,6 +506,26 @@ function extractZip(zip, dir) {
   else run('python3', ['-m', 'zipfile', '-e', zip, dir], dir)
 }
 
+/** Major version of a `java` binary, or 0 if it can't be determined. IMPURE (execs java). */
+function javaMajor(javaBin) {
+  try {
+    // `java --version` (Java 9+) prints to STDOUT; Java 8's `-version`-only CLI errors
+    // here → caught → 0 (Java 8 is < 11 anyway, so "treat as absent → provision" is correct).
+    const out = execFileSync(javaBin, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const m = out.match(/(\d+)\.\d+\.\d+/) || out.match(/version "?(\d+)/) || out.match(/\b(\d+)\b/)
+    return m ? Number(m[1]) : 0
+  } catch { return 0 }
+}
+
+/** A present JDK≥11's home (JAVA_HOME, else a `java` on PATH), or null. IMPURE (probes + execs java). */
+function detectPresentJava() {
+  const jh = process.env.JAVA_HOME
+  if (jh && isExecutable(join(jh, 'bin', 'java')) && javaMajor(join(jh, 'bin', 'java')) >= 11) return jh
+  const jbin = whichOn('java', process.env.PATH || '')
+  if (jbin && javaMajor(jbin) >= 11) return resolve(join(jbin, '..', '..')) // <home>/bin/java → <home>
+  return null
+}
+
 /**
  * IMPURE executor. Runs `plan` against the network. FAILS CLOSED without consent.
  * opts: { consent:boolean, dryRun:boolean, target?:string }
@@ -375,6 +544,9 @@ export function installScanners(plan, { consent = false, dryRun = false, target 
         targetDir: inst.targetDir, binDir: inst.binDir, expectedBin: inst.expectedBin,
         source: inst.source, checksum: inst.checksum || null, commands: inst.commands,
         status: 'planned', runnable: false, createdPaths: [inst.targetDir], log: 'dry-run — no install performed',
+        ...(inst.method === 'code-analyzer-stack'
+          ? { env: inst.env, pathPrepend: inst.pathPrepend, jdk: { mode: inst.jdk.mode, version: inst.jdk.version || null, javaHome: inst.jdk.javaHome } }
+          : {}),
       })
     } else {
       records.push(executeOne(inst))
@@ -435,7 +607,10 @@ function main() {
   else detect = detectTools(process.env.PATH || '')
   const installable = (detect.summary && detect.summary.installable_missing) || []
 
-  const plan = planInstalls(installable, { runId, tmpRoot, platform: process.platform, arch: process.arch, only })
+  // Detect a present java≥11 (impure) so the CA-stack JDK step reuses it instead of
+  // provisioning the pinned Temurin; planInstalls itself stays pure (the result is an input).
+  const presentJavaHome = detectPresentJava()
+  const plan = planInstalls(installable, { runId, tmpRoot, platform: process.platform, arch: process.arch, only, presentJavaHome })
 
   if (!plan.installs.length) {
     const msg = { note: 'nothing installable to install', skipped: plan.skipped, runId, tmpRoot }

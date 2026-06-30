@@ -37,6 +37,53 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.41] — 2026-06-30
+
+**Deterministic-findings cold-install milestone — Code Analyzer CRUD/FLS flips from owner-gated to
+consented-deterministic-by-default (docs/roadmap-deterministic-findings.md §5).** CRUD/FLS is the #1
+AppExchange review-failure class, and Salesforce Code Analyzer (PMD `ApexCRUDViolation`/`ApexFlsViolation`
++ the SFGE dataflow engine) is the exact static engine the reviewer runs for it. When `sf`+plugin+JDK are
+already present the agent runs it as-is and the 0.8.40 `--all` ingest picks it up; the gap was a TRULY-COLD
+box (no `sf`, no Java), where `tool-detect.mjs` marked the `code-analyzer` family `install:'owner'`, so the
+installer never provisioned it and CRUD/FLS fell to PENDING-OWNER-RUN. This slice flips it to a consented
+tmp-install (a new `code-analyzer-stack` method), so even a cold run produces deterministic CRUD/FLS. A
+prior spike validated the hermetic cold-install recipe live and re-verified every pin at source.
+**(A) The CA-stack installer** (`install-scanners.mjs`): a `JDK_PINS` constant (4-platform Temurin
+17.0.19+10, each `{file, sha256}`, `%2B`-encoded release-tag URL) mirroring `BINARY_PINS`; a `resolveJdk`
+pure helper (reuse a present `java`≥11 read-only, else provision the pinned tarball); a dedicated
+`resolveTool` branch (the compound plan — the pinned `@salesforce/cli@2.140.6` npm step, the
+`code-analyzer@5.14.0` plugin step, the JDK detect-or-provision step, the hermetic `env` map + 2-dir
+`pathPrepend` all rooted under the tmp root); and a dedicated `executeOne` branch (JDK
+download+sha256-verify+extract or reuse → pinned CLI → pinned plugin, hermetic env passed to every exec via
+a separate `runEnv`). **(B) The hermeticity contract** (the spike's central, load-bearing finding): `SF_*`
+alone is NOT sufficient — `~/.sf`, the npm cache, and `@salesforce/cli`'s postinstall hooks (which fire
+during `npm install`) write under `HOME`/`TMPDIR`/`npm_config_cache`, so the FULL contained env is set
+BEFORE the npm install and passed to every exec, with every write path under the tmp root, so
+`cleanup-scanners.mjs`'s single structural `rm -rf <tmpRoot>` reaches all of it (0 escaped paths). **(C)
+tool-detect** flips the `code-analyzer` family to the installable `code-analyzer-stack` method (carrying the
+~1 GB / +~320 MB-JDK / JDK-11+ footprint note); a present `sf` is still used as-is, zero-cost. **(D)
+run-scans Family 1** documents the cold-install path + the engine-explicit workspace form
+`sf code-analyzer run --workspace <root> -r AppExchange -r sfge -r pmd --output-file … --view detail`, with
+**`-r sfge` mandatory** for FLS (DevPreview, not in `Recommended`); the 0.8.40 `--all` ingest consumes the
+JSON unchanged (the adapter needed NO change — it already extracts only stable fields, so the band is
+deterministic given a pinned analyzer). **Consent** disclosure (journey + run-scans) carries the CA-stack
+footprint + that it pulls `@salesforce/cli` + the plugin from npm and (if Java absent) the Temurin JDK from
+Adoptium. **Additive-only:** the existing `resolveTool`/`executeOne` pip/npm/git/binary branches +
+`planInstalls` core + the existing tools' plans are byte-unchanged (the CA-stack branch + `JDK_PINS` + the
+manifest `env`/`pathPrepend` fields are NEW; `presentJavaHome` is a new optional planner input threaded
+through, not probed in the pure planner). **Tests:** `+6` `CA*` checks in `test-install-scanners` (plan
+shape, the **hermeticity-contract structural assertion** — every CA-stack env path + `pathPrepend` entry
+under the tmp root, the standing guard for the spike's finding, `JDK_PINS` integrity, the JDK
+detect-or-provision decision, `installCommands`, and a hermetic `--dry-run` disclosure) and `+1` `T7` in
+`test-tool-detect` (absent `sf` → installable via `code-analyzer-stack`, not owner; present `sf` →
+satisfied; footprint/JDK note). Mutation-proven non-vacuous (escape a path → hermeticity RED; corrupt a
+`JDK_PINS` sha256 → integrity RED; flip tool-detect back to `owner` → classification RED). The live
+install+run is **operator-cold-validated (Level B)**, not CI-hermetic (it needs network + ~1 GB + Java);
+the standing tests cover the PURE logic. `docs/deterministic-findings-acceptance.md` Level B B0 now leads
+with the cold-install recipe (env-before-install contract, the pins, `-r AppExchange -r sfge -r pmd`, the
+hermeticity check, the twice-run byte-identical determinism), keeping the present-`sf` zero-install path.
+Suite **55 files / 707 checks** (was 55 / 700; +6 `CA*`, +1 `T7`). Tag stays **HELD** (0.9.0 reserved).
+
 ## [0.8.40] — 2026-06-30
 
 **Deterministic-findings Phase 2 · JOURNEY WIRING — the 11 ingest adapters now actually RUN in the journey

@@ -35,7 +35,7 @@ import { join, sep } from 'node:path'
 import { tmpdir, homedir, platform as osPlatform, arch as osArch } from 'node:os'
 import { createHash } from 'node:crypto'
 import {
-  planInstalls, installScanners, installCommands, assertSafeTmpRoot, MANIFEST_SCHEMA,
+  planInstalls, installScanners, installCommands, assertSafeTmpRoot, MANIFEST_SCHEMA, JDK_PINS,
 } from '../harness/install-scanners.mjs'
 
 let pass = 0, fail = 0
@@ -164,6 +164,102 @@ check('P6 installCommands per method', () => {
   assert.match(byName['osv-scanner'].commands[1], /^verify sha256/)
   assert.match(byName['retire'].commands[0], /npm install --prefix/)
   assert.match(byName['testssl'].commands[0], /git clone --depth 1/)
+})
+
+// ── CA stack (0.8.41): code-analyzer cold-install plan + hermeticity contract ──
+const CA_MISSING = [{ name: 'sf', family: 'code-analyzer', install: 'code-analyzer-stack' }]
+const planCA = (extra = {}) => planInstalls(CA_MISSING, { runId: 'fixed-run', tmpRoot: ROOT0, platform: 'linux', arch: 'x64', ...extra })
+const caInst = (p) => p.installs.find((i) => i.method === 'code-analyzer-stack')
+
+check('CA1 code-analyzer-stack plan shape: pinned cli+plugin+JDK, hermetic env, 2-dir pathPrepend, determinism', () => {
+  const p = planCA() // presentJavaHome undefined → cold / provision path
+  const i = caInst(p)
+  assert.ok(i, 'the CA stack is planned when sf is absent')
+  assert.equal(i.name, 'sf')
+  // pinned Salesforce CLI + code-analyzer plugin (the determinism anchors)
+  assert.equal(i.cli.pkg, '@salesforce/cli')
+  assert.equal(i.cli.version, '2.140.6')
+  assert.equal(i.plugin.name, 'code-analyzer')
+  assert.equal(i.plugin.version, '5.14.0')
+  assert.equal(i.plugin.npm, '@salesforce/plugin-code-analyzer')
+  // sf is the post-install presence check; binDir is the cli .bin (also the top-level pathPrepend)
+  assert.equal(i.cliBinDir, join(ROOT0, 'sf', 'cli', 'node_modules', '.bin'))
+  assert.equal(i.binDir, i.cliBinDir)
+  assert.equal(i.expectedBin, join(i.cliBinDir, 'sf'))
+  // the run PATH is BOTH the sf .bin AND the JDK bin
+  assert.deepEqual(i.pathPrepend, [i.cliBinDir, join(ROOT0, 'sf', 'jdk', 'jdk-17.0.19+10', 'bin')])
+  // the hermetic env names every contained write dir + the telemetry/autoupdate-off flags
+  assert.deepEqual(Object.keys(i.env).sort(), ['HOME', 'JAVA_HOME', 'SF_AUTOUPDATE_DISABLE', 'SF_CACHE_DIR', 'SF_CONFIG_DIR', 'SF_DATA_DIR', 'SF_DISABLE_AUTOUPDATE', 'SF_DISABLE_TELEMETRY', 'TMPDIR', 'npm_config_cache'])
+  assert.equal(i.env.SF_DISABLE_TELEMETRY, 'true')
+  assert.equal(i.env.SF_AUTOUPDATE_DISABLE, 'true')
+  // byte-identical plan for identical inputs
+  assert.equal(JSON.stringify(planCA()), JSON.stringify(planCA()))
+})
+
+check('CA2 hermeticity contract: every CA-stack env path + pathPrepend entry is under tmpRoot (cold/provision)', () => {
+  const i = caInst(planCA()) // cold path → the provisioned JDK is under tmpRoot too
+  const underRoot = (x) => x.startsWith(ROOT0 + sep)
+  // the path-valued env entries (the three flag values are 'true', skipped by the absolute-path filter)
+  const envPaths = Object.values(i.env).filter((v) => v.startsWith(sep))
+  assert.equal(envPaths.length, 7, 'HOME + 4 SF_* dirs + TMPDIR + npm_config_cache + JAVA_HOME = 7 path values')
+  for (const v of envPaths) assert.ok(underRoot(v), `env path escaped tmpRoot: ${v}`)
+  for (const v of i.pathPrepend) assert.ok(underRoot(v), `pathPrepend escaped tmpRoot: ${v}`)
+})
+
+check('CA3 JDK detect-or-provision: present java≥11 → REUSE (no download); absent → provision the pin', () => {
+  // provision (cold): the pinned Temurin, with sha256 + the %2B URL + JAVA_HOME under tmpRoot
+  const prov = caInst(planCA()).jdk
+  assert.equal(prov.mode, 'provision')
+  assert.equal(prov.version, '17.0.19+10')
+  assert.match(prov.checksum, /^[0-9a-f]{64}$/)
+  assert.ok(prov.source.includes('jdk-17.0.19%2B10/'), 'the %2B-encoded release tag is in the URL')
+  assert.equal(prov.javaHome, join(ROOT0, 'sf', 'jdk', 'jdk-17.0.19+10'))
+  assert.ok(prov.javaHome.startsWith(ROOT0 + sep), 'a provisioned JDK lives under tmpRoot')
+  // reuse: a detected present java≥11 is reused read-only — JAVA_HOME left as-is, no download/sha256
+  const re = caInst(planCA({ presentJavaHome: '/opt/jdk-17' }))
+  assert.equal(re.jdk.mode, 'reuse')
+  assert.equal(re.jdk.javaHome, '/opt/jdk-17')
+  assert.equal(re.jdk.source, undefined, 'a reused JDK has no download to verify')
+  assert.equal(re.jdk.checksum, undefined)
+  assert.deepEqual(re.pathPrepend, [re.cliBinDir, '/opt/jdk-17/bin'])
+  assert.equal(re.env.JAVA_HOME, '/opt/jdk-17')
+})
+
+check('CA4 JDK_PINS integrity: 4 platforms, each a hex64 sha256 + a non-empty file; the %2B-encoded URL base', () => {
+  assert.equal(JDK_PINS.version, '17.0.19+10')
+  assert.ok(JDK_PINS.urlBase.includes('jdk-17.0.19%2B10/'), 'the + in the release tag is URL-encoded as %2B')
+  assert.ok(JDK_PINS.urlBase.startsWith('https://github.com/adoptium/temurin17-binaries/releases/download/'))
+  const plats = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64']
+  assert.deepEqual(Object.keys(JDK_PINS.assets).sort(), [...plats].sort())
+  for (const k of plats) {
+    const a = JDK_PINS.assets[k]
+    assert.ok(a.file && a.file.length > 0, `${k} file non-empty`)
+    assert.match(a.sha256, /^[0-9a-f]{64}$/, `${k} sha256 is hex64`)
+  }
+})
+
+check('CA5 installCommands(code-analyzer-stack): hermetic env + the JDK step + the pinned npm cli + the plugin', () => {
+  const i = caInst(planCA())
+  const cmds = installCommands(i)
+  assert.deepEqual(cmds, i.commands)
+  assert.match(cmds[0], /hermetic env/)
+  assert.match(cmds[1], /Temurin JDK 17\.0\.19\+10/)
+  assert.match(cmds[2], /npm install --prefix .* @salesforce\/cli@2\.140\.6/)
+  assert.match(cmds[3], /sf plugins install code-analyzer@5\.14\.0/)
+})
+
+check('CA6 --dry-run discloses the CA-stack env + 2-dir pathPrepend + JDK decision; no install performed (hermetic)', () => {
+  const base = mkroot()
+  const root = join(base, 'sf-srt-scanners', 'ca6')
+  const target = join(base, 'repo'); mkdirSync(target, { recursive: true })
+  const plan = planInstalls(CA_MISSING, { runId: 'ca6', tmpRoot: root, platform: 'linux', arch: 'x64' })
+  const m = installScanners(plan, { consent: false, dryRun: true, target })
+  const rec = m.installs.find((r) => r.method === 'code-analyzer-stack')
+  assert.equal(rec.status, 'planned')
+  assert.ok(rec.env && rec.env.JAVA_HOME, 'the dry-run record carries the hermetic env')
+  assert.equal(rec.jdk.mode, 'provision')
+  assert.deepEqual(rec.pathPrepend, [join(root, 'sf', 'cli', 'node_modules', '.bin'), join(root, 'sf', 'jdk', 'jdk-17.0.19+10', 'bin')])
+  assert.ok(!existsSync(join(root, 'sf', 'cli', 'node_modules')), 'nothing actually installed on a dry-run')
 })
 
 // ── IMPURE executor (hermetic) ──────────────────────────────────────────────

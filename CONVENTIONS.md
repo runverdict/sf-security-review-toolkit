@@ -246,7 +246,16 @@ Skills write into the PARTNER's repo, never into the plugin:
   ⇒ skipped → PENDING-OWNER-RUN, never run unverified. Bumping a pinned tool means
   re-pinning the version AND every per-platform sha256 from the release's published
   checksums. `cleanup-scanners.mjs` (the asymmetric remover) is manifest-driven and
-  likewise reads/removes only what the executor recorded.
+  likewise reads/removes only what the executor recorded. **(0.8.41)** the consented
+  install set also includes the **Code Analyzer stack** (`code-analyzer-stack` method:
+  the pinned `@salesforce/cli` + the `code-analyzer` plugin from npm + a JDK 11+ — a
+  present `java`≥11 reused, else the sha256-pinned Temurin), so CRUD/FLS is
+  deterministic-by-default on a cold box. Its load-bearing rule is the **hermeticity
+  contract**: the full contained env (`HOME`/`SF_*`/`TMPDIR`/`npm_config_cache`/
+  `JAVA_HOME`, every path under the tmp root) is set BEFORE the npm install (the CLI's
+  postinstall hooks fire during it) and passed to every exec, so the same structural
+  `rm -rf <tmpRoot>` removes it with zero residue — `test-install-scanners` asserts every
+  CA-stack env path + `pathPrepend` entry stays under the tmp root.
 
 - **Findings carry PROVENANCE; a deterministic engine's result is relayed, never
   re-judged (0.8.28, Phase 1 · Slice 1 of `docs/roadmap-deterministic-findings.md`).** A
@@ -479,7 +488,7 @@ sf-security-review-toolkit/
 │   ├── reconcile-provenance.mjs     # 0.8.29 (Slice 2): LLM-supersession ENFORCEMENT (roadmap-deterministic-findings.md §3). A `deterministic` finding in the SAME owned class at the SAME locus (reuses finding-clusters.mjs sameLocation) demotes a co-located `llm-inferred` finding → status:'superseded' + superseded_by(det id). PURE + IDEMPOTENT; conservative (only an OWNED class supersedes; precise class match, dimension fallback; mark-not-delete). The LLM can never re-report/re-judge what an engine determined
 │   #   (Slice 2 also conditions apex-exposed-surface.md §5/§6 defer-to-SFGE on a code-analyzer-*.json proving the engine ran — engine-absent → KEEP llm-inferred + PENDING-OWNER-RUN, never a phantom hand-off)
 │   ├── tool-detect.mjs              # deterministic scan-tool detector (present|installable-on-consent|owner|owner-portal) — 0.6.0 preflight foundation
-│   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); the ONE network-touching engine (§7)
+│   ├── install-scanners.mjs         # 0.6.0 step 1: consented, tmp-scoped scanner install — PURE planInstalls() + impure executor (sha256-pinned binaries, fails closed w/o consent); 0.8.41 adds the code-analyzer-stack method (sf+plugin+JDK, hermeticity contract); the ONE network-touching engine (§7)
 │   ├── cleanup-scanners.mjs         # 0.6.0 step 2: asymmetric manifest-driven teardown — remove the tmp tool dir, KEEP the evidence; reuses assertSafeTmpRoot (refuses an unsafe root)
 │   ├── artifact-gate.mjs            # enforced gate: auto-proceed + AuthN/AuthZ withhold from the ledger (G4)
 │   ├── applicable-requirements.mjs  # exact applies_to ∩ elements applicability (G1). 0.8.25: parseBaselineApplies additively captures verification + the folded conflicts block scalar; `--render` + renderApplicable() emit the VERBATIM operator-facing applicability block (count·by-track·conflicting·mobile-gap), distinct from --json (WI-06/INV-16)
@@ -508,7 +517,7 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium). 0.8.35: gitleaks-coldstart-full.json (genuine gitleaks output, secret-never-leaks — 3× generic-api-key, class-severity high). 0.8.36: detect-secrets-solano.json (genuine detect-secrets 1.5.0, nested-by-file — 24 occ / 6 files / 3 types, hash-never-leaks). 0.8.37: osv-coldstart-full.json (genuine OSV-Scanner SCA, lockfile path genericized — 1 source / 3 PyPI pkgs / 11 vulns, Extension A CVSS→enum: 1 critical·3 high·6 medium·1 low). 0.8.38: npm-audit-solano.json (genuine `npm audit --json` v2, leak-clean — 4 vulnerable pkgs body-parser/express/path-to-regexp/qs, Extension-A reuse label-only band: 2 high·2 medium). 0.8.39: trivy-dockerfile-solano.json (genuine Trivy 0.71.2 filesystem scan, leak-clean — 1 Class:'config' Result / 1 FAIL misconfig DS-0026 "No HEALTHCHECK", Severity LOW, no StartLine — the IaC-misconfig anchor, class-severity high; the same Dockerfile finding Checkov reports as CKV_DOCKER_2)
 │   ├── README.md
-│   └── test-*.mjs                   # 55 dependency-free standing tests (700 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 55 dependency-free standing tests (707 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook

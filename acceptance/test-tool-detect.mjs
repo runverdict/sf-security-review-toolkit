@@ -82,12 +82,8 @@ check('T5 determinism: same PATH → byte-identical JSON', () => {
   assert.equal(JSON.stringify(detectTools(d)), JSON.stringify(detectTools(d)))
 })
 
-check('T6 owner vs installable split: sf+zap=owner (never auto-installed), semgrep+nuclei=installable', () => {
+check('T6 owner vs installable split: zap=owner (never auto-installed), semgrep+nuclei=installable', () => {
   const r = detectTools('')
-  const sf = fam(r, 'code-analyzer').tools.find((t) => t.name === 'sf')
-  assert.equal(sf.install, 'owner')
-  assert.ok(!missingNames(r).includes('sf'), 'sf is owner-installed → never in installable-on-consent')
-  assert.ok(r.summary.owner_missing.some((x) => x.name === 'sf'))
   assert.ok(missingNames(r).includes('semgrep'))
   // ZAP is owner-run by nature (Java GUI app) → owner, never installable-on-consent.
   const zap = fam(r, 'dast').tools.find((t) => t.name === 'zap')
@@ -96,6 +92,24 @@ check('T6 owner vs installable split: sf+zap=owner (never auto-installed), semgr
   assert.ok(r.summary.owner_missing.some((x) => x.name === 'zap'))
   // nuclei IS a pinnable static binary → installable-on-consent.
   assert.ok(missingNames(r).includes('nuclei'))
+})
+
+check('T7 code-analyzer family: absent sf → installable via code-analyzer-stack (NOT owner); present sf → satisfied; footprint/JDK note', () => {
+  // 0.8.41: the Code Analyzer stack flips from owner-gated to a consented tmp-install.
+  const r = detectTools('')
+  const sf = fam(r, 'code-analyzer').tools.find((t) => t.name === 'sf')
+  assert.equal(sf.install, 'code-analyzer-stack', 'sf is now installable via the CA stack, not owner-gated')
+  assert.ok(missingNames(r).includes('sf'), 'absent sf → offered for the consented tmp-install')
+  assert.ok(!r.summary.owner_missing.some((x) => x.name === 'sf'), 'sf must no longer be owner_missing')
+  // the install record carries the footprint + JDK disclosure for the consent gate
+  const rec = r.summary.installable_missing.find((x) => x.name === 'sf')
+  assert.equal(rec.install, 'code-analyzer-stack')
+  assert.match(rec.hint, /JDK 11\+/)
+  assert.match(rec.hint, /1 GB/)
+  // a present `sf` flips the family satisfied + drops out of installable-missing (used as-is, zero-cost)
+  const present = detectTools(binDir(['sf']))
+  assert.equal(fam(present, 'code-analyzer').satisfied, true)
+  assert.ok(!missingNames(present).includes('sf'), 'a present sf is never re-installed')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

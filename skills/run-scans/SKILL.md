@@ -42,7 +42,9 @@ undispositioned findings — each of those bounces at the materials check
   that the endpoint families were skipped for lack of an inventory.
 - `${CLAUDE_PLUGIN_ROOT}/baseline/requirements-baseline.yaml` readable.
 - Per family: the Code Analyzer CLI + JDK 11+ (PMD engine) for the package
-  track; a ZAP install (or the container) wherever the owner will run DAST;
+  track — present `sf` used as-is, else consent-installable as the whole stack
+  to the tmp dir (0.8.41, the same gate as the OSS scanners); a ZAP install (or
+  the container) wherever the owner will run DAST;
   network access for the TLS check; ecosystem package managers for the
   dependency audit. For the external-endpoint families (7/8) and the DAST/TLS
   extensions, the free/OSS tools — **Semgrep**, **OSV-Scanner**, **Checkov**,
@@ -77,10 +79,15 @@ undispositioned findings — each of those bounces at the materials check
 > preflight gate (the second of its two consents), `harness/install-scanners.mjs`
 > installs the missing scanners to a tmp dir OUTSIDE the repo
 > (`/tmp/sf-srt-scanners/<runid>/`, sha256-pinned binaries) and records them in
-> `<target>/.security-review/scanner-install.json`. **This skill READS that pointer
+> `<target>/.security-review/scanner-install.json`. **As of 0.8.41 that consented set
+> also includes the Code Analyzer stack** (`@salesforce/cli` + the `code-analyzer`
+> plugin from npm + a JDK 11+ — a present `java`≥11 reused, else the pinned Temurin from
+> Adoptium; ~1 GB, +~320 MB if Java must be provisioned), so on a cold box CRUD/FLS is
+> deterministic-by-default rather than owner-gated. **This skill READS that pointer
 > (when its `status` is not `cleaned`), prepends its `pathPrepend` to the PATH for the
 > scan subprocesses, and uses those tools** — turning the absent families into real
-> evidence. It still never runs the installer itself; absent the pointer (declined, or
+> evidence (the Code Analyzer record's hermetic `env` + 2-dir `pathPrepend` is what
+> Family 1's engine-explicit form exports). It still never runs the installer itself; absent the pointer (declined, or
 > a standalone run with no journey gate), the answer stays `PENDING-OWNER-RUN`. The
 > tmp tools are removed by `cleanup-scanners.mjs` at end-of-run (evidence kept).
 > **When that consent was given, running the consented scanners with their STANDARD
@@ -155,6 +162,20 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    required major version — read that from the baseline entry at run time,
    don't trust this prose. PMD needs JDK 11+; check `java -version` before
    blaming the scanner.
+   *Cold-install path (0.8.41):* when `sf` / the plugin / a JDK are ABSENT and
+   the operator consented at the journey gate, `install-scanners.mjs`
+   provisions the whole Code Analyzer stack — the pinned `@salesforce/cli` +
+   the `code-analyzer` plugin + a JDK 11+ (a present `java`≥11 is reused, else
+   the pinned Temurin is fetched + sha256-verified) — into the tmp root, so
+   CRUD/FLS is deterministic-by-default instead of `PENDING-OWNER-RUN`. The
+   `code-analyzer` record inside the manifest that
+   `<target>/.security-review/scanner-install.json` points at carries a
+   hermetic `env` map and a 2-dir `pathPrepend` (the sf `.bin` AND
+   `JAVA_HOME/bin`). **Export that `env` and prepend both `pathPrepend` dirs**
+   for the scan subprocess, then run the workspace form below. Everything the
+   stack writes is contained under the tmp root, so `cleanup-scanners.mjs`
+   removes it structurally at end-of-run (evidence kept). When a present `sf`
+   is already on PATH, use it as-is — it is never re-installed.
    *Invocation:* the canonical form recorded in
    `scan-code-analyzer-invocation` is
 
@@ -181,6 +202,26 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    it is slow and has per-entry-point timeouts, so budget for it and triage
    its output first (baseline: `scan-sfge-crud-fls-dataflow`,
    `fail-crud-fls`).
+   *Engine-explicit workspace form (the cold-install / deterministic-band path):*
+   when you provisioned the stack via the cold-install path above — or whenever
+   you want the deterministic CRUD/FLS band — run the v5 workspace form that
+   selects the engines explicitly:
+
+   ```bash
+   sf code-analyzer run --workspace <force-app-root> \
+     -r AppExchange -r sfge -r pmd \
+     --output-file .security-review/evidence/code-analyzer-<date>.json --view detail
+   ```
+
+   **`-r sfge` is mandatory for FLS:** `ApexFlsViolation` is DevPreview and NOT
+   in `Recommended`, so it only fires when sfge is selected explicitly;
+   `ApexCRUDViolation` comes in via `-r AppExchange` / `-r pmd`. All three
+   CRUD/FLS rules carry a Security/AppExchange tag, so they survive the ingest
+   adapter's security-tag filter. SFGE has per-entry-point timeouts and a JVM
+   heap knob (`--sfge-jvm-args`); defaults are fine at small sizes (the 0.8.41
+   spike ran 45 files in ~30 s) but budget the timeout for large Apex trees.
+   The 0.8.40 `--all` ingest then consumes the resulting JSON into the
+   deterministic band (already wired — don't re-wire).
    *Agent runs:* install check, scan, JSON parsing, diffing findings against
    the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
    confirmation of every FP justification.

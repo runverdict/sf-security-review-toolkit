@@ -237,11 +237,17 @@ missing or a key piece of the architecture was misread.
      live-probe / scratch-org floor. Offer it once, here: "install the N missing
      scanners (<name (method)>, …) to `/tmp/sf-srt-scanners/<run>/` **for this run**?
      They're sha256-verified (pinned binaries), removed at cleanup, and the evidence
-     is kept. This yes also covers **running** them for this run — which fetches their
-     standard rules/templates (Semgrep registry rules, Nuclei templates, the OSV DB) —
-     since that is inseparable from producing the evidence. → yes: real
-     SAST/SCA/secret/DAST/TLS evidence instead of `PENDING-OWNER-RUN`. → no (default):
-     those families stay `PENDING-OWNER-RUN` (today's behavior, unchanged)." On yes, the run later invokes
+     is kept. When the **Code Analyzer stack** is among them (no `sf` present), that one
+     is heavier: it pulls `@salesforce/cli` + the `code-analyzer` plugin from npm and,
+     if no `java`≥11 is present, the pinned Temurin JDK from Adoptium — **~1 GB (+~320 MB
+     if Java must be provisioned)** of tmp, contained under the run dir and removed at
+     cleanup the same way; in exchange CRUD/FLS becomes deterministic instead of
+     `PENDING-OWNER-RUN`. This yes also covers **running** them for this run — which fetches
+     their standard rules/templates (Semgrep registry rules, Nuclei templates, the OSV DB,
+     the Code Analyzer engines) — since that is inseparable from producing the evidence.
+     → yes: real SAST/SCA/secret/DAST/TLS + deterministic CRUD/FLS evidence instead of
+     `PENDING-OWNER-RUN`. → no (default): those families stay `PENDING-OWNER-RUN` (today's
+     behavior, unchanged)." On yes, the run later invokes
      `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
      <target> --json` (one Bash call = one approval; the CC permission boundary is the
      outer tool call, so its pip/curl/git/npm subprocesses run unprompted under it),

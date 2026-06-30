@@ -60,14 +60,39 @@ re-confirms those against a **fresh** Code Analyzer run rather than a captured o
 
 ---
 
-## Level B — live (operator-run, needs `sf` + Code Analyzer)
+## Level B — live (operator-run; `sf` + Code Analyzer present OR cold-installed on consent)
 
-### B0 — prerequisites (operator)
+### B0 — prerequisites: stand up Code Analyzer (operator)
 
-- `sf` CLI installed and authenticated (the deployed-org power-up / owner gate — it is **not**
-  auto-installed in a cold journey; see roadmap §5).
-- The **Code Analyzer** plugin (`sf plugins install code-analyzer`), reporting the
-  baseline-prescribed major version (`scan-code-analyzer-v5-required`). PMD needs JDK 11+.
+Two ways to get `sf` + the `code-analyzer` plugin + a JDK 11+ in place; both end at the same B1
+invocation.
+
+**Cold-install path (0.8.41 — the default on a box without `sf`).** At the journey's preflight
+gate, consent to the scanner install; `install-scanners.mjs` provisions the WHOLE Code Analyzer
+stack into the tmp root and records it in `<target>/.security-review/scanner-install.json`:
+
+- the pinned `@salesforce/cli@2.140.6` (npm) + the `code-analyzer@5.14.0` plugin (oclif short
+  name → npm `@salesforce/plugin-code-analyzer`, which bundles pmd 0.43.0 / sfge 0.22.0 — the
+  pins are what make the ledger band deterministic given a fixed analyzer);
+- a JDK 11+ — a present `java`≥11 reused read-only, else the pinned **Temurin 17.0.19+10** fetched
+  from Adoptium and **sha256-verified before extract** (per-platform pin; an unpinned platform
+  with no present java fails closed → PENDING-OWNER-RUN, never extracted unverified);
+- the **hermeticity contract** (the spike's load-bearing finding): the install sets the full
+  contained env — `HOME` · `SF_DATA_DIR` · `SF_CACHE_DIR` · `SF_CONFIG_DIR` · `TMPDIR` ·
+  `npm_config_cache` · `JAVA_HOME`, every path under the tmp root — **before** the npm install
+  (the `@salesforce/cli` postinstall hooks fire during it, and `~/.sf` / the npm cache are not
+  governed by `SF_*` alone) and passes it to every exec, so the teardown's single
+  `rm -rf <tmpRoot>` reaches everything (0 escaped paths; verified twice-run byte-identical).
+  Footprint: ~1 GB (+~320 MB if Java must be provisioned).
+
+For the scan, export the `code-analyzer` record's `env` and prepend its 2-dir `pathPrepend`
+(sf `.bin` + `JAVA_HOME/bin`), then run the B1 form with `-r AppExchange -r sfge -r pmd`.
+`cleanup-scanners.mjs` removes the stack at end-of-run (evidence kept).
+
+**Zero-install variant (a box that already has it).** A present `sf` + `code-analyzer` plugin
+(reporting the baseline-prescribed major version, `scan-code-analyzer-v5-required`) + a `java`≥11
+is used as-is — nothing is installed.
+
 - **Anchor the toolkit checkout.** The `harness/*.mjs` engines live in the toolkit repo, NOT
   in the fixture — so every command below invokes them by absolute path via `$SRT`, and is
   cwd-independent (never `cd` into the fixture to run a harness):
@@ -90,19 +115,20 @@ The deterministic pass keys off a `code-analyzer-*.json` under
 dataflow findings (`scan-sfge-crud-fls-dataflow`):
 
 ```bash
-cd ~/srt-solano                 # sf code-analyzer scans the cwd source tree
+cd ~/srt-solano                 # or pass --workspace .
 DATE=$(date +%F)
-sf code-analyzer run \
-  --rule-selector AppExchange \
-  --rule-selector Recommended:Security \
-  --output-file .security-review/evidence/code-analyzer-$DATE.json
+sf code-analyzer run --workspace . \
+  -r AppExchange -r sfge -r pmd \
+  --output-file .security-review/evidence/code-analyzer-$DATE.json --view detail
 # (emit the HTML too for the submission; the JSON is what the ingest reads)
 [ -s ~/srt-solano/.security-review/evidence/code-analyzer-$DATE.json ] \
   || { echo "FAIL: Code Analyzer produced no JSON — fix the run before proceeding"; }
 ```
 
-Verify the flag syntax against your installed CLI (`sf code-analyzer run --help`) — the last
-major-version transition changed the command shape once.
+**`-r sfge` is mandatory** — `ApexFlsViolation` is DevPreview and NOT in `Recommended`, so the
+Graph Engine's FLS findings only fire when sfge is selected explicitly; `ApexCRUDViolation` comes
+in via `-r AppExchange` / `-r pmd`. Verify the flag syntax against your installed CLI
+(`sf code-analyzer run --help`) — the last major-version transition changed the command shape once.
 
 ### B2 — run the deterministic pass (agent-runnable; what audit-codebase Step 4b does)
 

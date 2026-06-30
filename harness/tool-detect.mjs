@@ -25,12 +25,15 @@ import { realpathSync } from 'node:fs'
 
 // Scan families ↔ the tools that satisfy each, with how a missing one is obtained.
 // install: 'pip' | 'binary' | 'npm' | 'git'  → installable to a tmp dir on consent.
-//          'owner'                            → the operator installs it themselves (e.g. the sf CLI).
+//          'code-analyzer-stack'              → consented tmp-install of the WHOLE Code Analyzer
+//                                               stack (the pinned `@salesforce/cli` + the
+//                                               `code-analyzer` plugin + a JDK 11+, detect-or-provision).
+//          'owner'                            → the operator installs it themselves (e.g. ZAP).
 // owner_portal: true                          → not locally runnable at all (Checkmarx portal).
 const FAMILIES = [
   {
     key: 'code-analyzer', label: 'Salesforce Code Analyzer + Graph Engine (package SAST/SFGE)',
-    tools: [{ name: 'sf', bins: ['sf'], install: 'owner', hint: 'install the Salesforce CLI; Code Analyzer is bundled (or `sf plugins install code-analyzer`)' }],
+    tools: [{ name: 'sf', bins: ['sf'], install: 'code-analyzer-stack', hint: 'present `sf`+plugin used as-is; else consented tmp-install of @salesforce/cli + the code-analyzer plugin + a JDK 11+ (detect-or-provision, pinned Temurin) — ~1 GB (+~320 MB if Java must be provisioned), removed at cleanup; deterministic CRUD/FLS (`-r sfge` for FLS)' }],
   },
   {
     key: 'source-code-scanner', label: 'Checkmarx Source Code Scanner', owner_portal: true, tools: [],
@@ -88,7 +91,7 @@ const FAMILIES = [
   },
 ]
 
-const INSTALLABLE = new Set(['pip', 'binary', 'npm', 'git'])
+const INSTALLABLE = new Set(['pip', 'binary', 'npm', 'git', 'code-analyzer-stack'])
 
 /** Resolve a binary on a PATH string → its absolute path, or null. Executable-bit checked. */
 export function whichOn(bin, pathStr) {
