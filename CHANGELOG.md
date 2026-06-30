@@ -44,6 +44,72 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.44] — 2026-06-30
+
+**Audit-engine robustness — two real failures a live 40-agent cold-run fan-out hit, where a
+sub-agent on the `resource-consumption-abuse` dimension exhausted the StructuredOutput retry cap
+(per the Workflow tool's semantics `agent()` returns `null`, it does NOT throw).** Both fixes are
+on the audit substrate + its mechanical ledger/recap; no change to any dimension's threat content.
+
+**BUG A — a dimension's FIND-stage failure silently dropped its coverage (correctness).**
+`harness/workflow-template.mjs` already handled a per-FINDING verify failure (retry once → a null
+verdict → the finding is kept `unverified` and surfaced). But a per-DIMENSION *find*-stage failure
+was invisible: a null find `result` flowed into `findings = []` → `return []`, so the dimension
+contributed **0 findings AND 0 unverified**, and `perDimension.flat().filter(Boolean)` then dropped
+any wholly-null entry. A crashed finder was therefore indistinguishable from one that ran clean and
+found nothing — the run reported "0 unverified" and the `denial-of-wallet` headline lead
+vanished from the verdict entirely. **Fix:** the verify stage now emits a `{coverageFailed:true}` marker when
+the find `result` is null (a non-null result with `findings:[]` stays a genuine clean 0-findings
+dimension). A new PURE `computeCoverage(perDimension, dimensions)` reconciles the raw per-dimension
+output — markers PLUS any wholly-dropped (null-by-index) dimension — into a `coverageFailed` list
+kept OUT of confirmed/refuted/unverified, and the `log` + synthesis envelope now state, loudly,
+`N dimension(s) had a coverage FAILURE (finder crashed) — re-run: <keys>` (the count is NON-ZERO
+when a finder crashed). The envelope carries `coverage_failed`; `merge-ledger.mjs` persists it in the
+pass object (added to `templates/audit-ledger.schema.json`), a pass with a coverage failure is never
+`dry` (so it can't satisfy the stop rule), and `render-recap.mjs` surfaces **Coverage INCOMPLETE —
+re-run X** and NEVER a clean PROCEED over a crashed dimension (the `--target` re-render too).
+
+**BUG B — the dirty-dimension RE-RUN crashed on the auto-injected always-on dimensions (recovery).**
+The recovery for A is a targeted re-run of the failed dimension — and it was broken.
+`harness/build-audit-engine.mjs` auto-injects the three always-on dimensions (`sessionid-egress`,
+`secrets-credentials`, `error-handling-disclosure`) when the driver's scope-input omits them
+(exactly the re-run case), and it did so with `targets: ''`. `workflow-template.mjs` then **threw**
+`dimension entry missing key/targets/finderPrompt` (its `!d.targets` check), killing the whole
+re-run before the first finder — in the live run the driver only recovered by hand-writing a
+one-off `build-rerun.mjs`. **Fix (defense in depth):** build-audit-engine injects a NON-EMPTY
+full-tree target (`FULL_TREE_TARGET = '.'`) — an empty target would also scan nothing even if the
+template didn't throw — and the template's validation now requires only `key && finderPrompt`
+(`targets` optional: empty / `.` means full-tree), with the finder prompt scoped to "scan the entire
+repository tree rooted at <repoRoot>" for a full-tree dimension. Because that relaxation turns the
+pre-0.8.44 loud crash into silent acceptance, build-audit-engine now WARNS loudly when a NORMAL
+(non-always-on) dimension arrives with empty targets — it will be audited as a full-tree scan, which
+for a focused dimension usually means the driver forgot to resolve its targets (a hand-written
+scope-input.json that bypassed audit-codebase's `unresolved` target-map flag); always-on dimensions
+are full-tree by design and stay silent. `skills/audit-codebase/SKILL.md` documents that a targeted
+re-run carries the always-on trio forward with their pass-1 targets when available, else the
+deterministic full-tree default — assembling and launching with no empty-targets crash and no LLM
+improvisation.
+
+**Tests:** a NEW `test-coverage-accounting` (+8) slices the pure helpers out of the template source
+(it can't be imported — its top-level `return` is legal only in the Workflow runtime) and exercises
+the EXACT live code path: `isFullTree`, `isValidDimension` (accepts the always-on full-tree default,
+rejects no-key/no-finderPrompt), and `computeCoverage` (a null entry + a crash-marker + normal
+results → both dimensions in `coverageFailed`, excluded from confirmed/refuted/unverified; clean-find
+vs crashed-find distinguished) + a live-wiring guard; `test-build-audit-engine` +2 (B1: always-on
+carry a NON-EMPTY full-tree target + every assembled dim satisfies the build-side invariant; B2: a
+driver-provided normal dimension with empty targets warns loudly, never a silent full-tree
+broadening, while always-on stays silent); `test-render-recap` +4 (RC8–RC11: coverage-incomplete
+forces a non-clean verdict, HALT still names the crashed dimension, no-failure unchanged, merge
+wiring); `test-merge-ledger` +1 (M16: `coverage_failed` lands in the pass object end-to-end, blocks
+`dry`, the recap stdout surfaces coverage-incomplete).
+Suite **57 files / 736 checks** (was 56 / 721), all green; each new test mutation-proven (revert the
+fix → its test RED). NON-BREAKING: the always-on stackNotes + the LLM threat content are unchanged;
+`coverage_failed` is additive + non-required in the schema (ledgers written before 0.8.44 still
+validate); the recap/merge changes are inert when no finder crashed (existing tests green unchanged).
+The live fan-out coverage-failure + re-run behavior is operator-validated (this cold run), not
+CI-hermetic — the Workflow fan-out isn't CI-runnable, so the tests pin the pure logic the bugs live
+in. Tag stays **HELD**.
+
 ## [0.8.43] — 2026-06-30
 
 **Preflight / detection-accuracy / gate-clarity hardening — four clear-cut gaps a live cold run

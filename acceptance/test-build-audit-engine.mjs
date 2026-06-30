@@ -141,9 +141,11 @@ check('A1 WI-A: scope-input missing always-on dims → engine auto-injects all t
   const dims = readInjected(d).dimensions
   const keys = dims.map((x) => x.key)
   for (const k of ALWAYS_ON) assert.ok(keys.includes(k), `auto-injected ${k} must be present in the built dimensions`)
-  // the auto-injected entries carry empty targets + the always-on stackNotes marker
+  // the auto-injected entries carry a NON-EMPTY full-tree target ('.') + the always-on
+  // stackNotes marker (BUG-B: an EMPTY '' would crash a targeted re-run and scope the finder to
+  // nothing — see B1 below).
   const sc = dims.find((x) => x.key === 'secrets-credentials')
-  assert.equal(sc.targets, '')
+  assert.equal(sc.targets, '.')
   assert.match(sc.stackNotes, /always-on dimension \(auto-injected\): full source tree/)
   // and the target map lists them applicable
   const tm = JSON.parse(readFileSync(join(d, '.security-review', 'target-map.json'), 'utf8'))
@@ -184,6 +186,56 @@ check('A3 WI-A: scope-input already listing all always-on → no duplicates, dri
   const se = dims.find((x) => x.key === 'sessionid-egress')
   assert.equal(se.targets, 'classes/Y.cls')
   assert.match(se.stackNotes, /driver-provided notes/)
+})
+
+check('B1 BUG-B: auto-injected always-on carry a NON-EMPTY full-tree target; every assembled dim satisfies the template validation (key && targets && finderPrompt) so a re-run never crashes', () => {
+  // The recovery for a coverage failure is a targeted re-run of the dirty dimension. The driver's
+  // re-run scope-input lists only that dimension, so the engine auto-injects the always-on trio.
+  // Pre-0.8.44 it injected them with `targets: ''`, and workflow-template.mjs threw
+  // `dimension entry missing key/targets/finderPrompt` (its `!d.targets` check), killing the
+  // whole re-run before the first finder. This pins the fix: a NON-EMPTY full-tree target, and
+  // NO assembled dimension that would trip the template's key && targets && finderPrompt guard.
+  const d = makeRepo(goodInput); dirs.push(d)
+  build(d)
+  const dims = readInjected(d).dimensions
+  for (const k of ALWAYS_ON) {
+    const dim = dims.find((x) => x.key === k)
+    assert.ok(dim, `${k} must be present`)
+    assert.ok(
+      typeof dim.targets === 'string' && dim.targets.trim().length > 0,
+      `${k} must carry a NON-EMPTY full-tree target (not '') — an empty target crashes a re-run and scans nothing`
+    )
+  }
+  // BUILD-SIDE invariant (deliberately STRICTER than the template): for this normal scope-input,
+  // EVERY assembled dimension carries non-empty targets. The template's own 0.8.44 validation only
+  // needs `key && finderPrompt` (targets optional — empty/'.' = full-tree), but the build side
+  // never EMITS an empty-targets dimension here, so (a) even the pre-0.8.44 `!d.targets` template
+  // wouldn't crash on build output, and (b) no normal dimension is silently scoped to a full-tree
+  // by an empty target slipping through assembly. (A deliberately empty-targets normal dimension is
+  // the B2 warn case below; the always-on full-tree default is '.', also non-empty.)
+  for (const dim of dims) {
+    assert.ok(dim.key && dim.targets && dim.finderPrompt,
+      `assembled dim ${dim.key || '(no key)'} must carry non-empty key + targets + finderPrompt (build-side invariant)`)
+  }
+})
+
+check('B2 a DRIVER-provided NORMAL dimension with empty targets → a loud WARN (full-tree), build still succeeds; always-on full-tree stays silent', () => {
+  // BUG-B relaxation turned a loud template crash into acceptance of empty targets. For a NORMAL
+  // dimension that almost always means the driver forgot to resolve targets — so the build must WARN
+  // (never silently broaden a focused dimension to the whole repo), while an always-on dimension is
+  // full-tree by design and must NOT warn.
+  const input = { ...goodInput, applicable: [
+    { key: 'crypto-internals', targets: '', stackNotes: 'driver forgot the targets' }, // normal + empty → WARN
+    { key: 'apex-exposed-surface', targets: 'classes/X.cls', stackNotes: 'scoped' },     // normal + scoped → no warn
+  ] }
+  const d = makeRepo(input); dirs.push(d)
+  const res = spawnSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { encoding: 'utf8' })
+  assert.equal(res.status, 0, 'build still succeeds (warn, not fatal)')
+  assert.match(res.stderr, /WARN: dimension crypto-internals has no targets — it will be audited as a FULL-TREE scan/, 'a normal empty-targets dimension must warn loudly')
+  // the auto-injected always-on dims are full-tree by design — they must NOT trigger the warn
+  for (const k of ALWAYS_ON) {
+    assert.doesNotMatch(res.stderr, new RegExp(`WARN: dimension ${k} has no targets`), `always-on ${k} is full-tree by design — no warn`)
+  }
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

@@ -67,7 +67,8 @@
  *      verdict values to ledger states (confirmed_real/partially_real →
  *      `confirmed`, false_positive → `refuted`), redact any credential value
  *      captured in an evidence snippet (§10), append the run-log entry, and
- *      surface the `unverified` list for a re-run.
+ *      surface the `unverified` list AND the `coverage_failed` list (dimensions
+ *      whose finder crashed — coverage incomplete, NOT clean) for a re-run.
  *
  * RUN-ARGS SHAPE (everything product-specific lives here, nothing in the body)
  *   {
@@ -97,7 +98,10 @@
  *                        // resolved by the stack-adapter step.
  *       { key:           "oauth-identity",
  *         targets:       "comma/newline-separated repo paths (starting points,
- *                         not boundaries — finders follow imports)",
+ *                         not boundaries — finders follow imports). EMPTY or '.'
+ *                         means the WHOLE source tree — the always-on full-tree
+ *                         dimensions (build-audit-engine FULL_TREE_TARGET); the
+ *                         finder is scoped to scan the entire repoRoot",
  *         stackNotes:    "optional per-dimension repo facts from the adapter",
  *         finderPrompt:  "the dimension file's §4 threat-focus paragraph",
  *         verifierNotes: "the dimension file's §5 Verifier guidance + §6
@@ -149,10 +153,89 @@ if (ARGS.consentVerified !== true) {
       'audit-codebase Step 2 (tier go-ahead) + Step 3 (show the target map) and verifies them. Do not hand-set this flag.'
   )
 }
+// ===== BEGIN PURE COVERAGE HELPERS =====
+// Extracted VERBATIM by acceptance/test-coverage-accounting.mjs (it slices this block from the
+// source and exercises it) — workflow-template.mjs itself CANNOT be imported, because its
+// top-level `return {…}` is legal only inside the Workflow runtime's async wrapper (a plain
+// `import` fails with "Illegal return statement"). So these functions MUST be PURE and
+// self-contained: no references to ARGS / CONTEXT / agent / any module-level state. The live
+// pipeline below calls them, so the engine and the test share ONE code path.
+
+// A dimension whose targets are empty / '.' / './' is a FULL-TREE scan — the always-on
+// auto-injected default (build-audit-engine.mjs FULL_TREE_TARGET) — NOT a malformed entry.
+function isFullTree(targets) {
+  const s = String(targets == null ? '' : targets).trim()
+  return s === '' || s === '.' || s === './'
+}
+
+// A dimension entry is valid when it carries a `key` AND a `finderPrompt`. `targets` is
+// OPTIONAL: an empty / '.' targets means "scan the whole repository tree" (an always-on
+// full-tree dimension), which is valid, not malformed. Pre-0.8.44 this threw on `!d.targets`,
+// which crashed a legitimate targeted re-run of an auto-injected always-on dimension (BUG-B):
+// build-audit-engine appended the always-on trio with empty targets, and this validation killed
+// the whole fan-out before the first finder. Both layers are fixed (build emits a real
+// full-tree target; this accepts an empty/'.' one) — defense in depth.
+function isValidDimension(d) {
+  return !!(d && d.key && d.finderPrompt)
+}
+
+// computeCoverage — reconcile the RAW pipeline output (`perDimension`, aligned to `dimensions`
+// by index) into the run's accounting. THE correctness property (BUG-A): a dimension whose
+// FINDER crashed must NEVER be silently dropped — it surfaces as a coverage FAILURE
+// ("re-run this dimension"), distinct from a dimension that ran clean and found nothing.
+//   - perDimension[i] == null  → the entire pipeline result was dropped (a stage threw; the
+//                                Workflow runtime drops a throwing item to null) → coverage
+//                                failure for dimensions[i]. (Compared by INDEX, before any
+//                                .filter(Boolean), so a wholly-dropped dimension is caught.)
+//   - an item with `coverageFailed === true` → the finder agent returned null (StructuredOutput
+//                                retry cap — agent() returns null, does NOT throw) → coverage
+//                                failure for that dimension.
+//   - any other item → a normal candidate finding (with or without a verdict).
+// A clean-empty find (perDimension[i] === []) contributes 0 candidates and is NOT a coverage
+// failure: "found nothing" ≠ "finder crashed". Coverage-failed dimensions are kept OUT of
+// confirmed/refuted/unverified findings and folded into their own list for the recap.
+function computeCoverage(perDimension, dimensions) {
+  const dims = Array.isArray(dimensions) ? dimensions : []
+  const pd = Array.isArray(perDimension) ? perDimension : []
+  const coverageFailed = []
+  const all = []
+  for (let i = 0; i < dims.length; i++) {
+    const key = dims[i] && dims[i].key ? dims[i].key : '#' + i
+    const entry = pd[i]
+    if (entry == null) {
+      // Whole-dimension drop: a stage threw and the runtime nulled the item. Coverage failure.
+      coverageFailed.push(key)
+      continue
+    }
+    const items = Array.isArray(entry) ? entry : [entry]
+    let failed = false
+    for (const it of items) {
+      if (!it) continue
+      if (it.coverageFailed) {
+        failed = true
+        continue
+      }
+      all.push(it)
+    }
+    if (failed) coverageFailed.push(key)
+  }
+  const coverageFailedUnique = []
+  for (const k of coverageFailed) if (!coverageFailedUnique.includes(k)) coverageFailedUnique.push(k)
+  const verified = all.filter((f) => f.verdict)
+  const unverified = all.filter((f) => !f.verdict)
+  const confirmed = verified.filter(
+    (f) => f.verdict.verdict === 'confirmed_real' || f.verdict.verdict === 'partially_real'
+  )
+  const refuted = verified.filter((f) => f.verdict.verdict === 'false_positive')
+  return { all, verified, unverified, confirmed, refuted, coverageFailed: coverageFailedUnique }
+}
+// ===== END PURE COVERAGE HELPERS =====
+
 for (const d of ARGS.dimensions) {
-  if (!d.key || !d.targets || !d.finderPrompt) {
+  if (!isValidDimension(d)) {
     throw new Error(
-      'workflow-template.mjs: dimension entry missing key/targets/finderPrompt: ' +
+      'workflow-template.mjs: dimension entry missing key/finderPrompt (targets is optional — ' +
+        'empty/"." means full-tree): ' +
         JSON.stringify(d).slice(0, 200)
     )
   }
@@ -270,7 +353,9 @@ const VERDICT_SCHEMA = {
 // ---------------------------------------------------------------------------
 const finderPrompt = (dim) =>
   `${CONTEXT}\n\n## Your dimension: ${dim.key}\n\n` +
-  `Primary targets (read these first, then follow imports/call-sites; use grep to locate the real files when a path is approximate):\n${dim.targets}\n\n` +
+  (isFullTree(dim.targets)
+    ? `Primary target: the ENTIRE repository tree rooted at ${REPO}. This is an always-on, full-source-tree dimension — there is no narrower target list, so scan broadly across the whole repo with grep (skip vendored/generated code: node_modules/, dist/, build/, .min.js, lockfiles), then follow imports/call-sites.\n\n`
+    : `Primary targets (read these first, then follow imports/call-sites; use grep to locate the real files when a path is approximate):\n${dim.targets}\n\n`) +
   (dim.stackNotes
     ? `Stack notes (claims from the partner's own docs — verify against the ACTUAL code, never assume):\n${dim.stackNotes}\n\n`
     : '') +
@@ -317,7 +402,14 @@ const perDimension = await pipeline(
   // verifier is a fresh context: it gets the finding, never the finder's
   // reasoning — independence is what earns the precision.
   (result, dim) => {
-    const findings = result && Array.isArray(result.findings) ? result.findings : []
+    // BUG-A: a CRASHED finder (agent() hit the StructuredOutput retry cap → returns null, does
+    // NOT throw) yields no findings array. That is a COVERAGE FAILURE, not a clean "found
+    // nothing" — emit a marker so computeCoverage surfaces it as "re-run this dimension" instead
+    // of silently contributing 0 findings AND 0 unverified. A non-null result WITH a findings
+    // array (even an empty one) is a genuine clean find.
+    const cleanFind = result && typeof result === 'object' && Array.isArray(result.findings)
+    if (!cleanFind) return [{ dimension: dim.key, coverageFailed: true, verdict: null }]
+    const findings = result.findings
     if (!findings.length) return []
     return parallel(
       findings.map((f) => async () => {
@@ -346,19 +438,25 @@ const perDimension = await pipeline(
   }
 )
 
-// Barrier: every dimension found + verified before synthesis — a synthesis
-// that misses verdicts under-counts.
-const all = perDimension.flat().filter(Boolean)
-const unverified = all.filter((f) => !f.verdict)
-const verified = all.filter((f) => f.verdict)
-const confirmed = verified.filter(
-  (f) => f.verdict.verdict === 'confirmed_real' || f.verdict.verdict === 'partially_real'
-)
-const refuted = verified.filter((f) => f.verdict.verdict === 'false_positive')
+// Barrier: every dimension found + verified before synthesis. computeCoverage reconciles the
+// raw per-dimension output (BEFORE any .filter(Boolean), so a wholly-dropped dimension is caught
+// by index) and surfaces a crashed finder as a COVERAGE FAILURE instead of silently dropping its
+// coverage — distinct from a dimension that ran clean and found nothing (BUG-A). Same pure code
+// path as acceptance/test-coverage-accounting.mjs.
+const coverage = computeCoverage(perDimension, ARGS.dimensions)
+const all = coverage.all
+const unverified = coverage.unverified
+const verified = coverage.verified
+const confirmed = coverage.confirmed
+const refuted = coverage.refuted
+const coverageFailed = coverage.coverageFailed
 
 log(
   `${all.length} candidate findings; ${confirmed.length} confirmed/partial, ${refuted.length} refuted` +
-    (unverified.length ? `, ${unverified.length} UNVERIFIED (re-run these; they are never reported as findings)` : '')
+    (unverified.length ? `, ${unverified.length} UNVERIFIED (re-run these; they are never reported as findings)` : '') +
+    (coverageFailed.length
+      ? `; ${coverageFailed.length} dimension(s) had a coverage FAILURE (finder crashed) — re-run: ${coverageFailed.join(', ')}`
+      : '')
 )
 
 // ---------------------------------------------------------------------------
@@ -393,6 +491,9 @@ const report = await agent(
     `3. Remediation plan per critical/high finding — short and concrete.\n` +
     `4. Strong controls observed — from the info-level entries; written for reuse in the reviewer-facing artifacts.\n` +
     `5. Coverage and residual risk — dimensions run this pass: ${ARGS.dimensions.map((d) => d.key).join(', ')} (tier: ${TIER}). State plainly that dimensions NOT in this list were not audited in this pass; that this was static code review by LLM agents — not DAST, not a penetration test; that verification controls false positives, not false negatives (say "no confirmed findings within the audited dimensions", never "secure" or "clean"); and that Salesforce performs its own penetration testing regardless of submitted evidence.\n` +
+    (coverageFailed.length
+      ? `   COVERAGE FAILURE — state this LOUDLY in section 5 and reflect it in the executive summary: the FINDER for these dimension(s) CRASHED this pass and produced NO findings, so coverage is INCOMPLETE (NOT clean) for them: ${coverageFailed.join(', ')}. These dimensions MUST be re-run; do NOT present the pass as complete or these dimensions as audited/clean.\n`
+      : '') +
     `6. Readiness-tracker mapping — each finding tagged to its tracker category (authn/authz, tenant isolation, injection, headers/TLS, secrets, rate-limit/DoS, info-disclosure, crypto, background-jobs, data-export, outbound).\n\n` +
     `Also return the executive summary and the findings table inline.\n\n` +
     `VERIFIED FINDINGS (JSON):\n${JSON.stringify(confirmedForReport, null, 2)}`,
@@ -416,6 +517,10 @@ return {
   confirmed: confirmed.length,
   refuted: refuted.length,
   unverified: unverified.map((f) => ({ title: f.title, file: f.file, dimension: f.dimension })),
+  // BUG-A: dimensions whose finder CRASHED (no findings produced) — coverage is INCOMPLETE, not
+  // clean. The mechanical merge (merge-ledger.mjs) carries these into the pass object + the recap
+  // so the run never reads as a clean verdict over a crashed dimension; re-run them (step 8).
+  coverage_failed: coverageFailed,
   report_path: REPORT_PATH,
   ledger_updates: verified.map((f) => ({
     title: f.title,

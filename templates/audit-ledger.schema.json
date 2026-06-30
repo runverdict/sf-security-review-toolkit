@@ -275,6 +275,14 @@
           "type": "integer",
           "minimum": 0
         },
+        "coverage_failed": {
+          "description": "Dimension keys whose FINDER crashed this pass (the finder agent hit the StructuredOutput retry cap — workflow-template's agent() returns null — or its whole pipeline result was dropped by a thrown stage). Coverage is INCOMPLETE for these, NOT clean: they produced no findings because they did not run, not because nothing is there (BUG-A). The recap surfaces 'coverage incomplete — re-run X' and the pass is never `dry` while this is non-empty, so a crashed finder can never read as a clean verdict or count toward the stop rule. Re-run these dimensions (audit-codebase step 8). Absent/empty when every finder completed; intentionally NOT in `required` so ledgers written before 0.8.44 still validate.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        },
         "dry": {
           "description": "True when the pass confirmed zero NEW findings at severity low or above (new info entries don't count). Two consecutive dry passes — the second being a full-band pass — is the engine's stop rule (audit-methodology.md §6). Dry means 'this method found nothing new', never 'nothing is there'.",
           "type": "boolean"

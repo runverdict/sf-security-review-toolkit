@@ -166,6 +166,49 @@ check('RC5 wiring: merge-ledger imports + emits the recap; audit-codebase Step 7
   assert.match(audit, /Print[^.]*recap[^.]*VERBATIM|recap block VERBATIM|stdout block VERBATIM/i, 'states print-the-recap verbatim')
 })
 
+check('RC8 BUG-A: a crashed finder (coverageFailed) over ZERO open findings forces a NON-clean verdict (never a false PROCEED)', () => {
+  // zero open findings BUT a dimension's finder crashed → coverage incomplete, must NOT read PROCEED/clean.
+  const block = renderAuditRecap({
+    findings: [], dimensions: ['secrets-credentials', 'crypto-internals'],
+    candidates: 3, confirmed: 0, refuted: 3, unverified: 0,
+    coverageFailed: ['resource-consumption-abuse'], pass: 4, tier: 'standard',
+  })
+  assert.match(block, /Coverage INCOMPLETE/, 'surfaces the coverage-incomplete caveat')
+  assert.match(block, /resource-consumption-abuse/, 'names the dimension to re-run')
+  assert.match(block, /coverage-FAILED 1/, 'the counts line shows the coverage-failed count')
+  assert.ok(!/\*\*Verdict: PROCEED\.\*\*/.test(block), 'NEVER a clean PROCEED over a crashed dimension')
+  assert.match(block, /\*\*Verdict: COVERAGE INCOMPLETE — re-run required\.\*\*/, 'the verdict is COVERAGE INCOMPLETE, not PROCEED')
+  assert.match(block, /re-run/i, 'tells the operator to re-run')
+})
+
+check('RC9 coverage failure WITH an open high → HALT, and still names the crashed dimension to re-run', () => {
+  const block = renderAuditRecap({
+    findings: [{ id: '1', dimension: 'apex-exposed-surface', status: 'confirmed', adjusted_severity: 'high', file: 'a.cls:5' }],
+    dimensions: ['apex-exposed-surface'], candidates: 2, confirmed: 1, refuted: 0, unverified: 0,
+    coverageFailed: ['resource-consumption-abuse'], pass: 5, tier: 'standard',
+  })
+  assert.match(block, /\*\*Verdict: HALT\.\*\*/, 'an open high still HALTs')
+  assert.match(block, /Coverage INCOMPLETE/, 'the coverage caveat is still surfaced alongside HALT')
+  assert.match(block, /resource-consumption-abuse/, 'the crashed dimension is named in the HALT verdict too')
+})
+
+check('RC10 no coverage failure → verdict + counts unchanged (PROCEED on zero open, no coverage caveat)', () => {
+  const block = renderAuditRecap({
+    findings: [], dimensions: ['x'], candidates: 1, confirmed: 0, refuted: 1, unverified: 0,
+    coverageFailed: [], pass: 1, tier: 'quick',
+  })
+  assert.match(block, /\*\*Verdict: PROCEED\.\*\*/, 'an empty coverageFailed leaves PROCEED intact')
+  assert.ok(!/Coverage INCOMPLETE/.test(block), 'no coverage caveat when nothing crashed')
+  assert.ok(!/coverage-FAILED/.test(block), 'no coverage-failed count when nothing crashed')
+})
+
+check('RC11 wiring: merge-ledger threads R.coverage_failed → pass object + the recap (coverageFailed)', () => {
+  const merge = readFileSync(join(PLUGIN, 'harness', 'merge-ledger.mjs'), 'utf8')
+  assert.match(merge, /R\.coverage_failed/, 'merge-ledger reads coverage_failed off the workflow envelope')
+  assert.match(merge, /coverage_failed: coverageFailed/, 'merge-ledger persists coverage_failed in the pass object')
+  assert.match(merge, /coverageFailed,/, 'merge-ledger passes coverageFailed into renderAuditRecap')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

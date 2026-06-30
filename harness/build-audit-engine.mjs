@@ -60,6 +60,14 @@ if (!APPLICABLE.length) { console.error('build-audit-engine: scope-input.applica
 // (injection-xss :81 is CONDITIONAL — "always for the injection half" — and is LEFT to the
 // driver; it is deliberately NOT forced here.)
 const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-disclosure']
+// FULL_TREE_TARGET — the sentinel scope for an auto-injected always-on dimension: the WHOLE
+// source tree. It is deliberately NON-EMPTY ('.'). An EMPTY targets ('') would (a) crash a
+// targeted re-run — workflow-template.mjs rejected a dimension whose `!d.targets` was true, so
+// re-running only `resource-consumption-abuse` died because the auto-injected always-on trio
+// arrived with empty targets (BUG-B) — and (b) scope the finder to NOTHING even if the template
+// didn't throw. '.' is the representation the template's finder prompt expands to "scan the
+// entire repository tree rooted at <repoRoot>", matching the always-on stackNotes below.
+const FULL_TREE_TARGET = '.'
 {
   const present = new Set(APPLICABLE.map((d) => d && d.key))
   const autoInjected = []
@@ -72,7 +80,7 @@ const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-di
     }
     // De-dup: never inject a key the driver already listed (its targets/stackNotes win).
     if (!present.has(key)) {
-      APPLICABLE.push({ key, targets: '', stackNotes: 'always-on dimension (auto-injected): full source tree' })
+      APPLICABLE.push({ key, targets: FULL_TREE_TARGET, stackNotes: 'always-on dimension (auto-injected): full source tree' })
       present.add(key)
       autoInjected.push(key)
     }
@@ -135,8 +143,24 @@ function extract(key) {
 
 const dimensions = APPLICABLE.map((d) => {
   if (!d.key) throw new Error('build-audit-engine: an applicable entry is missing its key')
+  const targets = d.targets || ''
+  // A dimension with EMPTY targets is treated as a FULL-TREE scan by the template
+  // (workflow-template.mjs isFullTree('') === true). That is correct + intended for the always-on
+  // dimensions (auto-injected with FULL_TREE_TARGET, or a driver legitimately scoping one to the
+  // whole repo). But for a NORMAL dimension an empty targets almost always means the driver forgot
+  // to resolve its targets — warn LOUDLY so a hand-written scope-input.json can't SILENTLY broaden
+  // a focused dimension to the entire repo. (audit-codebase's target-map step already flags this as
+  // `unresolved`; this is the belt for a scope-input that bypassed that path. Not fatal — a
+  // full-tree scan is broader coverage, not a hole — and pre-0.8.44 this LOUDLY crashed the
+  // template; the warn preserves the loud signal without killing the run.)
+  if (!String(targets).trim() && !ALWAYS_ON.includes(d.key)) {
+    console.error(
+      `WARN: dimension ${d.key} has no targets — it will be audited as a FULL-TREE scan (the whole repo). ` +
+        `If you meant to scope it, add its targets in scope-input.json (always-on dimensions are full-tree by design).`
+    )
+  }
   const { finderPrompt, verifierNotes } = extract(d.key)
-  return { key: d.key, targets: d.targets || '', stackNotes: d.stackNotes || '', finderPrompt, verifierNotes }
+  return { key: d.key, targets, stackNotes: d.stackNotes || '', finderPrompt, verifierNotes }
 })
 
 // ---- run-args object ----

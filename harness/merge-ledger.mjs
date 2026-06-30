@@ -218,6 +218,12 @@ const newConfirmedLowPlus = ledger.findings.filter(
 const candidates = Number.isInteger(R.total_candidates) ? R.total_candidates : R.ledger_updates.length
 const unverified = Array.isArray(R.unverified) ? R.unverified.length : (Number(R.unverified) || 0)
 const dims = Array.isArray(R.dimensions_run) ? R.dimensions_run : []
+// BUG-A: dimensions whose FINDER crashed this pass (workflow-template emits `coverage_failed`).
+// Coverage is INCOMPLETE for these, NOT clean — they produced no findings because they did not
+// run. Carried into the pass object + the recap so the run never reads as a clean verdict over a
+// crashed dimension, and the pass is never `dry` while this is non-empty (a crashed dimension
+// can't contribute to the two-dry-passes stop rule).
+const coverageFailed = Array.isArray(R.coverage_failed) ? R.coverage_failed.filter(Boolean) : []
 
 const passObj = {
   id: PASS,
@@ -230,7 +236,11 @@ const passObj = {
   confirmed: confirmedThisPass,
   refuted: refutedThisPass,
   unverified,
-  dry: newConfirmedLowPlus === 0,
+  coverage_failed: coverageFailed,
+  // A pass with a coverage failure is NEVER dry: a crashed finder found "nothing new" only
+  // because it did not run, so counting it toward the stop rule would falsely declare the audit
+  // complete. dry requires zero new ≥low confirmed AND every finder having actually run.
+  dry: newConfirmedLowPlus === 0 && coverageFailed.length === 0,
   report_path: repoRel(REPORT),
 }
 ledger.passes = ledger.passes.filter((p) => p.id !== PASS)
@@ -250,7 +260,8 @@ const logEntry =
   `- Commit: ${HEAD || '(unknown)'}\n` +
   `- Dimensions: ${dims.join(', ') || '(none)'}\n` +
   `- Agents: ${dims.length} finders + ${candidates} verifiers + 1 synthesis${agentCount ? ` = ${agentCount}` : ''}\n` +
-  `- This pass: confirmed/partial ${confirmedThisPass}, refuted ${refutedThisPass}, unverified ${unverified}\n` +
+  `- This pass: confirmed/partial ${confirmedThisPass}, refuted ${refutedThisPass}, unverified ${unverified}` +
+  (coverageFailed.length ? `, coverage-FAILED ${coverageFailed.length} (finder crashed — re-run: ${coverageFailed.join(', ')})` : '') + `\n` +
   `- Open confirmed (all passes): ${confirmed.length} — ${sevStr || '(none above info)'}\n` +
   `- Dry (no new ≥low confirmed): ${passObj.dry}\n` +
   `- Report: ${passObj.report_path}\n` +
@@ -273,6 +284,7 @@ process.stdout.write(
       confirmed: confirmedThisPass,
       refuted: refutedThisPass,
       unverified,
+      coverageFailed,
       pass: PASS,
       tier: TIER,
     }) +

@@ -51,6 +51,11 @@ export function renderAuditRecap(facts) {
   const tier = f.tier ? String(f.tier) : 'unknown-tier'
   const findings = Array.isArray(f.findings) ? f.findings : []
   const dims = Array.isArray(f.dimensions) ? f.dimensions.filter(Boolean) : []
+  // BUG-A: dimensions whose FINDER crashed this pass. Coverage is INCOMPLETE for these, NOT
+  // clean — so the recap must NEVER render a clean PROCEED over them (the crashed `denial-of-
+  // wallet` lead simply vanishing from the verdict is the exact failure this guards).
+  const coverageFailed = present && Array.isArray(f.coverageFailed) ? f.coverageFailed.filter(Boolean) : []
+  const coverageIncomplete = coverageFailed.length > 0
 
   // The cluster lead — byte-identical to finding-clusters --headline over the same findings.
   // When there is NO audit data, pass null so renderClusterHeadline takes its UNAVAILABLE
@@ -87,15 +92,36 @@ export function renderAuditRecap(facts) {
 
   // 2) this pass's counts.
   L.push(`**This pass:** ${dims.length} dimension(s) ran${dims.length ? ` — ${dims.join(', ')}` : ''}.`)
-  L.push(`Candidates ${n(f.candidates)} · confirmed/partial ${n(f.confirmed)} · refuted ${n(f.refuted)} · unverified ${n(f.unverified)}.`)
+  L.push(
+    `Candidates ${n(f.candidates)} · confirmed/partial ${n(f.confirmed)} · refuted ${n(f.refuted)} · unverified ${n(f.unverified)}` +
+      (coverageIncomplete ? ` · coverage-FAILED ${coverageFailed.length}` : '') + '.'
+  )
+  if (coverageIncomplete) {
+    L.push('')
+    L.push(
+      `**⚠ Coverage INCOMPLETE:** ${coverageFailed.length} dimension(s) had a finder CRASH and were NOT audited this ` +
+        `pass — re-run: ${coverageFailed.join(', ')}. The counts above cover only the dimensions whose finder completed; ` +
+        'this pass does NOT clear the crashed dimension(s), and "no findings" there means "did not run", not "nothing is there".'
+    )
+  }
   L.push('')
-  // 3) proceed-vs-halt verdict.
+  // 3) proceed-vs-halt verdict. A coverage failure can NEVER read as a clean PROCEED — a crashed
+  // finder leaves a hole in the audit, so even with zero open critical/high the verdict is
+  // "coverage incomplete — re-run required", never PROCEED.
   if (halt) {
     L.push(
       `**Verdict: HALT.** ${crit} critical + ${high} high open in the ledger. The journey auto-proceeds to the ` +
         'NOT-READY report (this is an audit tool — it never fixes, never writes code, and is read-only on your ' +
         'source). generate-artifacts withholds the AuthN/AuthZ doc while an open critical/high sits in that ' +
-        'category. Fix and re-run; the staleness check re-audits only the changed dimensions.'
+        'category. Fix and re-run; the staleness check re-audits only the changed dimensions.' +
+        (coverageIncomplete ? ` Coverage is ALSO incomplete — re-run the crashed dimension(s): ${coverageFailed.join(', ')}.` : '')
+    )
+  } else if (coverageIncomplete) {
+    L.push(
+      `**Verdict: COVERAGE INCOMPLETE — re-run required.** No open critical/high in the ledger within the dimensions ` +
+        `whose finder COMPLETED, but ${coverageFailed.length} dimension(s) crashed and were NOT audited ` +
+        `(${coverageFailed.join(', ')}). This is NOT a clean pass and NOT a PROCEED — re-run the crashed dimension(s) ` +
+        'before relying on this verdict (CONVENTIONS §2: "no blockers" is never "secure", and a crashed finder is not "no blockers").'
     )
   } else {
     L.push(
@@ -133,6 +159,9 @@ function factsFromLedger(ledger) {
     confirmed: latest ? latest.confirmed : 0,
     refuted: latest ? latest.refuted : 0,
     unverified: latest ? latest.unverified : 0,
+    // BUG-A: surface a coverage failure on the standalone `--target` re-render too, so a re-read
+    // of a pass with a crashed finder never reports a clean PROCEED.
+    coverageFailed: latest && Array.isArray(latest.coverage_failed) ? latest.coverage_failed : [],
     pass: latest ? latest.id : undefined,
     tier: latest ? latest.tier : undefined,
   }

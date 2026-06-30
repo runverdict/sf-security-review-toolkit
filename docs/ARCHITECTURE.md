@@ -209,6 +209,22 @@ const confidence =
 `ledger-staleness` compares repo HEAD to each pass's `audited_commit` fingerprint and **flags** (never
 auto-flips) findings whose files changed since they were audited.
 
+### A crashed finder is surfaced as a coverage failure, never silently dropped
+**Engine** `harness/workflow-template.mjs` `computeCoverage` · `harness/render-recap.mjs` ·
+**Test** `acceptance/test-coverage-accounting.mjs`
+A finder that exhausts the StructuredOutput retry cap returns `null` (it does not throw), and a thrown
+stage drops the whole dimension to `null`. `computeCoverage` reconciles the raw per-dimension output by
+index — a null entry or a `{coverageFailed:true}` marker becomes a **coverage failure**, kept out of
+confirmed/refuted/unverified and folded into `coverage_failed`. A clean `findings:[]` result stays a real
+0-findings dimension: "found nothing" is never conflated with "finder crashed". The recap then reads
+**Coverage INCOMPLETE — re-run X**, never a clean PROCEED over a crashed dimension, and the pass is never
+`dry` while a coverage failure stands (so it can't satisfy the stop rule).
+
+```js
+const cleanFind = result && typeof result === 'object' && Array.isArray(result.findings)
+if (!cleanFind) return [{ dimension: dim.key, coverageFailed: true, verdict: null }]
+```
+
 ---
 
 ## D. The requirement baseline is data, not prose

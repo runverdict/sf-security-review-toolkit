@@ -361,6 +361,22 @@ regardless of anything this engine produces.
       re-probe the fixed paths (regression check) and the adjacent code the
       fix may have disturbed, while the digest keeps everything else quiet.
       This is what makes pass N+1 a fraction of pass 1's cost.
+
+      **A targeted re-run still assembles the always-on trio — without
+      improvisation.** `build-audit-engine.mjs` force-injects
+      `sessionid-egress`, `secrets-credentials`, and `error-handling-disclosure`
+      into *every* `scope-input.json`, even a re-run that lists only the one
+      dirty dimension (e.g. `resource-consumption-abuse`). Carry their **pass-1
+      `targets` forward** in the re-run's `scope-input.applicable` when you have
+      them (a precise scope beats a fresh full-tree scan); if you omit them, the
+      engine auto-injects each with the deterministic **full-tree target (`.`)**
+      and the template scopes that finder to the entire repo. Either way the
+      re-run assembles and launches with **no empty-targets crash** — the
+      pre-0.8.44 failure where an auto-injected always-on dimension arrived with
+      empty `targets`, tripped the template's `!d.targets` validation, and killed
+      the whole fan-out (so a legitimate re-run only survived by hand-writing a
+      one-off `build-rerun.mjs` to re-supply the always-on targets — exactly the
+      LLM improvisation the shipped engine now makes unnecessary).
    3. Escalate to `exhaustive` only now, if the submission warrants it, and
       run until the §6 stop rule: two consecutive dry passes, the second a
       full-band pass — one dry pass may only mean the band missed where the
@@ -427,7 +443,10 @@ The run recap is the FIXED `harness/render-recap.mjs` block (emitted by
 candidates vs confirmed vs refuted vs unverified counts, the PROCEED/HALT verdict, and
 what was NOT covered: packaged Apex CRUD/FLS belongs to Code Analyzer, dynamic behavior
 belongs to DAST, and this was white-box static review by LLM agents — Salesforce
-pen-tests the surface regardless.
+pen-tests the surface regardless. If any dimension's **finder crashed** this pass
+(`coverage_failed`), the recap surfaces a loud **Coverage INCOMPLETE — re-run X**
+caveat and the verdict is never a clean PROCEED over the crashed dimension (a crashed
+finder is a hole in the audit, not "no findings"); re-run those dimensions (step 8).
 
 ## What feeds the next skill
 

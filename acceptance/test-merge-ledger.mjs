@@ -298,6 +298,28 @@ check('M15 corruption guard: a PRESENT-but-non-array prior `findings` (dict) →
   assert.deepEqual(JSON.parse(readFileSync(lp, 'utf8')), corrupt, 'the corrupted ledger on disk is preserved, never overwritten')
 })
 
+check('M16 BUG-A: a result with coverage_failed lands in the pass object, blocks `dry`, and the recap stdout surfaces coverage-incomplete (never a clean PROCEED)', () => {
+  const d = gitRepo(); dirs.push(d)
+  const rp = join(d, '.security-review', 'result-1.json')
+  // A pass where the finder for one always-on dimension crashed: zero findings, but coverage_failed
+  // names the crashed dimension. Without the fix, newConfirmedLowPlus===0 → dry:true and the recap
+  // would PROCEED — a clean verdict over a crashed finder (the exact BUG-A regression).
+  writeFileSync(rp, JSON.stringify({
+    ledger_updates: [],
+    dimensions_run: ['secrets-credentials'],
+    total_candidates: 0,
+    unverified: [],
+    coverage_failed: ['resource-consumption-abuse'],
+  }))
+  const out = execFileSync('node', [MERGE, '--repo', d, '--result', rp, '--date', '2026-06-17', '--pass', '1', '--tier', 'standard'], { encoding: 'utf8' })
+  const led = JSON.parse(readFileSync(join(d, '.security-review', 'audit-ledger.json'), 'utf8'))
+  assert.deepEqual(led.passes[0].coverage_failed, ['resource-consumption-abuse'], 'coverage_failed is persisted in the pass object')
+  assert.equal(led.passes[0].dry, false, 'a pass with a coverage failure is NEVER dry (the dimension did not actually run)')
+  assert.match(out, /Coverage INCOMPLETE/, 'the recap stdout surfaces the coverage-incomplete caveat')
+  assert.match(out, /resource-consumption-abuse/, 'the crashed dimension is named for re-run')
+  assert.ok(!/\*\*Verdict: PROCEED\.\*\*/.test(out), 'NEVER a clean PROCEED over a crashed dimension')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
