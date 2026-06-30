@@ -7,6 +7,13 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- `docs/roadmap-coldrun-hardening.md` — the `ACTIVE` post-cold-run hardening backlog: B1 run static
+  deterministic scanners before the LLM fan-out (the top PENDING-OWNER-RUN drainer) · B2 throwaway-tier
+  pull-forward engines (compose/dockerfile standup + org-standup/teardown) + container-isolated OpenAPI
+  capture · B3 deterministic-band-disposition → verdict reflection · B4 PENDING labeling · B5
+  residual-shrinking · B6 prose · B7 gate-consolidation; with the genuinely-owner residual and the
+  locked decisions. Docs-only, no engine change (the single pick-up-fresh source of truth for the
+  remaining hardening). INDEX row added.
 - `docs/ARCHITECTURE.md` — a property → enforcing-engine → guarding-test → code-excerpt map (with exact
   `file:line` refs) so the "deterministic engines, not model goodwill" claim is verifiable in five minutes
   without a clone; surfaced from the README trust section. Docs-only, no engine change (prompted by an
