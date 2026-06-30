@@ -152,6 +152,10 @@ const CA_STACK_PINS = {
   // 5.14.0 bundles code-analyzer-pmd-engine 0.43.0 + code-analyzer-sfge-engine 0.22.0.
   plugin: { name: 'code-analyzer', version: '5.14.0', npm: '@salesforce/plugin-code-analyzer' },
 }
+// The CA stack's only legitimate tool name (tool-detect.mjs FAMILIES fixes it to `sf`).
+// Mirrors the PIP_TOOLS/NPM_TOOLS/GIT_TOOLS/BINARY_PINS membership gates so the
+// code-analyzer-stack branch isn't the one install method without a name allow-list.
+const CA_STACK_NAMES = new Set(['sf'])
 
 // Temurin (Eclipse Adoptium) JDK 17 — the JRE PMD/SFGE need (JDK 11+). Mirrors
 // BINARY_PINS: a per-platform { file, sha256 }, sha256-verified BEFORE extract; an
@@ -310,6 +314,7 @@ function resolveTool(t, tmpRoot, platKey, presentJavaHome) {
     }
   }
   if (t.install === 'code-analyzer-stack') {
+    if (!CA_STACK_NAMES.has(name)) return { skip: { name, family, method: t.install, reason: `unknown code-analyzer-stack tool '${name}'` } }
     const cliDir = join(targetDir, 'cli')
     const cliBinDir = join(cliDir, 'node_modules', '.bin')
     const jdkDir = join(targetDir, 'jdk')

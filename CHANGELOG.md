@@ -37,6 +37,45 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.42] — 2026-06-30
+
+**Code-Analyzer cold-install CLOSE-OUT — the headline security guard (JDK verify-before-extract,
+fail-closed) gets EXECUTOR coverage; a defense-in-depth name guard; a run-scans deterministic-band
+clarity fix (docs/roadmap-deterministic-findings.md §5).** The 0.8.41 cold-install slice shipped the
+`code-analyzer-stack` executor, but its tests drove only the PURE planner + a `dryRun:true` disclosure
+(the lone real-execute CA path) — the IMPURE JDK sha256-**verify-before-extract** (the slice's headline
+security property) had ZERO standing coverage, and the `code-analyzer-stack` `resolveTool` branch was the
+only install method WITHOUT a tool-name allow-list. This slice closes those gaps, additive-only on the
+harness. **(A) `CA7` — hermetic executor proof of the JDK fail-closed** (`test-install-scanners`): builds a
+real CA-stack PROVISION plan, points the JDK fetch at a LOCAL `file://` artifact with a guaranteed-MISMATCH
+checksum (mirrors `E5`'s bad-binary path + `E3`'s planInstalls-then-override idiom), runs
+`installScanners({consent:true})`, and asserts the install **fails closed BEFORE extract** — `status:'failed'`
++ the exact `JDK checksum mismatch` guard message, the JDK is NEVER unpacked (no `jdk-17.0.19+10/` under the
+extract dir), the pinned-CLI **npm never ran** (no `node_modules` under `cliDir`), and the failed install
+**contributes no PATH entry**. Fully hermetic (no network — `file://` + the mismatch fails before any npm).
+**Mutation-proven non-vacuous:** deleting the `got !== inst.jdk.checksum` guard turns `CA7` RED (tar then runs
+on a non-tarball → a generic failure whose log is NOT `JDK checksum mismatch`). The happy-path executor (real
+`npm install @salesforce/cli`) stays operator-cold-validated (Level B), not CI — it needs network + ~1 GB.
+**(B) Defense-in-depth name-membership guard** (`install-scanners.mjs`): a `CA_STACK_NAMES = new Set(['sf'])`
+gate (the CA stack's only legitimate tool name, fixed in `tool-detect.mjs` FAMILIES) at the top of the
+`code-analyzer-stack` branch — an unknown name → a `skip`, never an install — mirroring the
+`PIP_TOOLS`/`NPM_TOOLS`/`GIT_TOOLS`/`BINARY_PINS` allow-lists. Not exploitable today (only a trusted `--detect`
+JSON could supply another name); it closes the asymmetry. New `CA8` check locks it (`notsf` → skip with the
+membership reason; `sf` still plans) and is mutation-proven RED if the guard is removed. **(C) run-scans
+Family 1 deterministic-band clarity** (`skills/run-scans/SKILL.md`, prose-only): the engine-explicit workspace
+form (`-r AppExchange -r sfge -r pmd --output-file …json`) is now THE primary form for the deterministic
+CRUD/FLS band — for **BOTH** a present `sf` and the cold-installed stack (the only difference is how `sf` got
+onto PATH). The byte-verified required HTML submission form (`scan-code-analyzer-invocation`) is kept as an
+ADDITIONAL pass for the submission artifact, with an explicit note that a present-`sf` user running HTML-only
+gets NEITHER the FLS band NOR the `--all`-ingestable JSON — they must run the engine-explicit form. No harness
+or `--all` wiring touched. **(D) Cosmetics** (`test-install-scanners`): `CA1` now value-asserts
+`SF_DISABLE_AUTOUPDATE === 'true'` (was key-only); `CA2`'s env-path-count comment corrected (`4 SF_*` →
+`3 path SF_*` — the three `SF_DISABLE_*`/`AUTOUPDATE` entries are `'true'` flags, not paths; the asserted `7`
+was always right). **Additive-only:** the only `install-scanners.mjs` change is the one-line name guard + its
+`CA_STACK_NAMES` constant — the pip/npm/git/binary `resolveTool`/`executeOne` branches, the `planInstalls`
+core, and the JDK verify/extract logic are byte-unchanged (`CA7` TESTS that logic, it does not edit it). Suite
+**55 files / 709 checks** (was 55 / 707; +`CA7`, +`CA8`). Tag stays **HELD** (0.9.0 reserved).
+
 ## [0.8.41] — 2026-06-30
 
 **Deterministic-findings cold-install milestone — Code Analyzer CRUD/FLS flips from owner-gated to

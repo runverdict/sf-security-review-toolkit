@@ -192,6 +192,7 @@ check('CA1 code-analyzer-stack plan shape: pinned cli+plugin+JDK, hermetic env, 
   assert.deepEqual(Object.keys(i.env).sort(), ['HOME', 'JAVA_HOME', 'SF_AUTOUPDATE_DISABLE', 'SF_CACHE_DIR', 'SF_CONFIG_DIR', 'SF_DATA_DIR', 'SF_DISABLE_AUTOUPDATE', 'SF_DISABLE_TELEMETRY', 'TMPDIR', 'npm_config_cache'])
   assert.equal(i.env.SF_DISABLE_TELEMETRY, 'true')
   assert.equal(i.env.SF_AUTOUPDATE_DISABLE, 'true')
+  assert.equal(i.env.SF_DISABLE_AUTOUPDATE, 'true')
   // byte-identical plan for identical inputs
   assert.equal(JSON.stringify(planCA()), JSON.stringify(planCA()))
 })
@@ -201,7 +202,7 @@ check('CA2 hermeticity contract: every CA-stack env path + pathPrepend entry is 
   const underRoot = (x) => x.startsWith(ROOT0 + sep)
   // the path-valued env entries (the three flag values are 'true', skipped by the absolute-path filter)
   const envPaths = Object.values(i.env).filter((v) => v.startsWith(sep))
-  assert.equal(envPaths.length, 7, 'HOME + 4 SF_* dirs + TMPDIR + npm_config_cache + JAVA_HOME = 7 path values')
+  assert.equal(envPaths.length, 7, 'HOME + 3 path SF_* dirs + TMPDIR + npm_config_cache + JAVA_HOME = 7 path values')
   for (const v of envPaths) assert.ok(underRoot(v), `env path escaped tmpRoot: ${v}`)
   for (const v of i.pathPrepend) assert.ok(underRoot(v), `pathPrepend escaped tmpRoot: ${v}`)
 })
@@ -260,6 +261,42 @@ check('CA6 --dry-run discloses the CA-stack env + 2-dir pathPrepend + JDK decisi
   assert.equal(rec.jdk.mode, 'provision')
   assert.deepEqual(rec.pathPrepend, [join(root, 'sf', 'cli', 'node_modules', '.bin'), join(root, 'sf', 'jdk', 'jdk-17.0.19+10', 'bin')])
   assert.ok(!existsSync(join(root, 'sf', 'cli', 'node_modules')), 'nothing actually installed on a dry-run')
+})
+
+check('CA7 executor: JDK checksum MISMATCH → fails closed BEFORE extract (JDK never unpacked, npm never ran, no PATH entry) — hermetic', () => {
+  // The CA-stack executor's headline security property: the pinned JDK is sha256-verified
+  // BEFORE it is extracted, and a mismatch aborts the whole install before npm ever runs.
+  // Driven fully hermetically (mirrors E5's bad-binary path + E3's planInstalls-then-override
+  // idiom): curl reads a LOCAL file:// artifact, and the mismatch fails closed before any npm.
+  const base = mkroot()
+  const root = join(base, 'sf-srt-scanners', 'ca7')
+  // a LOCAL fake "JDK tarball"; its real sha256 will NOT match the mismatch checksum we force below.
+  const fakeJdk = join(base, 'jdk-fake.tar.gz'); writeFileSync(fakeJdk, 'not a real jdk\n')
+  const plan = planInstalls(CA_MISSING, { runId: 'ca7', tmpRoot: root, platform: 'linux', arch: 'x64', presentJavaHome: null })
+  const inst = caInst(plan)
+  // point the JDK fetch at the local artifact + a guaranteed-mismatch checksum; leave the rest as planned.
+  inst.jdk.source = `file://${fakeJdk}`
+  inst.jdk.checksum = 'f'.repeat(64)
+  const m = installScanners(plan, { consent: true })
+  const rec = m.installs.find((r) => r.method === 'code-analyzer-stack')
+  assert.equal(rec.status, 'failed')
+  assert.match(rec.log, /JDK checksum mismatch/) // the exact verify-before-extract guard message
+  // the unverified JDK is NEVER unpacked — no jdk-17.0.19+10/ under the extract dir.
+  assert.ok(!existsSync(join(inst.jdk.extractDir, JDK_PINS.dirName)), 'an unverified JDK must never be extracted')
+  // the pinned-CLI npm step is downstream of the JDK gate → it never ran.
+  assert.ok(!existsSync(join(inst.cliDir, 'node_modules')), 'the CLI npm install must not run when the JDK fails closed')
+  // a failed install contributes no PATH entry (mirrors E5's pathPrepend assertion).
+  assert.deepEqual(m.pathPrepend, [], 'a failed install contributes no PATH entry')
+})
+
+check('CA8 name-membership guard: an unknown tool name under code-analyzer-stack → skip, never an install', () => {
+  // The code-analyzer-stack branch gates on CA_STACK_NAMES (= {'sf'}) like the pip/npm/git/binary
+  // branches gate on their own name allow-lists — an unknown name is skipped, not provisioned.
+  const p = planInstalls([{ name: 'notsf', family: 'code-analyzer', install: 'code-analyzer-stack' }], { runId: 'fixed-run', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' })
+  assert.equal(p.installs.length, 0, 'an unknown code-analyzer-stack tool name is never planned')
+  assert.ok(p.skipped.some((s) => s.name === 'notsf' && /unknown code-analyzer-stack tool/.test(s.reason)), 'it skips with the membership-guard reason')
+  // the only legitimate CA-stack name still plans (no regression).
+  assert.ok(caInst(planCA()), "the canonical 'sf' name still plans")
 })
 
 // ── IMPURE executor (hermetic) ──────────────────────────────────────────────

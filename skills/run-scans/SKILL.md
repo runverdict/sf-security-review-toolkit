@@ -176,36 +176,12 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    stack writes is contained under the tmp root, so `cleanup-scanners.mjs`
    removes it structurally at end-of-run (evidence kept). When a present `sf`
    is already on PATH, use it as-is — it is never re-installed.
-   *Invocation:* the canonical form recorded in
-   `scan-code-analyzer-invocation` is
-
-   ```bash
-   sf code-analyzer run --rule-selector AppExchange \
-     --rule-selector Recommended:Security \
-     --output-file CodeAnalyzerReport.html
-   ```
-
-   Verify the flag syntax against YOUR installed CLI (`--help`) before
-   running — the last major-version transition changed the command shape
-   once already. The **AppExchange selector is load-bearing**: it activates
-   the review-specific PMD rule set (session-ID retrieval, hardcoded
-   credentials, install/uninstall-handler rules, the Critical
-   `FeatureManagement.changeProtection` license-gate-tampering rule
-   `AvoidFeatureManagementChangeProtection`, and the Moderate
-   `getInstance(userId/profileId)` taint rule `AvoidGetInstanceWithTaint` —
-   baseline: `scan-pmd-appexchange-rules`,
-   `violation-feature-management-change-protection`,
-   `violation-getinstance-with-taint`); a scan without it looks diligent and
-   misses the rules the reviewer cares about. Emit HTML (the submission
-   format) and JSON (machine triage) in the same pass. Run the Graph Engine
-   too — its data-flow CRUD/FLS findings target the #1 review-failure cause;
-   it is slow and has per-entry-point timeouts, so budget for it and triage
-   its output first (baseline: `scan-sfge-crud-fls-dataflow`,
-   `fail-crud-fls`).
-   *Engine-explicit workspace form (the cold-install / deterministic-band path):*
-   when you provisioned the stack via the cold-install path above — or whenever
-   you want the deterministic CRUD/FLS band — run the v5 workspace form that
-   selects the engines explicitly:
+   *Invocation — the deterministic-band form is PRIMARY.* Run the v5 workspace
+   form that selects the engines explicitly. This is the form that produces the
+   FLS band AND the `--all`-ingestable evidence JSON, and it is the primary
+   command for **BOTH** a present `sf` and the cold-installed stack — the only
+   difference between the two is how `sf` got onto PATH (a pre-existing install
+   vs. the 0.8.41 cold-install provision above), not which command you run:
 
    ```bash
    sf code-analyzer run --workspace <force-app-root> \
@@ -217,11 +193,45 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    in `Recommended`, so it only fires when sfge is selected explicitly;
    `ApexCRUDViolation` comes in via `-r AppExchange` / `-r pmd`. All three
    CRUD/FLS rules carry a Security/AppExchange tag, so they survive the ingest
-   adapter's security-tag filter. SFGE has per-entry-point timeouts and a JVM
-   heap knob (`--sfge-jvm-args`); defaults are fine at small sizes (the 0.8.41
-   spike ran 45 files in ~30 s) but budget the timeout for large Apex trees.
-   The 0.8.40 `--all` ingest then consumes the resulting JSON into the
-   deterministic band (already wired — don't re-wire).
+   adapter's security-tag filter. **A present `sf` does NOT exempt you from this
+   form:** the HTML-only submission form below, run on its own, yields NEITHER
+   the FLS band NOR the `--all`-ingestable JSON — so a box that already has `sf`
+   on PATH still MUST run this engine-explicit form (with `-r sfge` + the
+   evidence JSON) to get the deterministic CRUD/FLS band. SFGE has
+   per-entry-point timeouts and a JVM heap knob (`--sfge-jvm-args`); defaults
+   are fine at small sizes (the 0.8.41 spike ran 45 files in ~30 s) but budget
+   the timeout for large Apex trees. The 0.8.40 `--all` ingest then consumes the
+   resulting JSON into the deterministic band (already wired — don't re-wire).
+
+   Verify the flag syntax against YOUR installed CLI (`--help`) before
+   running — the last major-version transition changed the command shape
+   once already. The **AppExchange selector is load-bearing** (in BOTH forms):
+   it activates the review-specific PMD rule set (session-ID retrieval,
+   hardcoded credentials, install/uninstall-handler rules, the Critical
+   `FeatureManagement.changeProtection` license-gate-tampering rule
+   `AvoidFeatureManagementChangeProtection`, and the Moderate
+   `getInstance(userId/profileId)` taint rule `AvoidGetInstanceWithTaint` —
+   baseline: `scan-pmd-appexchange-rules`,
+   `violation-feature-management-change-protection`,
+   `violation-getinstance-with-taint`); a scan without it looks diligent and
+   misses the rules the reviewer cares about. The Graph Engine (`-r sfge`)
+   data-flow CRUD/FLS findings target the #1 review-failure cause, so triage
+   its output first (baseline: `scan-sfge-crud-fls-dataflow`, `fail-crud-fls`).
+
+   *Submission HTML artifact (an ADDITIONAL pass, NOT the primary/only
+   command).* The reviewer requires the HTML report, so ALSO emit it — the
+   byte-verified required invocation recorded in `scan-code-analyzer-invocation`:
+
+   ```bash
+   sf code-analyzer run --rule-selector AppExchange \
+     --rule-selector Recommended:Security \
+     --output-file CodeAnalyzerReport.html
+   ```
+
+   Run BOTH passes every time: the engine-explicit JSON above (the deterministic
+   band + machine triage — what feeds the ledger) AND this HTML (the submission
+   format — what gets uploaded). HTML alone is not enough; the engine-explicit
+   form is what makes CRUD/FLS deterministic.
    *Agent runs:* install check, scan, JSON parsing, diffing findings against
    the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
    confirmation of every FP justification.
