@@ -36,6 +36,7 @@ import { tmpdir, homedir, platform as osPlatform, arch as osArch } from 'node:os
 import { createHash } from 'node:crypto'
 import {
   planInstalls, installScanners, installCommands, assertSafeTmpRoot, MANIFEST_SCHEMA, JDK_PINS,
+  readCodeAnalyzerPluginVersion,
 } from '../harness/install-scanners.mjs'
 
 let pass = 0, fail = 0
@@ -297,6 +298,32 @@ check('CA8 name-membership guard: an unknown tool name under code-analyzer-stack
   assert.ok(p.skipped.some((s) => s.name === 'notsf' && /unknown code-analyzer-stack tool/.test(s.reason)), 'it skips with the membership-guard reason')
   // the only legitimate CA-stack name still plans (no regression).
   assert.ok(caInst(planCA()), "the canonical 'sf' name still plans")
+})
+
+check('CA9 (0.8.43) readCodeAnalyzerPluginVersion: reads the on-disk plugin package.json; missing/malformed → null (no throw)', () => {
+  // Deterministic-version-readout helper (hermetic — no install). Points at a base dir
+  // holding node_modules/@salesforce/plugin-code-analyzer/package.json and returns its
+  // version; the cold-run misreport (5.13.0 while 5.14.0 was on disk) came from reading
+  // an ad-hoc `sf plugins` instead of this file.
+  const base = mkroot()
+  const pdir = join(base, 'node_modules', '@salesforce', 'plugin-code-analyzer')
+  mkdirSync(pdir, { recursive: true })
+  writeFileSync(join(pdir, 'package.json'), JSON.stringify({ name: '@salesforce/plugin-code-analyzer', version: '5.14.0' }))
+  assert.equal(readCodeAnalyzerPluginVersion(base), '5.14.0', 'reads the version deterministically from the installed package.json')
+  // a base dir with no plugin tree → null, never a throw
+  assert.equal(readCodeAnalyzerPluginVersion(join(base, 'does-not-exist')), null)
+  // a malformed package.json → null, never a throw (the "never crash" contract)
+  const bad = mkroot()
+  const bdir = join(bad, 'node_modules', '@salesforce', 'plugin-code-analyzer')
+  mkdirSync(bdir, { recursive: true })
+  writeFileSync(join(bdir, 'package.json'), '{ not valid json')
+  assert.equal(readCodeAnalyzerPluginVersion(bad), null)
+  // a package.json with no version field → null
+  const nov = mkroot()
+  const ndir = join(nov, 'node_modules', '@salesforce', 'plugin-code-analyzer')
+  mkdirSync(ndir, { recursive: true })
+  writeFileSync(join(ndir, 'package.json'), JSON.stringify({ name: 'x' }))
+  assert.equal(readCodeAnalyzerPluginVersion(nov), null)
 })
 
 // ── IMPURE executor (hermetic) ──────────────────────────────────────────────

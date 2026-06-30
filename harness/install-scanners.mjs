@@ -398,6 +398,36 @@ const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8',
 // so the pip/npm/git/binary branches' `run(...)` call sites stay byte-identical.
 const runEnv = (cmd, args, cwd, env) => execFileSync(cmd, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
+// ── Deterministic plugin-version readout (0.8.43) ─────────────────────────────
+// A cold run REPORTED "code-analyzer 5.13.0" while the PINNED 5.14.0 was actually
+// installed — the misreport came from an LLM-read `sf plugins`, not the on-disk
+// manifest. Reading the installed plugin's package.json makes the version
+// deterministic-to-report. PURE-ish: one read-only file read, returns null (never
+// throws) when absent/unreadable/un-versioned, so the executor never crashes on it.
+const CA_PLUGIN_REL = join('node_modules', '@salesforce', 'plugin-code-analyzer', 'package.json')
+
+/** Read the installed code-analyzer plugin version under `baseDir` (the dir that holds
+ *  `node_modules/@salesforce/plugin-code-analyzer/`), or null if it can't be read. */
+export function readCodeAnalyzerPluginVersion(baseDir) {
+  try {
+    const j = JSON.parse(readFileSync(join(String(baseDir || ''), CA_PLUGIN_REL), 'utf8'))
+    return typeof j.version === 'string' && j.version ? j.version : null
+  } catch { return null }
+}
+
+/** The first readable plugin version across the candidate dirs the CA stack writes the
+ *  user-plugin into (oclif installs `sf plugins` content under the data dir), or null. */
+function resolveInstalledPluginVersion(inst) {
+  const env = inst.env || {}
+  const candidates = [env.SF_DATA_DIR, env.HOME ? join(env.HOME, '.local', 'share', 'sf') : null, inst.cliDir]
+  for (const base of candidates) {
+    if (!base) continue
+    const v = readCodeAnalyzerPluginVersion(base)
+    if (v) return v
+  }
+  return null
+}
+
 /** Execute one install. Returns a manifest record. Throws nothing — failures are recorded. */
 function executeOne(inst) {
   const rec = {
@@ -481,6 +511,14 @@ function executeOne(inst) {
       rec.log = clampLog(runEnv('npm', ['install', '--prefix', inst.cliDir, '--no-audit', '--no-fund', `${inst.cli.pkg}@${inst.cli.version}`], inst.targetDir, stepEnv), 2000)
       // (3) the pinned code-analyzer plugin via the just-installed sf.
       runEnv(join(inst.cliBinDir, 'sf'), ['plugins', 'install', `${inst.plugin.name}@${inst.plugin.version}`], inst.targetDir, stepEnv)
+      // Record the version DETERMINISTICALLY from the installed plugin's package.json
+      // (not an ad-hoc `sf plugins` read): `pinned` = what we asked for, `installed` =
+      // what landed on disk (null if unreadable — never a crash, additive field).
+      rec.plugin = {
+        name: inst.plugin.name,
+        pinned: inst.plugin.version,
+        installed: resolveInstalledPluginVersion(inst),
+      }
     } else {
       rec.status = 'failed'; rec.log = `unsupported method '${inst.method}'`; return rec
     }

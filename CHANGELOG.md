@@ -44,6 +44,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.43] — 2026-06-30
+
+**Preflight / detection-accuracy / gate-clarity hardening — four clear-cut gaps a live cold run
+against a real nested-SFDX multi-package repo surfaced.** The target was a FastAPI + Next.js product
+with NESTED SFDX packages (`salesforce/` + `salesforce-mcp/`), an MCP server, Canvas, and Agentforce,
+with `sf` deliberately absent (the cold-install path). None of these touch the consent-safety floor
+structurally (that consolidation is a separate designed slice) — they are detection-accuracy + gate-
+message clarity, all additive on the harness. **(1) NESTED-SFDX discovery** (`harness/package-readiness.mjs`):
+the pure `packageReadiness` core was correct, but `main()` read only the ROOT `sfdx-project.json`, so a
+repo whose packages live in subdirectories returned `no-package` and the journey only recovered by
+LLM-grepping + re-running per-dir. New exported `discoverPackages(target)` finds every `sfdx-project.json`
+under the repo at a bounded depth (≤4, skipping `node_modules`/dot-dirs), runs `packageReadiness` on each,
+and returns `[{dir, relPath, readiness}, …]`; `main() --json` keeps the legacy single-package top-level
+shape (a single root package emits unchanged keys — render-preflight + scope-submission read those) and
+ADDS a `packages[]` array + an `anyInstallable`/most-actionable roll-up, always. `scope-submission`'s
+managed-package + Agentforce detection greps now recurse too (not a root-only `force-app`). **(2) READY-
+without-precondition** (`harness/render-preflight.mjs`): the deployed-org power-up line read "READY
+(installable)" purely from package-readiness while `sf` was ABSENT — but the deep audit can't run a step
+without first installing + authing `sf`. The renderer now folds the `sf`-presence fact (already in the
+tool-detect JSON it consumes) into that line: installable + sf-present → "READY (installable)";
+installable + sf-absent → "READY — pending sf install + Dev Hub auth". No new enum state; only the
+installable+sf-absent case is qualified. **(3) Deterministic version readout** (`harness/install-scanners.mjs`):
+the run reported "code-analyzer 5.13.0" while the pinned 5.14.0 was actually installed — the misreport
+came from an LLM-read `sf plugins`. New exported `readCodeAnalyzerPluginVersion(baseDir)` reads the
+installed plugin's `node_modules/@salesforce/plugin-code-analyzer/package.json` version (null on any read
+failure, never crashes); the `code-analyzer-stack` executor records it on the manifest record as
+`rec.plugin = { name, pinned, installed }` (additive field). `run-scans` Family 1 + `audit-codebase` now
+say to report the version from that manifest record, not an ad-hoc `sf plugins`. **(4) Gate-message
+clarity (PROSE only, NOT the structural consolidation):** the deep-audit power-up offer and the scanner-
+install gate now CROSS-REFERENCE each other's `sf` — the deployed-org deep audit installs an AUTHED,
+GLOBAL `sf` (for the scratch-org stand-up), distinct from the UNAUTHED, TMP `sf` the scanner-install gate
+provisions inside `code-analyzer-stack` for the static CRUD/FLS Code Analyzer (journey + render-preflight,
+both directions); and `gate-spec`'s audit-tier CONFIRM variant + `audit-codebase` Step 2 now frame the
+recorded-tier stop as authorizing the LAUNCH (the fan-out token spend, plus the target-map approval that
+follows), NOT a tier re-election. **Tests:** `test-package-readiness` +4 (nested discovery + roll-up +
+single-root legacy-shape preservation + zero-package byte-identical text), `test-render-preflight` +1
+(PF7 installable+sf-absent qualifier, non-vacuous flip), `test-install-scanners` +1 (CA9 version-read
+helper, hermetic), and a new `test-gate-message-clarity` (+6 — journey/render-preflight prose cross-refs
++ gate-spec functional authorize/launch framing + the first-pass-menu-stays-election non-vacuity guard).
+Suite **56 files / 721 checks** (was 55 / 709), all green; each new test mutation-proven (revert the fix →
+its test RED). NON-BREAKING: `packageReadiness` pure core byte-unchanged, the single-root `--json` shape
+preserved (render-preflight + scope-submission tests still green), the install-scanners change is one
+additive manifest field (the pip/npm/git/binary + code-analyzer-stack install LOGIC byte-unchanged). Tag
+stays **HELD**.
+
 ## [0.8.42] — 2026-06-30
 
 **Code-Analyzer cold-install CLOSE-OUT — the headline security guard (JDK verify-before-extract,

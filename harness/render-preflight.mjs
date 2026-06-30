@@ -46,7 +46,10 @@ import { fileURLToPath } from 'node:url'
 // package-readiness emits status ∈ {installable, needs-build, no-package} + a `registered`
 // boolean; this maps that onto the FOUR operator-facing states. Each state has a FIXED
 // label + verdict; only the detector's `reason` fills the parenthetical. Frozen so the
-// enum is provably complete and a new wording cannot creep in.
+// enum is provably complete and a new wording cannot creep in. (0.8.43: the renderer
+// QUALIFIES the `installable` label to "READY — pending sf install + Dev Hub auth" when
+// `sf` is absent from tool-detect — the deep audit needs sf authed, not just an installable
+// version — but no new enum state is added; every other label is unchanged.)
 export const DEEP_AUDIT_STATES = Object.freeze({
   'installable': Object.freeze({
     label: 'READY (installable)',
@@ -114,6 +117,10 @@ export function renderPreflight(facts) {
   L.push(`  • External backend: ${sd ? `[${sd.status}] ${oneLine(sd.reason)}` : 'not detected'}`)
   // scan tools present (from tool-detect)
   const td = f.toolDetect && typeof f.toolDetect === 'object' ? f.toolDetect : null
+  // Is `sf` itself present? (the deployed-org deep audit can't run a step without it,
+  // even when a package is installable — so an installable+sf-absent "READY" overstates).
+  const sfPresent = !!(td && td.summary && Array.isArray(td.summary.present_tools) &&
+    td.summary.present_tools.some((t) => t && t.name === 'sf'))
   if (td && td.summary) {
     const present = Array.isArray(td.summary.present_tools) ? td.summary.present_tools.map((t) => t.name) : []
     const satisfied = Array.isArray(td.summary.satisfied_families) ? td.summary.satisfied_families.length : 0
@@ -140,7 +147,14 @@ export function renderPreflight(facts) {
   const stateKey = pr ? deepAuditState(pr) : null
   if (stateKey && DEEP_AUDIT_STATES[stateKey]) {
     const st = DEEP_AUDIT_STATES[stateKey]
-    L.push(`  • Deployed-org deep audit — ${st.label}: ${st.verdict}`)
+    // Qualify ONLY the installable+sf-absent case: an installable version means the deep
+    // audit CAN run, but not before `sf` is installed + a Dev Hub authed — so "READY"
+    // alone overstates it without sf. Every other state's fixed label is unchanged, and
+    // installable+sf-present stays the plain "READY (installable)".
+    const label = stateKey === 'installable' && !sfPresent
+      ? 'READY — pending sf install + Dev Hub auth'
+      : st.label
+    L.push(`  • Deployed-org deep audit — ${label}: ${st.verdict}`)
   } else {
     L.push('  • Deployed-org deep audit — readiness not sensed (package-readiness not run); install + auth `sf` and re-run to settle it')
   }
@@ -165,6 +179,11 @@ export function renderPreflight(facts) {
   // (4) sf CLI — only surfaced when there is no package readiness yet (no sf sensed)
   if (!pr) {
     L.push('  • sf CLI — not detected: install + auth `sf` to unlock the DevHub auto-resolve and the deployed-org deep audit')
+    // Cross-reference the two distinct `sf` installs so "install sf" reads unambiguously:
+    // the deep-audit `sf` is a SEPARATE authed, global install (for the scratch-org
+    // stand-up) — distinct from the unauthed, tmp `sf` the scanner-install gate provisions
+    // (inside code-analyzer-stack) for the static CRUD/FLS Code Analyzer.
+    L.push('    (this is a separate authed, global `sf` for the scratch-org stand-up — NOT the unauthed, tmp `sf` the scan-tool install gate provisions for the static CRUD/FLS Code Analyzer)')
   }
   return L.join('\n')
 }

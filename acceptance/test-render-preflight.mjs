@@ -40,7 +40,10 @@ const FACTS = {
   needFromYou: [],
   baseline: { total: 155, last_verified_null: 36, newest_verified: '2026-06-20' },
   packageReadiness: { status: 'needs-build', registered: false, package: 'Acme', reason: 'no package-id alias' },
-  toolDetect: { families: [1, 2, 3, 4, 5, 6, 7, 8], summary: { present_tools: [{ name: 'npm' }], satisfied_families: ['dependency-audit'], installable_missing: [{ name: 'osv-scanner', install: 'binary' }] } },
+  // `sf` is PRESENT in the baseline fixture so the installable deep-audit line reads the
+  // plain "READY (installable)" (installable + sf present). PF7 toggles sf to exercise the
+  // 0.8.43 sf-absent qualifier.
+  toolDetect: { families: [1, 2, 3, 4, 5, 6, 7, 8], summary: { present_tools: [{ name: 'npm' }, { name: 'sf' }], satisfied_families: ['dependency-audit'], installable_missing: [{ name: 'osv-scanner', install: 'binary' }] } },
   stackDetect: { status: 'runnable', reason: 'node compose recipe' },
   dockerCheck: { status: 'available', runnable: true },
 }
@@ -112,6 +115,22 @@ check('PF5 honesty: empty needFromYou → "none"; non-empty renders the gaps', (
   assert.match(withGaps, /• source not findable/)
   assert.match(withGaps, /• MCP server claimed but absent/)
   assert.ok(!/none — nothing blocks/.test(withGaps), 'no "none" when gaps exist')
+})
+
+check('PF7 (0.8.43) installable+sf-absent → "pending sf install" qualifier; installable+sf-present → plain READY', () => {
+  const pr = { status: 'installable', registered: true, reason: 'r' }
+  const tdNoSf = { families: [1], summary: { present_tools: [{ name: 'npm' }], satisfied_families: [], installable_missing: [] } }
+  const tdSf = { families: [1], summary: { present_tools: [{ name: 'npm' }, { name: 'sf' }], satisfied_families: [], installable_missing: [] } }
+  const a = renderPreflight({ ...FACTS, packageReadiness: pr, toolDetect: tdNoSf })
+  const b = renderPreflight({ ...FACTS, packageReadiness: pr, toolDetect: tdSf })
+  // sf absent → the deployed-org line is QUALIFIED (an installable version still needs sf authed)
+  assert.match(a, /Deployed-org deep audit — READY — pending sf install \+ Dev Hub auth/)
+  assert.ok(!a.includes('READY (installable)'), 'sf-absent must not render the bare "READY (installable)"')
+  // sf present → the plain fixed label, no qualifier
+  assert.match(b, /Deployed-org deep audit — READY \(installable\)/)
+  assert.ok(!/pending sf install/.test(b), 'sf-present has no pending qualifier')
+  // non-vacuous: the ONLY difference is the sf fact, and the label flips
+  assert.notEqual(a, b)
 })
 
 check('PF6 wiring: journey grants + references the harness + verbatim + the 4-state', () => {

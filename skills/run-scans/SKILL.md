@@ -176,6 +176,11 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    stack writes is contained under the tmp root, so `cleanup-scanners.mjs`
    removes it structurally at end-of-run (evidence kept). When a present `sf`
    is already on PATH, use it as-is — it is never re-installed.
+   **Report the Code Analyzer plugin version from the manifest record's
+   `code-analyzer` → `plugin.installed` field (read deterministically from the
+   installed plugin's `package.json`), NOT an ad-hoc `sf plugins` listing** — a
+   cold run misreported `5.13.0` while the pinned `5.14.0` was on disk because
+   it read the version from an LLM-parsed `sf plugins` instead of the manifest.
    *Invocation — the deterministic-band form is PRIMARY.* Run the v5 workspace
    form that selects the engines explicitly. This is the form that produces the
    FLS band AND the `--all`-ingestable evidence JSON, and it is the primary

@@ -50,7 +50,7 @@ elements, get the requirement list those elements imply.
 
    | Element | Detection |
    |---|---|
-   | Managed package | `sfdx-project.json`, `force-app/` tree, `*-meta.xml`; record package type (1GP/2GP), namespace, and whether Apex/LWC/Aura/Flows exist |
+   | Managed package | `sfdx-project.json`, `force-app/` tree, `*-meta.xml`; record package type (1GP/2GP), namespace, and whether Apex/LWC/Aura/Flows exist. **Recurse — packages can be NESTED**, not just at the repo root: a multi-package repo puts each SFDX project in its own subdirectory (e.g. `salesforce/sfdx-project.json` + `salesforce-mcp/sfdx-project.json`). Discover them all with `find . -name sfdx-project.json -not -path '*/node_modules/*'` (bounded depth) — or read the deterministic roll-up from `node ${CLAUDE_PLUGIN_ROOT}/harness/package-readiness.mjs --target <repo> --json`, whose `packages[]` array lists every discovered package + an `anyInstallable` roll-up. A root-only probe returns `no-package` on the nested layout and silently drops the whole element |
    | Agentforce agent | `Bot`/`BotVersion`, `GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`, `genAiPromptTemplate` metadata, or invocable actions wired to a planner — the **AgentExchange listing** signal. Emit a distinct `agentforce` element; it rides the package element but is what makes the `agentforce-*` requirements apply. **Do NOT infer it from `managed-package` alone** — a plain managed package that ships no agent is not an Agentforce listing, and asserting `agentforce-*` requirements against it manufactures blockers it can never satisfy (the cold-start finding this row closes) |
    | MCP server | MCP SDK imports, JSON-RPC `initialize`/`tools/list` dispatch in the partner's own code, an `/mcp`-shaped route they serve |
    | MCP client integration (inbound) | Code that **calls into** a Salesforce-hosted MCP server — a Connected/External Client App config, `mcp_api`+`refresh_token` scope requests, a PKCE+ECA OAuth flow targeting `*.salesforce.com`, redirect-URI handlers pointed at SF. This is the Direction-A signal (see the classifier below) |
@@ -94,10 +94,11 @@ elements, get the requirement list those elements imply.
    now gate **solely** on the `agentforce` element, not on `managed-package`. So
    a failure to detect the agent under-prepares the partner for an entire
    AgentExchange track with no error. Before writing the manifest, run a
-   deterministic confirmation: grep `force-app/` for any
+   deterministic confirmation: grep EVERY `force-app/` tree (there may be more than
+   one, under nested packages — don't assume a single root `force-app`) for any
    `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
-   metadata (e.g. `grep -rlE '<(Bot|GenAiPlugin|GenAiPlanner|GenAiFunction)' force-app`
-   plus `find force-app -name '*.genAiPlugin-meta.xml' -o -name '*.bot-meta.xml'`).
+   metadata (e.g. `grep -rlE '<(Bot|GenAiPlugin|GenAiPlanner|GenAiFunction)' --include='*.xml' . --exclude-dir=node_modules`
+   plus `find . -path '*/node_modules/*' -prune -o \( -name '*.genAiPlugin-meta.xml' -o -name '*.bot-meta.xml' \) -print`).
    If any matches but no `agentforce` element was emitted, that is a detection
    miss — emit the element. (This is the inverse of the MCP-client trap above:
    there, over-detection drags in a track; here, under-detection drops one.)

@@ -34,10 +34,18 @@
  * network. (A live `sf package version list` confirms an alias is actually
  * PROMOTED/released — this reads the project config, which is the up-front signal.)
  *
+ * NESTED PACKAGES (0.8.43). `packageReadiness` stays per-project + pure; the CLI
+ * now drives it via `discoverPackages(target)`, which finds EVERY sfdx-project.json
+ * under the repo at a bounded depth (root included) — so a repo whose packages live
+ * in subdirectories (`salesforce/`, `salesforce-mcp/`) is classified correctly
+ * instead of reading `no-package` from a root-only probe. The `--json` output keeps
+ * the legacy single-package top-level shape (a single root package emits unchanged
+ * keys) and ADDS a `packages[]` array + an `anyInstallable` roll-up, always.
+ *
  * USAGE: node package-readiness.mjs --target <repo> [--json]
  */
-import { readFileSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const VERSION_ID = /^04t[A-Za-z0-9]{12}([A-Za-z0-9]{3})?$/ // 04t + 15/18-char subscriber-package-version id
@@ -97,15 +105,96 @@ export function packageReadiness(proj) {
   }
 }
 
+// Directories never worth descending for an SFDX package (deps / VCS / our own
+// machine-state). `.`-prefixed dirs are skipped wholesale below; `node_modules`
+// is the one non-dot dir that has to be named explicitly.
+const SKIP_DIRS = new Set(['node_modules'])
+
+/**
+ * Discover EVERY sfdx-project.json under `target` (root included) at a bounded
+ * depth, and run the pure `packageReadiness` on each. The headline 0.8.43 fix:
+ * a repo whose SFDX packages live in SUBDIRECTORIES (e.g. `salesforce/` +
+ * `salesforce-mcp/`, the nested-package layout a real cold run hit) returned
+ * `no-package` from a root-only read, forcing the journey to LLM-grep + re-run
+ * per directory. This makes the discovery deterministic.
+ *
+ * Returns `[{ dir, relPath, readiness }, …]` sorted root-first then by relPath.
+ * Pure-ish: the only I/O is read-only directory/file reads (no mutation, no
+ * network); a single repo state maps to a single result. `packageReadiness`
+ * itself stays per-project + pure.
+ */
+export function discoverPackages(target, { maxDepth = 4 } = {}) {
+  const root = String(target || '.')
+  const found = []
+  const walk = (dir, depth) => {
+    if (depth > maxDepth) return
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    if (entries.some((e) => e.isFile() && e.name === 'sfdx-project.json')) {
+      let proj = null
+      try { proj = JSON.parse(readFileSync(join(dir, 'sfdx-project.json'), 'utf8')) } catch {}
+      const rel = relative(root, dir)
+      found.push({ dir, relPath: rel === '' ? '.' : rel, readiness: packageReadiness(proj) })
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith('.') && !SKIP_DIRS.has(e.name)) {
+        walk(join(dir, e.name), depth + 1)
+      }
+    }
+  }
+  walk(root, 0)
+  found.sort((a, b) =>
+    a.relPath === '.' ? -1 : b.relPath === '.' ? 1 : a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0
+  )
+  return found
+}
+
+// Most-actionable ordering for the roll-up: installable (deep audit READY) >
+// needs-build+registered (buildable) > needs-build+unregistered > no-package.
+function actionabilityRank(r) {
+  if (!r) return -1
+  if (r.status === 'installable') return 3
+  if (r.status === 'needs-build') return r.registered ? 2 : 1
+  return 0
+}
+
+/** The single readiness that best represents a discovered set (the roll-up rep). */
+export function rollupReadiness(pkgs) {
+  if (!Array.isArray(pkgs) || !pkgs.length) return packageReadiness(null)
+  let best = pkgs[0].readiness
+  let bestRank = actionabilityRank(best)
+  for (let i = 1; i < pkgs.length; i++) {
+    const rank = actionabilityRank(pkgs[i].readiness)
+    if (rank > bestRank) { best = pkgs[i].readiness; bestRank = rank }
+  }
+  return best
+}
+
 function main() {
   const arg = (f, d) => { const i = process.argv.indexOf(f); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d }
   const TARGET = arg('--target', process.cwd())
   const AS_JSON = process.argv.includes('--json')
-  let proj = null
-  try { proj = JSON.parse(readFileSync(join(TARGET, 'sfdx-project.json'), 'utf8')) } catch {}
-  const r = packageReadiness(proj)
-  if (AS_JSON) process.stdout.write(JSON.stringify(r, null, 2) + '\n')
-  else process.stdout.write(`[${r.status}] ${r.reason}\n`)
+  const pkgs = discoverPackages(TARGET)
+  const rep = rollupReadiness(pkgs)
+  const anyInstallable = pkgs.some((p) => p.readiness.status === 'installable')
+  if (AS_JSON) {
+    // Back-compat: the roll-up representative's fields stay at the TOP LEVEL, so a
+    // single-root-package repo emits the legacy `{ status, registered, reason, … }`
+    // shape unchanged (render-preflight + scope-submission read those keys). The
+    // `packages[]` array + `anyInstallable` roll-up are ADDED on top, always.
+    const out = {
+      ...rep,
+      packages: pkgs.map((p) => ({ dir: p.dir, relPath: p.relPath, readiness: p.readiness })),
+      anyInstallable,
+    }
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n')
+  } else if (pkgs.length <= 1) {
+    process.stdout.write(`[${rep.status}] ${rep.reason}\n`) // byte-identical to the pre-0.8.43 single line
+  } else {
+    const L = [`[${rep.status}] roll-up across ${pkgs.length} packages (anyInstallable=${anyInstallable}) — most-actionable shown; per-package:`]
+    for (const p of pkgs) L.push(`  • ${p.relPath}: [${p.readiness.status}] ${p.readiness.reason}`)
+    process.stdout.write(L.join('\n') + '\n')
+  }
 }
 
 function invokedDirectly() {

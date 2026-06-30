@@ -455,14 +455,16 @@ export function gateOptions(gateId, facts = {}) {
     if (locked) {
       header = spec.confirmHeader
       question =
-        `A '${locked}' audit tier is already recorded from the journey. Authorize the launch, ` +
-        `change the tier, or cancel?`
+        `A '${locked}' audit tier is already recorded from the journey. This stop AUTHORIZES the ` +
+        `launch (the fan-out token spend) and the target-map approval that follows — it is NOT a ` +
+        `re-election of your tier. Authorize the launch, change the tier, or cancel?`
       options = [
         {
           label: `Authorize the ${locked} launch (recommended)`,
           description:
-            `Launch the audit at the already-chosen '${locked}' tier. This records the LAUNCH ` +
-            `authorization; the tier itself was elected earlier and is REUSED, not re-asked.`,
+            `Launch the audit at the already-chosen '${locked}' tier — this authorizes the TOKEN ` +
+            `SPEND of the fan-out (and the target-map approval that immediately follows). The tier ` +
+            `itself was elected earlier and is REUSED, not re-asked.`,
           decision: 'affirm',
         },
         {

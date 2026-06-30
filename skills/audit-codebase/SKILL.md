@@ -81,7 +81,11 @@ regardless of anything this engine produces.
    - **The journey already collected the tier** (a recorded `audit-tier` token exists) →
      gate-spec emits the CONFIRM-and-authorize variant `{Authorize the <locked> launch,
      Change tier, Cancel}` — it does NOT re-offer the election (WI-02; this kills the
-     redundant tier re-ask). On **Authorize**, record the LAUNCH authorization (it reuses
+     redundant tier re-ask). **Frame this stop to the operator as authorizing the LAUNCH —
+     the fan-out token spend, and the target-map approval that immediately follows — NOT a
+     tier re-election** (so it never reads as "why are you asking my tier again"); the
+     tier is reused from the journey, gate-spec's confirm-variant question already says so.
+     On **Authorize**, record the LAUNCH authorization (it reuses
      the prior tier token, cross-referenced via `verifyConsent`):
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the launch confirm question>" --answer "<the Authorize option>" --target <target>`.
      On **Cancel**, the same call with `--decision deny`, then STOP. Only **Change tier**
@@ -191,7 +195,11 @@ regardless of anything this engine produces.
    Read-only on the partner source except the ledger it seeds. Re-ingest is
    idempotent (a deterministic id is stable from `engine+ruleId+file:line`), so
    running this on every pass never duplicates — and Step 6's reconcile, after the
-   merge, is what demotes any co-located LLM finding the engine now owns.
+   merge, is what demotes any co-located LLM finding the engine now owns. When you
+   report WHICH Code Analyzer version produced the evidence, read it from the
+   scanner-install manifest's `code-analyzer` record (`plugin.installed`, sourced
+   deterministically from the plugin's `package.json`), never from an ad-hoc
+   `sf plugins` listing (a cold run misreported the version that way).
 
 5. **Run the engine.** Preferred substrate: the Workflow tool with a project-local
    copy of `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`, assembled by the

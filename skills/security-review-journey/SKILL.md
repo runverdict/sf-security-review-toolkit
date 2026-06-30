@@ -222,7 +222,11 @@ missing or a key piece of the architecture was misread.
      N/A (nothing to install) or needs `sf` first; offer "install + authenticate
      `sf` so I can audit the deployed package and auto-resolve endpoint/permission/
      coverage facts from the DevHub?" Never imply a deep audit is runnable when it
-     isn't.
+     isn't. **This deep-audit `sf` is a SEPARATE authed, global install** (for the
+     scratch-org stand-up) — distinct from the **unauthed, tmp `sf`** the
+     scanner-install gate provisions (inside `code-analyzer-stack`) for the static
+     CRUD/FLS Code Analyzer; so when both run, `sf` is installed twice, two
+     different ways, on purpose. Say so if you offer both.
    For any of these the run still proceeds on silence (a LIVE power-up needs an
    explicit yes — the hard floor); the change is that the offer is proactive and
    true, so the operator's one up-front decision is fully informed.
@@ -242,7 +246,9 @@ missing or a key piece of the architecture was misread.
      if no `java`≥11 is present, the pinned Temurin JDK from Adoptium — **~1 GB (+~320 MB
      if Java must be provisioned)** of tmp, contained under the run dir and removed at
      cleanup the same way; in exchange CRUD/FLS becomes deterministic instead of
-     `PENDING-OWNER-RUN`. This yes also covers **running** them for this run — which fetches
+     `PENDING-OWNER-RUN`. **This tmp `sf` is UNAUTHED and for the static Code Analyzer
+     only — NOT the authed, global `sf` the deployed-org deep audit installs** to stand
+     up a scratch org; the two are separate installs with separate purposes. This yes also covers **running** them for this run — which fetches
      their standard rules/templates (Semgrep registry rules, Nuclei templates, the OSV DB,
      the Code Analyzer engines) — since that is inseparable from producing the evidence.
      → yes: real SAST/SCA/secret/DAST/TLS + deterministic CRUD/FLS evidence instead of
