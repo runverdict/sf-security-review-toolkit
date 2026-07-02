@@ -11,6 +11,16 @@
  *   - + a synthetic `agentforce` element → agentforce-* COME BACK.
  *   - + a synthetic `mcp-server` element → mcp-* COME BACK.
  *
+ * GAP-Y2 (0.8.53): the gate canonicalizes element-type SYNONYMS. The scope manifest is
+ * LLM-authored, so a real run can type the external backend as `external-web-app`;
+ * computeApplicable keyed the RAW type, so the synonym scope computed 27 FEWER
+ * requirements than `external-endpoint` — dropping the DAST/TLS/endpoint-* control set
+ * (six of them blocker-severity) from the applicable set that feeds compute-sci's
+ * blocker floor + completeness %. A synonym-typed external app could read falsely-ready.
+ * The GAP-Y2 checks pin: synonym set == canonical set (EQUAL, never merely larger),
+ * canonical scopes byte-identical to the pre-canonicalization gate, an unknown type
+ * adds nothing, and the CLI/render paths flow through the same chokepoint.
+ *
  * Dependency-free: `node acceptance/test-applicable-requirements.mjs`.
  */
 import assert from 'node:assert/strict'
@@ -19,6 +29,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseBaselineApplies, computeApplicable, renderApplicable } from '../harness/applicable-requirements.mjs'
+import { ELEMENT_TYPE_SYNONYMS } from '../harness/render-detected-elements.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'applicable-requirements.mjs')
@@ -89,6 +100,116 @@ check('`all`-gated requirements always apply (sanity)', () => {
   const appl = new Set(computeApplicable(entries, PLAIN_PACKAGE))
   const missing = allGated.filter((id) => !appl.has(id))
   assert.deepEqual(missing, [], `missing all-gated: ${missing.slice(0, 5).join(', ')}`)
+})
+
+// ---------------------------------------------------------------------------
+// GAP-Y2 (0.8.53) — element-type synonyms canonicalize AT THE GATE.
+// ---------------------------------------------------------------------------
+
+// The pre-0.8.53 gate, verbatim — the reference for "canonical scopes compute exactly
+// what they always did" and for the magnitude of the synonym under-scope it repaired.
+const rawApplicable = (els) => {
+  const s = new Set((els || []).map((e) => String(e).toLowerCase()))
+  const out = []
+  for (const r of entries) {
+    const at = (r.applies_to || []).map((x) => String(x).toLowerCase())
+    if (at.includes('all') || at.some((t) => s.has(t))) out.push(r.id)
+  }
+  return out
+}
+
+check('GAP-Y2: external-web-app computes EXACTLY the external-endpoint applicable set', () => {
+  const canon = computeApplicable(entries, ['managed-package', 'external-endpoint'])
+  const syn = computeApplicable(entries, ['managed-package', 'external-web-app'])
+  assert.deepEqual(syn, canon, 'the synonym scope must EQUAL the canonical scope — never a subset, never a superset')
+  // the external-endpoint-gated controls the raw gate dropped are back
+  const s = new Set(syn)
+  for (const id of ['scan-external-sast', 'scan-external-sca', 'scan-iac-misconfig',
+                    'endpoint-ssl-labs-a-grade', 'endpoint-https-only', 'dast-self-run-required',
+                    'dast-authenticated-scans', 'mcpthreat-ssrf-mitigation']) {
+    assert.ok(s.has(id), `${id} must apply to a synonym-typed external app`)
+  }
+})
+
+check('GAP-Y2: the baseline stays canonical-vocabulary-only (aliasing lives in the synonym map, not applies_to)', () => {
+  // If applies_to ever grew an `external-web-app` token, aliasing would have TWO homes and
+  // drift right back. The raw (un-canonicalized) gate must still under-scope the synonym —
+  // proving the baseline itself carries only the canonical vocabulary.
+  const rawSyn = rawApplicable(['managed-package', 'external-web-app'])
+  const canon = computeApplicable(entries, ['managed-package', 'external-endpoint'])
+  assert.ok(rawSyn.length < canon.length, 'applies_to must not duplicate the synonym vocabulary')
+  assert.ok(!rawSyn.includes('endpoint-https-only'), 'endpoint-* stays gated on the canonical token only')
+})
+
+check('GAP-Y2: EVERY synonym in ELEMENT_TYPE_SYNONYMS computes its canonical type\'s exact set', () => {
+  for (const [syn, canon] of Object.entries(ELEMENT_TYPE_SYNONYMS)) {
+    assert.deepEqual(
+      computeApplicable(entries, ['managed-package', syn]),
+      computeApplicable(entries, ['managed-package', canon]),
+      `${syn} must compute the same set as ${canon}`
+    )
+  }
+  // mixed case still aliases — the gate has always been case-insensitive on element types
+  assert.deepEqual(
+    computeApplicable(entries, ['External-Web-App']),
+    computeApplicable(entries, ['external-endpoint'])
+  )
+})
+
+check('GAP-Y2 no over-scope / no drift: canonical scopes compute byte-identically to the pre-canonicalization gate', () => {
+  for (const els of [
+    PLAIN_PACKAGE,
+    ['managed-package', 'external-endpoint'],
+    ['mcp-server'],
+    ['managed-package', 'agentforce', 'mcp-server', 'external-endpoint', 'mobile'],
+    [],
+  ]) {
+    assert.deepEqual(computeApplicable(entries, els), rawApplicable(els), `canonical scope changed: [${els.join(', ')}]`)
+  }
+})
+
+check('GAP-Y2: an unknown element type adds NOTHING (never misclassified as external)', () => {
+  assert.deepEqual(
+    computeApplicable(entries, ['managed-package', 'blockchain-widget']),
+    computeApplicable(entries, ['managed-package'])
+  )
+})
+
+check('GAP-Y2 CLI: the --elements arg path canonicalizes via the chokepoint; recorded elements stay verbatim', () => {
+  const run = (els) => JSON.parse(execFileSync('node', [CLI, '--elements', els, '--json'], { encoding: 'utf8' }))
+  const syn = run('managed-package,external-web-app')
+  const canon = run('managed-package,external-endpoint')
+  assert.equal(syn.applicable_count, canon.applicable_count)
+  assert.deepEqual(syn.applicableBaselineIds, canon.applicableBaselineIds)
+  // honest provenance: the recorded elements are the partner's own strings, unaliased
+  assert.deepEqual(syn.elements, ['managed-package', 'external-web-app'])
+})
+
+check('GAP-Y2 SCI seam: the blocker-severity external controls are IN the synonym scope (the blocker floor is fed upstream)', () => {
+  // compute-sci filters applicableBaselineIds for severity_if_missing === 'blocker' (the
+  // blocker floor) — a requirement missing from THIS set can never hold the gate. Pin that
+  // the blocker-severity external-endpoint controls are in the synonym-typed scope.
+  const chunks = baseline.split(/^(?=- id:)/m)
+  const sevOf = (id) => {
+    const c = chunks.find((x) => x.startsWith(`- id: ${id}`))
+    return c ? (c.match(/severity_if_missing:\s*(\S+)/) || [])[1] : undefined
+  }
+  const syn = new Set(computeApplicable(entries, ['managed-package', 'external-web-app']))
+  for (const id of ['endpoint-ssl-labs-a-grade', 'endpoint-third-party-testing-consent',
+                    'endpoint-review-scanner-ip-allowlist', 'dast-self-run-required',
+                    'dast-authenticated-scans', 'testenv-external-test-instances']) {
+    assert.equal(sevOf(id), 'blocker', `${id} is blocker-severity in the baseline`)
+    assert.ok(syn.has(id), `${id} (blocker) must be in the synonym scope's applicable set`)
+  }
+})
+
+check('GAP-Y2 render: a synonym scope renders the canonical COUNT; the elements line stays verbatim', () => {
+  const canonN = computeApplicable(entries, ['managed-package', 'external-endpoint']).length
+  const block = renderApplicable(entries, ['managed-package', 'external-web-app'])
+  assert.match(block, new RegExp(`### Applicable requirements — ${canonN} of ${entries.length}`))
+  assert.match(block, /\*\*Architecture elements:\*\* managed-package, external-web-app/)
+  // the external-endpoint-gated conflicting entry now surfaces for the synonym scope too
+  assert.match(block, /- endpoint-ssl-labs-a-grade — /)
 })
 
 // ---------------------------------------------------------------------------

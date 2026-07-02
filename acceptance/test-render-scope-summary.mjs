@@ -86,6 +86,29 @@ check('SS2 golden: canonical element order (managed-package before mcp-server, u
   assert.match(block, /\*\*Architecture elements \(3\):\*\*/)
 })
 
+check('SS2e synonym element sorts under its CANONICAL slot; the type string renders verbatim (0.8.53)', () => {
+  // An LLM-authored manifest can type the external backend as 'external-web-app'. The sort
+  // must rank it at the external-endpoint slot (BEFORE mobile), not append it last as an
+  // unknown — while the element line still shows the manifest's own string (honest provenance).
+  const m = {
+    ...MANIFEST,
+    elements: [
+      { type: 'mobile', evidence: 'iOS companion app' },
+      { type: 'external-web-app', evidence: 'partner-hosted backend' },
+      { type: 'managed-package', evidence: 'sfdx-project.json' },
+    ],
+  }
+  const block = renderScopeSummary(m)
+  const mp = block.indexOf('- managed-package')
+  const ewa = block.indexOf('- external-web-app')
+  const mob = block.indexOf('- mobile')
+  assert.ok(mp > 0 && ewa > mp, 'managed-package ranks first')
+  assert.ok(mob > ewa, 'the synonym ranks at its canonical (external-endpoint) slot — before mobile, not appended last')
+  assert.match(block, /- external-web-app — partner-hosted backend/) // verbatim type string
+  // a truly-unknown type still appends last (canonicalization never force-aliases it)
+  assert.ok(renderScopeSummary(MANIFEST).indexOf('- weird-thing') > renderScopeSummary(MANIFEST).indexOf('- mcp-server'))
+})
+
 check('SS2 golden: applicable count = the EXACT list length', () => {
   assert.match(renderScopeSummary(MANIFEST), /\*\*Applicable baseline requirements:\*\* 3 \(the exact length of applicableBaselineIds\)/)
   // a manifest with no applicable list → honest "(not computed)", never a fabricated count

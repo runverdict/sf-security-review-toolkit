@@ -51,6 +51,43 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.53] — 2026-07-02
+
+**The applicable-requirements gate now canonicalizes element-type synonyms — a synonym-typed
+external app requires the SAME controls as `external-endpoint`.** 0.8.52 taught the scan-status
+render to recognize the external-source synonyms, but the go/no-go gate still keyed the raw
+manifest type: `computeApplicable` matched `applies_to` tokens against the element strings
+verbatim, so an `external-web-app` scope computed **27 fewer** applicable requirements than
+`external-endpoint` (86 vs 113 against the current baseline) — silently dropping the external
+SAST/SCA/IaC scan requirements, the DAST set, and the `endpoint-*` controls, six of them
+blocker-severity (`endpoint-ssl-labs-a-grade`, `endpoint-third-party-testing-consent`,
+`endpoint-review-scanner-ip-allowlist`, `dast-self-run-required`, `dast-authenticated-scans`,
+`testenv-external-test-instances`). `applicableBaselineIds` feeds `compute-sci`'s blocker floor
+and completeness %, so a synonym-typed external app could read falsely ready with its
+external-endpoint controls never required — a scoping-correctness gap: where the 0.8.51 fix
+stopped the verdict over-counting blockers, this one stops it under-requiring controls.
+
+The fix reuses the single synonym home shipped at 0.8.52 (`canonicalElementType` /
+`ELEMENT_TYPE_SYNONYMS` in `render-detected-elements.mjs` — the map is NOT duplicated) at ONE
+chokepoint: `computeApplicable` canonicalizes every incoming element type (lowercased first, so
+the gate's existing case-insensitivity extends to synonyms), so every caller benefits — the CLI
+manifest path, the `--elements` arg path, and `renderApplicable`. Conservative by construction:
+an unknown type passes through unchanged (it can never spuriously ADD requirements), a canonical
+scope computes byte-identically to before, and the synonym scope EQUALS the canonical set —
+never a superset. `render-scope-summary`'s element sort additionally ranks a synonym under its
+canonical slot, matching the detected-elements table (sort-only, no gate effect; the manifest's
+own type string still renders verbatim — honest provenance). `compute-sci` itself is untouched —
+it consumes the corrected applicable set from upstream.
+
+Suite **61 files / 827 checks** (was 818), all green. The 9 new checks are mutation-proven (gate
+canonicalization removed → the synonym scope under-computes 86 vs 113 → RED; sort-rank
+canonicalization removed → the synonym element sorts last → RED), headed by the equality pair:
+an `external-web-app` scope computes EXACTLY the `external-endpoint` applicable set (the 27
+dropped requirements restored, the blocker-severity six among them), every synonym in the map
+computes its canonical type's exact set, canonical scopes stay byte-identical to the
+pre-canonicalization gate, an unknown type (`blockchain-widget`) adds nothing, and the recorded
+manifest elements stay verbatim (the partner's own strings, unaliased).
+
 ## [0.8.52] — 2026-07-02
 
 **The scan-status render now recognizes external-source element-type synonyms — a family that

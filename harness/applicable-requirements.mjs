@@ -21,6 +21,14 @@
  * (Bot/GenAiPlugin/GenAiPlanner = agentforce; JSON-RPC initialize/tools-list in
  * own code = mcp-server) — NOT inferred from `managed-package`.
  *
+ * Element types are canonicalized through `canonicalElementType` (the synonym
+ * map owned by render-detected-elements.mjs) INSIDE `computeApplicable`, so a
+ * synonym-typed element (`external-web-app`) computes the SAME applicable set
+ * as its canonical type (`external-endpoint`). The scope manifest is
+ * LLM-authored, and this set feeds compute-sci's blocker floor + completeness
+ * % — an un-canonicalized synonym silently dropped the whole external-endpoint
+ * control set (DAST, TLS, endpoint-*) from the go/no-go gate.
+ *
  * PURE: no LLM, no deps, no network. Dependency-free line parse of the baseline
  * (applies_to is inline `[a, b]`).
  *
@@ -38,6 +46,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { canonicalElementType } from './render-detected-elements.mjs'
 
 /**
  * Dependency-free parse: [{ id, applies_to:[...], verification, conflicts }] from the
@@ -82,7 +91,13 @@ export function parseBaselineApplies(yamlText) {
 
 /** Pure applicability: a req applies iff applies_to has `all` or intersects elements. */
 export function computeApplicable(entries, elementTypes) {
-  const els = new Set((elementTypes || []).map((e) => String(e).toLowerCase()))
+  // Canonicalize HERE — the single chokepoint every caller flows through (the CLI
+  // manifest path, the `--elements` arg path, and renderApplicable), so no input site
+  // can reintroduce a raw synonym. Lowercase BEFORE aliasing so the gate's existing
+  // case-insensitivity extends to synonyms; an unrecognized type passes through
+  // unchanged (it can never spuriously ADD requirements), and a canonical type is the
+  // helper's identity, so a canonical scope computes exactly what it always did.
+  const els = new Set((elementTypes || []).map((e) => canonicalElementType(String(e).toLowerCase())))
   const applicable = []
   for (const r of entries) {
     const at = (r.applies_to || []).map((x) => String(x).toLowerCase())

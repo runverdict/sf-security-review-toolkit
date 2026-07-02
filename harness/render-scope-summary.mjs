@@ -41,7 +41,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CANONICAL_ELEMENT_ORDER } from './render-detected-elements.mjs'
+import { CANONICAL_ELEMENT_ORDER, canonicalElementType } from './render-detected-elements.mjs'
 
 // The partner-program preflight gates in scope-submission step-5 order — the manifest
 // operatorConfirmed.<key> + its display label. FROZEN so the gate-state table is fixed run-to-run
@@ -93,10 +93,12 @@ function gateState(oc, key) {
   return `(recorded: ${cell(v)})`
 }
 
-/** Stable canonical element order (known types first, unknown appended in manifest order). */
+/** Stable canonical element order (known types first, unknown appended in manifest order).
+ * A recognized synonym ranks under its canonical slot — the type string itself still renders
+ * verbatim (honest provenance) — mirroring render-detected-elements' rank. Sort-only. */
 function orderElements(els) {
   const rank = (type) => {
-    const i = CANONICAL_ELEMENT_ORDER.indexOf(String(type))
+    const i = CANONICAL_ELEMENT_ORDER.indexOf(String(canonicalElementType(type)))
     return i >= 0 ? i : CANONICAL_ELEMENT_ORDER.length
   }
   return els
