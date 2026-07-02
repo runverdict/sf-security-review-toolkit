@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.48**, suite **58 files / 767 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.49**, suite **58 files / 768 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -113,10 +113,12 @@
   dockerfile + the single-container teardown path are byte-identical. Standing tests: U14 (pre-plan),
   U15 (the loopback override — rebind + strip + REPLACE-tags), U16 (refuse-on-ambiguity), U17 (gates),
   U18 (NAMES-only + injection guard), T9/T10 (project-name teardown boundary); suite 58 files / 767
-  checks. **Loopback boundary completed next (B2-P3b-h):** the port-based override covers published
-  `ports:` but not `network_mode` (a host/container/service-networked service sidesteps port
-  publishing), so the loopback guarantee is not "delivered" until the hardening slice below adds the
-  `network_mode` refusal.
+  checks. **Loopback boundary COMPLETED (0.8.49, B2-P3b-h):** `planCompose` now also refuses any
+  service whose `network_mode` is `host` / `container:*` / `service:*` (the namespace-sharing modes
+  that sidestep port publishing, checked before web-tier selection), while `bridge`/`default`/`none`/
+  absent stand up as before — so the 127.0.0.1-only guarantee holds for every compose shape the engine
+  accepts (U19; suite 58 / 768). The compose recipe + its loopback boundary are now fully in place
+  (still pending the one cold run that cold-validates the whole B1..B2 arc).
 
 ---
 
@@ -127,8 +129,9 @@ labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)
 test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
 
 ### B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI
-Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**node + python + dockerfile
-now; compose next**), org (**not built — still prose**). Remaining slices (in order):
+Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**DONE — node + python +
+dockerfile + compose, loopback-hardened**), org (**not built — B2-P2, the last B2 slice**). Remaining
+slices (in order):
 - ~~**B2-P3a — python + dockerfile `standup-stack` support**~~ **DONE (0.8.46)** — see "Shipped this
   arc" above. Single-container recipes that fit the existing teardown model with zero teardown change.
 - ~~**B2-#11 — OpenAPI spec, Route B (container-isolated)**~~ **DONE (0.8.47)** — see "Shipped this
@@ -139,18 +142,11 @@ now; compose next**), org (**not built — still prose**). Remaining slices (in 
   arc" above. The compose stand-up (docker-resolved config → pure `planCompose` → loopback override →
   project-scoped teardown) ships; the loopback boundary needs the port-based override COMPLETED by the
   hardening slice below before it is called delivered.
-- **B2-P3b-h — compose loopback hardening (network-mode)** *(THE NEXT SLICE — completes the P3b
-  loopback boundary).* The 0.8.48 override enforces loopback by rewriting each service's published
-  `ports:`, which is correct for port-based publishing but **does not cover `network_mode`**: a service
-  that shares the host/another-container network namespace sidesteps compose port publishing entirely,
-  so the port-based override is a no-op for it. `planCompose` must **refuse** (return
-  `{unsupported:'compose'}`, the established refuse-don't-guess posture) any resolved-config service
-  whose `network_mode` is `host` or begins with `container:`/`service:` — checked BEFORE web-service
-  selection — while allowing absent/`bridge`/`default`/`none` to stand up as today. One standing test
-  (a host-network service → refused; a bridge/absent service → still stands up). File:
-  `harness/standup-stack.mjs` (+ test). This is the last thing between the compose recipe and a
-  delivered loopback-only guarantee.
-- **B2-P2 — org-tier `standup-org`/`teardown-org` engine.** The deployed-org deep audit currently
+- ~~**B2-P3b-h — compose loopback hardening (network-mode)**~~ **DONE (0.8.49)** — see "Shipped this
+  arc" above. `planCompose` refuses `host`/`container:*`/`service:*` network modes (checked before
+  web-tier selection); `bridge`/`default`/`none`/absent stand up as before. The compose loopback
+  boundary is now delivered.
+- **B2-P2 — org-tier `standup-org`/`teardown-org` engine** *(THE NEXT SLICE — the last B2 item).* The deployed-org deep audit currently
   improvises scratch-org create/install/teardown via inline `sf` commands. Build
   `standup-org.mjs`/`teardown-org.mjs` mirroring `install-scanners`/`standup-stack`: consented
   `sf org create scratch` (features `[Einstein1AIPlatform]`, `--no-ancestors`) + a resource manifest +
