@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.50**, suite **60 files / 788 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.51**, suite **61 files / 814 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -139,14 +139,35 @@
   alias-name-guard security matrix (foreign / contains-prefix / trailing-newline / whitespace / empty /
   null all refused), fail-closed consent, origin-repo coupling, `sf`-unavailable honesty, dry-run purity,
   the names-only manifest allowlist, idempotence, the sweep contract; suite 60 files / 788 checks.
+- **0.8.51 B3a — deterministic-band disposition → ledger status (verdict honesty)** *(shipped +
+  test-backed)*. The audit adjudicated a deterministic scanner class FP into the FP-dossier prose, but
+  nothing flipped the ledger status, so `finding-clusters --headline` + `compute-sci` kept counting
+  refuted noise as open blockers (the "4 critical / 112 high" over-count). New `harness/apply-dispositions.mjs`
+  — a structural twin of `reconcile-provenance.mjs` (pure, idempotent, marks-never-deletes,
+  protected-state-aware, `--dry-run`) — reads a structured `.security-review/deterministic-dispositions.json`
+  (engine + ruleId + `refuted`|`accepted_risk` + reason [+ justification] [+ scope.files]) and flips the
+  matching `provenance:'deterministic'` findings out of the open band, keeping provenance/engine/ruleId/
+  class/severity intact and stamping an auditable `disposition_reason`. **The determinism boundary:** the
+  APPLICATION is 100% deterministic; the ADJUDICATION stays the labelled LLM/human residual recorded as
+  data (no hardcoded auto-refute ruleset — a usually-noisy rule can be a real bug). **Paramount safety
+  (verified):** a disposition can ONLY move a deterministic finding OUT of the open band — never an
+  llm-inferred one (it can't hide an LLM-confirmed blocker, proven against an impostor carrying matching
+  engine/ruleId), never into open, never `fixed`; exact engine+ruleId match; `accepted_risk` schema-valid;
+  a corrupted dispositions file fails LOUD. The FP dossier row and the ledger refutation share the one
+  disposition entry (single source). Wired after `reconcile-provenance` in audit-codebase + the run-scans
+  tail; the recap surfaces "N open · M dispositioned" so the drop is never silent. Standing tests: the
+  llm-never-flipped safety test + the verdict-honesty integration (SCI/headline count drops to the real
+  blockers) + provenance-kept + idempotence + protected-states + accepted_risk-justification + the wiring;
+  suite 61 files / 814 checks.
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection, THE NEXT ITEM) →
-B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)**. One item at a
-time, each test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a DONE; B3b
+GAP-Y is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7
+(gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
+the post-hardening build justifies it.
 
 ### ~~B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI~~ **COMPLETE (0.8.46–0.8.50)**
 All three "throwaway" tiers now pull forward: scanner-dir (DONE, 0.6.0), server/mirror (**DONE — node +
@@ -172,23 +193,21 @@ pending the one clean cold run that cold-validates B1..B2 (that run also gates t
   name-guarded, irreversible teardown; the four deep-audit skills invoke it instead of improvising
   `sf org create/delete` inline.
 
-### B3 — Deterministic-band disposition → verdict reflection  *(verdict-honesty — THE NEXT ITEM, now that B2 is complete)*
-- **Why.** `--all` ingests deterministic scanner findings as `status:confirmed`. The driver
-  class-dispositions most as FP (e.g. a large class of constant-GUC/RLS-predicate SAST highs the audit
-  confirmed FP) into the **FP dossier**, but the **ledger status stays `confirmed`** — so the headline
-  verdict over-states (a cold run showed "4 critical / 112 high" when the real blockers were ~1 critical
-  + 4 high + a deep-audit medium). Alarming-but-mostly-noise.
-- **Fix.** A deterministic class-disposition harness: applying a dossier class-disposition updates the
-  matching deterministic ledger entries' **status** (confirmed → refuted/accepted-FP), so the
-  blocker-floor + the cluster-headline + the SCI count the **real** blockers. Alternatively/additionally,
-  the cluster-headline distinguishes "raw deterministic band" from "LLM-adjudicated blockers." Keep the
-  scanner-relayed provenance intact (the disposition is the layer on top).
-- **GAP-Y (fold in, cosmetic).** The scan-status render mislabels the External-SAST/SCA families as
-  "N/A" when the manifest element is typed `external-web-app` (the render keys those rows on
-  `external-endpoint`) even though they ran and are credited SATISFIED. Fix the render element-type keying.
-- **GAP-Z (separate, minor).** The Workflow runtime can't write files, so the driver hand-scripts the
-  artifact-content extraction + write each pass (plus recurring inline-`node` shell-escaping slips it
-  recovers from). A deterministic "extract drafted content + write" harness would cut the improvisation.
+### B3 — Deterministic-band disposition → verdict reflection  *(verdict-honesty)*
+- ~~**B3a — the class-disposition harness (the verdict-honesty core)**~~ **DONE (0.8.51)** — see
+  "Shipped this arc" above. `harness/apply-dispositions.mjs` flips matching deterministic ledger entries
+  `confirmed → refuted`/`accepted_risk` from a structured `deterministic-dispositions.json`, so the
+  headline + blocker floor + SCI count the real blockers; a disposition can only ever move a
+  `deterministic` finding OUT of the open band (never an llm-inferred one, never into open, never
+  `fixed`), provenance kept intact, single-sourced with the FP dossier.
+- **GAP-Y / B3b — render element-type keying** *(THE NEXT ITEM — cosmetic).* The scan-status render
+  mislabels the External-SAST/SCA families as "N/A" when the manifest element is typed `external-web-app`
+  (the render keys those rows on `external-endpoint`) even though they ran and are credited SATISFIED.
+  Fix the render element-type keying so the families that ran read as SATISFIED, not N/A.
+- **GAP-Z / B3c — extract-drafted-content + write harness** *(separate, minor).* The Workflow runtime
+  can't write files, so the driver hand-scripts the artifact-content extraction + write each pass (plus
+  recurring inline-`node` shell-escaping slips it recovers from). A deterministic "extract drafted content
+  + write" harness would cut the improvisation.
 
 ### B4 — PENDING labeling / wiring fixes  *(stop narrating resolved items as PENDING)*
 - The install-time UEC grant + the released `04t` version are verified **headlessly inside install** but
