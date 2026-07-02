@@ -200,6 +200,19 @@ export function planCompose(config, prePlan) {
   const refuse = (reason) => ({ schema: prePlan.schema, runId: prePlan.runId, unsupported: 'compose', reason })
   const badNames = svcNames.filter((n) => !SERVICE_OK.test(n))
   if (badNames.length) return refuse(`unsafe compose service name(s) '${badNames.join("', '")}' — refusing to template the loopback override`)
+  // network_mode guard: a service sharing the host's (or another container's) network
+  // namespace bypasses compose port publishing ENTIRELY — under `network_mode: host`
+  // the app binds the host interface directly and the loopback override's `ports:`
+  // rewrite is a silent no-op (Compose ignores `ports:` under host networking). Must
+  // run BEFORE web-tier selection: a host-networked service could itself declare the
+  // web port and be picked, templating an override that confines nothing. Absent /
+  // `bridge` / `default` / `none` go through normal port publishing (allowed).
+  for (const n of svcNames) {
+    const mode = services[n] && typeof services[n].network_mode === 'string' ? services[n].network_mode : ''
+    if (mode === 'host' || mode.startsWith('container:') || mode.startsWith('service:')) {
+      return refuse(`service '${n}' uses network_mode '${mode}', which bypasses compose port publishing — the toolkit cannot confine it to 127.0.0.1; refusing the compose stand-up`)
+    }
+  }
   // resolved-config port entries: `target` is a number, `published` a string — coerce both
   const portsOf = (n) => (Array.isArray(services[n] && services[n].ports) ? services[n].ports : [])
   const publishers = svcNames.filter((n) => portsOf(n).length > 0)

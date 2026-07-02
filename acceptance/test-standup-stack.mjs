@@ -23,6 +23,8 @@
  *   U16 planCompose REFUSES an ambiguous web service — never guesses
  *   U17 the kind-agnostic gates (consent, needs-secrets, port) hold for compose
  *   U18 the compose plan carries env NAMES only + unsafe service names are refused
+ *   U19 planCompose REFUSES network_mode host/container:/service: (modes that bypass
+ *       compose port publishing) — and never falsely refuses bridge/default/none/absent
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
  * CI-hermetic — these tests pin the PURE planCompose (loopback override +
@@ -283,6 +285,44 @@ check('U18 the compose plan carries env NAMES only + unsafe service names are re
   const evil = planCompose({ services: { 'web:\n    privileged: true\n  x': { ports: [{ target: 8080, published: '8080' }] } } }, pre)
   assert.equal(evil.unsupported, 'compose')
   assert.match(evil.reason, /unsafe compose service name/)
+})
+
+check('U19 planCompose REFUSES network_mode host/container:/service: — modes that bypass compose port publishing (the loopback override would be a silent no-op)', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u19', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u19') })
+  const web = { image: 'node:18-alpine', ports: [{ mode: 'ingress', target: 8080, published: '8080', protocol: 'tcp' }] }
+  // (a) a NON-web service on host networking → the whole stand-up is refused: under
+  // host networking the app binds the host interface directly, so the generated
+  // `ports: !reset []` cannot strip it
+  const sidecar = planCompose({ services: { web, metrics: { image: 'prom:v1', network_mode: 'host' } } }, pre)
+  assert.equal(sidecar.unsupported, 'compose')
+  assert.match(sidecar.reason, /service 'metrics' uses network_mode 'host'.*cannot confine it to 127\.0\.0\.1/)
+  // (b) the WEB service itself on host networking while declaring the web port — the
+  // guard must hold BEFORE selection, else it gets picked and the `!override` templates
+  // a no-op (Compose ignores `ports:` under host networking)
+  const webHost = planCompose({ services: { web: { ...web, network_mode: 'host' }, db: { image: 'postgres:16-alpine' } } }, pre)
+  assert.equal(webHost.unsupported, 'compose')
+  assert.match(webHost.reason, /service 'web' uses network_mode 'host'/)
+  // (c) host networking typically declares NO ports at all — the refusal must name the
+  // real problem (host networking), never the misleading 'no service publishes a port'
+  const noPorts = planCompose({ services: { app: { image: 'x', network_mode: 'host' } } }, pre)
+  assert.equal(noPorts.unsupported, 'compose')
+  assert.match(noPorts.reason, /service 'app' uses network_mode 'host'/)
+  // (d) the other namespace-sharing modes are equally un-confinable
+  for (const mode of ['container:api', 'service:api']) {
+    const shared = planCompose({ services: { web, worker: { image: 'x', network_mode: mode } } }, pre)
+    assert.equal(shared.unsupported, 'compose', `network_mode ${mode} must be refused`)
+    assert.match(shared.reason, new RegExp(`service 'worker' uses network_mode '${mode}'`))
+  }
+  // (e) NO false refusal: absent / bridge / default / none stay inside the port-publishing
+  // model the override governs — these must stand up exactly as before
+  for (const mode of [undefined, 'bridge', 'default', 'none']) {
+    const cache = mode ? { image: 'redis:7-alpine', network_mode: mode } : { image: 'redis:7-alpine' }
+    const ok = planCompose({ services: { web, cache } }, pre)
+    assert.equal(ok.unsupported, undefined, `network_mode ${mode || '(absent)'} must NOT be refused`)
+    assert.equal(ok.webService, 'web')
+    assert.match(ok.overrideContent, /"127\.0\.0\.1:8080:8080"/)
+    assert.match(ok.overrideContent, /cache:\n    ports: !reset \[\]/)
+  }
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

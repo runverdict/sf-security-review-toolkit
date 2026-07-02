@@ -51,6 +51,33 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.49] — 2026-07-02
+
+**The compose loopback boundary now covers `network_mode`.** The 0.8.48 stand-up confines a
+compose throwaway by rewriting each service's published `ports:` — the right lever for
+port-based publishing, but not for namespace sharing: under `network_mode: host` a service
+binds the host's interfaces directly and Compose ignores its `ports:` entirely, so the
+generated `!override`/`!reset` would be a silent no-op and the service could sit on the
+host's public interface for the throwaway's lifetime. `planCompose` now REFUSES the whole
+compose stand-up when any service declares `network_mode: host`, `container:<name>`, or
+`service:<name>`, with an honest reason naming the service and mode — the same
+refuse-don't-guess posture as the ambiguous-web-tier refusals (forcing bridge networking
+via the override could break the partner's app; refusing is the safe move). The guard runs
+BEFORE web-tier selection, so a host-networked service that itself declares the web port
+can never be picked and templated into a no-op override — and a host-networked service
+with no `ports:` at all gets the real reason (host networking), never the misleading
+no-publisher one. Absent / `bridge` / `default` / `none` stand up exactly as before: they
+stay inside the port-publishing model the override governs. Nothing else changes — the
+web-tier pick, override templating, ambiguity refusals, executors, teardown, and every
+other recipe kind are untouched; no new consent.
+
+Suite **58 files / 768 checks** (was 58 / 767), all green; the new check mutation-proven
+three ways (the guard dropped → red; the guard moved after web-tier selection → the
+no-`ports:` host-networked config surfaces the no-publisher reason instead of the real
+one → red; the guard scoped to only the non-web services → a host-networked web tier
+slips through to a no-op override → red) and guarded against over-refusal
+(`bridge`/`default`/`none`/absent must still produce the loopback override).
+
 ## [0.8.48] — 2026-07-02
 
 **`compose` backends now stand up as throwaway-DAST mirrors — the last recipe kind in the
