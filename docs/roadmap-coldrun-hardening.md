@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.46**, suite **57 files / 746 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.47**, suite **58 files / 760 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -68,12 +68,35 @@
   unchanged (fail-closed without consent, 127.0.0.1-only host publish with `0.0.0.0` as the
   in-container bind only, env NAMES-only in plan + manifest with values via the `0600` `--env-file`).
   **`compose` stays honestly `unsupported`** (multi-container — needs a project-scoped teardown
-  extension) → that is **B2-P3b** (a remaining B2 slice, deferred behind B2-#11 — see the backlog
-  note); `procfile` likewise. Standing tests: U9 (python
+  extension) → that is **B2-P3b**, now the next slice (see the backlog note); `procfile` likewise.
+  Standing tests: U9 (python
   plan), U10 (dockerfile plan + `assertStackName` acceptance), U11 (python run-command purity),
   U12 (NAMES-only for the new kinds), U13 (kind-agnostic gates), U3 re-scoped (compose/procfile
   boundary lock), T8 (teardown accepts the built image, refuses a foreign one); suite 57 files /
   746 checks.
+- **0.8.47 B2-#11 — real OpenAPI spec captured from the container-isolated mirror** *(shipped +
+  test-backed; NOT yet cold-validated — the live capture GET is operator-cold-validated, like
+  `run-dast`'s ZAP run; the standing tests pin the pure planner/validator/provenance + the skill
+  wiring)*. The api-endpoints artifact fell back to code-derived + `PENDING live capture` whenever
+  prod wasn't reachable; now, while the throwaway-DAST chain has the partner's backend up as an
+  isolated loopback mirror, a new `harness/capture-openapi.mjs` reads the framework's OWN spec from
+  that mirror (`/openapi.json` first; a fixed, JSON-only candidate order) → `evidence/openapi-<date>.json`
+  + a provenance sidecar naming the `container-isolated-throwaway-mirror` source, and
+  `generate-artifacts` Step 3 emits THAT as the real `artifact-api-endpoints-spec` with **`PENDING`
+  scoped to the prod-equivalence attestation line only** (never claiming prod-equivalence; the
+  no-capture fallback preserved verbatim). **Route B (container-isolated); Route A (host-venv import)
+  stays rejected.** The loopback-only invariant is the security core — enforced at four layers (the
+  shared `run-dast` `URL_OK` pre-filter, `planCapture`'s `assertLoopback`, an executor re-assert on
+  the plan actually run, and a bare-rooted-path guard so a candidate can't re-aim the GET off the
+  loopback base) — read-only (one `curl -sf` GET), **no new consent** (rides the recorded
+  `throwaway-dast` token, verified as `run-dast` does), and only the validated spec (re-serialized) +
+  provenance are ever persisted. `run-dast.mjs` change was byte-identical-value additive (two
+  `const` → `export const` so the throwaway tier has one loopback definition). run-scans' DAST scope
+  (Schemathesis + ZAP OpenAPI import) consumes the emitted artifact unchanged — now fed a real spec.
+  Standing tests: O2 (planner loopback refusal) + O8 (executor re-assert) — the security invariant at
+  both layers; O4/O5 (spec validation), O6 (honest provenance), O7 (consent fail-closed), O10
+  (not-exposed writes nothing), W1-W4 (skill wiring); suite 58 files / 760 checks. MCP `tools/list`
+  capture from the mirror is a scoped-out follow-on.
 
 ---
 
@@ -88,20 +111,11 @@ Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**node 
 now; compose next**), org (**not built — still prose**). Remaining slices (in order):
 - ~~**B2-P3a — python + dockerfile `standup-stack` support**~~ **DONE (0.8.46)** — see "Shipped this
   arc" above. Single-container recipes that fit the existing teardown model with zero teardown change.
-- **B2-#11 — OpenAPI spec, Route B (DECIDED, container-isolated).** *(THE NEXT SLICE — rides on
-  B2-P3a's python support, now unblocked; it delivers the marquee "+OpenAPI" artifact and validates the
-  just-shipped python stand-up.)* Flip the OpenAPI/endpoint-spec
-  artifact from code-derived/PENDING → real, by capturing `/openapi.json` from the throwaway-DAST
-  **container mirror** once it's up (the app runs isolated, with synthetic secrets). **Route A (a
-  host-venv `pip install` + `app.openapi()`) was rejected** — it runs partner code on the host, breaking
-  the toolkit's static + container-isolation principle. So OpenAPI **rides on B2-P3a** (python support,
-  now shipped). Optional zero-cost
-  pre-step: a benign read-only GET of the prod `/openapi.json` (often disabled in prod). Wire-in: after
-  the mirror is up → GET `/openapi.json` (+ live `tools/list`) → evidence → `generate-artifacts` consumes
-  the real spec, keeping PENDING only on the prod-equivalence attestation line; feed the spec to the
-  Schemathesis/ZAP DAST scope. Files: `harness/standup-stack.mjs`, `harness/run-dast.mjs`,
-  `skills/generate-artifacts/SKILL.md`.
-- **B2-P3b — `compose` `standup-stack` support** *(deferred behind #11 — the last unsupported
+- ~~**B2-#11 — OpenAPI spec, Route B (container-isolated)**~~ **DONE (0.8.47)** — see "Shipped this
+  arc" above. `harness/capture-openapi.mjs` reads the framework spec from the isolated mirror;
+  `generate-artifacts` emits it as the real artifact with `PENDING` only on prod-equivalence. The
+  scoped-out remainder (a follow-on, not blocking): the live MCP `tools/list` capture from the mirror.
+- **B2-P3b — `compose` `standup-stack` support** *(THE NEXT SLICE — the last unsupported
   `stack-detect` recipe kind).* `compose` is multi-container ("most real backends are compose", so it
   is high-value) but it is **design-sensitive**, which is why it lands after #11, not before:
   - It does **not** fit the single-container teardown model — `teardown-stack.mjs` handles exactly one
