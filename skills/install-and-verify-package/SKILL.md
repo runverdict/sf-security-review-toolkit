@@ -1,7 +1,7 @@
 ---
 name: install-and-verify-package
 description: Stand up the partner's EXISTING released managed package in a throwaway scratch/trial org and audit the deployed artifact — exactly what the Salesforce reviewer does when they install your package. Pre-install contamination check, headless permission-chain verification (the install-time UEC grant drop), Connect API credential configuration, Manage Tools sync, install+uninstall integrity, and an Apex smoke test through the installed Named Credential. The core of the CLI-gated deployed-org deep audit.
-allowed-tools: Bash(sf *) Bash(rm *) Bash(node *harness/record-consent.mjs *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(rm *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write AskUserQuestion
 ---
 
 # Install and Verify Package
@@ -14,7 +14,7 @@ Install the managed package into a clean throwaway org and verify every link in 
 
 This is the **core** of the deployed-org deep audit — the step the whole CLI-gated path exists to reach. It is **opt-in and CLI-gated**: the orchestrator invokes it only when `sf` is authed and the operator opted into auditing the deployed package; the always-on source audit never depends on it. The common case is that the partner already has a released version, so the orchestrator hands its auto-resolved `04t…` id straight here — the build step is skipped entirely.
 
-- **Consumes:** a released `04t…` package version id (auto-resolved by the orchestrator querying the Dev Hub for the package's released version, or produced by `/sf-security-review-toolkit:build-managed-package` in the no-release-yet fallback), an authenticated target org from `/sf-security-review-toolkit:bootstrap-cli-auth`, and a clean throwaway org provisioned by `/sf-security-review-toolkit:teardown-mcp-registration`.
+- **Consumes:** a released `04t…` package version id (auto-resolved by the orchestrator querying the Dev Hub for the package's released version, or produced by `/sf-security-review-toolkit:build-managed-package` in the no-release-yet fallback), an authenticated target org from `/sf-security-review-toolkit:bootstrap-cli-auth`, and a clean throwaway org — a born-clean scratch org from `harness/standup-org.mjs` (the default), or a template org cleaned by `/sf-security-review-toolkit:teardown-mcp-registration`.
 
 ## When to use
 
@@ -25,7 +25,7 @@ This is the **core** of the deployed-org deep audit — the step the whole CLI-g
 ## Prerequisites
 
 - A released `04t...` package version id
-- The throwaway target org is authenticated (run `/sf-security-review-toolkit:bootstrap-cli-auth` first) and clean (run `/sf-security-review-toolkit:teardown-mcp-registration` first if it has registration history)
+- The throwaway target org is authenticated (run `/sf-security-review-toolkit:bootstrap-cli-auth` first) and clean. A fresh scratch org from `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-org.mjs --consent` (alias `sf-srt-org-<runId>`) is clean **by construction** — engine-created seconds ago, no history to check. A Trialforce template org needs `/sf-security-review-toolkit:teardown-mcp-registration` first if it has registration history
 - The MCP server's OAuth client id + secret on hand (for step 5)
 
 ## Steps
@@ -207,7 +207,7 @@ This is the **core** of the deployed-org deep audit — the step the whole CLI-g
 
    A `CalloutException` here is usually the token exchange, not the server — match it against the step 5 gotcha table (wrong token URL, scope mismatch; empty `Error: .` fields also mean the server's error response isn't RFC 6749-shaped top-level `error`/`error_description`, which Salesforce parses). A 200 proves OAuth token exchange + the Named Credential + the **running admin's** credential chain (anonymous Apex runs as you, not the Platform Integration User — the PIU's enablement is the separate axis step 4 verifies). A 200 here **plus** tools not firing in the agent = org-side enablement problem, full stop (not credentials) — for the deep audit, record it as an enablement (not credential-chain) observation; standalone agent-runtime triage lives in the sibling sf-mcp-partner-toolkit. (Caveat: Apex egress ≠ Agentforce egress, so this proves credentials, not the runtime path.)
 
-8. **Verify uninstall integrity, then hand off.** With the battery green, the deployed-artifact evidence — the four-query permission battery, the least-privilege / over-grant read, the credential-resolution proof — is ready for the `audit-deployed-package` pass and the readiness verdict (tag every finding *automated, from this throwaway org*). Before tearing down, complete the install/**uninstall** half of the cycle the reviewer runs: `sf package uninstall -p {PACKAGE_VERSION_ID} -o {ORG_ALIAS} --wait 10`, and confirm it leaves no orphaned metadata behind (a failed uninstall handler or leftover components is exactly what the reviewer flags). Then hand the org to `/sf-security-review-toolkit:teardown-mcp-registration` for zero-residue removal. When asserting against live data in a fresh Trialforce template org, note these orgs ship their own sample CRM records — assert counts ≥ what you planted (or filter by seeded external ids), never exact-match.
+8. **Verify uninstall integrity, then hand off.** With the battery green, the deployed-artifact evidence — the four-query permission battery, the least-privilege / over-grant read, the credential-resolution proof — is ready for the `audit-deployed-package` pass and the readiness verdict (tag every finding *automated, from this throwaway org*). Before tearing down, complete the install/**uninstall** half of the cycle the reviewer runs: `sf package uninstall -p {PACKAGE_VERSION_ID} -o {ORG_ALIAS} --wait 10`, and confirm it leaves no orphaned metadata behind (a failed uninstall handler or leftover components is exactly what the reviewer flags). Then remove the org. An engine-created scratch org is deleted by its own teardown half — `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-org.mjs --consent --target <repo>` (name-guarded: it deletes only the `sf-srt-org-<runId>` org its manifest records, keeps every evidence file, and is idempotent; same recorded `sf-deep-audit-ops` token, no new consent). A Trialforce template org instead goes to `/sf-security-review-toolkit:teardown-mcp-registration` for zero-residue registration removal. When asserting against live data in a fresh Trialforce template org, note these orgs ship their own sample CRM records — assert counts ≥ what you planted (or filter by seeded external ids), never exact-match.
 
 ## Upgrade runbook
 
@@ -242,4 +242,4 @@ Prevention belongs in the package, not the runbook: ship the ESR in the `Incompl
 
 ## What feeds the next skill
 
-- **Feeds:** the deployed-artifact evidence — the four-query permission battery, the least-privilege / over-grant read, the credential-resolution proof, and install+uninstall integrity — into the `audit-deployed-package` pass and the readiness verdict, each finding tagged *automated, from this throwaway org*. Then hands the org to `/sf-security-review-toolkit:teardown-mcp-registration` for zero-residue removal.
+- **Feeds:** the deployed-artifact evidence — the four-query permission battery, the least-privilege / over-grant read, the credential-resolution proof, and install+uninstall integrity — into the `audit-deployed-package` pass and the readiness verdict, each finding tagged *automated, from this throwaway org*. Then removes the org: `harness/teardown-org.mjs` for an engine-created scratch org (name-guarded delete, evidence kept), or `/sf-security-review-toolkit:teardown-mcp-registration` for a template org's registration residue.

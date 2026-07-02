@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, static scans, audit, artifacts, live scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -581,9 +581,20 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    (contamination check, permission-chain / UEC grant-drop verification, smoke
    test) → `/sf-security-review-toolkit:audit-deployed-package` (the security
    pass over the installed artifact) → `/sf-security-review-toolkit:teardown-mcp-registration`
-   (zero-residue removal). Source reading cannot verify install-time behavior;
-   this previews the reviewer's own install/uninstall test. Skip silently when
-   the power-up was declined — the source audit is the always-on core.
+   (zero-residue removal). The scratch-org create/delete inside those steps is
+   ENGINE-RUN, never hand-scripted: `harness/standup-org.mjs` creates the
+   born-clean org (toolkit alias `sf-srt-org-<runId>`, resource manifest,
+   fails closed without the recorded `sf-deep-audit-ops` consent — the same
+   token those ops already classify to, no new gate) and
+   `harness/teardown-org.mjs` deletes exactly the org its manifest records
+   (name-guarded: a non-toolkit alias is refused, so a foreign org can never
+   be deleted; `--sweep` clears toolkit orgs left behind by a crashed run —
+   machine-wide, so only when no other toolkit audit is in flight). Dev Hub
+   authentication stays owner-interactive — the engine detects a missing hub
+   and degrades honestly (`no-devhub`); it never authenticates. Source
+   reading cannot verify install-time behavior; this previews the reviewer's
+   own install/uninstall test. Skip silently when the power-up was declined —
+   the source audit is the always-on core.
 
 8. **Reviewer simulation** → `/sf-security-review-toolkit:reviewer-simulation`.
    Reframes everything the audit + scans (+ deep audit) found as **what Salesforce

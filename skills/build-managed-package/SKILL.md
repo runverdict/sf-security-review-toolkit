@@ -1,7 +1,7 @@
 ---
 name: build-managed-package
 description: Cut a released managed 2GP from the partner's source — ONLY when the deployed-org deep audit finds no released version to audit yet. The common case is the partner already has a release; this is the fallback that produces an installable artifact so the deep audit has something to stand up. It does not modify the partner's application logic, but it DOES generate packaging scaffolding (a post-install handler, a CspTrustedSite) into force-app/ and edit sfdx-project.json — and only on the no-existing-release path.
-allowed-tools: Bash(sf *) Bash(git diff*) Bash(cat *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Read Write Edit AskUserQuestion
+allowed-tools: Bash(sf *) Bash(git diff*) Bash(cat *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write Edit AskUserQuestion
 ---
 
 # Build Managed Package
@@ -40,7 +40,9 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
    record it: `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --answer "<operator's exact yes>" --target <repo>`.
    The PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop: without
    it, `sf org create scratch`, `sf project deploy`, and `sf package version create` are
-   **DENIED**. **Promotion (step 10) is a SEPARATE, distinctly-worded ask** — this consent
+   **DENIED** — and the `standup-org.mjs`/`teardown-org.mjs` engines step 9 uses for the
+   scratch-org lifecycle verify the SAME recorded token before running (no new consent).
+   **Promotion (step 10) is a SEPARATE, distinctly-worded ask** — this consent
    does NOT cover it. A skipped ask means the op is denied, not silently run.
 
 1. **Verify the namespace prerequisites.** A managed 2GP requires a registered namespace LINKED to the Dev Hub. The namespace lives in a plain signup Developer Edition org (the "namespace holder" — don't use the Dev Hub itself, it can't be linked). Verify headlessly:
@@ -169,7 +171,13 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
    sf apex run test --class-names MCPPostInstallTest -o {ORG_ALIAS} --code-coverage --result-format human --wait 10
    ```
 
-9. **Create the package version.** Gate it on a **namespaced scratch-org deploy** first: `sf project deploy start` into a scratch org created under your namespace is the mandatory validation step before `sf package version create` — metadata element values are best-effort until they survive a namespaced deploy. Create that scratch org from a definition carrying the MCP feature — `"features": ["Einstein1AIPlatform"]` plus the `EinsteinGptSettings` settings block (`Einstein1AIPlatform` enables third-party MCP server registration; the older `Chatbot` feature is retired — as of June 2026 it fails org creation with `INVALID_INPUT: Chatbot is not a valid Features value` — and `botSettings` has failed the scratch settings deploy with `ProblemDeployingSettings`; omit both unless you need them). Pass `--no-ancestors` to `sf org create scratch` while the package has no released version. Before promoting, test-install the beta into a **namespace-less** scratch org (betas install fine into scratch orgs) and run the post-install battery from `/sf-security-review-toolkit:install-and-verify-package` — cheaper to catch an install-time problem before the promote is burned. After the version builds, test-install it into the same org to verify the perm sets auto-assign. Then execute:
+9. **Create the package version.** Gate it on a **namespaced scratch-org deploy** first: `sf project deploy start` into a scratch org created under your namespace is the mandatory validation step before `sf package version create` — metadata element values are best-effort until they survive a namespaced deploy. Create that scratch org through the org engine, run from the project root so the project's namespace applies:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/standup-org.mjs --consent --def-file config/project-scratch-def.json --target <repo>
+   ```
+
+   with the definition carrying the MCP feature — `"features": ["Einstein1AIPlatform"]` plus the `EinsteinGptSettings` settings block (`Einstein1AIPlatform` enables third-party MCP server registration; the older `Chatbot` feature is retired — as of June 2026 it fails org creation with `INVALID_INPUT: Chatbot is not a valid Features value` — and `botSettings` has failed the scratch settings deploy with `ProblemDeployingSettings`; omit both unless you need them). The engine always passes `--no-ancestors` — exactly right on this path, since this skill only runs while the package has no released version — creates the org under the toolkit alias `sf-srt-org-<runId>`, and records the manifest its paired `teardown-org.mjs` deletes from (name-guarded: only orgs the engine created are deletable; it rides the step-0 `sf-deep-audit-ops` consent, nothing new to ask). Before promoting, test-install the beta into a **namespace-less** scratch org (a second engine run without `--def-file`, outside the namespaced project root; betas install fine into scratch orgs) and run the post-install battery from `/sf-security-review-toolkit:install-and-verify-package` — cheaper to catch an install-time problem before the promote is burned. After the version builds, test-install it into the same org to verify the perm sets auto-assign. When the orgs have served their purpose, delete each with `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-org.mjs --consent --run-id <id>`. Then execute:
 
    ```bash
    sf package version create --package "{MCP_NAME}" --code-coverage --installation-key-bypass --wait 30 -v {DEVHUB_ALIAS}

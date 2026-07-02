@@ -51,6 +51,62 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.50] — 2026-07-02
+
+**The scratch-org lifecycle is now an engine, not an improvisation — B2-P2, the last B2
+slice.** The deployed-org deep audit stands the package up in a throwaway scratch org, and
+until now the `sf org create scratch` / `sf org delete` calls around that were hand-scripted
+inline in skill prose on every run — the same live-op fragility the scanner-dir
+(`install-scanners`) and server-tier (`standup-stack`) engines already retired.
+`harness/standup-org.mjs` + `harness/teardown-org.mjs` are the org tier of that pattern: a
+PURE planner (`planStandupOrg` — toolkit-scoped alias `sf-srt-org-<runId>`, a Developer +
+`Einstein1AIPlatform` default definition or the caller's own `--def-file`, `--no-ancestors`,
+duration clamped to a sane bound) + a fail-closed executor that records a resource manifest
+of exactly what it created — NAMES/IDS only (alias, username, orgId): the create's raw
+`--json` output carries an access token, which is parsed out and discarded, never persisted.
+`--dry-run` writes the `planned` manifest and performs no live op.
+
+The teardown half is the high-stakes piece: `sf org delete` is IRREVERSIBLE, so every delete
+is gated on `assertOrgAlias` — the fully-anchored `sf-srt-org-` convention, asserted BEFORE
+any plan is returned or any `sf` call runs, on every path including standup's own
+crash-cleanup delete. A tampered manifest, a production alias, a Dev Hub, a value that
+merely contains the prefix, a trailing-newline smuggle — all REFUSE, removing nothing; there
+is no bare `--target-org` fallback. The teardown is asymmetric (keeps every evidence file,
+removes the org + tmp dir), idempotent (an absent org is `already-clean`), and honest at its
+edges: an unavailable `sf` CLI is NOT read as "the org is gone" — when the manifest records
+a really-created org, the engine refuses to destroy the teardown record and reports
+`failed`, never a false success over a live org; a pointer whose tmp manifest was cleared
+(a reboot mid-multi-day org) still tears down by its guarded alias instead of claiming "no
+org stood up"; a path-escaping `--run-id` is refused as invalid; the pointer rewrite is a
+strict field allowlist. `--sweep` clears toolkit orgs left behind by a crashed run, strictly
+name-scoped — and documented as MACHINE-WIDE across toolkit orgs (it cannot tell an orphan
+from another session's in-flight run), so it is for quiet machines only.
+
+**No new consent — and consent is doubly coupled:** both ops already classify to the
+recorded `sf-deep-audit-ops` gate, both executors verify that same token (the flag alone is
+insufficient), and the teardown additionally requires the recorded consent of the org's
+ORIGINATING repo (the manifest records which repo stood the org up) — a token recorded in
+some other repo, or the cwd, never authorizes deleting another run's org. **Dev Hub
+authentication stays owner-interactive:** the engine detects a missing hub and degrades
+honestly (`no-devhub`); it never authenticates and stores no credential. The four deep-audit
+skills (`bootstrap-cli-auth`, `install-and-verify-package`, `build-managed-package`, the
+journey's deep-audit step) now invoke the engines instead of improvising the lifecycle — a
+born-clean engine-created scratch org is pristine by construction, collapsing the
+contamination-teardown improvisation for the scratch path; the build/install/audit/
+mcp-teardown steps themselves are unchanged. `assertSafeTmpRoot` additionally rejects the
+bare `sf-srt-org` grouping dir, like the scanner/stack/dast tiers.
+
+Suite **60 files / 788 checks** (was 58 / 768), all green — and hermetic BY CONSTRUCTION:
+the sweep check runs the CLI in a spawned process with a stubbed `sf` on PATH and an
+isolated TMPDIR, so the standing suite can never touch a real org or a real run's manifests.
+The 20 new checks are mutation-proven (24 mutations, each driving its expected RED in a
+throwaway checkout, every check covered), headed by the name-guard battery: dropping the
+`assertOrgAlias` call in `planTeardownOrg` → a foreign alias is accepted → RED; removing
+either regex anchor → contains-the-prefix / newline-smuggled aliases pass → RED. The live
+`sf org create/delete` is operator-cold-validated, not CI-hermetic — the standing tests pin
+the pure planners, the consent fail-closed + origin-repo coupling, the dry-run purity, the
+names-only manifest, and the alias name guard, which are what regress silently.
+
 ## [0.8.49] — 2026-07-02
 
 **The compose loopback boundary now covers `network_mode`.** The 0.8.48 stand-up confines a

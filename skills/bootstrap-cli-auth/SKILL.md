@@ -1,7 +1,7 @@
 ---
 name: bootstrap-cli-auth
 description: Install the Salesforce CLI and authenticate the orgs the deployed-org deep audit needs — from a machine that may have no local browser (CI box, remote server, devcontainer). The CLI-gated entry step the autonomous orchestrator invokes only when the operator opts into auditing the deployed package; read-only on the partner's source.
-allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Bash(node *harness/record-consent.mjs *) Write AskUserQuestion
+allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Write AskUserQuestion
 ---
 
 # Bootstrap CLI Auth
@@ -139,7 +139,13 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    sf org display -o {ORG_ALIAS} --json
    ```
 
-   Record each alias's org ID and instance URL — the rest of the deep-audit steps reference them when debugging. If everything is green, hand off to `/sf-security-review-toolkit:teardown-mcp-registration` to provision a clean throwaway org, then `/sf-security-review-toolkit:install-and-verify-package` to stand up the package — or, only if no released version exists yet, `/sf-security-review-toolkit:build-managed-package` first. (Building the integration from scratch is out of scope here — that à-la-carte path lives in the sibling sf-mcp-partner-toolkit.)
+   Record each alias's org ID and instance URL — the rest of the deep-audit steps reference them when debugging. If everything is green, provision the throwaway org and continue:
+
+   - **Fresh scratch org (the default):** engine-run, never improvised —
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-org.mjs --consent --target <repo>` creates a born-clean org under the toolkit alias `sf-srt-org-<runId>` (Developer edition, `Einstein1AIPlatform`, `--no-ancestors`) and records a resource manifest, so `harness/teardown-org.mjs` can later delete exactly that org and nothing else (its name guard refuses any org the engine didn't create). No new consent: `sf org create scratch`/`sf org delete` already classify to the recorded `sf-deep-audit-ops` gate, which both engines verify. The engine assumes the Dev Hub auth this skill just completed — with no authed hub it degrades honestly (`no-devhub`) and never authenticates for you. Its pristineness holds by construction; no contamination check needed.
+   - **Trialforce template org:** hand-created from the Template Id; run `/sf-security-review-toolkit:teardown-mcp-registration` first if it has registration history.
+
+   Then `/sf-security-review-toolkit:install-and-verify-package` to stand up the package — or, only if no released version exists yet, `/sf-security-review-toolkit:build-managed-package` first. (Building the integration from scratch is out of scope here — that à-la-carte path lives in the sibling sf-mcp-partner-toolkit.)
 
 ## The `--url-only` convention
 
@@ -181,7 +187,7 @@ This prints the URL (the human opens it on whatever machine has their browser) r
 - Installing Node.js itself, if absent
 - Completing each web-flow login in a browser (via the auto-forwarded port in VS Code Remote, or an `ssh -L 1717:localhost:1717` tunnel)
 - Logging into popups for browser-based flows — with the autofill wrong-org hazard above in mind
-- Creating fleet orgs that don't exist yet — the namespace-holder org's role and registration gotchas are covered in `/sf-security-review-toolkit:build-managed-package` step 1 (needed only when a version must be built); throwaway scratch/template org provisioning is handled by `/sf-security-review-toolkit:teardown-mcp-registration` as part of standing up a clean org for the deployed-package audit
+- Creating fleet orgs that don't exist yet — the namespace-holder org's role and registration gotchas are covered in `/sf-security-review-toolkit:build-managed-package` step 1 (needed only when a version must be built); throwaway SCRATCH orgs are created/deleted by the `harness/standup-org.mjs` / `harness/teardown-org.mjs` engine pair (deterministic lifecycle, toolkit-scoped alias, name-guarded delete), while cleaning a hand-registered TEMPLATE org stays with `/sf-security-review-toolkit:teardown-mcp-registration`
 
 ## What feeds the next skill
 
