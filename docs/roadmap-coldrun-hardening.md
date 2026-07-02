@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.49**, suite **58 files / 768 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.50**, suite **60 files / 788 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -119,19 +119,40 @@
   absent stand up as before — so the 127.0.0.1-only guarantee holds for every compose shape the engine
   accepts (U19; suite 58 / 768). The compose recipe + its loopback boundary are now fully in place
   (still pending the one cold run that cold-validates the whole B1..B2 arc).
+- **0.8.50 B2-P2 — org-tier `standup-org` / `teardown-org` scratch-org lifecycle** *(shipped +
+  test-backed; the live `sf org create/delete` is operator-cold-validated, like the docker executors)*.
+  The deployed-org deep audit improvised `sf org create scratch` / `sf org delete` inline in skill prose
+  each run; the lifecycle is now a deterministic engine pair mirroring `install-scanners`/`standup-stack`.
+  `standup-org.mjs`: pure `planStandupOrg` (toolkit alias `sf-srt-org-<runId>`, Developer +
+  `Einstein1AIPlatform` default definition, `--no-ancestors`, clamped duration) + a fail-closed executor
+  that verifies the recorded `sf-deep-audit-ops` token (no new consent), degrades honestly on
+  `no-devhub` (Dev Hub auth stays owner-interactive — the engine never authenticates), and writes a
+  strict NAMES/IDS-only manifest (the create's `authFields` access token is parsed out and discarded).
+  `teardown-org.mjs` — the destructive half: **`assertOrgAlias` gates every irreversible `sf org delete`
+  on the fully-anchored `sf-srt-org-` convention, asserted before any delete on every path** (the plan,
+  the crash-cleanup, the machine-wide `--sweep`), with no bare `--target-org` fallback; consent is
+  **doubly coupled** (the recorded token AND the org's originating-repo token); an unavailable `sf` never
+  reads as "org gone" (a created org's teardown record survives, failing loud not false-clean); asymmetric
+  + idempotent, evidence KEPT. Four deep-audit skills now invoke the engines; the build/install/audit/
+  mcp-teardown steps are unchanged. `assertSafeTmpRoot` also boxes the new `sf-srt-org` grouping dir.
+  Standing tests (hermetic — a stubbed `sf` + isolated TMPDIR, no live org ever reachable): the
+  alias-name-guard security matrix (foreign / contains-prefix / trailing-newline / whitespace / empty /
+  null all refused), fail-closed consent, origin-repo coupling, `sf`-unavailable honesty, dry-run purity,
+  the names-only manifest allowlist, idempotence, the sweep contract; suite 60 files / 788 checks.
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **B2 (throwaway tiers + OpenAPI) → B3 (verdict-reflection) → B4 (PENDING
-labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)**. One item at a time, each
-test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection, THE NEXT ITEM) →
+B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)**. One item at a
+time, each test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
 
-### B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI
-Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**DONE — node + python +
-dockerfile + compose, loopback-hardened**), org (**not built — B2-P2, the last B2 slice**). Remaining
-slices (in order):
+### ~~B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI~~ **COMPLETE (0.8.46–0.8.50)**
+All three "throwaway" tiers now pull forward: scanner-dir (DONE, 0.6.0), server/mirror (**DONE — node +
+python + dockerfile + compose, loopback-hardened**), org (**DONE — `standup-org`/`teardown-org`,
+0.8.50**). Every slice below is shipped + test-backed (see "Shipped this arc"); the whole arc is still
+pending the one clean cold run that cold-validates B1..B2 (that run also gates the tag).
 - ~~**B2-P3a — python + dockerfile `standup-stack` support**~~ **DONE (0.8.46)** — see "Shipped this
   arc" above. Single-container recipes that fit the existing teardown model with zero teardown change.
 - ~~**B2-#11 — OpenAPI spec, Route B (container-isolated)**~~ **DONE (0.8.47)** — see "Shipped this
@@ -146,16 +167,12 @@ slices (in order):
   arc" above. `planCompose` refuses `host`/`container:*`/`service:*` network modes (checked before
   web-tier selection); `bridge`/`default`/`none`/absent stand up as before. The compose loopback
   boundary is now delivered.
-- **B2-P2 — org-tier `standup-org`/`teardown-org` engine** *(THE NEXT SLICE — the last B2 item).* The deployed-org deep audit currently
-  improvises scratch-org create/install/teardown via inline `sf` commands. Build
-  `standup-org.mjs`/`teardown-org.mjs` mirroring `install-scanners`/`standup-stack`: consented
-  `sf org create scratch` (features `[Einstein1AIPlatform]`, `--no-ancestors`) + a resource manifest +
-  asymmetric `sf org delete scratch --no-prompt` (keep evidence, fail-closed on a malformed manifest).
-  The ops are **already** in the `sf-deep-audit-ops` consent gate (no new consent). A born-clean scratch
-  org collapses the contamination-teardown UI path and the "can't prove pristineness" caveat. The Dev Hub
-  auth stays owner-interactive; the org *lifecycle* pulls forward.
+- ~~**B2-P2 — org-tier `standup-org`/`teardown-org` engine**~~ **DONE (0.8.50)** — see "Shipped this
+  arc" above. The scratch-org create/delete lifecycle is now a deterministic engine pair with a
+  name-guarded, irreversible teardown; the four deep-audit skills invoke it instead of improvising
+  `sf org create/delete` inline.
 
-### B3 — Deterministic-band disposition → verdict reflection  *(verdict-honesty)*
+### B3 — Deterministic-band disposition → verdict reflection  *(verdict-honesty — THE NEXT ITEM, now that B2 is complete)*
 - **Why.** `--all` ingests deterministic scanner findings as `status:confirmed`. The driver
   class-dispositions most as FP (e.g. a large class of constant-GUC/RLS-predicate SAST highs the audit
   confirmed FP) into the **FP dossier**, but the **ledger status stays `confirmed`** — so the headline
