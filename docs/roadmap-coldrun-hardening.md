@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.52**, suite **61 files / 818 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.53**, suite **61 files / 827 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -171,14 +171,29 @@
   Canonical types render byte-identically; suite 61 files / 818 checks. **This is the RENDER half only —
   the same synonym still under-scopes the go/no-go GATE (`applicable-requirements.mjs`), which is B3b-2
   below.**
+- **0.8.53 B3b-2 — canonicalize element-type synonyms at the go/no-go GATE (GAP-Y2)** *(shipped +
+  test-backed)*. The render fix (B3b) left the gate under-scoping: `applicable-requirements.mjs` mapped
+  `(m.elements||[]).map(e => e.type)` raw, so an `external-web-app` manifest computed 86 applicable
+  requirements instead of 113 — silently dropping the external-endpoint control set (DAST, TLS,
+  `endpoint-*`, external SAST/SCA/IaC), which feeds `compute-sci`'s blocker floor + completeness, so a
+  synonym-typed external app could read falsely-ready with its controls never required. The existing
+  `canonicalElementType` is now applied at the single chokepoint (top of `computeApplicable`,
+  lowercase-then-alias so the gate's case-insensitivity extends to synonyms), so every caller (CLI
+  manifest path, `--elements`, `renderApplicable`) flows through it; `render-scope-summary`'s sort folds
+  it in too. An `external-web-app` manifest now computes EXACTLY the `external-endpoint` applicable set
+  (`deepEqual`, 113 — the 27 dropped restored, 6 blocker-severity pinned into the compute-sci seam),
+  canonical scopes byte-identical, an unknown type adds nothing (no over-scope). `compute-sci` untouched
+  (it consumes the corrected set). Suite 61 files / 827 checks. **Follow-up (B3b-3):** the same
+  raw-`e.type` fragility survives in other consumers (notably `compile-submission`'s re-intersect) — see
+  the open backlog.
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a + B3b DONE;
-B3b-2 GAP-Y2 is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7
-(gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a/B3b/B3b-2 DONE;
+B3b-3 GAP-Y3 is THE NEXT ITEM, then B3c) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) →
+B7 (gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
 the post-hardening build justifies it.
 
 ### ~~B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI~~ **COMPLETE (0.8.46–0.8.50)**
@@ -216,50 +231,113 @@ pending the one clean cold run that cold-validates B1..B2 (that run also gates t
   A single `canonicalElementType` helper (home: `render-detected-elements.mjs`) aliases external
   web-app/API element-type synonyms (`external-web-app` + siblings) → `external-endpoint`, wired into the
   scan-status **render** so families that ran read DONE not N/A.
-- **GAP-Y2 / B3b-2 — canonicalize element types at the GATE (not just the render)** *(THE NEXT ITEM —
-  correctness, materially more than cosmetic).* The SAME synonym drift under-scopes the go/no-go engine:
-  `applicable-requirements.mjs` maps `(m.elements||[]).map(e => e.type)` RAW (unaliased), so an
-  `external-web-app` manifest computes **86 applicable requirements instead of 113** — dropping 27,
-  including the blocker/major external-endpoint controls (`scan-external-sast`/`-sca`,
-  `scan-iac-misconfig`, `endpoint-ssl-labs-a-grade`, `endpoint-https-only`, the DAST + `endpoint-*` set).
-  That feeds `compute-sci`'s blocker floor + completeness, so a synonym-typed external app can read
-  falsely-ready with its external-endpoint controls never required — the inverse of B3a (B3a stopped
-  over-counting blockers; this stops UNDER-requiring controls). **Fix:** wire the existing
-  `canonicalElementType` into `applicable-requirements.mjs` (both the `--elements` arg + the manifest
-  `.map(e => e.type)` paths) so the applicable set matches `external-endpoint`; fold in the cosmetic
-  `render-scope-summary.mjs` rank (still ranks raw types). One standing test: an `external-web-app`
-  manifest yields the SAME applicable set as `external-endpoint`.
-- **GAP-Z / B3c — extract-drafted-content + write harness** *(separate, minor).* The Workflow runtime
-  can't write files, so the driver hand-scripts the artifact-content extraction + write each pass (plus
-  recurring inline-`node` shell-escaping slips it recovers from). A deterministic "extract drafted content
-  + write" harness would cut the improvisation.
+- ~~**GAP-Y2 / B3b-2 — canonicalize element types at the GATE**~~ **DONE (0.8.53)** — see "Shipped this
+  arc" above. `canonicalElementType` wired into `computeApplicable` (single chokepoint,
+  lowercase-then-alias); an `external-web-app` manifest now computes EXACTLY the `external-endpoint`
+  applicable set (deepEqual, 113; the 27 dropped controls restored, 6 blocker-severity pinned to the SCI
+  seam), canonical unchanged, no over-scope — the go/no-go gate no longer under-requires the
+  external-endpoint control set on a synonym-typed manifest.
+- **GAP-Y3 / B3b-3 — finish element-type synonym resilience across the REMAINING consumers** *(THE
+  NEXT ITEM — correctness for one, hygiene for the rest).* The 0.8.53 gate fix canonicalized
+  `computeApplicable`, but a consumer sweep found the same raw-`e.type` fragility in several other places
+  that filter/branch on element type. **Verify each against the code, then canonicalize (reuse
+  `canonicalElementType` — do NOT duplicate the map):**
+  - `compile-submission` — **the one with go/no-go weight:** it reportedly **re-intersects `applies_to`
+    itself** instead of reading the manifest's `applicableBaselineIds` verbatim, so a synonym-typed
+    manifest could re-drop the external controls at the final compile even though the gate is now correct.
+    Confirm; if true, either canonicalize its intersect OR make it read `applicableBaselineIds` verbatim
+    (single source of truth). This one is a correctness follow-up, not cosmetic.
+  - `reviewer-simulation` / `reviewer-challenges` element filters, `prepare-test-environment`'s component
+    table, `run-scans` family-applies prose, `stay-listed`'s staleness filter — mostly LLM-side prose
+    that keys on the canonical type; canonicalize or note the synonym so they don't mis-branch.
+  - **Operational carryover (document + decide):** a manifest written *before* 0.8.53 from a
+    synonym-typed scope persists the truncated 86-id `applicableBaselineIds` on disk until
+    `scope-submission` re-runs. Options: a one-line note in the resume/staleness path that a pre-0.8.53
+    manifest should be re-scoped, or have the reader recompute. Decide in the slice.
+  - Standing test per real fix (a synonym manifest yields the same downstream behavior as its canonical
+    type). All note-severity except the `compile-submission` re-intersect — sequence that first.
+- **GAP-Z / B3c — extract-drafted-content + write harness** *(minor scope, but a NEW file-write
+  surface — not trivial).* The Workflow runtime is read-only ("no filesystem access" —
+  `artifact-workflow-template.mjs:22-25,132-134`), so `generate-artifacts` step (d) and `audit-codebase`
+  step 6 have the driver hand-script the extract-content-from-envelope + write each pass (the
+  shell-escaping slips are an *observed-in-cold-runs* motivation, not a code fact — treat as such).
+  **Build `harness/write-drafted-content.mjs`:** unwrap the Workflow task-output envelope
+  (`.result.drafted[] = [{key, out, content}]` — REUSE `merge-ledger.mjs:60`'s `wrapper.result ?
+  wrapper.result : wrapper` unwrap, don't re-derive it) and write each `content` to `join(repo, out)`;
+  wire it into `generate-artifacts` step (d) in place of the improvised write (the audit-report return in
+  `audit-codebase` step 6 is the same shape — generalize or ship a sibling). **Net-new SECURITY
+  invariant not to miss:** because this is the first code that WRITES from a Workflow-returned
+  `out` path, it MUST path-scope every `out` under `<repo>` and refuse `../`/absolute escapes — no such
+  guard exists today (`build-artifact-engine.mjs` stores `out` unguarded). Standing test: an envelope
+  whose `content` carries backticks/quotes/newlines writes byte-exact files; a `../` traversal `out` is
+  REFUSED; a gate-suppressed key is not written; both wrapped + bare envelope shapes unwrap; idempotent
+  re-run.
 
-### B4 — PENDING labeling / wiring fixes  *(stop narrating resolved items as PENDING)*
-- The install-time UEC grant + the released `04t` version are verified **headlessly inside install** but
-  still narrated PENDING-OWNER-RUN — relabel.
-- Local-deterministic `testssl`/`sslyze` already clears the `endpoint-ssl-labs-a-grade` conflicting
-  status — ensure the SCI/recap credits it, not "PENDING SSL Labs."
-- Always emit the `checkmarx-prediction` file with its one-directional caveat; detect `CX_APIKEY` to
-  optionally run the real headless `cx scan` (the only legitimate Checkmarx pull-forward).
+### B4 — PENDING labeling / wiring fixes  *(stop narrating resolved items as PENDING — RE-GROUND before building)*
+> **A review (2026-07-02) found this item partly stale/ungrounded — do NOT build it as previously
+> written. Corrected below; the FIRST step of the slice is to re-verify each bullet against the code and
+> drop what's already done.**
+- **(a) UEC grant / `04t` PENDING relabel — RE-GROUND FIRST.** The facts hold (the install-time UEC grant
+  + released `04t` ARE verified headlessly inside install), but the audit could not locate a
+  `PENDING-OWNER-RUN` *mislabel* in code — the only "pending" narration near the deployed-org audit
+  (`render-preflight.mjs:155`, `package-readiness.mjs:18`) is the HONEST `sf`/Dev-Hub/scratch-org
+  precondition, which is correct. So either the mislabel lives only in the live cold-run driver transcript
+  (a prompt/skill-prose fix, not a harness fix) or it no longer exists. **Grep for the actual mislabel
+  before writing anything; if there's nothing to relabel, drop this bullet.**
+- **(b) local-TLS SCI currency — the one genuinely-open, narrow fix.** Local `testssl`/`sslyze` already
+  clears `endpoint-ssl-labs-a-grade` and `render-scan-status` Family 4 already shows it DONE; there is
+  **no literal "PENDING SSL Labs" string**. The residual is narrower than the old phrasing implied:
+  confirm whether `compute-sci` gives local-TLS evidence full SATISFIED *currency* credit (vs
+  statically-cleared / stale), and fix only that seam. Scope it to compute-sci currency — do NOT rewrite
+  the render (already correct).
+- ~~**(c) always-emit checkmarx-prediction + `CX_APIKEY` cx-scan**~~ **ALREADY SHIPPED (0.4.4, commit
+  47efea0)** — lives in `run-scans/SKILL.md` (~lines 324-356). **STALE — delete this bullet; do not
+  rebuild it.**
+- Net: B4 may shrink to just bullet (b) once (a) is re-grounded and (c) is dropped. Verify first.
 
-### B5 — Residual-shrinking track  *(shrink the labelled LLM residual; see roadmap-deterministic-findings §4)*
+### B5 — Residual-shrinking track  *(the differentiator; see roadmap-deterministic-findings §4)*
 Build deterministic engines that move each residual class's reachability/exposure/pattern substrate from
-LLM-inferred to deterministic, leaving only the semantic judgment labelled `llm-inferred`:
-- **ReDoS** — `regexploit`/`recheck` (regex-AST/NFA ambiguity; near-zero-FP; drop-in).
-- **Prompt-injection reachability** — Semgrep taint templated off `p/ai-best-practices` (untrusted
-  source → LLM-prompt sink); the LLM judges exploitability.
-- **Denial-of-wallet patterns** — metered-sink-in-unbounded-loop + missing-rate-limit-on-public-route
-  (Semgrep + CodeQL-style); split the existing `resource-consumption-abuse` dimension into a deterministic
-  detector + a labelled judgment.
-- **IDOR / BOLA** — a 2-user differential oracle (Schemathesis/Akto) for the API/MCP surface; SFGE/PMD
-  already cover the Apex missing-control side.
+LLM-inferred to deterministic, leaving only the semantic judgment labelled `llm-inferred`. **This is FOUR
+separate slices, not one — a review (2026-07-02) confirmed only ReDoS is ready to implement directly;
+the other three need a DESIGN DECISION resolved first (below).** Sequence: ReDoS → then the design calls.
+- **ReDoS (buildable first)** — `regexploit`/`recheck` (regex-AST/NFA ambiguity; near-zero-FP; drop-in).
+  A new tool → its own owned class + an `ingest-scanner-findings` adapter. Note: the
+  `resource-consumption-abuse` dimension ALSO owns an algorithmic-amplification/ReDoS shape — decide
+  whether the deterministic ReDoS engine SUPERSEDES that LLM shape (via reconcile-provenance) or sits
+  beside it. That reconciliation is the one design point even here.
+- **Prompt-injection reachability** *(DESIGN FIRST)* — Semgrep taint off `p/ai-best-practices` (untrusted
+  source → LLM-prompt sink); the LLM judges exploitability. **Open design Q:** the existing semgrep
+  adapter is tool→band (→ `scan-external-sast`); a prompt-injection-reachability finding is a DIFFERENT
+  class — decide the owned-class + adapter mapping before building.
+- **Denial-of-wallet** *(DESIGN FIRST)* — metered-sink-in-unbounded-loop + missing-rate-limit-on-public-
+  route; "split the `resource-consumption-abuse` dimension into a deterministic detector + a labelled
+  judgment." **Open design Qs:** (1) no stock rule pack detects this — it needs CUSTOM Semgrep rules
+  (authoring effort); (2) "CodeQL-style" is aspirational — CodeQL is NOT a toolkit scanner (absent from
+  `tool-detect`/`install-scanners`); don't imply wiring it; (3) DoW and ReDoS both live in
+  `resource-consumption-abuse`, so the two splits interact — design them together.
+- **IDOR / BOLA** *(DESIGN FIRST)* — a 2-user differential oracle (Schemathesis/Akto) for the API/MCP
+  surface; SFGE/PMD already cover the Apex missing-control side. **Open design Q:** this is a live
+  2-user differential (needs a running target + two identities) — decide how it rides the throwaway-DAST
+  consent + mirror, vs. staying owner-run.
 - **Honest floor (do NOT relitigate):** business-logic + multi-step authz are IRREDUCIBLE (Rice's
   theorem; the platform reviewer pen-tests them by hand). The North Star is **"deterministic substrate
   maximized + a labelled semantic residual,"** NOT "100% deterministic."
 
-### B6 — "human" → conversational prose sweep
-~80 `human`/`Human` references across ~30 files read AI-authored → reframe to natural second-person.
-Skill + harness prose is a code change; README/CONVENTIONS/docs is a docs-only change.
+### B6 — "human" → conversational prose sweep  *(SURGICAL, not blanket — a review flagged the old framing as DANGEROUS)*
+The raw count is accurate (87 whole-word `human`/`Human` across 31 tracked files), but a review
+(2026-07-02) found the "reframe to second-person" framing WRONG for the large majority, and a blanket
+sweep would cause real damage. **The slice is a KEEP/REWRITE classifier, not a find-replace. NEVER touch:**
+- **`--result-format human`** (and any `human` that is a literal CLI value / enum / flag) — rewriting it
+  is a FUNCTIONAL BUG.
+- **the "LLM/human residual" / "human-adjudicated" vocabulary** — that is the **LOCKED North Star**
+  (see Locked decisions); rewriting it contradicts this very doc.
+- **`human` as the actor-noun distinguishing the person from the agent/toolkit** — "the human owns the
+  submit," "a human tester," "human-by-necessity," "owner-signed / human signature" — these are
+  load-bearing honesty vocabulary, not AI-tells.
+**ONLY rewrite** genuine AI-authored throat-clearing where "human" reads as an awkward third-person
+stand-in for the reader (e.g. "the human should run…" → "run…"/"you run…"). Produce the keep/rewrite
+list FIRST (grep + classify), get it right, then apply. Skill + harness prose is a code change;
+README/CONVENTIONS/docs is a docs-only change. Low value, real risk — do it carefully or defer it.
 
 ### B7 — Structural gate-consolidation  *(consent-arch — needs design, lowest priority)*
 The journey elects the audit tier up front, then the `audit-codebase` launch gate re-asks/confirms the
@@ -270,6 +348,15 @@ standalone `audit-codebase`, keep the target-map gate as THE substantive 2nd sto
 duplicate the ask," not "skip a gate" (the consents are still recorded; the assembler still checks
 audit-tier + audit-targetmap), so it does NOT re-introduce the past full-auto-skipped-consent regression.
 Touches the consent-coupling architecture → design carefully before building.
+> **Audit precisions (2026-07-02): (1)** WI-02 already shipped (commit 6270e97) — the redundant tier
+> RE-ELECTION is gone; `audit-codebase` Step 2 is the confirm-and-authorize variant (`gate-spec.mjs`
+> ~450-485) that reuses the tier. B7's remaining scope is only removing the second `AskUserQuestion` in
+> the full-auto journey path. **(2)** target-map approval is a SEPARATE gate (Step 3, `audit-targetmap`),
+> distinct from the Step 2 launch/token-spend gate (`audit-tier`) — the parenthetical above conflates
+> them. **(3)** the actual open design question: `audit-codebase` distinguishes a journey call from a
+> standalone call ONLY by whether an `audit-tier` token already exists (there is no explicit handoff
+> flag) — so any consolidation must key off that, and that's the crux to design. Lowest priority; leave
+> for last.
 
 ---
 
