@@ -130,7 +130,7 @@ Graph Engine's FLS findings only fire when sfge is selected explicitly; `ApexCRU
 in via `-r AppExchange` / `-r pmd`. Verify the flag syntax against your installed CLI
 (`sf code-analyzer run --help`) — the last major-version transition changed the command shape once.
 
-### B2 — run the deterministic pass (agent-runnable; what audit-codebase Step 4b does)
+### B2 — run the deterministic pass (agent-runnable; what audit-codebase Step 4 does)
 
 One `--all` invocation ingests EVERY recognized scanner output present under `evidence/` (the
 metadata over-grant scan is always-on; the `code-analyzer-$DATE.json` you produced in B1 — plus any
@@ -164,8 +164,9 @@ for (const f of l.findings.filter(x => x.provenance === "deterministic")) {
 
 ### B4 — run the audit (LLM fan-out) + merge + reconcile; confirm LLM duplicates are superseded
 
-Run the journey (`run the security review`) or `audit-codebase` directly. Step 4b has already
-seeded the deterministic findings (B2); the LLM fan-out then runs, `merge-ledger.mjs` folds in
+Run the journey (`run the security review`) or `audit-codebase` directly. Step 4 has already
+seeded the deterministic findings (B2), and the ledger digest is compiled after it (Step 4b) so
+the fan-out defers to the band on the first pass; the LLM fan-out then runs, `merge-ledger.mjs` folds in
 the LLM findings, and `reconcile-provenance.mjs` runs as the **last merge step**:
 
 ```bash
@@ -245,7 +246,7 @@ three originally-wobbled CRUD-FLS / sharing / ViewAll classes.
 
 - Engines: `harness/ingest-scanner-findings.mjs` (Slice 1/2 + the 0.8.40 `--all` content-recognizer ingest),
   `harness/reconcile-provenance.mjs` (Slice 2).
-- Wiring: `skills/audit-codebase/SKILL.md` (Step 4b — now ONE `--all` call — plus the reconcile at the end of
+- Wiring: `skills/audit-codebase/SKILL.md` (Step 4 — now ONE `--all` call — plus the reconcile at the end of
   Step 6), `skills/security-review-journey/SKILL.md` (Audit step), `skills/run-scans/SKILL.md` (Family 1 feeds
   the ingest, AND step 9b now runs `--all` + reconcile at the scan tail so a single cold run seeds the band).
 - Standing guards: `acceptance/test-deterministic-integration.mjs` (this slice),

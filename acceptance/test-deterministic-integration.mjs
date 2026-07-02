@@ -43,6 +43,13 @@
  *     W10    run-scans GRANTS both harnesses in allowed-tools.
  *     W11    run-scans INVOKES `--all` then reconcile-provenance --target at the scan tail
  *            (in that order) + carries the PENDING-when-absent note.
+ *     W12    JOURNEY DRIVE ORDER: the static-scan-substrate step precedes the Audit step,
+ *            and the removed old-order rationale phrases are GONE (negative assertions, so
+ *            a self-contradictory skill cannot pass on the indexOf alone).
+ *     W13    ORDER: audit-codebase compiles the ledger digest AFTER the deterministic pass
+ *            (the band is in the digest the fan-out reads — first-pass defer).
+ *     W14    run-scans carries the static/live partition + the two journey entry modes
+ *            (standalone full-sweep behavior stated unchanged).
  *
  * Dependency-free, hermetic (only the committed real fixtures under acceptance/fixtures/, no
  * network, no sf, no LLM): `node acceptance/test-deterministic-integration.mjs`.
@@ -89,7 +96,7 @@ function setupTarget() {
   mkdirSync(join(T, 'force-app', 'permissionsets'), { recursive: true })
   copyFileSync(PS_FIXTURE, join(T, 'force-app', 'permissionsets', 'Solano_Admin.permissionset-meta.xml'))
   // a code-analyzer-*.json under evidence/ is the signal the audit's deterministic pass keys
-  // off (Step 4b) — its PRESENCE is what flips CRUD/FLS from PENDING to deterministic.
+  // off (Step 4) — its PRESENCE is what flips CRUD/FLS from PENDING to deterministic.
   copyFileSync(CA_FIXTURE, join(T, '.security-review', 'evidence', 'code-analyzer-2026-06-26.json'))
   return T
 }
@@ -97,9 +104,9 @@ const ledgerPath = (T) => join(T, '.security-review', 'audit-ledger.json')
 const findings = (T) => readJSON(ledgerPath(T)).findings
 const byClass = (T, cls) => findings(T).filter((f) => f.provenance === 'deterministic' && f.class === cls)
 
-// Run the deterministic pass exactly as Step 4b does: ONE `--all` invocation, which ALWAYS runs
+// Run the deterministic pass exactly as Step 4 does: ONE `--all` invocation, which ALWAYS runs
 // the metadata source scan and content-recognizes the `code-analyzer-*.json` under evidence/
-// (the same single-pass band Step 4b now seeds — `--all` subsumes the old two `--scanner` calls).
+// (the same single-pass band Step 4 now seeds — `--all` subsumes the old two `--scanner` calls).
 // Returns the seeded ledger's findings.
 function runDeterministicPass(T) {
   node([INGEST, '--all', '--target', T])
@@ -294,6 +301,39 @@ check('W11 run-scans INVOKES --all then reconcile-provenance --target at the sca
   assert.ok(recAt > -1, 'reconcile --target invocation present in run-scans')
   assert.ok(allAt < recAt, '--all seeds the band BEFORE reconcile demotes the LLM dupes')
   assert.ok(runScansText.includes('PENDING-OWNER-RUN'), 'the PENDING-when-absent note is present in run-scans')
+})
+
+check('W12 JOURNEY DRIVE ORDER — the static-scan substrate precedes the Audit step + the old-order rationale is GONE', () => {
+  const staticAt = journeyText.indexOf('**Static scans (the static-scan substrate)**')
+  const auditAt = journeyText.indexOf('**Audit** → `/sf-security-review-toolkit:audit-codebase`')
+  assert.ok(staticAt > -1, 'the static-scan-substrate step marker is present in the journey')
+  assert.ok(auditAt > -1, 'the audit step marker is present in the journey')
+  assert.ok(staticAt < auditAt, 'the static substrate step comes BEFORE the audit in the journey drive order')
+  // negative assertions — the removed old-order rationale must be GONE, or a
+  // self-contradictory skill (new step list, old defending prose) still passes the
+  // indexOf above
+  for (const gone of [
+    'precedes Scans (Step 5)',
+    'a re-audit ingests it',
+    '— scope, audit, artifacts, scans, package —',
+    'scope → audit → artifacts → scans',
+  ]) {
+    assert.ok(!journeyText.includes(gone), `old-order phrase still present in the journey: "${gone}"`)
+  }
+})
+
+check('W13 ORDER — audit-codebase compiles the ledger digest AFTER the deterministic pass (first-pass defer)', () => {
+  const ingestAt = auditBody.indexOf('ingest-scanner-findings.mjs --all')
+  const digestAt = auditBody.indexOf('Compile the ledger digest')
+  assert.ok(ingestAt > -1 && digestAt > -1, 'both markers present')
+  assert.ok(ingestAt < digestAt, 'the digest-compile instruction follows the deterministic-pass instruction — the freshly-seeded band is IN the digest the fan-out reads')
+  assert.ok(/AFTER the deterministic pass/.test(auditBody), 'the digest step states the AFTER ordering explicitly')
+})
+
+check('W14 run-scans carries the static/live partition + the two journey entry modes', () => {
+  assert.ok(/static substrate/i.test(runScansText), 'the static-substrate mode is documented')
+  assert.ok(runScansText.includes('live/conditional tail'), 'the live/conditional-tail mode is documented')
+  assert.ok(/standalone\s+invocation\s+with\s+no\s+mode\s+stated\s+is\s+the\s+full\s+sweep/i.test(runScansText), 'standalone full-sweep behavior is stated unchanged')
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

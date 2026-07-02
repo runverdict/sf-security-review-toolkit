@@ -145,25 +145,22 @@ regardless of anything this engine produces.
    claims — the single most productive finder instruction in the field runs
    was "verify the claimed model against the actual code, do not assume it."
 
-4. **Compile the ledger digest** from
-   `<target>/.security-review/audit-ledger.json`: one line per entry,
-   `[state] title — file (one-line resolution or refute reason)` (§5.3).
-   First run: empty digest is fine. Include `refuted` entries (they stop
-   finders re-raising the same non-issue) and `fixed` entries (re-report only
-   if regressed). Skipping the digest is the expensive mistake: every pass
-   re-discovers the same top findings and pays the verify fan-out for them
-   again. Never let an LLM rewrite ledger entries — the merge is mechanical
-   (step 6) or the dedup keys corrupt.
-
-4b. **Deterministic pass FIRST — the engines seed the ledger before the LLM
-   fan-out** (Phase 1 of `docs/roadmap-deterministic-findings.md`). A 5-run cold
+4. **Deterministic pass FIRST — the engines seed the ledger before the digest
+   is compiled and before the LLM fan-out** (Phase 1 of
+   `docs/roadmap-deterministic-findings.md`). A 5-run cold
    campaign proved the LLM-generated CRUD/FLS band is unstable run-to-run
    (high·high·ABSENT·high·high on identical code), while Code Analyzer (PMD/SFGE)
    and the permission-set metadata scan find those exact classes
-   DETERMINISTICALLY. Run them NOW — before Step 5's LLM fan-out — so a
+   DETERMINISTICALLY. Run them NOW — before Step 4b's digest compile and Step 5's
+   LLM fan-out — so a
    `provenance:'deterministic'` finding already exists in the ledger when the
+   digest is compiled and when the
    verifier defers to it (the Slice-2 "defer to the engine ONLY when it actually
-   ran" rule in `apex-exposed-surface.md` §5/§6 keys off exactly this evidence):
+   ran" rule in `apex-exposed-surface.md` §5/§6 keys off exactly this evidence).
+   On a journey run, the static-scan substrate has ALREADY populated
+   `.security-review/evidence/` before this phase launches — a populated
+   `evidence/` dir is the NORMAL first-journey-run case, and this pass is what
+   turns it into the first-pass deterministic band:
 
    - **One deterministic pass — `--all` — ingests every recognized scanner output
      present.** It ALWAYS runs the metadata source scan (no `sf`, no network — it
@@ -182,10 +179,13 @@ regardless of anything this engine produces.
      never re-judged or re-severitied by the LLM. An unrecognized evidence file is
      skipped with a named note, never guessed. Keep this BEFORE Step 5's LLM fan-out.
    - **`sf`/Code Analyzer absent → PENDING-OWNER-RUN, never LLM-fill, never drop.**
-     When no `code-analyzer-*.json` is present in `evidence/`, Code Analyzer has not
-     run, so `--all` reports the CRUD/FLS + sharing classes as **PENDING-OWNER-RUN**
-     (prompt the owner to install `sf` + the Code Analyzer plugin and run
-     `/sf-security-review-toolkit:run-scans` to make these deterministic). The LLM
+     When no `code-analyzer-*.json` is present in `evidence/` — on a journey run
+     that means the scanner-install consent was declined or the tool was absent;
+     standalone with no prior scans it is simply the not-yet case — Code Analyzer
+     has not run, so `--all` reports the CRUD/FLS + sharing classes as
+     **PENDING-OWNER-RUN** (prompt the owner to install `sf` + the Code Analyzer
+     plugin and run `/sf-security-review-toolkit:run-scans` to make these
+     deterministic). The LLM
      fan-out still audits those classes and **KEEPS its findings as `llm-inferred`** —
      it is NOT licensed to defer to an engine that never ran (that phantom hand-off,
      dropping a real FLS blocker to a scanner with no output, is the fixrun4 failure the
@@ -201,6 +201,20 @@ regardless of anything this engine produces.
    deterministically from the plugin's `package.json`), never from an ad-hoc
    `sf plugins` listing (a cold run misreported the version that way).
 
+4b. **Compile the ledger digest — AFTER the deterministic pass** — from
+   `<target>/.security-review/audit-ledger.json`: one line per entry,
+   `[state] title — file (one-line resolution or refute reason)` (§5.3).
+   First run: empty digest is fine. Include `refuted` entries (they stop
+   finders re-raising the same non-issue) and `fixed` entries (re-report only
+   if regressed). The digest is compiled AFTER Step 4 on purpose: that is what
+   puts the freshly-seeded `provenance:'deterministic'` band INTO the digest the
+   fan-out reads, so the finders defer to the engine findings on the FIRST pass
+   instead of re-reporting them and leaving Step 6's reconcile to clean up after
+   the fact. Skipping the digest is the expensive mistake: every pass
+   re-discovers the same top findings and pays the verify fan-out for them
+   again. Never let an LLM rewrite ledger entries — the merge is mechanical
+   (step 6) or the dedup keys corrupt.
+
 5. **Run the engine.** Preferred substrate: the Workflow tool with a project-local
    copy of `${CLAUDE_PLUGIN_ROOT}/harness/workflow-template.mjs`, assembled by the
    shipped `build-audit-engine.mjs` (next). You do NOT hand-extract prompts or
@@ -214,7 +228,9 @@ regardless of anything this engine produces.
    it retires the marker-slice fragility G5 hardened):
 
    1. Write `<target>/.security-review/scope-input.json` — the scoping output that
-      is legitimately yours (tier, pass, runDate, the step-4 `ledger` digest, the
+      is legitimately yours (tier, pass, runDate, the step-4b `ledger` digest —
+      compiled AFTER the step-4 deterministic pass, so the deterministic band is
+      in it — the
       `context` block assembled from the scope manifest, the `applicable` dimensions
       with their per-dimension `targets` + `stackNotes`, and the `na` list with
       reasons). The schema is in `${CLAUDE_PLUGIN_ROOT}/harness/build-audit-engine.mjs`'s
@@ -314,11 +330,11 @@ regardless of anything this engine produces.
    **Then reconcile provenance — the LAST step of the merge phase.** After
    `merge-ledger.mjs` has folded the LLM findings into the ledger, run
    `node ${CLAUDE_PLUGIN_ROOT}/harness/reconcile-provenance.mjs --target <target>`.
-   A `provenance:'deterministic'` finding from Step 4b that owns a class, sitting in
+   A `provenance:'deterministic'` finding from Step 4 that owns a class, sitting in
    the SAME owned class at the SAME locus as an `llm-inferred` finding, demotes that
    LLM finding to `status:'superseded'` (`superseded_by` → the deterministic id) — so
    the LLM never re-reports or re-judges what an engine already determined. It runs
-   AFTER the merge because both the deterministic findings (Step 4b) and the LLM
+   AFTER the merge because both the deterministic findings (Step 4) and the LLM
    findings must be in the ledger first; it is conservative (only an OWNED class at
    an overlapping locus supersedes — a different class, a non-overlapping locus, or
    an unmapped deterministic finding leaves the LLM finding untouched) and it MARKS,

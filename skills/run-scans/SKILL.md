@@ -1,6 +1,6 @@
 ---
 name: run-scans
-description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. Use after artifacts exist; the scan evidence is what the submission attaches.
+description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
 allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) AskUserQuestion
 ---
 
@@ -20,8 +20,13 @@ undispositioned findings — each of those bounces at the materials check
 
 ## When to use
 
-- Artifacts drafted and the scope manifest's endpoint inventory exists — the
-  DAST scope is generated from it
+- As the journey's **static-scan substrate** (early, BEFORE the audit): the
+  host-independent families need only the scope manifest — see "The
+  static/live partition" below
+- As the journey's **live/conditional tail** (late): artifacts drafted and the
+  scope manifest's endpoint inventory exists — the DAST scope is generated
+  from it (this prerequisite belongs to the DAST/live tail, not the static
+  substrate)
 - Re-scanning after fixes: the submitted report must be the post-fix run
 - Refreshing evidence before submission (baseline: `scan-report-freshness`)
 - NOT a replacement for the white-box audit
@@ -123,6 +128,44 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 | 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
 | 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code) |
 | 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
+
+## The static/live partition — two journey entry modes
+
+The eight families split cleanly by what they need, and the journey drives the
+two halves at different points:
+
+- **Static substrate (host-independent — the journey runs these EARLY, before
+  the audit):** Family 1 (Code Analyzer — CRUD/FLS + sharing), Family 5
+  (dependency audit), Family 6 (secret scan), Family 7 (external SAST), and
+  Family 8 (SCA + IaC). These read the repo and consume only tools already
+  present or consent-installed at the journey gate; they need no reachable
+  host and no deployed org, only the scope manifest. Family 4's **local TLS**
+  form (testssl.sh/sslyze) MAY join the static pass, but ONLY when a manifest
+  endpoint host is reachable AND its read-only live-probe consent is already
+  recorded — a host-reaching probe stays behind the same gate at the same
+  ask-point regardless of when it runs; otherwise TLS stays in the tail or
+  `PENDING-OWNER-RUN`.
+- **Live/conditional tail (the journey runs these LATE, after artifacts):**
+  Family 3 (the authenticated-DAST plan + the consented throwaway DAST — live
+  ops), Family 2 (the portal prediction — it maps the audit ledger's CONFIRMED
+  findings, which exist only after the audit), Family 4's host-grade TLS
+  (SSL Labs / host-reachable testssl where not already produced), anything the
+  static pass left `PENDING-OWNER-RUN`, and the Step 9b ingest + reconcile
+  tail.
+
+**How the journey signals the mode:** it SAYS so in the invocation — "run the
+static-scan substrate" vs "run the live/conditional tail" — and this skill runs
+only that half's families (family selection from the manifest is unchanged;
+the mode only partitions WHICH selected families run now). Each mode ends with
+the Step 9b `--all` ingest + reconcile over whatever evidence now exists — both
+harnesses are idempotent (stable ids dedup; reconcile only demotes), so running
+them at the substrate tail AND again at the live tail is safe. **A standalone
+invocation with no mode stated is the full sweep — all selected families, both
+halves, exactly as before.** Consent posture is identical in every mode: this
+skill installs nothing, and an absent tool is `PENDING-OWNER-RUN` (the hard
+boundary above, verbatim). On a journey run, the static substrate is what makes
+the audit's first pass ingest real scanner findings instead of leaving those
+families PENDING until a re-audit.
 
 ## Steps
 
@@ -542,11 +585,13 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    complements).
 
 9b. **Seed the deterministic band IN THIS PASS — `--all` ingest, then reconcile**
-   (Phase 1/2 of `docs/roadmap-deterministic-findings.md`). Families 1–8 above have now
-   written their evidence JSONs under `.security-review/evidence/`. Fold every recognized
-   scanner output into the deterministic band right here — so a SINGLE cold run is
-   meaningful, instead of waiting for the next `/sf-security-review-toolkit:audit-codebase`
-   re-audit to ingest them:
+   (Phase 1/2 of `docs/roadmap-deterministic-findings.md`). The families this pass ran
+   have now written their evidence JSONs under `.security-review/evidence/`. Fold every
+   recognized scanner output into the deterministic band right here — this closes EVERY
+   entry mode: on a journey run the static substrate does it EARLY (so the band is
+   seeded before the first audit pass), the live tail does it again over whatever the
+   tail added, and a standalone sweep does it so a single cold run is meaningful on
+   its own:
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --all --target <target>
@@ -561,16 +606,21 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
    `hardcoded-secrets`; Code Analyzer / metadata own crud-fls / sharing / viewall; the
    SAST + dependency-CVE adapters own no class, so they only ADD to the band). **When no
    `code-analyzer-*.json` is present, `--all` reports CRUD/FLS + sharing as
-   PENDING-OWNER-RUN (never LLM-fill, never drop) — exactly the audit-codebase Step 4b
+   PENDING-OWNER-RUN (never LLM-fill, never drop) — exactly the audit-codebase Step 4
    contract.**
 
-   **Design note (run-scans-tail ingest+reconcile, NOT a re-audit).** Seeding the band at
-   the scan tail is the deliberate choice over re-running the whole `audit-codebase` pass
-   after scans, which would double the expensive LLM fan-out for no new signal. Both
-   harnesses are pure + idempotent and finding-neutral on re-run (stable ids dedup;
-   reconcile only demotes, and a deterministic finding never supersedes another
-   deterministic one), so running `--all` + reconcile HERE and again at audit Step 4b /
-   Step 6 is safe — the band is byte-stable run-to-run.
+   **Design note (in-pass ingest+reconcile, NOT a re-audit).** On a journey run the
+   EARLY static substrate is what flips the deterministic families from PENDING to
+   real findings BEFORE the first audit — the audit's own `--all` ingest then reads
+   that evidence on its FIRST pass, so nothing waits for a re-audit. The ingest at
+   the live tail (and on a standalone sweep) is the same machinery closing the same
+   loop for the families that legitimately run late — the deliberate choice over
+   re-running the whole `audit-codebase` pass after scans, which would double the
+   expensive LLM fan-out for no new signal. Both harnesses are pure + idempotent and
+   finding-neutral on re-run (stable ids dedup; reconcile only demotes, and a
+   deterministic finding never supersedes another deterministic one), so running
+   `--all` + reconcile at the substrate tail, again at the live tail, and again at
+   audit Step 4 / Step 6 is safe — the band is byte-stable run-to-run.
 
 10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
@@ -653,11 +703,13 @@ stages. Findings fixed here belong in the audit ledger so the next
 `/sf-security-review-toolkit:audit-codebase` pass doesn't re-report them.
 
 Step 9b already seeded the deterministic band IN THIS PASS — `--all` ingested
-every scanner output Families 1–8 produced and `reconcile-provenance.mjs` demoted the
-co-located LLM duplicates — so a single cold run is already meaningful. The SAME
-evidence (`evidence/code-analyzer-<date>.json` et al.) is re-ingested INCREMENTALLY by
-audit-codebase's **deterministic pass** (`harness/ingest-scanner-findings.mjs --all`) on
-the next audit: stable ids dedup, so re-ingest never duplicates and the band recurs
-identically run-to-run (`docs/roadmap-deterministic-findings.md` Phase 1). So running
-THIS phase is what flips the CRUD/FLS + sharing classes from PENDING-OWNER-RUN to
-deterministic — the replacement for the unstable LLM-only blocker sample.
+every scanner output the pass produced and `reconcile-provenance.mjs` demoted the
+co-located LLM duplicates. On a journey run the **static substrate** is the pass
+that matters most here: it runs BEFORE the audit, so the audit's own deterministic
+pass (`harness/ingest-scanner-findings.mjs --all`) reads the SAME evidence
+(`evidence/code-analyzer-<date>.json` et al.) on its FIRST fan-out — stable ids
+dedup, so re-ingest never duplicates and the band recurs identically run-to-run
+(`docs/roadmap-deterministic-findings.md` Phase 1). The live tail and any
+standalone sweep flip whatever remained. So running THIS phase is what flips the
+CRUD/FLS + sharing classes from PENDING-OWNER-RUN to deterministic — the
+replacement for the unstable LLM-only blocker sample.

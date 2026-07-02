@@ -32,11 +32,15 @@ import { fileURLToPath } from 'node:url'
 // ── THE FROZEN PHASE LADDER — furthest-reached first ──────────────────────────
 // Each phase: the presence flag that proves it, the resume label, the single next
 // skill, and the one-sentence reason. Walked top-down; the first present phase wins.
+// A rung may carry `requires` (additional flags that must ALSO be present): evidence
+// counts as Phase 3 only WITH an audit ledger — evidence WITHOUT one means the
+// journey's static-scan substrate ran and the AUDIT is the resume point, not compile.
 const PHASE_LADDER = Object.freeze([
   Object.freeze({ flag: 'submission', label: 'Phase 5 — submission compiled',
     next: '/sf-security-review-toolkit:stay-listed (or re-run compile-submission to refresh)',
     reason: 'a compiled submission package exists — maintain it and refresh stale evidence, don\'t rebuild blindly.' }),
-  Object.freeze({ flag: 'evidence', label: 'Phase 3 — scans run (partial or full)',
+  Object.freeze({ flag: 'evidence', requires: Object.freeze(['audit_ledger']),
+    label: 'Phase 3 — scans run (partial or full)',
     next: '/sf-security-review-toolkit:compile-submission',
     reason: 'scan evidence exists — compile the submission (it re-runs the cheap scans and demotes any HAVE row lacking evidence).' }),
   Object.freeze({ flag: 'artifacts', label: 'Phase 2 — reviewer artifacts generated',
@@ -45,6 +49,9 @@ const PHASE_LADDER = Object.freeze([
   Object.freeze({ flag: 'audit_ledger', label: 'Phase 1 — audit ran',
     next: '/sf-security-review-toolkit:generate-artifacts',
     reason: 'an audit ledger exists — generate the reviewer artifacts (the gate withholds the AuthN/AuthZ doc on any open critical/high).' }),
+  Object.freeze({ flag: 'evidence', label: 'static-scan substrate ran — no audit ledger yet',
+    next: '/sf-security-review-toolkit:audit-codebase',
+    reason: 'scan evidence exists but no audit has run — the static scans ran first; the audit is next (its deterministic ingest seeds the band from that evidence on the first pass).' }),
   Object.freeze({ flag: 'scope_manifest', label: 'Phase 0 — scope resolved',
     next: '/sf-security-review-toolkit:audit-codebase',
     reason: 'a scope manifest exists — run the white-box audit next.' }),
@@ -72,7 +79,7 @@ export function renderRouterStatus(facts) {
     next = '/sf-security-review-toolkit:audit-codebase'
     reason = 'files changed since the audit — re-audit the changed dimensions before any verdict trusts the ledger (a stale finding is never carried into the readiness verdict).'
   } else {
-    const phase = PHASE_LADDER.find((p) => f[p.flag]) || FRESH
+    const phase = PHASE_LADDER.find((p) => f[p.flag] && (p.requires || []).every((r) => f[r])) || FRESH
     label = phase.label
     next = phase.next
     reason = phase.reason

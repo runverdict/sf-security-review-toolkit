@@ -48,11 +48,15 @@ directly) and it takes over:
         │   PREFLIGHT: a cheap scan detects your architecture (+ reads the Dev Hub if `sf`
         │   is authed) and reports — ✓ what it found · ⚠ what it actually needs · ✦ optional
         │   power-ups — then runs the rest AUTONOMOUSLY, pausing only at the safety gates.
+        │   (Numbers are each skill's phase identity; the list is the journey's DRIVE ORDER —
+        │   the static scans run BEFORE the audit, so the audit ingests real scanner
+        │   findings on its first pass instead of leaving those families pending.)
         │
         ├─ 0. /sf-security-review-toolkit:scope-submission           what are you listing? which requirements apply?
-        ├─ 1. /sf-security-review-toolkit:audit-codebase             autonomous find → verify → synthesize audit
+        ├─ 3. /sf-security-review-toolkit:run-scans (static substrate) Code Analyzer · deps · secrets · ext SAST/SCA/IaC — host-independent, before the audit
+        ├─ 1. /sf-security-review-toolkit:audit-codebase             autonomous find → verify → synthesize audit, seeded by the substrate's evidence
         ├─ 2. /sf-security-review-toolkit:generate-artifacts         authn/authz flow, data flow, tools list, …
-        ├─ 3. /sf-security-review-toolkit:run-scans                  8 families: Code Analyzer · DAST · TLS · deps · secrets · ext SAST/SCA/IaC
+        ├─ 3. /sf-security-review-toolkit:run-scans (live/conditional tail) DAST · TLS · portal prediction · whatever stayed pending
         ├─ 4. /sf-security-review-toolkit:reviewer-simulation        what Salesforce Product Security will see, ranked by attack priority
         ├─ 5. /sf-security-review-toolkit:prepare-test-environment   Trialforce org, agent + Topics, test users
         ├─ 6. /sf-security-review-toolkit:compile-submission         questionnaire, checklist, SCI verdict, wizard-slot package

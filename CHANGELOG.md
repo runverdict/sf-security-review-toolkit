@@ -51,6 +51,50 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.45] — 2026-07-02
+
+**The journey now runs the static scanner substrate BEFORE the LLM audit.** On a full run the
+drive order was scope → audit → artifacts → scans, so the first audit pass ran without the
+deterministic scanner findings: those families sat PENDING in the completeness index until the
+scan phase ran at the tail, and folding them in cost a second, fully-priced audit pass. The
+order is now scope → static scans → audit → artifacts → live/conditional scans — the
+host-independent families run first, the audit's `--all` ingest seeds the deterministic band on
+the FIRST pass, and the re-audit double-cost is gone. A focused, test-backed change:
+
+- `skills/security-review-journey/SKILL.md` — a new "Static scans (the static-scan substrate)"
+  step before the audit (Code Analyzer CRUD/FLS + sharing, external SAST, SCA + IaC, secret
+  scan, dependency audit); the consented scanner install runs before it; the Scans step becomes
+  the live/conditional tail (DAST plan + throwaway DAST, portal prediction, host-grade TLS,
+  the ingest tail), with `cleanup-scanners` staying at end-of-run; the frontmatter description,
+  audit-step rationale, smart-resume table, and recap all tell the same order story. Consent
+  posture unchanged: same gates, same ask points, fail-closed the same way — local TLS joins
+  the static pass only when a reachable host's read-only live-probe consent is already
+  recorded, a declined scanner install leaves those families `PENDING-OWNER-RUN`, and an
+  absent scanner never blocks the audit (its findings stay `llm-inferred`).
+- `skills/run-scans/SKILL.md` — the explicit static/live partition over the eight families and
+  the two journey entry modes (the static substrate needs only the scope manifest; the
+  endpoint-inventory prerequisite belongs to the DAST/live tail); a standalone invocation with
+  no mode stated is the unchanged full sweep; the Step 9b `--all` ingest + reconcile is
+  documented as idempotent at every entry point (substrate tail, live tail, audit pass).
+- `skills/audit-codebase/SKILL.md` — the ledger digest is now compiled AFTER the deterministic
+  pass (Steps 4/4b swapped), so the freshly-seeded deterministic band is in the digest the
+  fan-out reads and the finders defer to it on the FIRST pass instead of re-reporting what the
+  engines already own; a populated `evidence/` dir is documented as the normal
+  first-journey-run case, with the absent-engine contract in force verbatim
+  (`PENDING-OWNER-RUN`, never LLM-fill, never drop; the LLM keeps its findings `llm-inferred`).
+- `harness/render-router-status.mjs` — a new resume-ladder rung: evidence WITHOUT an audit
+  ledger now resumes at the audit (the static substrate ran; the audit is next), never at
+  compile; evidence WITH a ledger keeps the unchanged compile path.
+- `README.md` flow diagram, `docs/deterministic-findings-acceptance.md`, `CONVENTIONS.md`, and
+  `docs/INDEX.md` reconciled to the new order. The skills keep their canonical phase
+  identities (scope Phase 0, audit Phase 1, run-scans Phase 3) — the journey's drive order is
+  what changed.
+
+Suite **57 files / 740 checks** (was 57 / 736), all green; each new check mutation-proven
+(reintroduce the old order → RED): W12 journey drive order + negative assertions on the removed
+old-order rationale, W13 digest-after-deterministic-pass, W14 the run-scans partition + entry
+modes, RR6 the resume-ladder rung.
+
 ## [0.8.44] — 2026-06-30
 
 **Audit-engine robustness — two real failures a live 40-agent cold-run fan-out hit, where a

@@ -1,6 +1,6 @@
 ---
 name: security-review-journey
-description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, audit, artifacts, scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
+description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, static scans, audit, artifacts, live scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
 allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) AskUserQuestion Skill
 ---
 
@@ -112,7 +112,7 @@ missing or a key piece of the architecture was misread.
    | `<target>/.security-review/sf-autoresolve.json` | DevHub auto-resolve ran | reuse the resolved endpoint/permission/coverage facts |
    | `<target>/.security-review/audit-ledger.json` | Phase 1 ran | read `confirmed`/`fixed`/`accepted` — open criticals/highs gate artifacts (Step in AUTONOMOUS RUN) |
    | `<target>/docs/security-review/*.md` artifacts | Phase 2 partial/full | list which required artifacts exist; regenerate only the stale/missing |
-   | `<target>/.security-review/evidence/` (scan reports, SSL Labs JSON, screenshots) | Phase 3 partial | match each evidence file to its baseline scan requirement; a plan with no report is NOT done |
+   | `<target>/.security-review/evidence/` (scan reports, SSL Labs JSON, screenshots) | scans ran — with NO audit ledger, the static-scan substrate; with a ledger, Phase 3 partial | no audit ledger → the static substrate ran and the AUDIT is the resume point (its ingest seeds the deterministic band from this evidence on the first pass); with a ledger → match each evidence file to its baseline scan requirement; a plan with no report is NOT done |
    | `<target>/docs/security-review/submission/` + `submission-checklist.md` | Phase 5 compiled | the package exists; offer a refresh, don't rebuild blindly |
 
 3. **Trust nothing stale — spot-check the manifest against the repo.** A scope
@@ -393,32 +393,75 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    `scope-manifest.json` (+ `sf-autoresolve.json` when the DevHub power-up was
    accepted). Re-run it whenever Step 0 flagged drift.
 
-2. **Audit** → `/sf-security-review-toolkit:audit-codebase`. The find →
+2. **Static scans (the static-scan substrate)** → `/sf-security-review-toolkit:run-scans`,
+   invoked in **static-substrate mode** — state the mode explicitly in the invocation
+   (run-scans documents both journey entry modes; a bare invocation with no mode is a
+   standalone full sweep). This step runs the **host-independent** scan families BEFORE
+   the audit, so the audit's deterministic ingest has real scanner evidence on its
+   FIRST pass: Code Analyzer (the CRUD/FLS + sharing band), the external SAST
+   (Semgrep + the language gates), SCA + IaC (OSV-Scanner/Checkov), the secret scan,
+   and the dependency audit — every manifest-selected family that needs no reachable
+   host and no deployed org. Evidence lands under `.security-review/evidence/`, and
+   the substrate's own tail runs the idempotent `--all` ingest + reconcile, so the
+   deterministic band is already seeded when the audit launches.
+
+   **If the scanner-install consent was asked + RECORDED at the gate** (gate
+   `scanner-install`; `--consent` alone no longer installs — the engine verifies the
+   recorded token), run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
+   <target> --json` BEFORE invoking the substrate so `run-scans` finds the
+   tmp-installed tools on the PATH it prepends (from
+   `.security-review/scanner-install.json`) and emits **real** Code Analyzer /
+   Semgrep / OSV / Checkov / secret evidence instead of `PENDING-OWNER-RUN`.
+   **If it was declined / never offered**, install nothing — the substrate uses only
+   tools already present, and absent scanners stay `PENDING-OWNER-RUN` (run-scans'
+   hard boundary is unchanged; this step NEVER installs anything itself).
+   `cleanup-scanners.mjs` stays at END-OF-RUN, after the live/conditional tail —
+   the tmp tools remain on the PATH for it.
+
+   **An absent scanner never blocks the audit.** Zero static tools → this step
+   reports those families `PENDING-OWNER-RUN` and the run proceeds straight to the
+   audit, which keeps its findings `llm-inferred` (the standing contract, unchanged —
+   the substrate only changes WHEN deterministic evidence can exist, never what
+   happens without it).
+
+   **TLS placement (a host-reaching probe never re-times a gate):** testssl.sh/sslyze
+   still reach a host, so local TLS joins this static pass ONLY when a manifest
+   endpoint host is reachable AND its read-only live-probe consent was already
+   recorded at the preflight gate — the same consent, asked at the same point,
+   fail-closed the same way. With no reachable/consented host, TLS stays in the
+   live/conditional tail (Step 6) or `PENDING-OWNER-RUN`.
+
+3. **Audit** → `/sf-security-review-toolkit:audit-codebase`. The find →
    adversarial-verify → synthesize engine, fanned out across the applicable
    dimensions. It refuses to run without a manifest and embeds the existing
    ledger so confirmed/refuted findings are not re-reported. Declare the
    token-cost tier up front (`quick`/`standard`/`exhaustive`).
 
    **Deterministic pass FIRST, then reconcile (Phase 1 of
-   `docs/roadmap-deterministic-findings.md`).** audit-codebase now runs the
-   deterministic engines BEFORE its LLM fan-out and reconciles AFTER its merge —
-   the journey just needs to know the ordering this introduces:
+   `docs/roadmap-deterministic-findings.md`).** audit-codebase runs the
+   deterministic engines BEFORE its LLM fan-out and reconciles AFTER its merge:
    `harness/ingest-scanner-findings.mjs` seeds `provenance:'deterministic'` findings
    (the `metadata-viewall` source scan ALWAYS — ViewAll/ModifyAll over-grants, no
-   `sf` needed; the `code-analyzer` adapter WHEN a
-   `.security-review/evidence/code-analyzer-*.json` exists — CRUD/FLS + sharing),
-   then after the merge `harness/reconcile-provenance.mjs` supersedes any co-located
-   `llm-inferred` finding the engine now owns. **`sf`/Code Analyzer absent →
+   `sf` needed; plus every scanner output the static substrate (Step 2) already
+   landed under `.security-review/evidence/` — Code Analyzer CRUD/FLS + sharing,
+   the OSS SAST / SCA / IaC / secret families), then after the merge
+   `harness/reconcile-provenance.mjs` supersedes any co-located `llm-inferred`
+   finding the engine now owns. Because the static substrate ran FIRST, the `--all`
+   ingest seeds the deterministic band on the FIRST audit pass: the finders defer
+   to it immediately (audit-codebase compiles the ledger digest AFTER its
+   deterministic pass, so the band is in the digest the fan-out reads), the SCI
+   credits those families as reviewer-reproducible SATISFIED in the same run, and
+   the old double-cost — auditing blind, then paying a full re-audit just to
+   ingest late-arriving scan evidence — is gone. PENDING remains only for
+   declined-consent / absent-tool families and the genuinely-owner scans (the
+   portal run, the live-prod DAST). **`sf`/Code Analyzer absent →
    PENDING-OWNER-RUN, never LLM-fill, never drop:** with no `code-analyzer-*.json`,
    CRUD/FLS + sharing stay PENDING and the LLM KEEPS those findings as
-   `llm-inferred`. Note the cold-run ordering: on a first journey run the audit (this
-   step) precedes Scans (Step 5), so the `code-analyzer-*.json` does not exist yet and
-   those classes are PENDING; once the owner has run Code Analyzer (Step 5 Family 1,
-   or out of band) a re-audit ingests it and reconcile supersedes the LLM
-   duplicates — the deterministic band then recurs identically run-to-run (the §8
-   "run the engine twice → identical" replacement for the 5-run campaign).
+   `llm-inferred` — and the deterministic band recurs identically run-to-run (the
+   §8 "run the engine twice → identical" replacement for the 5-run campaign).
 
-3. **Blocker-policy gate (automatic — no election since 0.5.2).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
+4. **Blocker-policy gate (automatic — no election since 0.5.2).** Read `audit-ledger.json`. The toolkit is an AUDIT tool: an open critical/high
    does NOT halt the run and does NOT offer a fix path — it **auto-proceeds** to
    the full NOT-READY report. It never pauses to fix, never drafts/suggests/writes
    code, and is read-only on the partner's source; if the partner wants to
@@ -452,27 +495,28 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    recording what was open when the report was produced — it is **informational
    only**; the gate never reads it for the decision.
 
-4. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
+5. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
    only the artifacts whose `applies_to` matched the manifest; honors the
    blocker-gate AuthN/AuthZ suppression. Each generated doc is labeled
    automated-vs-owner-run; none is presented as reviewer-final.
 
-5. **Scans** → `/sf-security-review-toolkit:run-scans`. Code Analyzer (the
-   agent can run it), SSL Labs and dependency scans where targets resolve; DAST
-   and Checkmarx are owner-run (creds + the live target are the human's) — those
-   become tasks in `PENDING-OWNER-RUN.md`, not blockers. A scan is only "done"
-   with a verified evidence file; a plan with no report is not (CONVENTIONS §2).
-   **If the scanner-install consent was asked + RECORDED at the gate** (gate
-   `scanner-install`; `--consent` alone no longer installs — the engine verifies the
-   recorded token), run
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/install-scanners.mjs --consent --target
-   <target> --json` BEFORE this phase so `run-scans` finds the tmp-installed tools
-   on the PATH it prepends (from `.security-review/scanner-install.json`) and emits
-   **real** Semgrep/OSV/Checkov/secret/TLS evidence instead of `PENDING-OWNER-RUN`;
-   then run `node ${CLAUDE_PLUGIN_ROOT}/harness/cleanup-scanners.mjs --target
-   <target>` at the end of the run (or in `stay-listed`) to remove the tools and
-   keep the evidence. **If it was declined / never offered**, install nothing —
-   absent scanners stay `PENDING-OWNER-RUN` (run-scans' hard boundary is unchanged).
+6. **Scans (the live/conditional tail)** → `/sf-security-review-toolkit:run-scans`,
+   invoked in **live-tail mode** (state the mode in the invocation, as at Step 2).
+   The static substrate (Step 2) already produced the host-independent evidence;
+   what remains is the live and conditional work: the authenticated-DAST plan
+   (+ the throwaway-DAST chain below), the Checkmarx portal prediction (it maps
+   the audit ledger's CONFIRMED findings, so it can only run after the audit),
+   host-grade TLS — SSL Labs, or local testssl/sslyze where a consented reachable
+   host exists — any family the substrate left `PENDING-OWNER-RUN`, and the scan
+   tail's `--all` ingest + reconcile. That tail is idempotent (stable ids dedup;
+   reconcile only demotes), so re-running it after the substrate already seeded
+   the band is safe and folds in whatever THIS pass added. DAST and Checkmarx are
+   owner-run (creds + the live target are the human's) — those become tasks in
+   `PENDING-OWNER-RUN.md`, not blockers. A scan is only "done" with a verified
+   evidence file; a plan with no report is not (CONVENTIONS §2). At the END of the
+   run, run `node ${CLAUDE_PLUGIN_ROOT}/harness/cleanup-scanners.mjs --target
+   <target>` (or in `stay-listed`) to remove the consent-installed tmp tools and
+   keep the evidence.
 
    **If the throwaway-DAST consent was asked + RECORDED at the gate** (gate `throwaway-dast`,
    the gate's third consent; `stack-detect` = `runnable` AND `docker-check` = `available`;
@@ -508,7 +552,7 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    destroyed at teardown). If `needs-recipe`/`n/a`, or the consent was declined, DAST
    stays owner-run — emit the ZAP plan into `PENDING-OWNER-RUN.md`, no stand-up.
 
-6. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
+7. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
    Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce
    reviewer actually does*: stand the package up in a throwaway org and audit the
    installed artifact. The five lifecycle skills below are all shipped, so this is
@@ -529,7 +573,7 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    this previews the reviewer's own install/uninstall test. Skip silently when
    the power-up was declined — the source audit is the always-on core.
 
-7. **Reviewer simulation** → `/sf-security-review-toolkit:reviewer-simulation`.
+8. **Reviewer simulation** → `/sf-security-review-toolkit:reviewer-simulation`.
    Reframes everything the audit + scans (+ deep audit) found as **what Salesforce
    Product Security will see** — the challenge checklist run against the ledger,
    ranked by the reviewer's own attack priority (public reach → authz → injection
@@ -538,7 +582,7 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    runs (it only needs the ledger); its open-challenge list seeds the
    path-to-green in compile.
 
-8. **Compile** → `/sf-security-review-toolkit:compile-submission`. Assembles the
+9. **Compile** → `/sf-security-review-toolkit:compile-submission`. Assembles the
    complete downloadable `submission-package/` with the wizard-slot `INDEX.md`
    (each artifact mapped to its exact Security Review Wizard step + upload slot),
    `PENDING-OWNER-RUN.md` (the human tail), and `readiness-verdict.md`. The
@@ -580,8 +624,9 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 Automated: the preflight (baseline-currency check, architecture detection, prior-
 state + drift scan, `sf`-authed sense and — only if opted in — DevHub auto-
 resolve), the tier classification + the single preflight report, and the
-end-to-end drive across scope → audit → artifacts → scans →
-(opt-in deep audit) → compile, with every contradiction flagged inline.
+end-to-end drive across scope → static scans → audit → artifacts →
+live/conditional scans → (opt-in deep audit) → compile, with every
+contradiction flagged inline.
 
 Manual: correcting a misread in the preflight; supplying any ⚠ NEED-FROM-YOU
 audit-blocker; consenting to a live read-only probe, to standing up a scratch

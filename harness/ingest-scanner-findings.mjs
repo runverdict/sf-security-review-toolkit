@@ -136,7 +136,7 @@
  *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
  *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
  *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
- *     what the audit Step 4b and the run-scans tail invoke so a cold run actually ingests the
+ *     what the audit Step 4 and the run-scans tail invoke so a cold run actually ingests the
  *     full OSS scanner set, not just code-analyzer + metadata.
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs'

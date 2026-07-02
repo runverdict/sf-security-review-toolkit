@@ -12,6 +12,9 @@
  *      auto-proceed note.
  * RR4  fail-safe — null / non-object → the honest "fresh start" block, never a crash.
  * RR5  wiring — the journey grants + references the harness + states verbatim.
+ * RR6  static-substrate rung — evidence WITHOUT an audit ledger resumes at the AUDIT
+ *      (the journey's static scans run before the audit); evidence WITH one is the
+ *      unchanged compile path.
  *
  * Dependency-free: `node acceptance/test-render-router-status.mjs`.
  */
@@ -87,6 +90,18 @@ check('RR4 fail-safe: null / non-object → "fresh start", never a crash', () =>
   // CLI with neither --facts nor --target → fresh start
   const out = execFileSync('node', [CLI], { encoding: 'utf8' })
   assert.match(out, /Resume point: fresh start/)
+})
+
+check('RR6 static substrate: evidence WITHOUT audit_ledger → the audit is next (not compile); WITH it → compile', () => {
+  // the journey's static-scan substrate runs scans BEFORE the audit, so evidence alone
+  // no longer proves Phase 3 — it must resume at the audit, never jump to compile
+  const noLedger = renderRouterStatus({ evidence: true, scope_manifest: true })
+  assert.match(noLedger, /Next: \/sf-security-review-toolkit:audit-codebase/)
+  assert.match(noLedger, /static/i, 'the label/reason names the static substrate')
+  assert.doesNotMatch(noLedger, /compile-submission/)
+  // evidence WITH the ledger is unchanged — the compile path
+  const withLedger = renderRouterStatus({ evidence: true, audit_ledger: true, scope_manifest: true })
+  assert.match(withLedger, /Next: \/sf-security-review-toolkit:compile-submission/)
 })
 
 check('RR5 wiring: journey grants + references the harness + verbatim', () => {

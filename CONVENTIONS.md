@@ -288,8 +288,8 @@ Skills write into the PARTNER's repo, never into the plugin:
   gap to SFGE ONLY when a `code-analyzer-*.json` evidence file proves it ran — engine-absent
   → keep the finding `llm-inferred` and mark the class PENDING-OWNER-RUN, never refute by a
   phantom hand-off (the fixrun4 dropped-blocker). **Slice 3 (0.8.30) WIRES both engines into
-  the flow — PHASE 1 COMPLETE:** audit-codebase runs the deterministic pass FIRST (Step 4b,
-  before the LLM fan-out — `metadata-viewall` always + `code-analyzer` when a
+  the flow — PHASE 1 COMPLETE:** audit-codebase runs the deterministic pass FIRST (Step 4,
+  before the ledger digest is compiled and before the LLM fan-out — `metadata-viewall` always + `code-analyzer` when a
   `code-analyzer-*.json` evidence file exists; `sf` absent → PENDING-OWNER-RUN, never LLM-fill,
   never drop) and `reconcile-provenance.mjs` LAST (end of Step 6, after `merge-ledger.mjs`),
   with Step 7 re-rendering the recap off the reconciled band; the journey + run-scans document
@@ -517,7 +517,7 @@ sf-security-review-toolkit/
 │   ├── build-run-args.mjs           # mechanizes the audit-codebase run-args step
 │   ├── fixtures/                    # 0.8.28: REAL captured scanner output as deterministic-ingest test data (committed) — code-analyzer-{solano,sfge-meridian}.json + permissionsets/*.permissionset-meta.xml. 0.8.31: checkov-dockerfile-solano.json (genuine Checkov 3.3.2 dockerfile output, host path genericized — the iac-misconfig adapter anchor). 0.8.32: semgrep-{coldstart-full,helios}.json (genuine Semgrep OSS output, relative-path/leak-clean — the tool→band anchors: 2× WARNING→medium + 1× ERROR→high). 0.8.33: bandit-coldstart-full.json (genuine Bandit Python-SAST output, all-MEDIUM — the B608 SQLi anchor + 2× B310 + B104). 0.8.34: njsscan-solano.json (genuine njsscan 0.4.3 Node-SAST output, leak-clean — the nested-object anchors: node_secret ERROR→high + helmet_feature_disabled WARNING→medium). 0.8.35: gitleaks-coldstart-full.json (genuine gitleaks output, secret-never-leaks — 3× generic-api-key, class-severity high). 0.8.36: detect-secrets-solano.json (genuine detect-secrets 1.5.0, nested-by-file — 24 occ / 6 files / 3 types, hash-never-leaks). 0.8.37: osv-coldstart-full.json (genuine OSV-Scanner SCA, lockfile path genericized — 1 source / 3 PyPI pkgs / 11 vulns, Extension A CVSS→enum: 1 critical·3 high·6 medium·1 low). 0.8.38: npm-audit-solano.json (genuine `npm audit --json` v2, leak-clean — 4 vulnerable pkgs body-parser/express/path-to-regexp/qs, Extension-A reuse label-only band: 2 high·2 medium). 0.8.39: trivy-dockerfile-solano.json (genuine Trivy 0.71.2 filesystem scan, leak-clean — 1 Class:'config' Result / 1 FAIL misconfig DS-0026 "No HEALTHCHECK", Severity LOW, no StartLine — the IaC-misconfig anchor, class-severity high; the same Dockerfile finding Checkov reports as CKV_DOCKER_2)
 │   ├── README.md
-│   └── test-*.mjs                   # 57 dependency-free standing tests (736 checks) guarding the harness/ + hooks/ + CI hygiene
+│   └── test-*.mjs                   # 57 dependency-free standing tests (740 checks) guarding the harness/ + hooks/ + CI hygiene
 │                                    # (incl. ledger-staleness {unit, hermetic -detect, -adversary}; test-reconcile-provenance = 0.8.29 LLM-supersession enforcement; test-deterministic-integration = 0.8.30 Slice-3 journey wiring + real-CLI sequence)
 ├── hooks/                           # plugin-shipped PreToolUse hooks — auto-discovered on enable
 │   ├── hooks.json                   # PreToolUse: Edit|Write → authz-gate-hook; Bash → sf-ops-gate-hook
