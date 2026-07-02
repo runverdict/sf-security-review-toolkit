@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.51**, suite **61 files / 814 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.52**, suite **61 files / 818 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -159,13 +159,25 @@
   llm-never-flipped safety test + the verdict-honesty integration (SCI/headline count drops to the real
   blockers) + provenance-kept + idempotence + protected-states + accepted_risk-justification + the wiring;
   suite 61 files / 814 checks.
+- **0.8.52 B3b — render element-type synonym keying (GAP-Y)** *(shipped + test-backed)*. The scope
+  manifest is LLM-authored, so a real run typed the external backend `external-web-app` (a synonym of the
+  canonical `external-endpoint`); the scan-status render keyed the Applies gate on the canonical type and
+  short-circuited Families 3/4/7/8 to N/A **before checking their evidence** — families that ran with
+  SATISFIED evidence read N/A. A single conservative `canonicalElementType` helper (home:
+  `render-detected-elements.mjs`, exporting `ELEMENT_TYPE_SYNONYMS`) aliases the clear external web-app/API
+  synonyms → `external-endpoint` (exact-string match only — a non-string/array/`toString`-less type is
+  returned unchanged, an unknown type is never coerced, never into `managed-package`/`mcp-server`/
+  `agentforce`), wired into `render-scan-status.mjs`'s `appliesToFamily` (+ the detected-elements sort).
+  Canonical types render byte-identically; suite 61 files / 818 checks. **This is the RENDER half only —
+  the same synonym still under-scopes the go/no-go GATE (`applicable-requirements.mjs`), which is B3b-2
+  below.**
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a DONE; B3b
-GAP-Y is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a + B3b DONE;
+B3b-2 GAP-Y2 is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) → B7
 (gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
 the post-hardening build justifies it.
 
@@ -200,10 +212,23 @@ pending the one clean cold run that cold-validates B1..B2 (that run also gates t
   headline + blocker floor + SCI count the real blockers; a disposition can only ever move a
   `deterministic` finding OUT of the open band (never an llm-inferred one, never into open, never
   `fixed`), provenance kept intact, single-sourced with the FP dossier.
-- **GAP-Y / B3b — render element-type keying** *(THE NEXT ITEM — cosmetic).* The scan-status render
-  mislabels the External-SAST/SCA families as "N/A" when the manifest element is typed `external-web-app`
-  (the render keys those rows on `external-endpoint`) even though they ran and are credited SATISFIED.
-  Fix the render element-type keying so the families that ran read as SATISFIED, not N/A.
+- ~~**GAP-Y / B3b — render element-type keying**~~ **DONE (0.8.52)** — see "Shipped this arc" above.
+  A single `canonicalElementType` helper (home: `render-detected-elements.mjs`) aliases external
+  web-app/API element-type synonyms (`external-web-app` + siblings) → `external-endpoint`, wired into the
+  scan-status **render** so families that ran read DONE not N/A.
+- **GAP-Y2 / B3b-2 — canonicalize element types at the GATE (not just the render)** *(THE NEXT ITEM —
+  correctness, materially more than cosmetic).* The SAME synonym drift under-scopes the go/no-go engine:
+  `applicable-requirements.mjs` maps `(m.elements||[]).map(e => e.type)` RAW (unaliased), so an
+  `external-web-app` manifest computes **86 applicable requirements instead of 113** — dropping 27,
+  including the blocker/major external-endpoint controls (`scan-external-sast`/`-sca`,
+  `scan-iac-misconfig`, `endpoint-ssl-labs-a-grade`, `endpoint-https-only`, the DAST + `endpoint-*` set).
+  That feeds `compute-sci`'s blocker floor + completeness, so a synonym-typed external app can read
+  falsely-ready with its external-endpoint controls never required — the inverse of B3a (B3a stopped
+  over-counting blockers; this stops UNDER-requiring controls). **Fix:** wire the existing
+  `canonicalElementType` into `applicable-requirements.mjs` (both the `--elements` arg + the manifest
+  `.map(e => e.type)` paths) so the applicable set matches `external-endpoint`; fold in the cosmetic
+  `render-scope-summary.mjs` rank (still ranks raw types). One standing test: an `external-web-app`
+  manifest yields the SAME applicable set as `external-endpoint`.
 - **GAP-Z / B3c — extract-drafted-content + write harness** *(separate, minor).* The Workflow runtime
   can't write files, so the driver hand-scripts the artifact-content extraction + write each pass (plus
   recurring inline-`node` shell-escaping slips it recovers from). A deterministic "extract drafted content
