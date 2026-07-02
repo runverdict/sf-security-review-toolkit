@@ -68,7 +68,8 @@
   unchanged (fail-closed without consent, 127.0.0.1-only host publish with `0.0.0.0` as the
   in-container bind only, env NAMES-only in plan + manifest with values via the `0600` `--env-file`).
   **`compose` stays honestly `unsupported`** (multi-container — needs a project-scoped teardown
-  extension) → that is **B2-P3b, the next slice**; `procfile` likewise. Standing tests: U9 (python
+  extension) → that is **B2-P3b** (a remaining B2 slice, deferred behind B2-#11 — see the backlog
+  note); `procfile` likewise. Standing tests: U9 (python
   plan), U10 (dockerfile plan + `assertStackName` acceptance), U11 (python run-command purity),
   U12 (NAMES-only for the new kinds), U13 (kind-agnostic gates), U3 re-scoped (compose/procfile
   boundary lock), T8 (teardown accepts the built image, refuses a foreign one); suite 57 files /
@@ -84,22 +85,12 @@ test-backed. Tag stays HELD until a clean cold run on the post-hardening build j
 
 ### B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI
 Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**node + python + dockerfile
-now; compose next**), org (**not built — still prose**). Remaining slices:
+now; compose next**), org (**not built — still prose**). Remaining slices (in order):
 - ~~**B2-P3a — python + dockerfile `standup-stack` support**~~ **DONE (0.8.46)** — see "Shipped this
   arc" above. Single-container recipes that fit the existing teardown model with zero teardown change.
-- **B2-P3b — `compose` `standup-stack` support** *(the next slice)*. `compose` is the remaining
-  `stack-detect` recipe kind still `unsupported` (multi-container — most real backends are compose, so
-  this is the highest-remaining-value stand-up target). Unlike python/dockerfile it does **not** fit the
-  current single-container teardown model: `teardown-stack.mjs` handles exactly one container + one image
-  + one network guarded by `NAME_OK = /^sf-srt-(stack|net)-.../`. Build the compose stand-up as
-  `docker compose -p sf-srt-stack-<runId> -f <file> up -d` (loopback-publish the web service) + a
-  **project-scoped teardown** (`docker compose -p <project> down -v --remove-orphans`) so the whole
-  project is removed atomically without per-name enumeration — the teardown-model extension is the
-  distinct concern that earned compose its own slice. Compose files that define their own dependency
-  services (db/redis) stand up self-contained; ones referencing external creds remain the `needs-secrets`
-  scaffold-and-guide path. Files: `harness/standup-stack.mjs`, `harness/teardown-stack.mjs` (+ tests).
-- **B2-#11 — OpenAPI spec, Route B (DECIDED, container-isolated).** *(rides on B2-P3a's python support —
-  now unblocked.)* Flip the OpenAPI/endpoint-spec
+- **B2-#11 — OpenAPI spec, Route B (DECIDED, container-isolated).** *(THE NEXT SLICE — rides on
+  B2-P3a's python support, now unblocked; it delivers the marquee "+OpenAPI" artifact and validates the
+  just-shipped python stand-up.)* Flip the OpenAPI/endpoint-spec
   artifact from code-derived/PENDING → real, by capturing `/openapi.json` from the throwaway-DAST
   **container mirror** once it's up (the app runs isolated, with synthetic secrets). **Route A (a
   host-venv `pip install` + `app.openapi()`) was rejected** — it runs partner code on the host, breaking
@@ -110,6 +101,22 @@ now; compose next**), org (**not built — still prose**). Remaining slices:
   the real spec, keeping PENDING only on the prod-equivalence attestation line; feed the spec to the
   Schemathesis/ZAP DAST scope. Files: `harness/standup-stack.mjs`, `harness/run-dast.mjs`,
   `skills/generate-artifacts/SKILL.md`.
+- **B2-P3b — `compose` `standup-stack` support** *(deferred behind #11 — the last unsupported
+  `stack-detect` recipe kind).* `compose` is multi-container ("most real backends are compose", so it
+  is high-value) but it is **design-sensitive**, which is why it lands after #11, not before:
+  - It does **not** fit the single-container teardown model — `teardown-stack.mjs` handles exactly one
+    container + one image + one network, guarded by `NAME_OK = /^sf-srt-(stack|net)-.../`. Needs a
+    **project-scoped teardown** (`docker compose -p sf-srt-stack-<runId> down -v --remove-orphans`) so
+    the whole project (all containers, the default network, volumes) is removed atomically without
+    per-name enumeration — that teardown-model extension is a distinct concern.
+  - **The loopback-only invariant is the open design fork.** The throwaway is 127.0.0.1-only, but a
+    compose file's own `ports:` typically bind `0.0.0.0`, and `stack-detect` emits only `{kind:'compose',
+    file}` + a web-tier port — **not** the web *service name*, and `standup-stack` has no YAML parser to
+    find it. So enforcing loopback needs a decision (a generated compose override that rebinds the web
+    service to `127.0.0.1:<port>` — but the service name must be discovered first, e.g. via
+    `docker compose ... ps`/`config`). Resolve this fork before building. Files: `harness/standup-stack.mjs`,
+    `harness/teardown-stack.mjs` (+ tests). Compose that defines its own db/redis stands up
+    self-contained; compose referencing external creds stays the `needs-secrets` scaffold path.
 - **B2-P2 — org-tier `standup-org`/`teardown-org` engine.** The deployed-org deep audit currently
   improvises scratch-org create/install/teardown via inline `sf` commands. Build
   `standup-org.mjs`/`teardown-org.mjs` mirroring `install-scanners`/`standup-stack`: consented
