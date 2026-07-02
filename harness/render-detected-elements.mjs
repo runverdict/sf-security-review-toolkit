@@ -55,6 +55,37 @@ export const CANONICAL_ELEMENT_ORDER = Object.freeze([
   'mobile',
 ])
 
+// ── Element-type synonyms → the canonical vocabulary ──────────────────────────────
+// The scope manifest is LLM-authored, so a real run can type the external backend with
+// a reasonable synonym ('external-web-app') instead of the canonical 'external-endpoint'
+// — and a consumer that keys on the canonical type would silently misread the element
+// (render-scan-status's Applies gate short-circuited Families 3/4/7/8 to N/A this way,
+// with SATISFIED evidence on disk). This map is the SINGLE home for that resilience.
+// CONSERVATIVE by design: only clear external web-app/API synonyms, mapping ONLY to
+// 'external-endpoint'. It never maps into 'managed-package' / 'mcp-server' /
+// 'agentforce' (distinct surfaces), and an unrecognized type is returned UNCHANGED —
+// an unknown type must stay unknown, never be misclassified as external.
+export const ELEMENT_TYPE_SYNONYMS = Object.freeze({
+  'external-web-app': 'external-endpoint',
+  'external-web': 'external-endpoint',
+  'web-app': 'external-endpoint',
+  'external-api': 'external-endpoint',
+  'web-api': 'external-endpoint',
+})
+
+/**
+ * Pure: a manifest element type → its canonical type (unrecognized → returned as-is).
+ * Only an EXACT string match aliases. Any non-string value (a JSON manifest can carry an
+ * array or an object here) is returned as-is — never String()-coerced, so `['external-web-app']`
+ * cannot alias and a toString-less object cannot throw. Callers keep their own handling of
+ * non-string types exactly as if this helper weren't there.
+ */
+export function canonicalElementType(type) {
+  return typeof type === 'string' && Object.prototype.hasOwnProperty.call(ELEMENT_TYPE_SYNONYMS, type)
+    ? ELEMENT_TYPE_SYNONYMS[type]
+    : type
+}
+
 // Flatten a cell value to a single safe Markdown-table cell: collapse whitespace/newlines
 // to spaces and escape pipes, so a multi-line `evidence` can never break the table or vary
 // the rendering. Empty → an em dash so every cell is always filled.
@@ -83,9 +114,10 @@ export function renderDetectedElements(manifest) {
 
   // Stable canonical sort: known types in CANONICAL_ELEMENT_ORDER, unknown types appended in
   // manifest order. The original index is the final tiebreak, so a manifest that lists the
-  // same type twice keeps a deterministic order.
+  // same type twice keeps a deterministic order. A recognized synonym ranks under its
+  // canonical slot (the type string itself still renders verbatim — honest provenance).
   const rank = (type) => {
-    const i = CANONICAL_ELEMENT_ORDER.indexOf(String(type))
+    const i = CANONICAL_ELEMENT_ORDER.indexOf(String(canonicalElementType(type)))
     return i >= 0 ? i : CANONICAL_ELEMENT_ORDER.length
   }
   const ordered = els

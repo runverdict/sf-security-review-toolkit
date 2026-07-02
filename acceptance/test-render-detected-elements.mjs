@@ -13,6 +13,9 @@
  * DE3  fail-safe — null / non-object / no-elements → an honest "scope not detected yet" line,
  *      never a crash and never a fabricated element table.
  * DE4  wiring — scope-submission Step 2 grants + references the harness + states verbatim.
+ * DE5  element-type synonyms — canonicalElementType maps the clear external web-app/API
+ *      synonyms (and ONLY those) to `external-endpoint`; canonical and unknown types come
+ *      back unchanged; a synonym element sorts under its canonical slot, type verbatim.
  *
  * Dependency-free: `node acceptance/test-render-detected-elements.mjs`.
  */
@@ -22,7 +25,12 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { renderDetectedElements, CANONICAL_ELEMENT_ORDER } from '../harness/render-detected-elements.mjs'
+import {
+  renderDetectedElements,
+  CANONICAL_ELEMENT_ORDER,
+  ELEMENT_TYPE_SYNONYMS,
+  canonicalElementType,
+} from '../harness/render-detected-elements.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'render-detected-elements.mjs')
@@ -95,6 +103,50 @@ check('DE3b listingType not recorded → honest "(not recorded)", elements still
   const block = renderDetectedElements({ elements: [{ type: 'managed-package', evidence: 'pkg' }] })
   assert.match(block, /\*\*Listing type:\*\* \(not recorded\)/)
   assert.match(block, /\| managed-package \| pkg \|/)
+})
+
+check('DE5 canonicalElementType: external synonyms → external-endpoint; everything else unchanged', () => {
+  // the clear external web-app/API synonyms map to the canonical type
+  for (const syn of ['external-web-app', 'external-web', 'web-app', 'external-api', 'web-api']) {
+    assert.equal(canonicalElementType(syn), 'external-endpoint', `${syn} → external-endpoint`)
+  }
+  // every canonical type is returned unchanged — never re-aliased
+  for (const t of CANONICAL_ELEMENT_ORDER) assert.equal(canonicalElementType(t), t)
+  // a truly unknown type is returned AS-IS — never coerced to external-endpoint
+  assert.equal(canonicalElementType('blockchain-widget'), 'blockchain-widget')
+  assert.equal(canonicalElementType(''), '')
+  // the alias set is EXACTLY these five keys — an undocumented sixth synonym fails here
+  assert.deepEqual(
+    Object.keys(ELEMENT_TYPE_SYNONYMS).sort(),
+    ['external-api', 'external-web', 'external-web-app', 'web-api', 'web-app'],
+    'the synonym map holds exactly the five documented keys'
+  )
+  // the map only ever targets external-endpoint — never managed-package/mcp-server/agentforce
+  for (const [k, v] of Object.entries(ELEMENT_TYPE_SYNONYMS)) {
+    assert.equal(v, 'external-endpoint', `${k} aliases only to external-endpoint`)
+  }
+  // a NON-STRING value is returned as-is (identity) — never String()-coerced: an
+  // array-wrapped synonym must not alias, and a toString-less object must not throw
+  const wrapped = ['external-web-app']
+  assert.equal(canonicalElementType(wrapped), wrapped, 'array-wrapped synonym is not coerced')
+  const hostile = JSON.parse('{"toString":null}')
+  assert.equal(canonicalElementType(hostile), hostile, 'un-stringifiable object returned as-is, no throw')
+})
+
+check('DE5b a synonym element sorts under its canonical slot, its type rendered verbatim', () => {
+  const block = renderDetectedElements({
+    elements: [
+      { type: 'mobile', evidence: 'store listing' },
+      { type: 'external-web-app', evidence: 'live probe of the backend' },
+    ],
+  })
+  const ext = block.indexOf('| external-web-app |')
+  const mob = block.indexOf('| mobile |')
+  // the manifest's own type string renders verbatim (honest provenance — never rewritten)
+  assert.ok(ext > 0, 'the synonym type renders verbatim')
+  assert.ok(!/\| external-endpoint \|/.test(block), 'the row is not rewritten to the canonical type')
+  // …but it sorts in the external-endpoint slot (before mobile), not appended-last as unknown
+  assert.ok(ext < mob, 'sorts under the external-endpoint slot, not after the canonical types')
 })
 
 check('DE4 wiring: scope-submission Step 2 grants + references the harness + verbatim', () => {

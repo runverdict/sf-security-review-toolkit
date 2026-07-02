@@ -41,6 +41,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { canonicalElementType } from './render-detected-elements.mjs'
 
 // ── THE FROZEN CANONICAL 8-FAMILY CATALOG (run-scans "The eight families" table) ──
 // n/name/applies = the family; applies_elements = which manifest element types make it
@@ -89,12 +90,19 @@ function matchesFamily(entry, fam) {
   return fam.gate_ids.includes(ref) || fam.evidence_re.test(loc) || src.includes(`family-${fam.n}`)
 }
 
-/** Pure: applicability of a family from the manifest. true / false / null (unknown). */
+/**
+ * Pure: applicability of a family from the manifest. true / false / null (unknown).
+ * Element types are canonicalized first (render-detected-elements' canonicalElementType),
+ * so an LLM-authored synonym in the manifest (e.g. `external-web-app` for the canonical
+ * `external-endpoint`) still gates its families applicable — without this, familyStatus
+ * short-circuits to N/A and a family that RAN with satisfied evidence on disk reads N/A.
+ * An unrecognized type stays unchanged, so an unknown element never turns a family on.
+ */
 function appliesToFamily(fam, manifest) {
   if (fam.applies_elements === 'always') return true
   const els = manifest && Array.isArray(manifest.elements) ? manifest.elements : null
   if (!els) return null // no manifest → unknown for an element-gated family
-  return els.some((e) => e && fam.applies_elements.includes(e.type))
+  return els.some((e) => e && fam.applies_elements.includes(canonicalElementType(e.type)))
 }
 
 /** Pure: per-family { status, evidence } from the matched index entries + applicability. */

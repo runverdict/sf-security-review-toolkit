@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.52] — 2026-07-02
+
+**The scan-status render now recognizes external-source element-type synonyms — a family that
+RAN reads DONE, not N/A.** The scope manifest is LLM-authored, so a real run can type the
+external backend element with a reasonable synonym (`external-web-app`) instead of the
+canonical `external-endpoint`. `render-scan-status.mjs` gated each family's applicability on
+the raw manifest type, and `familyStatus` short-circuits an inapplicable family to N/A before
+looking at the evidence — so Families 3 (DAST), 4 (TLS), 7 (External SAST), and 8 (External
+SCA + IaC) read **N/A** even with SATISFIED, reviewer-reproducible reports on disk.
+
+`render-detected-elements.mjs` (the owner of the canonical element vocabulary) now exports a
+conservative `canonicalElementType` helper over a frozen `ELEMENT_TYPE_SYNONYMS` map — the
+SINGLE home for the aliasing: `external-web-app` / `external-web` / `web-app` / `external-api`
+/ `web-api` → `external-endpoint`, and nothing else. It never maps into `managed-package` /
+`mcp-server` / `agentforce` (distinct surfaces), and only an exact string match aliases: an
+unrecognized type — or any non-string value a JSON manifest can carry — is returned unchanged,
+so an unknown type stays unknown, never misclassified as external, and a malformed element
+type can never crash the render. The scan-status
+`Applies` gate normalizes each element type through it, so a synonym-typed manifest renders
+byte-identically to the canonical one; a manifest already using the canonical vocabulary
+renders byte-identically to before. The detected-elements table additionally sorts a synonym
+element under its canonical slot (the manifest's own type string still renders verbatim —
+honest provenance). Applicability gating only: evidence matching, dispositions, and every
+other status path are untouched.
+
+Suite **61 files / 818 checks** (was 814), all green. The 4 new checks are mutation-proven
+(alias removed → the synonym manifest reads N/A → RED; an unknown type force-aliased → the
+no-false-alias guard → RED), headed by the equivalence pair: an `external-web-app` manifest
+with satisfied external-family evidence renders Families 3/4/7/8 DONE and byte-identical to
+the `external-endpoint` render, while a `blockchain-widget` manifest never turns them on.
+
 ## [0.8.51] — 2026-07-02
 
 **Deterministic-band dispositions now flip the ledger, so the verdict counts the real

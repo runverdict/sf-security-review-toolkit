@@ -11,6 +11,10 @@
  *      a structural-N/A entry → N/A).
  * SC3  applicability — the manifest drives Applies (managed-package → families 1,2;
  *      an absent element → N/A; the "always" families 5,6 are always ✓); no manifest → "?".
+ * SC3b element-type synonyms — an LLM-authored `external-web-app` element gates the
+ *      external families (3/4/7/8) exactly like the canonical `external-endpoint`
+ *      (satisfied evidence → DONE, never N/A; byte-identical to the canonical render);
+ *      a truly unknown type is never coerced to external (families stay N/A).
  * SC4  fail-safe — no index → applicable families PENDING (with manifest), never a crash
  *      and never a fabricated DONE.
  * SC5  wiring — run-scans Step 11 references the harness + states verbatim.
@@ -90,6 +94,50 @@ check('SC3 applicability: manifest drives Applies; no manifest → "?" for eleme
   const noManifest = renderScanStatus({ index: { generated: '2026-06-26', entries: [] } })
   assert.match(noManifest, /\| 1\. Code Analyzer \| \? \|/)
   assert.match(noManifest, /\| 5\. Dependency audit \| ✓ \|/, 'always-on stays ✓ even without a manifest')
+})
+
+check('SC3b synonym element type: external-web-app gates families 3/4/7/8 — DONE, not N/A', () => {
+  // satisfied, reviewer-reproducible evidence for all four external-source families
+  const extIndex = {
+    generated: '2026-06-26',
+    entries: [
+      { ref_type: 'requirement', ref_id: 'dast-self-run-required', reviewer_reproducible: true, location: '.security-review/evidence/dast/zap-report.json', disposition: 'satisfied' },
+      { ref_type: 'requirement', ref_id: 'endpoint-ssl-labs-a-grade', reviewer_reproducible: true, location: '.security-review/evidence/ssllabs-2026-06-26.json', disposition: 'satisfied' },
+      { ref_type: 'requirement', ref_id: 'scan-external-sast', reviewer_reproducible: true, location: '.security-review/evidence/semgrep-2026-06-26.json', disposition: 'satisfied' },
+      { ref_type: 'requirement', ref_id: 'scan-external-sca', reviewer_reproducible: true, location: '.security-review/evidence/osv-2026-06-26.json', disposition: 'satisfied' },
+    ],
+  }
+  const synonym = renderScanStatus({ index: extIndex, manifest: { elements: [{ type: 'external-web-app' }] } })
+  // the families RAN with reviewer-reproducible reports on disk → DONE, never N/A
+  assert.match(synonym, /\| 3\. Authenticated DAST \| ✓ \|[^|]*\| DONE \|/)
+  assert.match(synonym, /\| 4\. TLS grade \| ✓ \|[^|]*\| DONE \|/)
+  assert.match(synonym, /\| 7\. External SAST \| ✓ \|[^|]*\| DONE \|/)
+  assert.match(synonym, /\| 8\. External SCA \+ IaC \| ✓ \|[^|]*\| DONE \|/)
+  // and the synonym manifest renders BYTE-IDENTICALLY to the canonical one — the alias
+  // changes applicability gating only, nothing else in the block
+  const canonical = renderScanStatus({ index: extIndex, manifest: { elements: [{ type: 'external-endpoint' }] } })
+  assert.equal(synonym, canonical, 'external-web-app gates exactly like external-endpoint')
+})
+
+check('SC3b no false-alias: an unknown element type is never coerced to external', () => {
+  const emptyIndex = { generated: '2026-06-26', entries: [] }
+  const block = renderScanStatus({ index: emptyIndex, manifest: { elements: [{ type: 'blockchain-widget' }] } })
+  // the unknown type does NOT make the element-gated families applicable
+  assert.match(block, /\| 1\. Code Analyzer \| — \(N\/A\) \|/)
+  assert.match(block, /\| 3\. Authenticated DAST \| — \(N\/A\) \|/)
+  assert.match(block, /\| 7\. External SAST \| — \(N\/A\) \|/)
+  assert.match(block, /\| 8\. External SCA \+ IaC \| — \(N\/A\) \|/)
+  // always-on families are unaffected
+  assert.match(block, /\| 5\. Dependency audit \| ✓ \|/)
+  assert.match(block, /\| 6\. Secret scan[^|]*\| ✓ \|/)
+  // a JSON-authorable NON-STRING type must neither alias nor crash the render: an
+  // array-wrapped synonym stays non-applicable, a toString-less object still renders
+  const weird = renderScanStatus({
+    index: emptyIndex,
+    manifest: { elements: [{ type: ['external-web-app'] }, { type: JSON.parse('{"toString":null}') }] },
+  })
+  assert.match(weird, /\| 3\. Authenticated DAST \| — \(N\/A\) \|/)
+  assert.match(weird, /\| 7\. External SAST \| — \(N\/A\) \|/)
 })
 
 check('SC4 fail-safe: no index → applicable families PENDING, never DONE, never a crash', () => {
