@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.45**, suite **57 files / 740 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.46**, suite **57 files / 746 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -53,6 +53,26 @@
   pass), W14 (partition/entry modes), RR6 (resume-ladder rung); suite 57 files / 740 checks.
   Complements the deterministic-findings arc: B1 makes the LLM *defer* on the first pass; B5 makes
   the scanners *find more*.
+- **0.8.46 B2-P3a — `python` + `dockerfile` throwaway stand-up recipes** *(shipped + test-backed;
+  NOT yet cold-validated — the live docker execution for the new kinds is operator-cold-validated,
+  as the node path was; the standing tests pin the pure plans + the teardown name boundary)*.
+  `standup-stack.mjs` covered only a plain `node` backend; it now plans + executes **`python`**
+  (copy-in on a pinned `python:3.12-slim` base, deterministic install-then-run command that is a
+  pure function of the recipe — the FastAPI/Flask/Django shape + the OpenAPI critical path for
+  B2-#11) and **`dockerfile`** (build-then-run the partner's own Dockerfile into the toolkit-named
+  `sf-srt-stack-<runId>:throwaway` image, which the existing name-scoped teardown removes with
+  **zero teardown-logic change** — recorded from the pre-create name-stub so a crashed build stays
+  teardown-able). The `node` plan + executor logic is byte-identical (verified: functional
+  byte-identity of the node plan across the change + a whitespace-diff showing the copy-in executor
+  block is a pure re-indent into the new `else`). Every safety property is kind-agnostic and
+  unchanged (fail-closed without consent, 127.0.0.1-only host publish with `0.0.0.0` as the
+  in-container bind only, env NAMES-only in plan + manifest with values via the `0600` `--env-file`).
+  **`compose` stays honestly `unsupported`** (multi-container — needs a project-scoped teardown
+  extension) → that is **B2-P3b, the next slice**; `procfile` likewise. Standing tests: U9 (python
+  plan), U10 (dockerfile plan + `assertStackName` acceptance), U11 (python run-command purity),
+  U12 (NAMES-only for the new kinds), U13 (kind-agnostic gates), U3 re-scoped (compose/procfile
+  boundary lock), T8 (teardown accepts the built image, refuses a foreign one); suite 57 files /
+  746 checks.
 
 ---
 
@@ -63,17 +83,28 @@ labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)
 test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
 
 ### B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI
-Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (PARTIAL — **node-only**), org
-(**not built — still prose**). Two slices:
-- **B2-P3 — compose/dockerfile/python `standup-stack` support.** Today `standup-stack.mjs` supports only
-  the `node` recipe (`compose`/`dockerfile` return `unsupported` — its own "later slice" TODO). Most real
-  backends are compose, so their throwaway-DAST can't stand up. Extend it → unblocks the corroborating
-  throwaway-DAST AND the OpenAPI capture below.
-- **B2-#11 — OpenAPI spec, Route B (DECIDED, container-isolated).** Flip the OpenAPI/endpoint-spec
+Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (**node + python + dockerfile
+now; compose next**), org (**not built — still prose**). Remaining slices:
+- ~~**B2-P3a — python + dockerfile `standup-stack` support**~~ **DONE (0.8.46)** — see "Shipped this
+  arc" above. Single-container recipes that fit the existing teardown model with zero teardown change.
+- **B2-P3b — `compose` `standup-stack` support** *(the next slice)*. `compose` is the remaining
+  `stack-detect` recipe kind still `unsupported` (multi-container — most real backends are compose, so
+  this is the highest-remaining-value stand-up target). Unlike python/dockerfile it does **not** fit the
+  current single-container teardown model: `teardown-stack.mjs` handles exactly one container + one image
+  + one network guarded by `NAME_OK = /^sf-srt-(stack|net)-.../`. Build the compose stand-up as
+  `docker compose -p sf-srt-stack-<runId> -f <file> up -d` (loopback-publish the web service) + a
+  **project-scoped teardown** (`docker compose -p <project> down -v --remove-orphans`) so the whole
+  project is removed atomically without per-name enumeration — the teardown-model extension is the
+  distinct concern that earned compose its own slice. Compose files that define their own dependency
+  services (db/redis) stand up self-contained; ones referencing external creds remain the `needs-secrets`
+  scaffold-and-guide path. Files: `harness/standup-stack.mjs`, `harness/teardown-stack.mjs` (+ tests).
+- **B2-#11 — OpenAPI spec, Route B (DECIDED, container-isolated).** *(rides on B2-P3a's python support —
+  now unblocked.)* Flip the OpenAPI/endpoint-spec
   artifact from code-derived/PENDING → real, by capturing `/openapi.json` from the throwaway-DAST
   **container mirror** once it's up (the app runs isolated, with synthetic secrets). **Route A (a
   host-venv `pip install` + `app.openapi()`) was rejected** — it runs partner code on the host, breaking
-  the toolkit's static + container-isolation principle. So OpenAPI **rides on B2-P3**. Optional zero-cost
+  the toolkit's static + container-isolation principle. So OpenAPI **rides on B2-P3a** (python support,
+  now shipped). Optional zero-cost
   pre-step: a benign read-only GET of the prod `/openapi.json` (often disabled in prod). Wire-in: after
   the mirror is up → GET `/openapi.json` (+ live `tools/list`) → evidence → `generate-artifacts` consumes
   the real spec, keeping PENDING only on the prod-equivalence attestation line; feed the spec to the
