@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/capture-openapi.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -359,11 +359,16 @@ families PENDING until a re-audit.
    executes the scan against production — OR the toolkit runs it against a
    throwaway.** *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
    was given, the toolkit stands the backend up as a disposable mirror and runs a
-   digest-pinned ZAP against THAT (`harness/{standup-stack,run-dast,teardown-stack}.mjs`),
+   digest-pinned ZAP against THAT
+   (`harness/{standup-stack,capture-openapi,run-dast,teardown-stack}.mjs`),
    landing real evidence in `evidence/dast/zap-baseline-*.json` — **labelled
    local-throwaway**: it's corroborating DAST + a de-risking dry run, NOT the
    production-equivalent submission scan (the active scan only ever hits a mirror the
-   toolkit built, never live prod / Salesforce infra / a third party). *Requires (the
+   toolkit built, never live prod / Salesforce infra / a third party). While the mirror
+   is up, `capture-openapi.mjs` also GETs the framework's own spec (read-only,
+   loopback-only, riding the same recorded consent) into `evidence/openapi-<date>.json` —
+   that is what upgrades the api-endpoints artifact `generate-artifacts` emits from
+   code-derived to mirror-captured, with prod-equivalence PENDING owner attestation. *Requires (the
    submission scan):* partner-run DAST of every external
    endpoint with an industry tool — there is no hosted alternative (baseline:
    `dast-self-run-required`); the scan must be **authenticated** (baseline:

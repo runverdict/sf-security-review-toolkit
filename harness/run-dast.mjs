@@ -41,10 +41,12 @@ const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // http(s):// + a non-empty authority/path with NO whitespace, control chars, or
 // encoding-trick chars (`<>"'\`). The real boundary is the new URL() + LOOPBACK
 // host-check below; this is a belt-and-suspenders pre-filter (WI-F.2).
-const URL_OK = /^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i
+// Exported: capture-openapi.mjs shares this exact pre-filter + LOOPBACK set so the
+// throwaway tier has ONE definition of the loopback-only invariant, not two drifting copies.
+export const URL_OK = /^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i
 
 /** Loopback-only hosts — an active DAST may ONLY ever hit a local throwaway. */
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
+export const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
 
 /** PURE. Compute the ZAP scan plan. Deterministic given (baseUrl, target, runId, tmpRoot). */
 export function planDast(baseUrl, { target, runId, tmpRoot } = {}) {

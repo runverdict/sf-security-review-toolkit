@@ -272,8 +272,10 @@ missing or a key piece of the architecture was misread.
      production-equivalent scan the submission ultimately needs." If `docker-check` is
      `absent`/`daemon-down`, do NOT offer this — surface the honest hint (install Docker
      once, or DAST stays owner-run). On yes, the run invokes the engine chain
-     `standup-stack.mjs --consent` → `run-dast.mjs --consent` → `teardown-stack.mjs`
-     (the evidence lands in `evidence/dast/`). If `stack-detect` = `needs-secrets`,
+     `standup-stack.mjs --consent` → `capture-openapi.mjs --consent` (the read-only
+     framework-spec capture from the mirror — the same yes covers it, no separate gate) →
+     `run-dast.mjs --consent` → `teardown-stack.mjs`
+     (the evidence lands in `evidence/dast/` + `evidence/openapi-<date>.json`). If `stack-detect` = `needs-secrets`,
      offer the scaffold-and-guide path (the toolkit writes an env stub, names the keys,
      you fill + confirm, it resumes); `needs-recipe`/`n/a` → DAST stays owner-run with
      the generated ZAP plan. On no / silence, stand up nothing.
@@ -356,7 +358,8 @@ missing or a key piece of the architecture was misread.
      On the operator's SELECTION of the stand-up option (the selection IS the consent — do NOT
      rely on the label containing "yes"; use `--decision deny` if they declined), record then run:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --decision affirm --question "<the throwaway-DAST question>" --answer "<the option they picked>" --target <target>`
-     → `standup-stack.mjs --consent` → `run-dast.mjs --consent` (both verify the token).
+     → `standup-stack.mjs --consent` → `capture-openapi.mjs --consent` →
+     `run-dast.mjs --consent` (all three verify the token).
 
    **`silence-is-yes` IS HARD-BOUND — read this exactly.** It authorizes ONLY the
    DETECTED-ARCHITECTURE inputs the preflight already sensed — the elements, endpoints,
@@ -527,6 +530,15 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    falls back to owner-run.)
    `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-stack.mjs --consent --target <target> --json`
    (isolated container, synthetic secrets, manifest of created resources) →
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/capture-openapi.mjs --consent --base-url <baseUrl
+   from standup> --target <target>` (while the mirror is up: a read-only GET of the
+   framework's own spec — `/openapi.json` first — lands the REAL api-endpoints spec in
+   `evidence/openapi-<date>.json` with a container-isolated-mirror provenance sidecar;
+   prod-equivalence stays PENDING owner attestation. **NO new consent** — it rides on the
+   recorded `throwaway-dast` token that stood the mirror up and verifies that token exactly
+   as `run-dast` does; the capture refuses any non-loopback URL. On `not-exposed` /
+   declined consent, nothing is captured and the api-endpoints artifact stays code-derived —
+   unchanged behavior) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --base-url <baseUrl from
    standup> --target <target>` (digest-pinned ZAP → real evidence under `evidence/dast/`) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-stack.mjs --target <target>` (destroy the

@@ -128,7 +128,19 @@ marked owner-input.
    - **The API spec from framework introspection, never hand-written.** A
      hand-authored OpenAPI drifts from the routes the moment someone edits a
      handler, and the reviewer imports the spec and diffs it against live
-     behavior. Generate from the framework's own model: FastAPI's
+     behavior. **Best source — the container-isolated mirror capture.** When
+     the throwaway-DAST chain ran, `harness/capture-openapi.mjs` captured the
+     framework's own spec from the stood-up mirror into
+     `evidence/openapi-<date>.json` with its provenance sidecar
+     (`openapi-<date>.provenance.json`, source:
+     `container-isolated-throwaway-mirror`). When that pair exists, emit THAT
+     capture as `artifact-api-endpoints-spec` — it IS the framework-generated
+     spec (real paths, schemas, identity endpoints), captured without touching
+     prod on synthetic secrets; the ONLY line that stays `PENDING` is the
+     **prod-equivalence attestation** (the spec came from the isolated mirror;
+     only the owner attests production matches it) — never mark the whole
+     artifact PENDING, and never present the capture as the production spec.
+     No mirror capture? Generate from the framework's own model: FastAPI's
      `/openapi.json` (or `app.openapi()` offline), Express via its swagger
      integration, Rails via rswag, Spring via springdoc — whatever the stack
      exposes. Include the identity surface (OAuth/token/discovery paths) and

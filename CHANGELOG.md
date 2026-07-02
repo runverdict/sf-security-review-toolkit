@@ -51,6 +51,56 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.47] — 2026-07-02
+
+**The api-endpoints spec artifact is now REAL when the throwaway mirror runs — captured from
+the framework itself, container-isolated, never from prod.** The reviewer requires an
+OpenAPI/endpoint spec generated from the framework, never hand-authored; until now, when the
+live server wasn't reachable, `generate-artifacts` fell back to a code-derived spec marked
+`PENDING live capture`. But the throwaway-DAST chain already stands the partner's backend up
+as an isolated mirror on `127.0.0.1` (synthetic secrets, loopback-only publish) — a reachable
+server the toolkit itself controls. The new `harness/capture-openapi.mjs` reads the spec from
+THAT, so the real framework spec (paths, schemas, identity endpoints) becomes evidence without
+running partner code on the host and without ever touching prod:
+
+- **Read-only, loopback-only, no new consent.** A benign GET of the framework's default spec
+  locations (`/openapi.json` first; a fixed, documented, JSON-only candidate order) while the
+  mirror is up. The planner shares run-dast's exact URL pre-filter + LOOPBACK host set — ONE
+  definition of the loopback-only invariant — and REFUSES any non-loopback base url; the
+  executor re-asserts the same check on the plan it actually runs, and candidate paths must be
+  bare rooted paths (never a full URL that could re-aim the GET). The capture rides on the SAME
+  recorded `throwaway-dast` consent that stood the mirror up (verified exactly the way run-dast
+  verifies it) and fails closed without it.
+- **A validated spec or nothing.** `validateSpec` accepts only a JSON body carrying a
+  top-level `openapi` 3.x / `swagger` 2.0 version key AND a `paths` object — an HTML error
+  page, a 404 body, or `{}` (a hardened always-200 endpoint) is never mistaken for a spec. On
+  the first valid candidate the spec lands in `evidence/openapi-<date>.json` (re-serialized
+  from its own parse — raw response bytes/headers are never persisted) with a provenance
+  sidecar naming the source (`container-isolated-throwaway-mirror`), the mirror url, the
+  synthetic-secrets note, and prod-equivalence as **PENDING owner attestation** — never
+  asserted. No valid candidate → `not-exposed`, nothing written, the code-derived artifact
+  stands.
+- **Wiring.** The journey's throwaway-DAST chain invokes the capture after `standup-stack`
+  reports the mirror up and before `teardown-stack`; `generate-artifacts` Step 3 emits a
+  mirror-captured spec as the real `artifact-api-endpoints-spec` with `PENDING` scoped to the
+  prod-equivalence attestation line ONLY (never the whole artifact, and never presented as the
+  production spec) — the code-derived + `PENDING live capture` fallback is byte-for-byte the
+  honest behavior it was for runs with no capture; run-scans' DAST scope (Schemathesis + the
+  ZAP OpenAPI import) consumes the emitted artifact exactly as before, now fed by a real spec.
+
+The live capture GET is operator-cold-validated (it needs a running mirror), like run-dast's
+ZAP run — the standing tests pin the pure planner/validator/provenance envelope and the skill
+wiring, which are what regress silently.
+
+Suite **58 files / 760 checks** (was 57 / 746), all green; each new check mutation-proven
+(the loopback guard dropped → the refusal checks go red, planner and executor both; a
+validateSpec that accepts any parseable JSON → the hardened-always-200 check goes red; the
+PENDING-prod-equivalence line dropped or the source flipped to `production` → the provenance
+check goes red; the consent throw removed → the fail-closed check goes red; the capture
+invocation moved after teardown or removed → the journey order check goes red; the run-scans
+grant removed → the grant check goes red; the generate-artifacts consumption or the preserved
+fallback text removed → the artifact-wiring check goes red).
+
 ## [0.8.46] — 2026-07-02
 
 **The throwaway stand-up now covers `python` and `dockerfile` recipes.** The throwaway-DAST
