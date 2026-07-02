@@ -450,7 +450,12 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    landed under `.security-review/evidence/` — Code Analyzer CRUD/FLS + sharing,
    the OSS SAST / SCA / IaC / secret families), then after the merge
    `harness/reconcile-provenance.mjs` supersedes any co-located `llm-inferred`
-   finding the engine now owns. Because the static substrate ran FIRST, the `--all`
+   finding the engine now owns, and `harness/apply-dispositions.mjs` applies any
+   structured deterministic-class adjudications the audit recorded in
+   `.security-review/deterministic-dispositions.json` (a scanner class the audit
+   adjudicated false-positive flips `confirmed → refuted` in the ledger — the same
+   reason the FP dossier carries; an `llm-inferred` finding is NEVER flipped, so a
+   disposition can never hide an LLM-confirmed blocker). Because the static substrate ran FIRST, the `--all`
    ingest seeds the deterministic band on the FIRST audit pass: the finders defer
    to it immediately (audit-codebase compiles the ledger digest AFTER its
    deterministic pass, so the band is in the digest the fan-out reads), the SCI
@@ -480,7 +485,13 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    "N findings across D dimensions" is never presented as N distinct
    problems — the audit fans out per dimension and re-finds one root cause under
    several lenses (e.g. a `without sharing` class flagged by apex-exposed-surface
-   AND web-client AND package-metadata is one issue, not three).
+   AND web-client AND package-metadata is one issue, not three). The headline reads
+   the DISPOSITIONED band: audit Step 6's `apply-dispositions.mjs` already flipped
+   any deterministic scanner class the audit adjudicated false-positive out of the
+   open band (structured entries in `.security-review/deterministic-dispositions.json`),
+   so the count reflects the real blockers — with the dispositioned count surfaced
+   in the audit recap's deterministic-band line, never a silent shrink. No new
+   consent, no gate change.
 
    The one honesty line the gate enforces: **if an open critical/high finding is
    in the AuthN/AuthZ category, the AuthN/AuthZ artifact is WITHHELD** in the next

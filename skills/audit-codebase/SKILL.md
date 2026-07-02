@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -342,17 +342,59 @@ regardless of anything this engine produces.
    `merge-ledger.mjs` already printed its operator recap BEFORE this supersession,
    Step 7 RE-RENDERS the recap so the headline + band reflect the reconciled state.
 
+   **Then apply deterministic-band dispositions — the NEXT deterministic ledger
+   step.** When this pass's verification ADJUDICATES a whole deterministic scanner
+   class as a false positive (or an accepted risk) — the same reasoning it writes
+   into the FP dossier — record that adjudication as STRUCTURED data in
+   `<target>/.security-review/deterministic-dispositions.json`:
+
+   ```json
+   { "dispositions": [
+     { "engine": "semgrep", "ruleId": "<the exact rule that fired>",
+       "disposition": "refuted",
+       "reason": "<the same one-line justification the FP dossier row carries>",
+       "accepted_risk_justification": "<REQUIRED iff disposition is accepted_risk>",
+       "scope": { "files": ["<optional — omit to disposition the whole engine+ruleId class>"] } }
+   ] }
+   ```
+
+   Then run `node ${CLAUDE_PLUGIN_ROOT}/harness/apply-dispositions.mjs --target
+   <target>`. It flips the matching `provenance:'deterministic'` findings
+   `confirmed → refuted` (or `accepted_risk`, carrying the required justification)
+   with an auditable `disposition_reason`, KEEPING provenance/engine/ruleId/class/
+   severity intact — the flip is a lifecycle layer on top, never a rewrite, so the
+   finding stays reviewer-reproducible. Safety properties (all engine-enforced):
+   it NEVER flips an `llm-inferred` finding (a disposition cannot hide an
+   LLM-confirmed blocker — the LLM's own confirmed findings are untouchable here);
+   the match is EXACT engine+ruleId (never fuzzy); it never moves anything INTO
+   the open band and never sets `fixed`; protected states (`fixed` /
+   `accepted_risk` / `superseded`) are never overwritten; it is pure + idempotent;
+   an absent dispositions file is a clean no-op. Because the SAME `reason` feeds
+   both the dossier prose and the ledger flip, the dossier FP row and the ledger
+   refutation share one source and can never diverge. Run it AFTER
+   `reconcile-provenance.mjs` and BEFORE Step 7 re-renders the recap, so the recap
+   and the blocker gate read the dispositioned band — the headline counts the REAL
+   blockers, and the recap's deterministic-band line surfaces how many findings
+   the adjudication dispositioned (the drop is visible, never a silent shrink).
+   Do NOT auto-refute a class without a real adjudication: a rule that is usually
+   noise can be a real bug in some code — the adjudication is the LLM/human call,
+   the application is deterministic.
+
 7. **Print the recap, then gate and route.** `merge-ledger.mjs` (Step 6) emits a
    FIXED operator recap block to stdout via `harness/render-recap.mjs` — LED BY the
    same finding-cluster headline as the exec summary, then dimensions-ran ·
    candidate/confirmed/refuted/unverified counts · the PROCEED/HALT verdict · the
-   not-covered caveat lines. **Because Step 6's `reconcile-provenance.mjs` ran AFTER
-   `merge-ledger.mjs` printed its recap, RE-RENDER the recap so it reflects the
-   reconciled band** — `node ${CLAUDE_PLUGIN_ROOT}/harness/render-recap.mjs --target
+   not-covered caveat lines. **Because Step 6's `reconcile-provenance.mjs` and
+   `apply-dispositions.mjs` ran AFTER `merge-ledger.mjs` printed its recap, RE-RENDER
+   the recap so it reflects the reconciled + dispositioned band** —
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/render-recap.mjs --target
    <target>` — and print THAT stdout block VERBATIM; never paraphrase, reorder, or
-   hand-rebuild it. (A superseded finding carries `status:'superseded'`, so it drops
-   out of the open band the headline and PROCEED/HALT verdict read — the re-render is
-   what propagates the supersession to the operator-facing recap.) Then gate: open
+   hand-rebuild it. (A superseded finding carries `status:'superseded'` and a
+   dispositioned deterministic finding carries `refuted`/`accepted_risk` + a
+   `disposition_reason`, so both drop out of the open band the headline and
+   PROCEED/HALT verdict read — the re-render is what propagates the supersession and
+   the dispositions to the operator-facing recap, whose deterministic-band line
+   surfaces the dispositioned count.) Then gate: open
    `critical`/`high` findings
    halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the

@@ -116,6 +116,10 @@
           "description": "Set on a finding with status `superseded`: a one-line human note recording which deterministic engine/rule/locus superseded it. Provenance for the audit trail — the LLM finding is not deleted, it is dispositioned.",
           "type": "string"
         },
+        "disposition_reason": {
+          "description": "Set on a `deterministic` finding whose lifecycle status was flipped by a structured class adjudication in .security-review/deterministic-dispositions.json (harness/apply-dispositions.mjs): a one-line auditable note recording the engine/ruleId dispositioned and the adjudication reason — the SAME reason the false-positive dossier row carries (single source, so the dossier and the ledger can never diverge). The finding's provenance/engine/ruleId/class/severity stay intact; only the lifecycle status moved (to `refuted` or `accepted_risk`, never into the open band, never `fixed`). Engine-maintained; do not hand-edit.",
+          "type": "string"
+        },
         "first_seen": {
           "$ref": "#/$defs/pass_id",
           "description": "Pass id in which this finding first entered the ledger."

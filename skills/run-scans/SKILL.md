@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/capture-openapi.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -601,6 +601,7 @@ families PENDING until a re-audit.
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --all --target <target>
    node ${CLAUDE_PLUGIN_ROOT}/harness/reconcile-provenance.mjs --target <target>
+   node ${CLAUDE_PLUGIN_ROOT}/harness/apply-dispositions.mjs --target <target>
    ```
 
    `--all` ALWAYS runs the metadata source scan and recognizes every other scanner output
@@ -627,6 +628,16 @@ families PENDING until a re-audit.
    `--all` + reconcile at the substrate tail, again at the live tail, and again at
    audit Step 4 / Step 6 is safe — the band is byte-stable run-to-run.
 
+   `apply-dispositions.mjs` then RE-APPLIES any structured deterministic-class
+   adjudications already recorded in
+   `<target>/.security-review/deterministic-dispositions.json` (written by the audit
+   when it adjudicates a scanner class false-positive/accepted-risk — see
+   audit-codebase Step 6), so a standalone scan pass's band is honest too: a
+   re-ingested finding of an adjudicated class lands `confirmed` and is immediately
+   flipped back to its dispositioned status. Absent file → clean no-op; pure +
+   idempotent; it NEVER flips an `llm-inferred` finding, never moves anything into
+   the open band, never sets `fixed`.
+
 10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
    `<target>/docs/security-review/fp-dossier.md` (or update it
@@ -642,7 +653,15 @@ families PENDING until a re-audit.
    file:line, functional explanation, the concrete mitigation, technical
    non-exploitability argument with evidence). Where the audit ledger
    already refuted the same pattern, reuse its reasoning/evidence verbatim —
-   that is what the ledger is for. Never downgrade an exploitable finding to
+   that is what the ledger is for. **Single source of truth for deterministic
+   findings:** a dossier FP row for a `provenance:'deterministic'` finding
+   MUST correspond to a disposition entry in
+   `<target>/.security-review/deterministic-dispositions.json` — the entry's
+   `reason` IS the dossier row's justification, and `apply-dispositions.mjs`
+   flips the ledger from the same entry, so a dossier FP and a ledger
+   refutation can never disagree. Author the dossier row FROM the disposition
+   entry (write the entry first if it does not exist), never as free-standing
+   prose. Never downgrade an exploitable finding to
    "false positive" to dodge a fix; an Accepted-residual disposition always
    carries an owner signature the agent cannot supply. **Exit bar: zero
    undispositioned findings** — the undocumented finding is the bounce, not

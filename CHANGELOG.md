@@ -51,6 +51,50 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.51] — 2026-07-02
+
+**Deterministic-band dispositions now flip the ledger, so the verdict counts the real
+blockers — B3a.** `ingest-scanner-findings.mjs --all` lands scanner findings in the ledger as
+`status:'confirmed'` (relayed verbatim — correct), and on a real cold run the audit then
+adjudicates much of that band as false-positive — but only into the FP-dossier PROSE. Nothing
+flipped the ledger status, so every status consumer (`finding-clusters.mjs --headline`, the
+`compute-sci.mjs` blocker floor and disposition vector) kept counting the adjudicated noise as
+open blockers and the headline over-stated (e.g. "4 critical / 112 high" where the real
+blockers were a handful). New `harness/apply-dispositions.mjs` closes the gap: the audit
+records each deterministic-class adjudication as STRUCTURED data in
+`<target>/.security-review/deterministic-dispositions.json` (`engine` + `ruleId` +
+`disposition: refuted|accepted_risk` + `reason` [+ `accepted_risk_justification` when
+accepted, + optional `scope.files`]), and the harness — pure, idempotent, a structural twin of
+`reconcile-provenance.mjs` — flips the matching `provenance:'deterministic'` findings out of
+the open band with an auditable `disposition_reason` (declared additively in the ledger
+schema), keeping provenance/engine/ruleId/class/severity intact.
+
+The honesty-preserving core: a disposition can only ever move a DETERMINISTIC finding OUT of
+the open band. It NEVER flips an `llm-inferred` finding (a disposition cannot hide an
+LLM-confirmed blocker), never moves anything INTO the open band, never sets `fixed`; the match
+is EXACT engine+ruleId (never fuzzy), protected states (`fixed`/`accepted_risk`/`superseded`)
+are never overwritten, `accepted_risk` requires its justification (schema-valid), and a
+disposition matching nothing is a reported no-op. There is deliberately NO hardcoded
+auto-refute ruleset — a rule that is usually noise can be a real bug in some code; the
+adjudication stays the audit's labelled semantic call, only the APPLICATION is deterministic.
+The FP dossier and the ledger refutation derive from the SAME disposition entry (run-scans
+Step 10 now mandates it), so they can never diverge.
+
+Wiring: audit-codebase Step 6 runs it after `merge-ledger` → `reconcile-provenance` and before
+the Step-7 recap re-render; the run-scans Step 9b `--all` + reconcile tail runs it too, so a
+standalone scan pass's band is honest; the journey's blocker gate notes the headline now reads
+the dispositioned band. The recap gains a deterministic-band line (`N open · M dispositioned
+by adjudication`) rendered only when the ledger carries scanner findings — the drop from the
+raw deterministic band to the adjudicated blockers is visible and auditable, never a silent
+shrink.
+
+Suite **61 files / 814 checks** (was 60 / 788), all green. The 26 new checks
+(`test-apply-dispositions.mjs`) are mutation-proven, headed by the safety pair: allow flipping
+an `llm-inferred` finding → RED, and skip the apply → the SCI/headline still report the
+inflated count → RED (the verdict-honesty integration drives the real
+`apply-dispositions` → `finding-clusters`/`compute-sci`/`render-recap` CLI sequence on a tmp
+ledger).
+
 ## [0.8.50] — 2026-07-02
 
 **The scratch-org lifecycle is now an engine, not an improvisation — B2-P2, the last B2

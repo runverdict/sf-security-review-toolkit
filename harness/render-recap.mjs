@@ -104,6 +104,22 @@ export function renderAuditRecap(facts) {
         'this pass does NOT clear the crashed dimension(s), and "no findings" there means "did not run", not "nothing is there".'
     )
   }
+  // B3a — deterministic-band disposition accounting: when the ledger carries scanner
+  // findings, surface how many are open vs dispositioned-by-adjudication so the drop from
+  // the raw deterministic band to the adjudicated blockers is VISIBLE and auditable —
+  // never a silent shrink (harness/apply-dispositions.mjs stamps `disposition_reason` on
+  // each flip). Absent a deterministic band, the recap is byte-unchanged.
+  const det = findings.filter((x) => String(x && x.provenance) === 'deterministic')
+  if (det.length) {
+    const detOpen = det.filter((x) => ['confirmed', 'regressed'].includes(String(x.status || '').toLowerCase())).length
+    const detDisp = det.filter((x) => typeof x.disposition_reason === 'string' && x.disposition_reason !== '').length
+    L.push('')
+    L.push(
+      `**Deterministic band:** ${det.length} scanner finding(s) — ${detOpen} open · ${detDisp} dispositioned by ` +
+        'adjudication (structured entries in `.security-review/deterministic-dispositions.json` — the same reasons ' +
+        'the FP dossier carries). The drop from the raw scanner band to the open blockers is auditable, never silent.'
+    )
+  }
   L.push('')
   // 3) proceed-vs-halt verdict. A coverage failure can NEVER read as a clean PROCEED — a crashed
   // finder leaves a hole in the audit, so even with zero open critical/high the verdict is
