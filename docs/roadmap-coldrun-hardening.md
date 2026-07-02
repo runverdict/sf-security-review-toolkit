@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.44**, suite **57 files / 736 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.45**, suite **57 files / 740 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -35,32 +35,32 @@
   previously-unexercised legs) all ran. The deterministic scanners also caught a real history-secret the
   LLM audit missed (the scanners-add-value thesis, confirmed).
 
+## Shipped this arc — pending cold-validation
+- **0.8.45 B1 — static scanners BEFORE the LLM fan-out** *(shipped + test-backed; NOT yet
+  cold-validated — the post-hardening clean cold run validates the reorder live, and that run also
+  gates the tag)*. The journey now drives `scope → static scans → audit → artifacts →
+  live/conditional scans`: a new static-scan-substrate step (Code Analyzer CRUD/FLS + sharing,
+  external SAST, SCA + IaC, secrets, dependency audit; local TLS only under the already-recorded
+  read-only probe consent) runs before the audit, so the audit's `--all` ingest seeds the
+  deterministic band on the FIRST pass and the re-audit double-cost is gone. Three companion fixes
+  landed with it: audit-codebase compiles the ledger digest AFTER its deterministic pass (the band
+  is in the digest the fan-out reads — first-pass deferral at the finder level, not just at
+  reconcile); run-scans carries the explicit static/live partition + the two journey entry modes
+  (a bare invocation stays the standalone full sweep); and `render-router-status.mjs` gained the
+  evidence-WITHOUT-audit-ledger rung (resume at the audit, never jump to compile). Consent posture
+  unchanged — same gates, same ask-points, fail-closed; the substrate never installs. Standing
+  tests: W12 (drive order + removed-rationale negative assertions), W13 (digest-after-deterministic-
+  pass), W14 (partition/entry modes), RR6 (resume-ladder rung); suite 57 files / 740 checks.
+  Complements the deterministic-findings arc: B1 makes the LLM *defer* on the first pass; B5 makes
+  the scanners *find more*.
+
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **B1 (reorder) → B2 (throwaway tiers + OpenAPI) → B3 (verdict-reflection) → B4 (PENDING
+Suggested order: **B2 (throwaway tiers + OpenAPI) → B3 (verdict-reflection) → B4 (PENDING
 labeling) → B5 (residual-shrinking) → B6 (prose) → B7 (gate-consolidation)**. One item at a time, each
 test-backed. Tag stays HELD until a clean cold run on the post-hardening build justifies it.
-
-### B1 — Run static deterministic scanners BEFORE the LLM fan-out  *(the #1 PENDING-drainer)*
-- **Why.** Every static scanner now cold-installs (Code Analyzer, Semgrep, OSV, Checkov, secrets,
-  local TLS). But the journey order is `scope → audit (LLM) → artifacts → scans`, so on a single pass
-  the LLM audits *without* the scanner findings, and the scanners only get folded in via `--all` at the
-  run-scans tail + a **re-audit** (double the expensive fan-out). And in the SCI they sit
-  PENDING/statically-cleared until they run. The cold-run driver *spontaneously backgrounded the scans
-  early* to compensate — strong signal the order is wrong.
-- **Fix.** Reorder so the static deterministic scanners run **before** the audit fan-out: seed the band
-  first → the LLM **defers** (doesn't re-report what a scanner found) + focuses on the residual → the
-  SCI credits them as reviewer-reproducible **SATISFIED** on the first pass → the re-audit double-cost
-  disappears. Keep **live/conditional** scans later (live-prod DAST, deployed-org deep audit, TLS that
-  needs a reachable host) — they're additional, not the static substrate.
-- **Files.** `skills/security-review-journey/SKILL.md` (phase order), `skills/audit-codebase/SKILL.md`
-  (Step 4b already runs `--all`; ensure it ingests a populated evidence dir), `skills/run-scans/SKILL.md`.
-- **Tests.** Wiring assertions in `test-deterministic-integration` (scans-before-fan-out order; SATISFIED
-  credit on a populated evidence dir). The live flow is operator-cold-validated.
-- **Note.** Complements the deterministic-findings arc: B1 makes the LLM *defer* on the first pass;
-  B5 makes the scanners *find more*.
 
 ### B2 — Throwaway-tier pull-forward engines + container-isolated OpenAPI
 Three "throwaway" tiers exist: scanner-dir (DONE, 0.6.0), server/mirror (PARTIAL — **node-only**), org
