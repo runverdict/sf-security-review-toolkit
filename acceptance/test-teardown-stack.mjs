@@ -13,6 +13,11 @@
  *   T6  teardownStack: --target with no pointer → nothing-to-tear-down
  *   T7  sweepStacks: name-scoped orphan cleanup, structured result, never throws
  *   T8  planTeardown returns a dockerfile-built toolkit image for removal; refuses a foreign one
+ *   T9  planTeardown: a compose manifest → a project-scoped plan; a foreign project is REFUSED
+ *   T10 teardownStack: compose — tampered project REFUSED (removes nothing); absent → already-clean
+ *
+ * The live `docker compose down` is operator-cold-validated, not CI-hermetic — these
+ * tests pin the PURE project-name guard + plan shape, which is what regresses silently.
  *
  * Dependency-free: `node acceptance/test-teardown-stack.mjs` (exit 0 = pass).
  */
@@ -78,7 +83,7 @@ check('T7 sweepStacks: name-scoped orphan cleanup, structured result, never thro
   const r = sweepStacks()
   assert.ok(['swept', 'already-clean'].includes(r.status), JSON.stringify(r))
   assert.ok(Array.isArray(r.removed))
-  for (const item of r.removed) assert.match(item, /^(container|image|tmp):/) // strictly toolkit-named
+  for (const item of r.removed) assert.match(item, /^(container|image|network|volume|tmp):/) // strictly toolkit-named (compose networks/volumes included)
 })
 
 check('T8 planTeardown: a dockerfile-built toolkit image is removable; a foreign image is refused', () => {
@@ -88,6 +93,37 @@ check('T8 planTeardown: a dockerfile-built toolkit image is removable; a foreign
   assert.equal(ok.image, 'sf-srt-stack-abc:throwaway')
   // … and must REFUSE an image the toolkit didn't build (a tampered manifest can never rmi it)
   assert.throws(() => planTeardown({ resources: { container: 'sf-srt-stack-abc', image: 'nginx:latest' } }), /non-toolkit docker resource/)
+})
+
+check('T9 planTeardown: a compose manifest → a project-scoped plan; a foreign project is REFUSED', () => {
+  const tmp = join(tmpdir(), 'sf-srt-stack', 'c9')
+  const ok = planTeardown({ schema: 'sf-srt-stack/1', kind: 'compose', project: 'sf-srt-stack-c9', composeFile: '/some/repo/docker-compose.yml', overridePath: join(tmp, 'compose.loopback-override.yml'), tmpRoot: tmp, baseUrl: 'http://127.0.0.1:8080' })
+  assert.equal(ok.kind, 'compose')
+  assert.equal(ok.project, 'sf-srt-stack-c9')               // the `down` is scoped to exactly this project
+  assert.equal(ok.composeFile, '/some/repo/docker-compose.yml')
+  assert.equal(ok.tmpRoot, tmp)
+  // the project NAME is asserted BEFORE any `docker compose down` — a tampered manifest
+  // can never down a foreign project (or smuggle one via the resources fallback)
+  for (const evil of ['someones-project', 'prod', 'sf-srt-net-x', '', null]) {
+    assert.throws(() => planTeardown({ kind: 'compose', project: evil, resources: { container: evil } }), /non-toolkit compose project/)
+  }
+  // an unsafe tmpRoot on a compose manifest is refused exactly like the single-container path
+  assert.throws(() => planTeardown({ kind: 'compose', project: 'sf-srt-stack-c9', tmpRoot: '/' }), /unsafe tmp root/)
+})
+
+check('T10 teardownStack: compose — tampered project REFUSED (removes nothing); absent → already-clean', () => {
+  const b = box()
+  const evil = join(b, 'evil.json')
+  writeFileSync(evil, JSON.stringify({ schema: 'sf-srt-stack/1', kind: 'compose', project: 'customers-production-stack', tmpRoot: join(tmpdir(), 'sf-srt-stack', 'x') }))
+  const r = teardownStack({ manifestPath: evil })
+  assert.equal(r.status, 'refused')
+  assert.deepEqual(r.removed, [])
+  // a valid compose manifest whose project/tmp don't actually exist → clean no-op
+  const okMf = join(b, 'ok.json')
+  writeFileSync(okMf, JSON.stringify({ schema: 'sf-srt-stack/1', kind: 'compose', project: 'sf-srt-stack-doesnotexist-xyz', composeFile: join(b, 'nope.yml'), overridePath: join(b, 'nope-override.yml'), tmpRoot: join(tmpdir(), 'sf-srt-stack', 'doesnotexist-xyz') }))
+  const r2 = teardownStack({ manifestPath: okMf })
+  assert.equal(r2.status, 'already-clean', JSON.stringify(r2))
+  assert.deepEqual(r2.removed, [])
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

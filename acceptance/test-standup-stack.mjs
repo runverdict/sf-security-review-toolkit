@@ -6,7 +6,7 @@
  *
  *   U1  planStandup: runnable node stack → container name, baseUrl, synth env, command
  *   U2  planStandup throws on a non-runnable stack (gate must resolve needs-* first)
- *   U3  planStandup: an as-yet-unsupported recipe (compose) → unsupported (next slice)
+ *   U3  planStandup: the honest unsupported boundary (procfile / unknown; compose is now a plan)
  *   U4  stackNames: deterministic + validates the run-id
  *   U5  standupStack FAILS CLOSED without consent
  *   U6  the plan never carries secret VALUES — only the synth env NAMES
@@ -17,13 +17,23 @@
  *   U11 the python run command is a pure function of the recipe entry
  *   U12 the python + dockerfile plans carry env NAMES only, never secret values
  *   U13 the kind-agnostic gates (consent, needs-secrets, port) hold for the new kinds
+ *   U14 compose → needs-config-resolution pre-plan under the toolkit project name
+ *   U15 planCompose: the loopback override rebinds the web tier to 127.0.0.1 and strips
+ *       every other service's host ports (THE compose isolation boundary)
+ *   U16 planCompose REFUSES an ambiguous web service — never guesses
+ *   U17 the kind-agnostic gates (consent, needs-secrets, port) hold for compose
+ *   U18 the compose plan carries env NAMES only + unsafe service names are refused
+ *
+ * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
+ * CI-hermetic — these tests pin the PURE planCompose (loopback override +
+ * refuse-on-ambiguity), which is what regresses silently.
  *
  * Dependency-free: `node acceptance/test-standup-stack.mjs` (exit 0 = pass).
  */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { planStandup, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE } from '../harness/standup-stack.mjs'
+import { planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE } from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
 let pass = 0, fail = 0
@@ -42,6 +52,18 @@ const pyRunnable = {
 const dfRunnable = {
   status: 'runnable', recipe: { kind: 'dockerfile', root: '.', file: 'Dockerfile' },
   webTier: { port: 9000 }, env: { synthesizable: ['APP_JWT_SECRET'], external: [], benign: ['PORT'], unknown: [] },
+}
+const composeRunnable = {
+  status: 'runnable', recipe: { kind: 'compose', file: 'docker-compose.yml' },
+  webTier: { port: 8080 }, env: { synthesizable: ['APP_JWT_SECRET'], external: [], benign: ['PORT'], unknown: [] },
+}
+// the shape `docker compose config --format json` emits: `target` a number, `published` a string
+const composeConfig = {
+  services: {
+    web: { image: 'node:18-alpine', ports: [{ mode: 'ingress', target: 8080, published: '8080', protocol: 'tcp' }] },
+    db: { image: 'postgres:16-alpine', ports: [{ mode: 'ingress', target: 5432, published: '5432', protocol: 'tcp' }] },
+    cache: { image: 'redis:7-alpine' },
+  },
 }
 
 console.log('standup-stack standing test')
@@ -63,14 +85,16 @@ check('U2 planStandup throws on a non-standable stack', () => {
   assert.throws(() => planStandup({ status: 'needs-recipe' }, { runId: 'u2', target: TARGET, tmpRoot: TMP }), /not standable/)
 })
 
-check('U3 planStandup: an as-yet-unsupported recipe (compose) → unsupported (next slice)', () => {
-  const p = planStandup({ status: 'runnable', recipe: { kind: 'compose' }, webTier: { port: 3000 }, env: {} }, { runId: 'u3', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u3') })
-  assert.equal(p.unsupported, 'compose')
-  assert.match(p.reason, /next slice/)
-  assert.match(p.reason, /'node'\/'python' \(copy-in\) \+ 'dockerfile' \(build\)/)
-  // procfile too — the honest boundary: exactly node/python/dockerfile stand up in this build
-  const q = planStandup({ status: 'runnable', recipe: { kind: 'procfile' }, webTier: { port: 3000 }, env: {} }, { runId: 'u3', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u3') })
-  assert.equal(q.unsupported, 'procfile')
+check('U3 planStandup: the honest unsupported boundary (procfile / unknown; compose is now a plan)', () => {
+  const p = planStandup({ status: 'runnable', recipe: { kind: 'procfile' }, webTier: { port: 3000 }, env: {} }, { runId: 'u3', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u3') })
+  assert.equal(p.unsupported, 'procfile')
+  assert.match(p.reason, /'node'\/'python' \(copy-in\), 'dockerfile' \(build\), and 'compose'/)
+  const q = planStandup({ status: 'runnable', recipe: {}, webTier: { port: 3000 }, env: {} }, { runId: 'u3', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u3') })
+  assert.equal(q.unsupported, 'unknown')
+  // compose is NO LONGER unsupported — it returns a real (pre-)plan, not a refusal
+  const c = planStandup({ status: 'runnable', recipe: { kind: 'compose', file: 'docker-compose.yml' }, webTier: { port: 3000 }, env: {} }, { runId: 'u3', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u3') })
+  assert.equal(c.unsupported, undefined)
+  assert.equal(c.kind, 'compose')
 })
 
 check('U4 stackNames: deterministic + validates run-id', () => {
@@ -181,6 +205,84 @@ check('U13 the kind-agnostic gates hold for python + dockerfile (consent, needs-
   assert.throws(() => planStandup({ status: 'needs-secrets', recipe: { kind: 'dockerfile', root: '.', file: 'Dockerfile' }, webTier: { port: 9000 }, env: { external: ['DATABASE_URL'] } }, { runId: 'u13', target: TARGET, tmpRoot: tmp }), /not standable/)
   // the invalid-port throw applies to the new kinds too
   assert.throws(() => planStandup(pyRunnable, { runId: 'u13', target: TARGET, tmpRoot: tmp, port: '70000' }), /invalid port/)
+})
+
+check('U14 planStandup: compose → needs-config-resolution pre-plan under the toolkit project name', () => {
+  const p = planStandup(composeRunnable, { runId: 'u14', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u14') })
+  assert.equal(p.kind, 'compose')
+  assert.equal(p.needsConfigResolution, true)               // the pure planner can't run `docker compose config` — the executor completes it
+  assert.equal(p.project, stackNames('u14').container)      // sf-srt-stack-u14: the PROJECT carries the run-name…
+  assert.equal(assertStackName(p.project), p.project)       // …and the teardown name gate accepts it
+  assert.equal(p.host, '127.0.0.1')
+  assert.equal(p.baseUrl, 'http://127.0.0.1:8080')          // run-dast/capture-openapi accept loopback only
+  assert.equal(p.composeFile, join(TARGET, 'docker-compose.yml'))
+  assert.ok(p.overridePath.startsWith(join(tmpdir(), 'sf-srt-stack', 'u14')))
+  assert.deepEqual(p.synthEnvNames, ['APP_JWT_SECRET'])
+})
+
+check('U15 planCompose: the loopback override rebinds the web tier to 127.0.0.1 and strips every other service (THE compose isolation boundary)', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u15', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u15') })
+  const p = planCompose(composeConfig, pre)
+  assert.equal(p.unsupported, undefined)
+  assert.equal(p.webService, 'web')                         // the service publishing the detected web port
+  const o = p.overrideContent
+  // (a) the web tier is rebound to 127.0.0.1 ONLY, with the REPLACE tag — a plain
+  // `ports:` in an override CONCATENATES with the base file and would leave the
+  // original 0.0.0.0 publish alive next to ours
+  assert.match(o, /web:\n    ports: !override\n      - "127\.0\.0\.1:8080:8080"/)
+  assert.ok(!o.includes('0.0.0.0'), 'the override must never publish on 0.0.0.0')
+  // (b) EVERY other service loses its host ports (db published 5432 → stripped; the
+  // reset must be the REPLACE tag too, for the same merge reason)
+  assert.match(o, /db:\n    ports: !reset \[\]/)
+  assert.match(o, /cache:\n    ports: !reset \[\]/)
+  // the completed plan still points the scanners at loopback
+  assert.equal(p.baseUrl, 'http://127.0.0.1:8080')
+  assert.equal(p.host, '127.0.0.1')
+  // a host:container mismatch keeps the app's own container-side target (8080:3000 → :3000)
+  const mm = planCompose({ services: { web: { ports: [{ target: 3000, published: '8080' }] } } }, pre)
+  assert.match(mm.overrideContent, /"127\.0\.0\.1:8080:3000"/)
+})
+
+check('U16 planCompose REFUSES an ambiguous web service — never guesses', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u16', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u16') })
+  // two services publish ports, neither matches the detected web port 8080 → REFUSE
+  // (a guessed web tier would publish the WRONG service to the host)
+  const two = planCompose({ services: {
+    api: { ports: [{ target: 3000, published: '3000' }] },
+    admin: { ports: [{ target: 9090, published: '9090' }] },
+  } }, pre)
+  assert.equal(two.unsupported, 'compose')
+  assert.match(two.reason, /ambiguous web service — 2 services publish ports, none matches the detected web port 8080/)
+  // no publisher at all → equally honest
+  const none = planCompose({ services: { worker: { image: 'x' } } }, pre)
+  assert.equal(none.unsupported, 'compose')
+  assert.match(none.reason, /no compose service publishes a port/)
+  // exactly ONE publisher and no port match → that sole publisher IS the web tier (allowed)
+  const sole = planCompose({ services: { api: { ports: [{ target: 3000, published: '3000' }] }, worker: { image: 'x' } } }, pre)
+  assert.equal(sole.unsupported, undefined)
+  assert.equal(sole.webService, 'api')
+})
+
+check('U17 the kind-agnostic gates hold for compose (consent, needs-secrets, port)', () => {
+  const tmp = join(tmpdir(), 'sf-srt-stack', 'u17')
+  // consent: fail-closed for compose too (thrown BEFORE any docker/compose call — hermetic)
+  assert.throws(() => standupStack(planStandup(composeRunnable, { runId: 'u17', target: TARGET, tmpRoot: tmp }), { consent: false }), /without explicit consent/)
+  // needs-secrets without a filled --env-file is not standable, compose included
+  assert.throws(() => planStandup({ status: 'needs-secrets', recipe: { kind: 'compose', file: 'docker-compose.yml' }, webTier: { port: 8080 }, env: { external: ['DATABASE_URL'] } }, { runId: 'u17', target: TARGET, tmpRoot: tmp }), /not standable/)
+  // the invalid-port throw applies to compose too
+  assert.throws(() => planStandup(composeRunnable, { runId: 'u17', target: TARGET, tmpRoot: tmp, port: '70000' }), /invalid port/)
+})
+
+check('U18 the compose plan carries env NAMES only + unsafe service names are refused', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u18', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u18') })
+  const p = planCompose(composeConfig, pre)
+  const blob = JSON.stringify(p)
+  assert.ok(blob.includes('APP_JWT_SECRET'), 'synth env NAME present in the compose plan')
+  assert.ok(!/[0-9a-f]{48}/.test(blob), 'no synthesized secret value should be in the plan')
+  // a service name that could inject lines into the string-templated override → REFUSED
+  const evil = planCompose({ services: { 'web:\n    privileged: true\n  x': { ports: [{ target: 8080, published: '8080' }] } } }, pre)
+  assert.equal(evil.unsupported, 'compose')
+  assert.match(evil.reason, /unsafe compose service name/)
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

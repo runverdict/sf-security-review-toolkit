@@ -20,11 +20,14 @@
  * It FAILS CLOSED without explicit consent (standing up a container + active scanning
  * is a live op). PURE planner `planStandup` (deterministic spec) + impure executor
  * `standupStack` (docker). Supported recipes: `node` + `python` (copy-in — toolkit base
- * image, source copied in) and `dockerfile` (build-then-run — the partner's own
+ * image, source copied in), `dockerfile` (build-then-run — the partner's own
  * Dockerfile brings the source + base image; the built image carries the toolkit
- * run-name so teardown removes it). `compose` is the next slice (multi-container —
- * needs a project-scoped teardown extension); it and `procfile` are returned as
- * unsupported, honest.
+ * run-name so teardown removes it), and `compose` (multi-container — docker's OWN
+ * parser resolves the file [`docker compose config --format json`; the harness bundles
+ * no YAML lib], the PURE `planCompose` picks the web tier and templates a loopback
+ * override that rebinds it to 127.0.0.1 and strips every other service's host ports,
+ * and the whole project runs under the toolkit run-name so teardown-stack can remove
+ * it project-scoped). `procfile` is returned as unsupported, honest.
  *
  * USAGE: node standup-stack.mjs --target <repo> --consent [--run-id <id>] [--port N] [--json]
  */
@@ -44,6 +47,10 @@ import { verifyConsent } from './record-consent.mjs'
 export const STACK_SCHEMA = 'sf-srt-stack/1'
 export const NAME_PREFIX = 'sf-srt-stack'
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+// compose service names land in the string-templated loopback override — only plain
+// one-line YAML keys are accepted (anything else could inject structure into the
+// override we generate, so it is REFUSED, not escaped)
+const SERVICE_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const NODE_BASE = 'node:18-alpine'
 export const PYTHON_BASE = 'python:3.12-slim' // pinned minor tag, never :latest (same discipline as NODE_BASE)
 
@@ -129,9 +136,31 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       pointerRel: join('.security-review', 'stack-standup.json'),
     }
   }
+  if (recipe.kind === 'compose') {
+    // COMPOSE (multi-container): the planner is pure, so it cannot run `docker compose
+    // config` itself — it returns a needs-config-resolution PRE-plan carrying every
+    // deterministic field; the executor resolves the file through docker's own parser
+    // and the pure `planCompose` completes it (web-tier pick + loopback override).
+    const composeFile = join(target, recipe.file || 'docker-compose.yml')
+    const synthNames = (stack.env && stack.env.synthesizable) || []
+    return {
+      schema: STACK_SCHEMA, runId, kind: 'compose', needsConfigResolution: true,
+      // the compose PROJECT carries the toolkit run-name (the stackNames convention), so
+      // every project resource (containers <project>-<svc>-N, network <project>_default,
+      // volumes <project>_*) is name-scoped for the project-scoped teardown + sweep
+      project: names.container,
+      container: names.container, image: null, network: null, baseImage: null,
+      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      composeFile, overridePath: join(tmpRoot, 'compose.loopback-override.yml'),
+      synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
+      envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
+      pointerRel: join('.security-review', 'stack-standup.json'),
+    }
+  }
   if (recipe.kind !== 'node') {
     return { schema: STACK_SCHEMA, runId, unsupported: recipe.kind || 'unknown',
-      reason: `standup of a '${recipe.kind}' recipe is the next slice; this build stands up 'node'/'python' (copy-in) + 'dockerfile' (build) — compose is multi-container and lands next` }
+      reason: `standup of a '${recipe.kind}' recipe is not supported — this build stands up 'node'/'python' (copy-in), 'dockerfile' (build), and 'compose' (multi-container, loopback-overridden, project-scoped teardown); 'procfile' stays owner-run` }
   }
   const root = recipe.root || '.'
   const sourceDir = root === '.' ? target : join(target, root)
@@ -155,6 +184,56 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
   }
 }
 
+/**
+ * PURE. Complete a compose pre-plan from the docker-resolved config JSON
+ * (`docker compose config --format json` — docker's OWN parser did the YAML work;
+ * the harness bundles no YAML lib). Picks the web tier and templates the loopback
+ * override; deterministic given (config, prePlan). Returns the full plan, or
+ * `{ unsupported: 'compose' }` when the web tier cannot be identified safely —
+ * REFUSE, never guess: a mis-identified web tier would publish the wrong service
+ * to the host.
+ */
+export function planCompose(config, prePlan) {
+  const services = config && typeof config === 'object' && config.services && typeof config.services === 'object' ? config.services : {}
+  const svcNames = Object.keys(services)
+  const port = Number(prePlan.port)
+  const refuse = (reason) => ({ schema: prePlan.schema, runId: prePlan.runId, unsupported: 'compose', reason })
+  const badNames = svcNames.filter((n) => !SERVICE_OK.test(n))
+  if (badNames.length) return refuse(`unsafe compose service name(s) '${badNames.join("', '")}' — refusing to template the loopback override`)
+  // resolved-config port entries: `target` is a number, `published` a string — coerce both
+  const portsOf = (n) => (Array.isArray(services[n] && services[n].ports) ? services[n].ports : [])
+  const publishers = svcNames.filter((n) => portsOf(n).length > 0)
+  const matchesWebPort = (p) => Number(p && p.published) === port || Number(p && p.target) === port
+  const matched = publishers.filter((n) => portsOf(n).some(matchesWebPort))
+  let webService
+  if (matched.length === 1) webService = matched[0]
+  else if (matched.length === 0 && publishers.length === 1) webService = publishers[0] // the sole publisher IS the web tier
+  else if (publishers.length === 0) return refuse('no compose service publishes a port — cannot identify a web tier to rebind on 127.0.0.1')
+  else if (matched.length > 1) return refuse(`ambiguous web service — ${matched.length} services publish the detected web port ${port}; cannot enforce loopback safely`)
+  else return refuse(`ambiguous web service — ${publishers.length} services publish ports, none matches the detected web port ${port}; cannot enforce loopback safely`)
+  // rebind the HOST side to 127.0.0.1:<webPort>; keep the service's own container-side
+  // target (a `8080:3000` mapping stays →3000 — the app listens where it listens)
+  const webEntry = portsOf(webService).find(matchesWebPort) || portsOf(webService)[0]
+  const targetPort = Number(webEntry && webEntry.target) || port
+  const others = svcNames.filter((n) => n !== webService)
+  // `!override`/`!reset` are load-bearing: a PLAIN `ports:` in a compose override file
+  // CONCATENATES with the base file's list, which would leave the original 0.0.0.0
+  // publish alive next to ours — the exact isolation failure this override exists to
+  // prevent. The tags REPLACE (Compose V2 merge semantics, verified empirically).
+  const overrideContent = [
+    '# generated loopback override — the throwaway publishes ONLY the web tier, ONLY on',
+    '# 127.0.0.1; every other service loses its host ports (services still reach each',
+    '# other over the compose network).',
+    'services:',
+    `  ${webService}:`,
+    '    ports: !override',
+    `      - "127.0.0.1:${port}:${targetPort}"`,
+    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []']),
+  ].join('\n') + '\n'
+  const { needsConfigResolution, ...plan } = prePlan
+  return { ...plan, webService, overrideContent }
+}
+
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
 
@@ -167,6 +246,8 @@ function writeManifest(plan, rec, target) {
   const manifest = {
     schema: plan.schema, runId: plan.runId, kind: plan.kind,
     resources: { container: plan.container, image: rec.builtImage || null, network: rec.network || null },
+    // compose only: what the project-scoped teardown needs to reconstruct the `down`
+    ...(plan.kind === 'compose' ? { project: plan.project, composeFile: plan.composeFile, overridePath: plan.overridePath, webService: plan.webService || null } : {}),
     host: plan.host, port: plan.port, baseUrl: plan.baseUrl,
     synthEnvNames: plan.synthEnvNames, // NAMES only; the random values live only in the container env
     status: rec.status, createdAt: rec.createdAt, log: rec.log || '',
@@ -206,6 +287,10 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     const st = envStatus(content, plan.externalEnvNames || [])
     if (!st.ready) return { status: 'needs-secrets', reason: `env-file is missing ${st.missing.join(', ') || '(file absent)'} — fill it (scaffold-env) before stand-up`, resources: { container: plan.container, image: null, network: null } }
   }
+  // COMPOSE dispatches to its own executor (multi-container: config-resolve →
+  // planCompose → override → `up`); the kind-agnostic gates above — consent
+  // fail-closed, docker present, needs-secrets re-check — have already held.
+  if (plan.kind === 'compose') return standupCompose(plan, { target, createdAt, timeoutMs })
 
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
@@ -274,6 +359,88 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }
   return writeManifest(plan, rec, target)
+}
+
+/**
+ * IMPURE compose executor. Called only from `standupStack` AFTER the kind-agnostic
+ * gates (consent fail-closed, docker present, needs-secrets re-check) have held.
+ * GATHER IMPURELY, CLASSIFY PURELY (the stack-detect pattern): docker's own parser
+ * resolves the compose file to JSON, the pure `planCompose` picks the web tier and
+ * templates the loopback override, and the project comes up under the toolkit
+ * run-name (`-p sf-srt-stack-<runId>`) so teardown-stack removes it project-scoped.
+ */
+function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
+  // Compose V2 is its own prerequisite beyond the docker daemon (the plugin can be
+  // absent) — mirror the no-docker honest-hint pattern; the legacy `docker-compose`
+  // V1 binary is deliberately NOT used as a fallback.
+  if (!quiet('docker', ['compose', 'version'])) {
+    return { status: 'no-compose', reason: 'Docker Compose V2 is not available (`docker compose version` failed) — install the compose plugin once, system-wide (Linux: `sudo apt-get install docker-compose-plugin`; Docker Desktop bundles it), then re-run — or this multi-container stack stays owner-run.', resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
+  }
+  const stamp = createdAt || new Date().toISOString()
+  const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
+
+  // Secret VALUES go via env-FILEs (compose interpolation), never the docker argv —
+  // written BEFORE config resolution so `${VAR}` interpolation in the compose file
+  // sees the same env at `config` time as at `up` time.
+  mkdirSync(plan.tmpRoot, { recursive: true, mode: 0o700 })
+  const synthFile = join(plan.tmpRoot, '.synth.env')
+  writeFileSync(synthFile, [
+    ...Object.entries(plan.benignEnv).map(([k, v]) => `${k}=${v}`),
+    ...plan.synthEnvNames.map((n) => `${n}=${randomBytes(24).toString('hex')}`),
+  ].join('\n') + '\n', { mode: 0o600 })
+  const fileArgs = ['--env-file', synthFile]
+  if (plan.envFile && existsSync(plan.envFile)) fileArgs.push('--env-file', plan.envFile)
+
+  let full
+  try {
+    const config = JSON.parse(run('docker', ['compose', '-p', plan.project, ...fileArgs, '-f', plan.composeFile, 'config', '--format', 'json']))
+    full = planCompose(config, plan)
+  } catch {
+    rec.status = 'failed'
+    rec.log = 'compose stand-up failed: `docker compose config` could not resolve the compose file (run it yourself for the parser error — the toolkit does not capture command output, to avoid persisting secret-bearing interpolations)'
+    return writeManifest(plan, rec, target)
+  }
+  if (full.unsupported) return { status: 'unsupported', reason: full.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
+  // The loopback override is the compose isolation boundary: the web tier publishes on
+  // 127.0.0.1 ONLY, and every other service is stripped of host ports entirely.
+  writeFileSync(full.overridePath, full.overrideContent, { mode: 0o600 })
+  const composeArgs = ['compose', '-p', full.project, ...fileArgs, '-f', full.composeFile, '-f', full.overridePath]
+
+  // Name-stub manifest BEFORE `up` (project + file paths are deterministic) so even a
+  // crashed `up` stays teardown-able from the manifest alone (audit: orphan).
+  writeManifest(full, rec, target)
+
+  // Same synchronous-window safety net as the single-container path — the project-scoped
+  // `down` removes every project resource; teardown-stack remains authoritative.
+  const cleanup = () => { try { execFileSync('docker', [...composeArgs, 'down', '-v', '--remove-orphans'], { stdio: 'ignore' }) } catch {} }
+  const handlers = {
+    SIGINT: () => { cleanup(); process.exit(130) },
+    SIGTERM: () => { cleanup(); process.exit(143) },
+    uncaughtException: (e) => { cleanup(); throw e },
+  }
+  for (const [s, h] of Object.entries(handlers)) process.on(s, h)
+  try {
+    run('docker', [...composeArgs, 'up', '-d', '--build'])
+    rec.status = 'starting'
+    const deadline = Date.now() + timeoutMs
+    let up = false
+    while (Date.now() < deadline) {
+      if (listening(full.baseUrl + '/healthz') || listening(full.baseUrl + '/')) { up = true; break }
+      const anyRunning = (() => { try { return run('docker', [...composeArgs, 'ps', '--status', 'running', '-q']).trim() !== '' } catch { return false } })()
+      if (!anyRunning) break
+      execFileSync('sleep', ['1'])
+    }
+    rec.status = up ? 'up' : 'failed'
+    // deliberately NO `docker compose logs` capture — the same NAMES-only contract as
+    // the single-container path (boot output can echo operator-filled secrets)
+    if (!up) rec.log = 'stand-up failed: the web tier did not become reachable in time (run `docker compose logs` yourself while the project exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
+  } catch {
+    rec.status = 'failed'
+    rec.log = 'stand-up failed during a docker compose step (the toolkit does not capture compose output, to avoid persisting secrets)'
+  } finally {
+    for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
+  }
+  return writeManifest(full, rec, target)
 }
 
 function main() {

@@ -51,6 +51,55 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.48] — 2026-07-02
+
+**`compose` backends now stand up as throwaway-DAST mirrors — the last recipe kind in the
+detector that couldn't.** Most real external backends ship a compose file (the app plus its
+own db/redis), and compose breaks the single-container model in two ways, both handled:
+
+- **Loopback isolation across N containers.** A compose file's own `ports:` typically bind
+  all interfaces. The stand-up resolves the file through docker's OWN parser
+  (`docker compose config --format json` — the harness still bundles no YAML library), and
+  the pure `planCompose` picks the web tier (the service publishing the detected web port)
+  and templates a loopback override: the web service is rebound to `127.0.0.1:<port>` and
+  EVERY other service's host ports are stripped. The `!override`/`!reset` REPLACE tags are
+  load-bearing — a plain `ports:` in an override file CONCATENATES with the base file's
+  list and would leave the original all-interfaces publish alive next to ours. Internal
+  services still reach each other on the compose network; nothing but the web tier ever
+  reaches the host, and only on `127.0.0.1`. When the web tier cannot be identified safely
+  (several services publish ports, none matches the detected web port), the stand-up
+  REFUSES with an honest reason rather than guessing — a mis-identified web tier would
+  publish the wrong service to the host. Service names that cannot be templated safely
+  into the override are refused the same way.
+- **Project-scoped teardown.** The project runs under the toolkit run-name
+  (`-p sf-srt-stack-<runId>`), so `teardown-stack` removes it as ONE
+  `docker compose down -v --remove-orphans` — all project containers + the network +
+  volumes, atomically, no per-name enumeration — and the project NAME must pass the
+  toolkit-name guard BEFORE any `down`: a tampered manifest can never tear down a foreign
+  compose project. The orphan sweep now also removes crashed-run compose networks and
+  volumes, name-scoped to the same `sf-srt-stack-` convention.
+
+Every kind-agnostic safety property holds for compose unchanged: fail-closed without
+consent (the same `throwaway-dast` gate — no new consent), secrets as NAMES in the plan +
+manifest with values only via `0600` env-files (compose interpolation, never argv), the
+needs-secrets filled-env-file re-check, no `docker compose logs` capture, the
+signal-handler cleanup net (a project-scoped `down`), and the pre-`up` name-stub manifest
+so even a crashed stand-up stays teardown-able. Without Compose V2 the engine degrades
+honestly (`no-compose` + an install hint; the legacy `docker-compose` V1 binary is not
+used). `procfile` remains the honest unsupported set. The `node`/`python`/`dockerfile`
+plans + executors and the single-container teardown path are unchanged.
+
+Suite **58 files / 767 checks** (was 58 / 760), all green; each new check mutation-proven
+(the override rebound to all-interfaces → red; the `127.0.0.1` host part omitted → red;
+another service's ports left published → red; the REPLACE tags downgraded to a plain
+merge → red; a guessed web tier on ambiguity → red; the project-name assertion dropped
+before the `down` → red; a project off the run-name convention → red; the
+unsafe-service-name refusal dropped → red; compose silently returned to the unsupported
+set → red). The live `docker compose config`/`up`/`down` execution is
+operator-cold-validated like the other kinds — the standing tests pin the pure plan
+(loopback override + refuse-on-ambiguity) and the pure teardown boundary (the
+project-name guard), which are what regress silently.
+
 ## [0.8.47] — 2026-07-02
 
 **The api-endpoints spec artifact is now REAL when the throwaway mirror runs — captured from

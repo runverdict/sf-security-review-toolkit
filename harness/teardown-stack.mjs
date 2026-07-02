@@ -10,7 +10,11 @@
  * asymmetry is structural. NEVER touches a resource it didn't create: every docker
  * name is checked against the `sf-srt-stack-` / `sf-srt-net-` convention (the docker
  * analogue of assertSafeTmpRoot) and a non-matching name is REFUSED — a tampered
- * manifest can never `docker rm` an unrelated container. Idempotent; guaranteed (works
+ * manifest can never `docker rm` an unrelated container. A `compose` manifest tears
+ * down as a PROJECT: one `docker compose -p <project> down -v --remove-orphans`
+ * removes all the project's containers + network + volumes atomically (no per-name
+ * enumeration), and the project NAME must pass the same toolkit-name gate first — a
+ * tampered manifest can never `down` a foreign project. Idempotent; guaranteed (works
  * from the manifest alone, so even a crashed stand-up is cleanable); disclosed.
  *
  * Pure `planTeardown` (validate + classify, no I/O) + `teardownStack` (the removals).
@@ -25,6 +29,13 @@ import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 
 const NAME_OK = /^sf-srt-(stack|net)-[A-Za-z0-9][A-Za-z0-9._:-]*$/
+// a compose PROJECT must be the run-name itself (`sf-srt-stack-<runId>`) — stricter
+// than NAME_OK (no `sf-srt-net-` form): the project name scopes an entire `down`
+const PROJECT_OK = /^sf-srt-stack-[A-Za-z0-9][A-Za-z0-9._-]*$/
+// compose project resources carry `_` separators (`<project>_default`, `<project>_<vol>`)
+// that the strict NAME_OK class deliberately lacks — this wider (still name-scoped) form
+// is used ONLY by the sweep's network/volume removal, never for arbitrary names
+const COMPOSE_RES_OK = /^sf-srt-stack-[A-Za-z0-9][\w.:-]*$/
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return null } }
 const POINTER_REL = join('.security-review', 'stack-standup.json')
 
@@ -34,12 +45,25 @@ export function assertStackName(name) {
   return name
 }
 
+/** Guard: a compose PROJECT we may `down` MUST be one we created (run-name-scoped). */
+export function assertProjectName(name) {
+  if (!PROJECT_OK.test(String(name || ''))) throw new Error(`refusing to tear down a non-toolkit compose project: '${name}'`)
+  return name
+}
+
 /**
  * PURE. From a manifest, validate the recorded resource names + tmp root and return the
  * removal plan. Throws (REFUSED) on any name/path that isn't ours.
  */
 export function planTeardown(manifest) {
   if (!manifest || typeof manifest !== 'object') throw new Error('planTeardown: no manifest')
+  if (manifest.kind === 'compose') {
+    // project-scoped teardown: the project NAME is the security boundary — it is
+    // asserted BEFORE any `down`, so a tampered manifest can never down a foreign project
+    const project = assertProjectName(manifest.project || (manifest.resources && manifest.resources.container))
+    const tmpRoot = manifest.tmpRoot ? assertSafeTmpRoot(manifest.tmpRoot) : null // throws on an unsafe root
+    return { kind: 'compose', project, composeFile: manifest.composeFile || null, overridePath: manifest.overridePath || null, tmpRoot, baseUrl: manifest.baseUrl || null }
+  }
   const res = manifest.resources || {}
   const container = res.container || null
   const image = res.image || null
@@ -83,6 +107,9 @@ export function teardownStack(opts = {}) {
   try { plan = planTeardown(src.manifest) }
   catch (e) { return { status: 'refused', error: String(e.message), removed: [] } }
 
+  // a compose stack tears down as ONE project-scoped `down` (name already asserted)
+  if (plan.kind === 'compose') return teardownCompose(plan, src)
+
   const removed = []
   if (plan.container && exists('container', plan.container)) { quiet('docker', ['rm', '-f', plan.container]); removed.push(`container:${plan.container}`) }
   if (plan.image && exists('image', plan.image)) { quiet('docker', ['rmi', '-f', plan.image]); removed.push(`image:${plan.image}`) }
@@ -99,11 +126,40 @@ export function teardownStack(opts = {}) {
 const runOut = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return '' } }
 
 /**
+ * Compose teardown: ONE project-scoped `docker compose down -v --remove-orphans`
+ * removes all the project's containers + the default network + volumes atomically —
+ * no per-name enumeration. `planTeardown` already asserted the project name is ours.
+ * The tmp dir (override + env files) is removed; evidence is KEPT, as ever.
+ */
+function teardownCompose(plan, src) {
+  const removed = []
+  const label = `label=com.docker.compose.project=${plan.project}`
+  const ctrs = runOut('docker', ['ps', '-aq', '--filter', label]).split('\n').filter(Boolean)
+  const nets = runOut('docker', ['network', 'ls', '-q', '--filter', label]).split('\n').filter(Boolean)
+  const vols = runOut('docker', ['volume', 'ls', '-q', '--filter', label]).split('\n').filter(Boolean)
+  // `down` works from the project label even if the compose files are gone — pass the
+  // files when they still exist (exact reconstruction), fall back to `-p` alone otherwise
+  const args = ['compose', '-p', plan.project]
+  if (plan.composeFile && existsSync(plan.composeFile)) args.push('-f', plan.composeFile)
+  if (plan.overridePath && existsSync(plan.overridePath)) args.push('-f', plan.overridePath)
+  quiet('docker', [...args, 'down', '-v', '--remove-orphans'])
+  if (ctrs.length || nets.length || vols.length) removed.push(`compose-project:${plan.project} (${ctrs.length} containers, ${nets.length} networks, ${vols.length} volumes)`)
+  if (plan.tmpRoot && existsSync(plan.tmpRoot)) { rmSync(plan.tmpRoot, { recursive: true, force: true }); removed.push(`tmp:${plan.tmpRoot}`) }
+  markCleaned(src.pointerDir, removed)
+  return {
+    status: removed.length ? 'torn-down' : 'already-clean',
+    removed,
+    evidenceKept: src.pointerDir ? join(src.pointerDir, 'evidence') : '(evidence lives in <repo>/.security-review/evidence/, never in the container or tmp dir)',
+  }
+}
+
+/**
  * SWEEP: remove EVERY toolkit throwaway container + tmp tree (orphan cleanup from a crashed
  * run where the same-run teardown never fired). Name-scoped — only ever touches
- * `sf-srt-stack-*` containers and `/tmp/sf-srt-{stack,dast}/*` trees, never anything else;
- * evidence (in the repo) is untouched. This is the engine-backed backstop for the "always
- * tear down" guarantee an LLM-orchestrated multi-process run can't make on its own.
+ * `sf-srt-stack-*` containers/images/networks/volumes (compose projects included) and
+ * `/tmp/sf-srt-{stack,dast}/*` trees, never anything else; evidence (in the repo) is
+ * untouched. This is the engine-backed backstop for the "always tear down" guarantee an
+ * LLM-orchestrated multi-process run can't make on its own.
  */
 export function sweepStacks() {
   const removed = []
@@ -112,6 +168,16 @@ export function sweepStacks() {
   }
   for (const img of runOut('docker', ['images', '--filter', 'reference=sf-srt-stack-*', '--format', '{{.Repository}}:{{.Tag}}']).split('\n').filter(Boolean)) {
     if (NAME_OK.test(img)) { quiet('docker', ['rmi', '-f', img]); removed.push(`image:${img}`) }
+  }
+  // compose residue (a crashed compose run): the container filter above already catches
+  // the `<project>-<svc>-N` names, but the project NETWORK (`<project>_default`) and
+  // VOLUMES (`<project>_<name>`) need their own name-scoped removal — same `sf-srt-stack-`
+  // convention, so only toolkit resources are ever touched (evidence is in the repo, untouched)
+  for (const n of runOut('docker', ['network', 'ls', '--filter', 'name=sf-srt-stack-', '--format', '{{.Name}}']).split('\n').filter(Boolean)) {
+    if (COMPOSE_RES_OK.test(n)) { quiet('docker', ['network', 'rm', n]); removed.push(`network:${n}`) }
+  }
+  for (const v of runOut('docker', ['volume', 'ls', '--filter', 'name=sf-srt-stack-', '--format', '{{.Name}}']).split('\n').filter(Boolean)) {
+    if (COMPOSE_RES_OK.test(v)) { quiet('docker', ['volume', 'rm', '-f', v]); removed.push(`volume:${v}`) }
   }
   for (const group of [join(tmpdir(), 'sf-srt-stack'), join(tmpdir(), 'sf-srt-dast')]) {
     let subs = []; try { subs = readdirSync(group) } catch {}
