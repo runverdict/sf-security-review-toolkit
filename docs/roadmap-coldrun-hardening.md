@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.47**, suite **58 files / 760 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.48**, suite **58 files / 767 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -97,6 +97,26 @@
   both layers; O4/O5 (spec validation), O6 (honest provenance), O7 (consent fail-closed), O10
   (not-exposed writes nothing), W1-W4 (skill wiring); suite 58 files / 760 checks. MCP `tools/list`
   capture from the mirror is a scoped-out follow-on.
+- **0.8.48 B2-P3b — `compose` throwaway stand-up + project-scoped teardown** *(recipe shipped +
+  test-backed; the loopback boundary is COMPLETED by the B2-P3b-h hardening slice below — see the open
+  backlog — and NOT yet cold-validated)*. `compose` was the last `stack-detect` recipe kind returning
+  `unsupported`; it now stands up. Docker's own parser resolves the file
+  (`docker compose config --format json` — the harness bundles no YAML lib), the pure `planCompose`
+  picks the web tier and templates a loopback override (`!override`/`!reset` Compose V2 REPLACE tags —
+  a plain `ports:` override would CONCATENATE and leave the base `0.0.0.0` publish alive) that rebinds
+  the web tier to `127.0.0.1:<port>` and strips every other service's host ports; ambiguous web-tier
+  identification is REFUSED not guessed; unsafe service names are refused (an injection guard on the
+  string-templated override). The project runs under the toolkit run-name so `teardown-stack` removes
+  it as ONE project-scoped `docker compose -p <project> down -v --remove-orphans` (the project name
+  asserted against the toolkit convention before any `down`), and the sweep now also clears orphaned
+  compose networks/volumes name-scoped. No new consent (rides the kind-agnostic gates); node/python/
+  dockerfile + the single-container teardown path are byte-identical. Standing tests: U14 (pre-plan),
+  U15 (the loopback override — rebind + strip + REPLACE-tags), U16 (refuse-on-ambiguity), U17 (gates),
+  U18 (NAMES-only + injection guard), T9/T10 (project-name teardown boundary); suite 58 files / 767
+  checks. **Loopback boundary completed next (B2-P3b-h):** the port-based override covers published
+  `ports:` but not `network_mode` (a host/container/service-networked service sidesteps port
+  publishing), so the loopback guarantee is not "delivered" until the hardening slice below adds the
+  `network_mode` refusal.
 
 ---
 
@@ -115,22 +135,21 @@ now; compose next**), org (**not built — still prose**). Remaining slices (in 
   arc" above. `harness/capture-openapi.mjs` reads the framework spec from the isolated mirror;
   `generate-artifacts` emits it as the real artifact with `PENDING` only on prod-equivalence. The
   scoped-out remainder (a follow-on, not blocking): the live MCP `tools/list` capture from the mirror.
-- **B2-P3b — `compose` `standup-stack` support** *(THE NEXT SLICE — the last unsupported
-  `stack-detect` recipe kind).* `compose` is multi-container ("most real backends are compose", so it
-  is high-value) but it is **design-sensitive**, which is why it lands after #11, not before:
-  - It does **not** fit the single-container teardown model — `teardown-stack.mjs` handles exactly one
-    container + one image + one network, guarded by `NAME_OK = /^sf-srt-(stack|net)-.../`. Needs a
-    **project-scoped teardown** (`docker compose -p sf-srt-stack-<runId> down -v --remove-orphans`) so
-    the whole project (all containers, the default network, volumes) is removed atomically without
-    per-name enumeration — that teardown-model extension is a distinct concern.
-  - **The loopback-only invariant is the open design fork.** The throwaway is 127.0.0.1-only, but a
-    compose file's own `ports:` typically bind `0.0.0.0`, and `stack-detect` emits only `{kind:'compose',
-    file}` + a web-tier port — **not** the web *service name*, and `standup-stack` has no YAML parser to
-    find it. So enforcing loopback needs a decision (a generated compose override that rebinds the web
-    service to `127.0.0.1:<port>` — but the service name must be discovered first, e.g. via
-    `docker compose ... ps`/`config`). Resolve this fork before building. Files: `harness/standup-stack.mjs`,
-    `harness/teardown-stack.mjs` (+ tests). Compose that defines its own db/redis stands up
-    self-contained; compose referencing external creds stays the `needs-secrets` scaffold path.
+- ~~**B2-P3b — `compose` `standup-stack` support**~~ **RECIPE DONE (0.8.48)** — see "Shipped this
+  arc" above. The compose stand-up (docker-resolved config → pure `planCompose` → loopback override →
+  project-scoped teardown) ships; the loopback boundary needs the port-based override COMPLETED by the
+  hardening slice below before it is called delivered.
+- **B2-P3b-h — compose loopback hardening (network-mode)** *(THE NEXT SLICE — completes the P3b
+  loopback boundary).* The 0.8.48 override enforces loopback by rewriting each service's published
+  `ports:`, which is correct for port-based publishing but **does not cover `network_mode`**: a service
+  that shares the host/another-container network namespace sidesteps compose port publishing entirely,
+  so the port-based override is a no-op for it. `planCompose` must **refuse** (return
+  `{unsupported:'compose'}`, the established refuse-don't-guess posture) any resolved-config service
+  whose `network_mode` is `host` or begins with `container:`/`service:` — checked BEFORE web-service
+  selection — while allowing absent/`bridge`/`default`/`none` to stand up as today. One standing test
+  (a host-network service → refused; a bridge/absent service → still stands up). File:
+  `harness/standup-stack.mjs` (+ test). This is the last thing between the compose recipe and a
+  delivered loopback-only guarantee.
 - **B2-P2 — org-tier `standup-org`/`teardown-org` engine.** The deployed-org deep audit currently
   improvises scratch-org create/install/teardown via inline `sf` commands. Build
   `standup-org.mjs`/`teardown-org.mjs` mirroring `install-scanners`/`standup-stack`: consented
