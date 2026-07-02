@@ -11,6 +11,8 @@
  *   T4  teardownStack: a tampered manifest (evil container name) → REFUSED, removes nothing
  *   T5  teardownStack: a valid manifest whose resources don't exist → already-clean
  *   T6  teardownStack: --target with no pointer → nothing-to-tear-down
+ *   T7  sweepStacks: name-scoped orphan cleanup, structured result, never throws
+ *   T8  planTeardown returns a dockerfile-built toolkit image for removal; refuses a foreign one
  *
  * Dependency-free: `node acceptance/test-teardown-stack.mjs` (exit 0 = pass).
  */
@@ -77,6 +79,15 @@ check('T7 sweepStacks: name-scoped orphan cleanup, structured result, never thro
   assert.ok(['swept', 'already-clean'].includes(r.status), JSON.stringify(r))
   assert.ok(Array.isArray(r.removed))
   for (const item of r.removed) assert.match(item, /^(container|image|tmp):/) // strictly toolkit-named
+})
+
+check('T8 planTeardown: a dockerfile-built toolkit image is removable; a foreign image is refused', () => {
+  // the build-then-run stand-up names its built image sf-srt-stack-<runId>:throwaway —
+  // planTeardown must return it for removal (docker rmi) …
+  const ok = planTeardown({ resources: { container: 'sf-srt-stack-abc', image: 'sf-srt-stack-abc:throwaway' } })
+  assert.equal(ok.image, 'sf-srt-stack-abc:throwaway')
+  // … and must REFUSE an image the toolkit didn't build (a tampered manifest can never rmi it)
+  assert.throws(() => planTeardown({ resources: { container: 'sf-srt-stack-abc', image: 'nginx:latest' } }), /non-toolkit docker resource/)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

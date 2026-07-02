@@ -51,6 +51,48 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.46] — 2026-07-02
+
+**The throwaway stand-up now covers `python` and `dockerfile` recipes.** The throwaway-DAST
+engine (`stack-detect` → `standup-stack` → `run-dast` → `teardown-stack`) could only stand up
+a plain `node` backend — every other recipe kind `stack-detect` emits came back `unsupported`,
+so a FastAPI/Flask/Django API (the most common external-API shape, and the OpenAPI critical
+path) or a repo shipping its own Dockerfile (the most prod-faithful single-container option)
+had no autonomous throwaway mirror to scan. `standup-stack` now plans and executes both:
+
+- **`python` (copy-in)** — the direct analogue of `node`: a pinned `python:3.12-slim` base
+  (never `:latest`, the same pinning discipline as `node:18-alpine`), the source copied into
+  the container, and a deterministic install-then-run command that is a pure function of the
+  recipe — pip from `requirements.txt` when the recipe root has one, else
+  `pyproject.toml`/`Pipfile` (`pip install .`), else no install (resolved by the shell inside
+  the container so the planner stays pure); then `manage.py` → the Django dev server,
+  `asgi.py`/`wsgi.py` → uvicorn/gunicorn on the conventional `<module>:application`, anything
+  else → `python <entry>` with HOST/PORT in the env. Every variant binds `0.0.0.0` INSIDE the
+  container only — the host publish stays `127.0.0.1`.
+- **`dockerfile` (build-then-run)** — builds the partner's own Dockerfile into an image
+  carrying the toolkit run-name (`sf-srt-stack-<runId>:throwaway`), so the existing
+  name-scoped teardown accepts and removes it with **zero teardown-logic change**; the built
+  image is recorded in the manifest from the pre-create name-stub on, so even a crashed build
+  stays teardown-able (and the name-scoped sweep catches any residue).
+
+Every safety property is kind-agnostic and holds for the new kinds: fail-closed without
+consent, the `127.0.0.1`-only host publish, secrets as NAMES in the plan + manifest with
+values only ever in the `0600` `--env-file` (burned at teardown), the needs-secrets
+filled-env-file re-check, the no-docker graceful hint, the signal-handler cleanup net, and
+the deliberate no-`docker logs`-capture. The `node` plan + executor logic is unchanged.
+`compose` stays honestly `unsupported` — it is multi-container and needs a project-scoped
+teardown extension, so it is the next slice (`procfile` likewise); the unsupported reason now
+names exactly what this build stands up. The live docker execution for the new kinds
+(pip + run, build + run) is operator-cold-validated like the node path — the standing tests
+pin the pure plans and the teardown boundary, which are what regress silently.
+
+Suite **57 files / 746 checks** (was 57 / 740), all green; each new/changed check
+mutation-proven (python or dockerfile reverted to `unsupported` → the plan checks go red; a
+skewed run-command mapping → the pure-function check goes red; a secret value leaked into a
+new-kind plan → the NAMES-only check goes red; a consent bypass on a new kind → the
+kind-agnostic-gates check goes red; a silent compose branch → the honest-boundary check goes
+red; an off-convention built-image name → the teardown boundary check goes red).
+
 ## [0.8.45] — 2026-07-02
 
 **The journey now runs the static scanner substrate BEFORE the LLM audit.** On a full run the

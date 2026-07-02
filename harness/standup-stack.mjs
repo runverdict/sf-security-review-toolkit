@@ -19,8 +19,12 @@
  *
  * It FAILS CLOSED without explicit consent (standing up a container + active scanning
  * is a live op). PURE planner `planStandup` (deterministic spec) + impure executor
- * `standupStack` (docker). This slice supports the `node` recipe (the common external-
- * API shape); `dockerfile`/`compose` are a later slice (returned as unsupported, honest).
+ * `standupStack` (docker). Supported recipes: `node` + `python` (copy-in — toolkit base
+ * image, source copied in) and `dockerfile` (build-then-run — the partner's own
+ * Dockerfile brings the source + base image; the built image carries the toolkit
+ * run-name so teardown removes it). `compose` is the next slice (multi-container —
+ * needs a project-scoped teardown extension); it and `procfile` are returned as
+ * unsupported, honest.
  *
  * USAGE: node standup-stack.mjs --target <repo> --consent [--run-id <id>] [--port N] [--json]
  */
@@ -41,6 +45,24 @@ export const STACK_SCHEMA = 'sf-srt-stack/1'
 export const NAME_PREFIX = 'sf-srt-stack'
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const NODE_BASE = 'node:18-alpine'
+export const PYTHON_BASE = 'python:3.12-slim' // pinned minor tag, never :latest (same discipline as NODE_BASE)
+
+// PYTHON RUN HEURISTIC (deterministic — the command is a pure function of the recipe):
+// install from `requirements.txt` when the recipe root has one, else `pyproject.toml`/
+// `Pipfile` (`pip install .`), else no install — resolved by the shell INSIDE the
+// container so the planner stays pure (an `if` with no matched branch exits 0, so the
+// run command still starts). Run: `manage.py` → the Django dev server; `asgi.py`/
+// `wsgi.py` → the conventional `<module>:application` via uvicorn/gunicorn (installed
+// by the dependency file, or the stand-up fails honestly); anything else →
+// `python <entry>` with HOST/PORT in the env. Every variant binds 0.0.0.0 INSIDE the
+// container so the 127.0.0.1-only host publish reaches it.
+const PY_INSTALL = 'if [ -f requirements.txt ]; then pip install --no-input --quiet -r requirements.txt; elif [ -f pyproject.toml ] || [ -f Pipfile ]; then pip install --no-input --quiet .; fi'
+function pythonRunCommand(entry, port) {
+  if (entry === 'manage.py') return `python manage.py runserver 0.0.0.0:${port}`
+  if (entry === 'asgi.py') return `python -m uvicorn asgi:application --host 0.0.0.0 --port ${port}`
+  if (entry === 'wsgi.py') return `python -m gunicorn --bind 0.0.0.0:${port} wsgi:application`
+  return `python ${entry}`
+}
 
 /** Resource names are derived ONLY from the validated run-id → teardown can name-scope. */
 export function stackNames(runId) {
@@ -68,9 +90,48 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
   if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
     throw new Error(`planStandup: invalid port '${port || (stack.webTier && stack.webTier.port)}'`)
   }
+  // Per-kind dispatch: node + python are COPY-IN plans (toolkit base image, source
+  // copied in); dockerfile is a BUILD plan (the partner's Dockerfile brings both).
+  if (recipe.kind === 'python') {
+    const root = recipe.root || '.'
+    const sourceDir = root === '.' ? target : join(target, root)
+    const entry = recipe.entry || 'app.py'
+    const synthNames = (stack.env && stack.env.synthesizable) || []
+    // PYTHONUNBUFFERED so boot output isn't buffered; HOST/PORT tell an env-reading app
+    // (Flask/FastAPI-style) where to bind — 0.0.0.0 is the in-container bind ONLY.
+    const benign = { PORT: String(webPort), PYTHONUNBUFFERED: '1', HOST: '0.0.0.0' }
+    return {
+      schema: STACK_SCHEMA, runId, kind: 'python',
+      container: names.container, image: null, network: null, baseImage: PYTHON_BASE,
+      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      sourceDir, entry, workdir: '/app',
+      command: `${PY_INSTALL} && ${pythonRunCommand(entry, webPort)}`,
+      synthEnvNames: [...synthNames], benignEnv: benign,
+      envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
+      pointerRel: join('.security-review', 'stack-standup.json'),
+    }
+  }
+  if (recipe.kind === 'dockerfile') {
+    const root = recipe.root || '.'
+    const buildContext = root === '.' ? target : join(target, root)
+    const dockerfilePath = join(target, recipe.file || join(root, 'Dockerfile'))
+    const synthNames = (stack.env && stack.env.synthesizable) || []
+    return {
+      schema: STACK_SCHEMA, runId, kind: 'dockerfile',
+      // the built image carries the toolkit run-name → teardown's name gate accepts + rmi's it
+      container: names.container, image: names.image, network: null, baseImage: null,
+      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      buildContext, dockerfilePath,
+      synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
+      envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
+      pointerRel: join('.security-review', 'stack-standup.json'),
+    }
+  }
   if (recipe.kind !== 'node') {
     return { schema: STACK_SCHEMA, runId, unsupported: recipe.kind || 'unknown',
-      reason: `standup of a '${recipe.kind}' recipe is a later slice; this slice stands up 'node' (copy-in) only` }
+      reason: `standup of a '${recipe.kind}' recipe is the next slice; this build stands up 'node'/'python' (copy-in) + 'dockerfile' (build) — compose is multi-container and lands next` }
   }
   const root = recipe.root || '.'
   const sourceDir = root === '.' ? target : join(target, root)
@@ -148,6 +209,9 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
 
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
+  // A dockerfile stand-up BUILDS a toolkit-named image; record it from the name-stub on
+  // (the name is deterministic) so even a crashed build stays teardown-able (docker rmi).
+  if (plan.kind === 'dockerfile') rec.builtImage = plan.image
 
   // Secret VALUES go via env-FILEs, never the docker argv — so they don't appear in host
   // process listings (audit: no secret on argv). The synth file lives in tmpRoot (0600),
@@ -177,11 +241,18 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   for (const [s, h] of Object.entries(handlers)) process.on(s, h)
   try {
     quiet('docker', ['rm', '-f', plan.container]) // clear any stale same-name container
-    // COPY-IN, not bind-mount: create → cp source → start (working tree stays in the container).
-    run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
-      ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
-    run('docker', ['cp', `${plan.sourceDir}/.`, `${plan.container}:${plan.workdir}`])
-    run('docker', ['start', plan.container])
+    if (plan.kind === 'dockerfile') {
+      // BUILD-THEN-RUN: the partner's own Dockerfile brings the source + base image.
+      run('docker', ['build', '-t', plan.image, '-f', plan.dockerfilePath, plan.buildContext])
+      run('docker', ['run', '-d', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
+        ...fileArgs, plan.image])
+    } else {
+      // COPY-IN, not bind-mount: create → cp source → start (working tree stays in the container).
+      run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
+        ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
+      run('docker', ['cp', `${plan.sourceDir}/.`, `${plan.container}:${plan.workdir}`])
+      run('docker', ['start', plan.container])
+    }
     rec.status = 'starting'
     const deadline = Date.now() + timeoutMs
     let up = false
