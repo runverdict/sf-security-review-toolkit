@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.53**, suite **61 files / 827 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.54**, suite **61 files / 835 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -186,13 +186,45 @@
   (it consumes the corrected set). Suite 61 files / 827 checks. **Follow-up (B3b-3):** the same
   raw-`e.type` fragility survives in other consumers (notably `compile-submission`'s re-intersect) — see
   the open backlog.
+- **0.8.54 B3b-3 — applicable set read verbatim at compile + stale-scope-manifest refusal (GAP-Y3)**
+  *(shipped + test-backed; verified off disk against the prior engine)*. The two seams that could still
+  resurrect the truncated set the 0.8.53 gate fix closed are shut. **(A)** `compile-submission` re-derived
+  applicability by raw `applies_to`-vs-element intersection at three sites (the conflicting-entries
+  collection ~66, the step-2 inventory filter ~77, the slot-suppression rule ~408) — on a synonym-typed
+  manifest the compiled checklist/questionnaire/slots could silently omit the external rows while the SCI
+  gate counted them missing. All three now read the manifest's `applicableBaselineIds` **verbatim** (the
+  single persisted authority — exactly what `compute-sci.mjs:60` consumes); the genuinely element-branching
+  conditionals match types through the canonical form (`ELEMENT_TYPE_SYNONYMS` keeps its one home; the
+  CONVENTIONS tree-line enumeration was trimmed to reference-plus-example). The journey's artifact step
+  (step 5) had the same narration — also converted. **(B)** The operational carryover turned out to have
+  gate weight, not note severity: a pre-0.8.53 manifest persists the truncated id set and `compute-sci`
+  consumed it verbatim — the falsely-ready failure surviving via the persisted cache. `compute-sci` now
+  recomputes the set from the manifest's own elements (reusing `applicable-requirements.mjs`'s exports —
+  that file needed zero diff) and REFUSES on any set difference (order-insensitive, duplicates ignored,
+  missing-stored-with-elements included, BOTH drift directions) with a `STALE SCOPE MANIFEST` block +
+  **exit 2**, routing to a scope-submission re-run. Refuse-only: it never adds, removes, or substitutes
+  ids; a fresh manifest computes **byte-identically** to the 0.8.53 engine (proven old-vs-new across
+  fresh-synonym/canonical/nontrivial/empty/no-manifest/whitespace/skip shapes, text + `--json`); element
+  types are trimmed so stray whitespace never false-positives; the same check catches a baseline changed
+  by a plugin upgrade after scoping. A manifest carrying stored ids but NO elements is out of the check's
+  reach (documented: a hand-edited shape scope-submission never writes; behavior byte-identical to prior).
+  **(C)** Canonical-form notes landed in the four remaining consumers (reviewer-simulation's challenge
+  filter, prepare-test-environment's component selection, run-scans' family Applies-when column,
+  stay-listed — which now also reads `applicableBaselineIds` verbatim). Standing-test fixtures that pin
+  arbitrary stored id sets now carry internally consistent manifests (elements was dead weight in them
+  before this change), so pinned layers can't trip the refusal as the baseline grows; the solano
+  CORROBORATE layer now exercises the fresh path with real elements. Standing tests: S1-S5 (exit-2 stale
+  on both output paths with counts + missing-id sample; fresh synonym ≡ canonical byte-identical;
+  shuffled/dup not stale; missing-stored stale; whitespace-trim) + W1-W3 (the three compile sites +
+  journey routing + the four notes, with negative assertions on the old re-intersect phrasings); the
+  staleness check is mutation-proven. Suite 61 files / 835 checks.
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a/B3b/B3b-2 DONE;
-B3b-3 GAP-Y3 is THE NEXT ITEM, then B3c) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) →
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a/B3b/B3b-2/
+B3b-3 DONE; B3c GAP-Z is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) →
 B7 (gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
 the post-hardening build justifies it.
 
@@ -237,27 +269,14 @@ pending the one clean cold run that cold-validates B1..B2 (that run also gates t
   applicable set (deepEqual, 113; the 27 dropped controls restored, 6 blocker-severity pinned to the SCI
   seam), canonical unchanged, no over-scope — the go/no-go gate no longer under-requires the
   external-endpoint control set on a synonym-typed manifest.
-- **GAP-Y3 / B3b-3 — finish element-type synonym resilience across the REMAINING consumers** *(THE
-  NEXT ITEM — correctness for one, hygiene for the rest).* The 0.8.53 gate fix canonicalized
-  `computeApplicable`, but a consumer sweep found the same raw-`e.type` fragility in several other places
-  that filter/branch on element type. **Verify each against the code, then canonicalize (reuse
-  `canonicalElementType` — do NOT duplicate the map):**
-  - `compile-submission` — **the one with go/no-go weight:** it reportedly **re-intersects `applies_to`
-    itself** instead of reading the manifest's `applicableBaselineIds` verbatim, so a synonym-typed
-    manifest could re-drop the external controls at the final compile even though the gate is now correct.
-    Confirm; if true, either canonicalize its intersect OR make it read `applicableBaselineIds` verbatim
-    (single source of truth). This one is a correctness follow-up, not cosmetic.
-  - `reviewer-simulation` / `reviewer-challenges` element filters, `prepare-test-environment`'s component
-    table, `run-scans` family-applies prose, `stay-listed`'s staleness filter — mostly LLM-side prose
-    that keys on the canonical type; canonicalize or note the synonym so they don't mis-branch.
-  - **Operational carryover (document + decide):** a manifest written *before* 0.8.53 from a
-    synonym-typed scope persists the truncated 86-id `applicableBaselineIds` on disk until
-    `scope-submission` re-runs. Options: a one-line note in the resume/staleness path that a pre-0.8.53
-    manifest should be re-scoped, or have the reader recompute. Decide in the slice.
-  - Standing test per real fix (a synonym manifest yields the same downstream behavior as its canonical
-    type). All note-severity except the `compile-submission` re-intersect — sequence that first.
-- **GAP-Z / B3c — extract-drafted-content + write harness** *(minor scope, but a NEW file-write
-  surface — not trivial).* The Workflow runtime is read-only ("no filesystem access" —
+- ~~**GAP-Y3 / B3b-3 — finish element-type synonym resilience across the REMAINING consumers**~~
+  **DONE (0.8.54)** — see "Shipped this arc" above. The `compile-submission` re-intersect was confirmed
+  (three prose sites) and converted to reading `applicableBaselineIds` verbatim; the operational
+  carryover was resolved as a deterministic `STALE SCOPE MANIFEST` refusal in `compute-sci` (exit 2,
+  refuse-only, fresh-path byte-identical); the four note-severity consumers carry the canonical-form
+  note (stay-listed also reads the persisted set verbatim).
+- **GAP-Z / B3c — extract-drafted-content + write harness** *(THE NEXT ITEM — minor scope, but a NEW
+  file-write surface — not trivial).* The Workflow runtime is read-only ("no filesystem access" —
   `artifact-workflow-template.mjs:22-25,132-134`), so `generate-artifacts` step (d) and `audit-codebase`
   step 6 have the driver hand-script the extract-content-from-envelope + write each pass (the
   shell-escaping slips are an *observed-in-cold-runs* motivation, not a code fact — treat as such).
