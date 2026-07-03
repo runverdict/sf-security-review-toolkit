@@ -16,10 +16,11 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { parseBaselineApplies, computeApplicable } from '../harness/applicable-requirements.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const SCI = join(PLUGIN, 'harness', 'compute-sci.mjs')
@@ -65,12 +66,16 @@ check('A1 fail-closed: empty applicable set → NOT NO-SURPRISES READY, complete
   assert.equal(json.completeness_pct, 0)
 })
 
-// A2 — determinism: a non-trivial state, run twice, byte-identical stdout
+// A2 — determinism: a non-trivial state, run twice, byte-identical stdout.
+// elements deliberately empty: this fixture pins an ARBITRARY stored applicable
+// set (the property under test is byte-determinism, not scope consistency);
+// with elements present, the stale-manifest refusal would correctly reject the
+// inconsistent pair — the S checks below cover that path.
 check('A2 determinism: identical inputs + fixed date → byte-identical stdout', () => {
   const d = fixture((dir) => {
     write(dir, 'scope-manifest.json', {
       applicableBaselineIds: ['scan-code-analyzer-invocation', 'artifact-authn-authz-flow-doc', 'process-review-fee'],
-      elements: [{ type: 'managed-package' }],
+      elements: [],
     })
     write(dir, 'audit-ledger.json', {
       findings: [
@@ -163,8 +168,11 @@ check('C1: aged baseline + MISSING items → MATERIALS COMPLETE preserved, floor
 
 // C2 — small-manifest guard: a single hard-stale req must NOT trip the floor
 // (hardStale.length >= 2 required), even though 1/1 = 100% >= 33%.
+// elements deliberately empty: the stored set is a deliberate SUBSET of the
+// synth baseline's managed-package set, which the stale-manifest refusal would
+// correctly reject if elements were present (the S checks cover that path).
 const c2dir = fixture((dir) => {
-  write(dir, 'scope-manifest.json', { applicableBaselineIds: [A4_REQS[1]], elements: [{ type: 'managed-package' }] })
+  write(dir, 'scope-manifest.json', { applicableBaselineIds: [A4_REQS[1]], elements: [] })
   write(dir, 'audit-ledger.json', { findings: [] })
   mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
   writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'),
@@ -187,9 +195,12 @@ check('C2: single hard-stale req → hard floor does NOT fire (needs ≥2)', () 
 // white-box static audit is statically-cleared — never headline credit, never a
 // floor clear. The cold-run regression these guard: an LLM-authored evidence index
 // marked auto-fail classes satisfied from its OWN static audit, inflating SCI 9%→17%.
+// elements deliberately empty: these fixtures pin arbitrary stored id sets (the
+// property under test is the CREDIT RULE, not scope consistency); with elements
+// present, the stale-manifest refusal would correctly reject them (S checks).
 function evFixture(applicable, entries, findings = []) {
   return fixture((dir) => {
-    write(dir, 'scope-manifest.json', { applicableBaselineIds: applicable, elements: [{ type: 'managed-package' }] })
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: applicable, elements: [] })
     write(dir, 'audit-ledger.json', { findings })
     mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
     writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'), JSON.stringify({ entries }))
@@ -249,6 +260,139 @@ check('P1d blocker floor: reviewer-reproducible scanner clear of the SAME blocke
   const j = runSciDate(d, '2026-06-16', blockPlugin)
   assert.equal(j.blocked, false, 'a reviewer-reproducible scanner clear must clear the blocker floor (clean-package path survives)')
   assert.notEqual(j.band, 'BLOCKED')
+})
+
+// ---------------------------------------------------------------------------
+// S — the stale-scope-manifest refusal. `applicableBaselineIds` is a CACHE of
+// scope-submission's computation; a manifest scoped before the applicability
+// gate canonicalized element-type synonyms persists a truncated set, and
+// compute-sci consumed it verbatim — under-requiring the blocker floor and
+// inflating completeness (the falsely-ready failure the gate fix closed,
+// surviving via the persisted cache). compute-sci must recompute from the
+// manifest's own elements and REFUSE (exit 2) on any set difference —
+// order-insensitive, duplicates ignored, and it never substitutes either set.
+// ---------------------------------------------------------------------------
+const BASELINE_ENTRIES = parseBaselineApplies(
+  readFileSync(join(PLUGIN, 'baseline', 'requirements-baseline.yaml'), 'utf8')
+)
+// What the pre-canonicalization gate computed for a synonym-typed scope: the raw
+// synonym matched no applies_to token, so only the `all`-gated floor survived.
+const TRUNCATED = computeApplicable(BASELINE_ENTRIES, ['no-such-element-type'])
+const CORRECT = computeApplicable(BASELINE_ENTRIES, ['external-web-app'])
+const WEB_SYNONYM_ELEMENTS = [{ type: 'external-web-app' }]
+
+function runSciRaw(target, extraArgs = []) {
+  // execFileSync throws on a non-zero exit; normalize to { status, stdout }.
+  try {
+    const out = execFileSync('node', [SCI, '--target', target, '--plugin', PLUGIN, '--date', '2026-06-16', ...extraArgs], { encoding: 'utf8' })
+    return { status: 0, stdout: out }
+  } catch (e) {
+    return { status: e.status, stdout: String(e.stdout || '') }
+  }
+}
+
+check('S1 stale refusal: synonym-typed manifest + truncated stored set → exit 2 + STALE block (text and --json)', () => {
+  assert.ok(CORRECT.length > TRUNCATED.length, 'precondition: the synonym scope must require more than the all-gated floor')
+  const d = fixture((dir) => {
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: TRUNCATED, elements: WEB_SYNONYM_ELEMENTS })
+    write(dir, 'audit-ledger.json', { findings: [] })
+  }); dirs.push(d)
+  for (const flags of [[], ['--json']]) {
+    const r = runSciRaw(d, flags)
+    assert.equal(r.status, 2, 'stale manifest must exit 2 (the documented refusal code) — never silently compute')
+    assert.match(r.stdout, /STALE SCOPE MANIFEST/)
+    assert.ok(r.stdout.includes(`(${TRUNCATED.length} distinct id(s))`), 'names the stored count')
+    assert.ok(r.stdout.includes(`(${CORRECT.length} id(s))`), 'names the recomputed count')
+    assert.match(r.stdout, /scope-submission/, 'routes to re-scoping')
+    const missing = CORRECT.filter((id) => !new Set(TRUNCATED).has(id)).sort()
+    assert.ok(r.stdout.includes(missing[0]), 'samples the missing ids')
+    assert.doesNotMatch(r.stdout, /READINESS:/, 'no SCI may be emitted alongside the refusal')
+  }
+})
+
+check('S2 fresh manifest passes; synonym scope ≡ canonical scope byte-identically (text and --json)', () => {
+  const mk = (els, ids) => fixture((dir) => {
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: ids, elements: els })
+    write(dir, 'audit-ledger.json', { findings: [] })
+  })
+  const dSyn = mk(WEB_SYNONYM_ELEMENTS, CORRECT); dirs.push(dSyn)
+  const dCan = mk([{ type: 'external-endpoint' }], computeApplicable(BASELINE_ENTRIES, ['external-endpoint'])); dirs.push(dCan)
+  for (const flags of [[], ['--json']]) {
+    const a = runSciRaw(dSyn, flags)
+    const b = runSciRaw(dCan, flags)
+    assert.equal(a.status, 0, 'a fresh (stored == recomputed) manifest must compute normally')
+    assert.equal(b.status, 0)
+    assert.doesNotMatch(a.stdout, /STALE SCOPE MANIFEST/)
+    assert.equal(a.stdout, b.stdout, 'a synonym-typed scope must compute the same SCI as its canonical twin')
+    assert.match(a.stdout, flags.length ? /"band"/ : /READINESS:/)
+  }
+})
+
+check('S3 shuffled + duplicated stored set → NOT stale (set comparison, order/duplicates ignored)', () => {
+  const shuffled = [...CORRECT].reverse().concat(CORRECT[0])
+  const d = fixture((dir) => {
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: shuffled, elements: WEB_SYNONYM_ELEMENTS })
+    write(dir, 'audit-ledger.json', { findings: [] })
+  }); dirs.push(d)
+  const r = runSciRaw(d)
+  assert.equal(r.status, 0, 'order/duplicates must not false-positive the staleness check')
+  assert.doesNotMatch(r.stdout, /STALE SCOPE MANIFEST/)
+})
+
+check('S4 missing applicableBaselineIds with a non-empty recompute → stale (exit 2)', () => {
+  const d = fixture((dir) => {
+    write(dir, 'scope-manifest.json', { elements: WEB_SYNONYM_ELEMENTS })
+    write(dir, 'audit-ledger.json', { findings: [] })
+  }); dirs.push(d)
+  const r = runSciRaw(d)
+  assert.equal(r.status, 2, 'a manifest with elements but no stored set must refuse, not silently compute')
+  assert.match(r.stdout, /STALE SCOPE MANIFEST/)
+})
+
+check('S5 stray whitespace in an element type → NOT stale (trimmed like the producer path)', () => {
+  // The manifest is LLM-authored JSON; the applicable-requirements --elements
+  // producer path trims its tokens, so the recompute must trim too or a
+  // trailing space would false-positive the refusal on a genuinely fresh scope.
+  const d = fixture((dir) => {
+    write(dir, 'scope-manifest.json', { applicableBaselineIds: CORRECT, elements: [{ type: ' external-web-app ' }] })
+    write(dir, 'audit-ledger.json', { findings: [] })
+  }); dirs.push(d)
+  const r = runSciRaw(d)
+  assert.equal(r.status, 0, 'a whitespace-padded element type must not trip the staleness refusal')
+  assert.doesNotMatch(r.stdout, /STALE SCOPE MANIFEST/)
+})
+
+// ---------------------------------------------------------------------------
+// W — prose wiring: the manifest's applicableBaselineIds is THE applicable set
+// for every consumer (single source of truth with the SCI gate), and the
+// element-consuming skills match types through the canonical form.
+// ---------------------------------------------------------------------------
+check('W1 compile-submission reads applicableBaselineIds verbatim at the three sites; no raw applies_to re-derivation', () => {
+  const skill = readFileSync(join(PLUGIN, 'skills', 'compile-submission', 'SKILL.md'), 'utf8')
+  const mentions = skill.match(/applicableBaselineIds/g) || []
+  assert.ok(mentions.length >= 3, `expected ≥3 applicableBaselineIds read sites, got ${mentions.length}`)
+  assert.doesNotMatch(skill, /intersects the manifest's `applies_to` set/, 'step 1 must not re-intersect applies_to')
+  assert.doesNotMatch(skill, /whose `applies_to` matches the manifest/, 'step 2 must not re-derive by applies_to')
+  assert.doesNotMatch(skill, /`applies_to` matched the scope manifest/, 'slot suppression must key on baseline ids')
+  assert.match(skill, /ELEMENT_TYPE_SYNONYMS/, 'element-type conditionals reference the canonical synonym home')
+  assert.match(skill, /STALE SCOPE MANIFEST/, 'documents the stale refusal and where it routes')
+})
+
+check('W2 security-review-journey documents the stale refusal routing; no raw applies_to re-derivation', () => {
+  const skill = readFileSync(join(PLUGIN, 'skills', 'security-review-journey', 'SKILL.md'), 'utf8')
+  assert.match(skill, /STALE SCOPE MANIFEST/)
+  assert.match(skill, /scope-submission/)
+  assert.match(skill, /applicableBaselineIds/, 'the artifact step reads the persisted applicable set')
+  assert.doesNotMatch(skill, /whose `applies_to` matched the manifest/, 'the artifact step must not re-derive by applies_to')
+})
+
+check('W3 the four element-consuming skills carry the canonical-form note; stay-listed reads the persisted set', () => {
+  for (const s of ['reviewer-simulation', 'prepare-test-environment', 'run-scans', 'stay-listed']) {
+    const skill = readFileSync(join(PLUGIN, 'skills', s, 'SKILL.md'), 'utf8')
+    assert.match(skill, /ELEMENT_TYPE_SYNONYMS/, `${s} must reference the canonical synonym home (never duplicate the map)`)
+  }
+  const stayListed = readFileSync(join(PLUGIN, 'skills', 'stay-listed', 'SKILL.md'), 'utf8')
+  assert.match(stayListed, /applicableBaselineIds/, 'stay-listed gates on the persisted applicable set, not a re-intersection')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

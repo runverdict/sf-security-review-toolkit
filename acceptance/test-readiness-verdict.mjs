@@ -70,10 +70,12 @@ check('RV2 section order matches the template (fixed RENDER sentinel order)', ()
 })
 
 check('RV3 the SCI slot equals compute-sci stdout EXACTLY (byte-for-byte paste)', () => {
-  // minimal fixture repo: empty applicable → deterministic NOT-READY block (with --date)
+  // minimal fixture repo: empty applicable + empty elements → deterministic NOT-READY
+  // block (with --date). elements must be empty too: with an element present and no
+  // stored ids, compute-sci's stale-manifest refusal exits 2 instead (test-sci S4).
   const repo = tmp()
   mkdirSync(join(repo, '.security-review'), { recursive: true })
-  writeFileSync(join(repo, '.security-review', 'scope-manifest.json'), JSON.stringify({ applicableBaselineIds: [], elements: [{ type: 'managed-package' }] }))
+  writeFileSync(join(repo, '.security-review', 'scope-manifest.json'), JSON.stringify({ applicableBaselineIds: [], elements: [] }))
   writeFileSync(join(repo, '.security-review', 'audit-ledger.json'), JSON.stringify({ findings: [], passes: [] }))
   const sciStdout = execFileSync('node', [SCI, '--target', repo, '--plugin', PLUGIN, '--date', '2026-06-25'], { encoding: 'utf8' })
   const sci = sciStdout.replace(/\n$/, '') // strip only the trailing newline the CLI adds

@@ -510,9 +510,11 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    only**; the gate never reads it for the decision.
 
 5. **Artifacts** → `/sf-security-review-toolkit:generate-artifacts`. Generates
-   only the artifacts whose `applies_to` matched the manifest; honors the
-   blocker-gate AuthN/AuthZ suppression. Each generated doc is labeled
-   automated-vs-owner-run; none is presented as reviewer-final.
+   only the artifacts whose baseline ids are in the manifest's
+   `applicableBaselineIds` (the persisted applicable set, read verbatim —
+   never re-derived by intersecting `applies_to` against element types);
+   honors the blocker-gate AuthN/AuthZ suppression. Each generated doc is
+   labeled automated-vs-owner-run; none is presented as reviewer-final.
 
 6. **Scans (the live/conditional tail)** → `/sf-security-review-toolkit:run-scans`,
    invoked in **live-tail mode** (state the mode in the invocation, as at Step 2).
@@ -626,7 +628,11 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    go/no-go signal**: `BLOCKED`/`NOT READY` is the honest verdict (the full report
    is still produced — it just says *don't submit yet* and names the blockers to
    fix + re-run), `MATERIALS COMPLETE`/`NO-SURPRISES READY` means the materials
-   are ready. The verdict is also
+   are ready. If `compute-sci` instead refuses with a `STALE SCOPE MANIFEST`
+   block (exit 2 — the manifest's persisted applicable set no longer matches a
+   recompute from its own elements), the resume point is Phase 0: route back to
+   `/sf-security-review-toolkit:scope-submission` and re-scope before compiling.
+   Past that gate, the verdict is also
    per-category, lists **what was NOT verified**, carries any open ledger findings
    forward, and ends on the fixed caveat: Salesforce performs its own penetration
    test regardless of submitted evidence, and the SCI measures completeness, never

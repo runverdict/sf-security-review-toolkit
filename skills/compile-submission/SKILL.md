@@ -62,8 +62,8 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    *undisclosed* one. When drifted: re-run scope-submission first, then come
    back. Then check baseline currency (CONVENTIONS §4): for every baseline
    entry this compile touches, warn when `last_verified` is older than 90
-   days or null, and collect every entry whose `verification: conflicting`
-   intersects the manifest's `applies_to` set (as of the 2026-06 sweep a
+   days or null, and collect every `verification: conflicting` entry whose id
+   is in the manifest's `applicableBaselineIds` (as of the 2026-06 sweep a
    single entry remains: `endpoint-ssl-labs-a-grade` — whether reviewers
    enforce the letter grade as pass/fail in practice; two further open
    FACETS ride on otherwise-verified entries and surface from their
@@ -71,11 +71,21 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    `artifact-agentexchange-questionnaire-na-reasons`, and MCP-listing fee
    applicability on `process-review-fee`) — these feed
    the verdict's confirm-with-your-Partner-Account-Manager list in step 8,
-   never a silently picked side.
+   never a silently picked side. Read the persisted `applicableBaselineIds`
+   list verbatim; never re-derive applicability by intersecting `applies_to`
+   against the manifest's element types. One staleness class the spot-checks
+   above cannot see — correct elements but a truncated persisted id list —
+   is caught deterministically at the SCI run below, whose `STALE SCOPE
+   MANIFEST` refusal aborts the compile.
 
 2. **Inventory what exists against what applies.** Filter the baseline to the
-   entries whose `applies_to` matches the manifest, then walk
-   `docs/security-review/` and `.security-review/evidence/` and classify
+   entries whose ids are in the manifest's `applicableBaselineIds` — the
+   persisted list is THE applicable set, read verbatim: it was computed with
+   element-type canonicalization and is exactly the set `compute-sci`
+   consumes, whereas re-deriving it by raw `applies_to`-vs-element
+   intersection re-drops the element-gated controls a synonym-typed
+   manifest requires — then
+   walk `docs/security-review/` and `.security-review/evidence/` and classify
    every applicable artifact: **present and verifiable**, **present but
    defective**, or **missing**. "Verifiable" is mechanical, not impressionistic:
    the file exists at the exact referenced path, is non-empty, parses (JSON
@@ -236,6 +246,12 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      not-verified list. It is also the autonomous go/no-go signal
      `security-review-journey` surfaces at the pre-compile gate, and it fills the
      readiness-tracker header (§ readiness-tracker SCI_BLOCK) identically.
+     If it instead prints a `STALE SCOPE MANIFEST` block and exits non-zero (exit
+     2), the manifest's persisted applicable set no longer matches a recompute
+     from its own elements (a pre-canonicalization scope, or a baseline changed
+     by a plugin upgrade after scoping) — re-run
+     `/sf-security-review-toolkit:scope-submission`, then restart this compile;
+     never hand-edit the manifest to silence the refusal.
    - **`LEDGER_FRESHNESS` — guard against a verdict over moved code.** Paste the
      one-liner from
      `node ${CLAUDE_PLUGIN_ROOT}/harness/ledger-staleness.mjs --target <target>` (the
@@ -405,10 +421,11 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
     what this toolkit can verify," not a prediction (CONVENTIONS §2).
 
     **Conditional suppression — the operator must never face an empty slot
-    (P-1).** Emit a slot **only when the artifact's `applies_to` matched the
-    scope manifest** (the same filter step 2 used). A managed-package-only
-    listing has no MCP-server-details artifact and no API/OAuth slot; an
-    external-server-only listing has no Code Analyzer / Checkmarx package leg.
+    (P-1).** Emit a slot **only when the artifact's baseline id is in the
+    manifest's `applicableBaselineIds`** (the same list step 2 read). A
+    managed-package-only listing has no MCP-server-details artifact and no
+    API/OAuth slot; an external-server-only listing has no Code Analyzer /
+    Checkmarx package leg.
     For Step 4 specifically, **auto-suppress the Desktop Clients and Mobile
     Apps sub-blocks when the manifest carries no desktop-client or mobile
     element** — render them as a one-line "not applicable: no <element> in
@@ -417,7 +434,11 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
     Render the surviving conditional sub-blocks from the **detected** elements,
     not a fixed list: a Username/Password block appears because a Trialforce /
     test-org credential runbook exists; an API/OAuth/SAML block appears because
-    the manifest shows an external endpoint or MCP server. The index closes
+    the manifest shows an external endpoint or MCP server. Wherever a rule in
+    this block genuinely branches on element TYPES, match the type through its
+    canonical form — synonyms per `harness/render-detected-elements.mjs`'s
+    `ELEMENT_TYPE_SYNONYMS` (e.g. `external-web-app` ≡ `external-endpoint`) —
+    never the raw manifest string. The index closes
     with a short "suppressed (not applicable)" list so the omission is visibly
     deliberate — a reviewer (and a future re-compile) sees that Desktop was
     *decided* out, not *forgotten*.

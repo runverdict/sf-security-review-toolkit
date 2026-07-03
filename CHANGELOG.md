@@ -51,6 +51,56 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.54] — 2026-07-03
+
+**The compile reads the manifest's persisted applicable set verbatim, and `compute-sci` refuses
+a stale scope manifest.** 0.8.53 fixed the applicability gate itself; two seams could still
+resurrect the truncated set it closed. First, compile-submission re-derived applicability by raw
+`applies_to`-vs-element intersection at three sites (the conflicting-entries collection, the
+step-2 inventory filter, and the submission-package slot-suppression rule) — on a synonym-typed
+manifest the compiled checklist/questionnaire/slots could silently omit the external rows (DAST,
+TLS, external SAST/SCA/IaC) while the SCI gate counted them missing: a self-contradictory
+compile. All three sites now read the manifest's `applicableBaselineIds` verbatim — the single
+applicable-set authority, exactly the set `compute-sci` consumes; the conditionals that genuinely
+branch on element types (the Desktop/Mobile sub-block suppression, the API/OAuth block) match
+types through their canonical form (`ELEMENT_TYPE_SYNONYMS` — the map keeps its one home in
+`render-detected-elements.mjs`, never duplicated into prose).
+
+Second, a scope manifest written before 0.8.53 persists the truncated applicable set on disk,
+and `compute-sci` consumed it verbatim — the falsely-ready failure the gate fix closed, surviving
+via the persisted cache (an under-scoped set inflates the completeness % and under-requires the
+blocker floor). `compute-sci` now recomputes the applicable set from the manifest's own elements
+(reusing `applicable-requirements.mjs`'s exports — the same engine scope-submission ran,
+canonicalization included; that file itself is untouched) against the baseline it already reads,
+and on any set difference — order-insensitive, duplicate ids ignored, a missing/empty stored
+array with a non-empty recompute included — refuses with a distinctive `STALE SCOPE MANIFEST`
+block (stored vs recomputed counts + a sample of the missing ids) and **exit code 2**, routing to
+a `/sf-security-review-toolkit:scope-submission` re-run. It never adds, removes, or substitutes
+ids in a passing run — the stored set under-requires, and a silent substitution would mask the
+drift. A fresh manifest (stored == recomputed) computes **byte-identically** to 0.8.53 on both
+the text and `--json` paths (verified against the prior engine on fresh synonym-typed, fresh
+canonical, empty-manifest, and no-manifest fixtures). The same check also catches a baseline
+changed by a plugin upgrade after the manifest was scoped. Both drivers (compile-submission,
+security-review-journey) document the refusal and its re-scope routing.
+
+Element-type synonym notes landed across the remaining consumers: reviewer-simulation's
+challenge filter, prepare-test-environment's component selection, run-scans' family-applies
+column (covering every per-family *Applies when:* line), and stay-listed's staleness gate — the
+latter now reads `applicableBaselineIds` verbatim instead of re-intersecting `applies_to`. The
+journey's artifact step likewise reads the persisted set verbatim instead of narrating an
+`applies_to` match.
+
+Suite **61 files / 835 checks** (was 827), all green. The staleness check is mutation-proven
+(check removed → the truncated set silently computes → RED). The new checks: stale synonym-typed
+manifest → exit-2 refusal naming both counts on both output paths; fresh manifest passes, with a
+synonym scope computing the same SCI as its canonical twin byte-for-byte; shuffled/duplicated
+stored order → NOT stale; missing stored array → stale; a whitespace-padded element type → NOT
+stale (types are trimmed to mirror the producer path, so stray whitespace can never
+false-positive the refusal); prose wiring for the three compile sites + the journey routing +
+the four canonical-form notes. Standing-test fixtures that pin arbitrary stored id sets now
+carry internally consistent manifests, so the pinned layers cannot trip the new refusal as the
+baseline grows.
+
 ## [0.8.53] — 2026-07-02
 
 **The applicable-requirements gate now canonicalizes element-type synonyms — a synonym-typed

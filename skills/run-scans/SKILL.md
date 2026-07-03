@@ -129,6 +129,12 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 | 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code) |
 | 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
 
+The *Applies when (manifest)* column — here and in every per-family *Applies
+when:* line below — matches element types through their canonical form
+(synonyms per `harness/render-detected-elements.mjs`'s
+`ELEMENT_TYPE_SYNONYMS`, e.g. `external-web-app` ≡ `external-endpoint`): a
+synonym-typed manifest selects exactly the families its canonical twin would.
+
 ## The static/live partition — two journey entry modes
 
 The eight families split cleanly by what they need, and the journey drives the

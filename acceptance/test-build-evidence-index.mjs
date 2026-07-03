@@ -102,8 +102,12 @@ check('B2 fail-safe: a cleared class pointing at a NON-EXISTENT scanner file →
 check('B3 end-to-end into compute-sci: only the reproducible clear is credited', () => {
   const d = makeRepo(); dirs.push(d)
   build(d)
+  // elements deliberately empty: this pins an arbitrary 3-id applicable set (the
+  // property under test is the credit rule, not scope consistency); with an element
+  // present, compute-sci's stale-manifest refusal would correctly reject the
+  // inconsistent pair (see test-sci.mjs S checks).
   writeFileSync(join(d, '.security-review', 'scope-manifest.json'),
-    JSON.stringify({ applicableBaselineIds: ['fail-crud-fls', 'fail-soql-injection', 'scan-iac-misconfig'], elements: [{ type: 'managed-package' }] }))
+    JSON.stringify({ applicableBaselineIds: ['fail-crud-fls', 'fail-soql-injection', 'scan-iac-misconfig'], elements: [] }))
   writeFileSync(join(d, '.security-review', 'audit-ledger.json'), JSON.stringify({ findings: [] }))
   const out = execFileSync('node', [SCI, '--target', d, '--plugin', PLUGIN, '--date', '2026-06-17', '--json'], { encoding: 'utf8' })
   const j = JSON.parse(out)

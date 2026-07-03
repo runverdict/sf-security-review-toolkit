@@ -253,11 +253,16 @@ function evidenceEntry(id) {
   return null // MISSING — owner-completable materials not done (the Phase B gap)
 }
 
-function buildState(dir, applicableIds) {
+// elements defaults to empty: the PRIMARY layer pins the FROZEN SOLANO_APPLICABLE
+// id set so baseline growth cannot drift the count — but with real elements
+// present, compute-sci's stale-manifest refusal would (correctly) reject a frozen
+// set the moment the baseline grows. Only the CORROBORATE layer, whose id set is
+// live-derived from ELEMENTS by construction, passes real elements.
+function buildState(dir, applicableIds, elements = []) {
   mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
   writeFileSync(join(dir, '.security-review', 'scope-manifest.json'), JSON.stringify({
     applicableBaselineIds: applicableIds,
-    elements: ELEMENTS.map((t) => ({ type: t })),
+    elements,
   }))
   writeFileSync(join(dir, '.security-review', 'audit-ledger.json'), JSON.stringify({
     schema_version: '1', findings: FINDINGS,
@@ -273,10 +278,10 @@ function runSci(dir) {
   const out = execFileSync('node', [SCI, '--target', dir, '--plugin', PLUGIN, '--date', RUN_DATE, '--json'], { encoding: 'utf8' })
   return JSON.parse(out)
 }
-function fixture(applicableIds) {
+function fixture(applicableIds, elements = []) {
   const dir = mkdtempSync(join(tmpdir(), 'solano-band-'))
   dirs.push(dir)
-  buildState(dir, applicableIds)
+  buildState(dir, applicableIds, elements)
   return dir
 }
 
@@ -354,7 +359,9 @@ check('CORROBORATE: every fixed Solano id still exists in the live applicable se
 })
 
 check('CORROBORATE: live-derived state stays low / BLOCKED with empty blocker_findings', () => {
-  const j = runSci(fixture(liveApplicable))
+  // live-derived ids + real elements: consistent by construction, so this layer
+  // also exercises compute-sci's stale-manifest check on its passing (fresh) path.
+  const j = runSci(fixture(liveApplicable, ELEMENTS.map((t) => ({ type: t }))))
   assert.ok(j.completeness_pct < 20, `live-derived completeness ${j.completeness_pct}% should stay low until Phase B`)
   assert.equal(j.band, 'BLOCKED', `live-derived band ${j.band} — expected BLOCKED on owner materials`)
   assert.equal(j.blocked, true)

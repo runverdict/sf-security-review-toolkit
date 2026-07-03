@@ -250,9 +250,15 @@ published consequence (baseline: `post-pkce-refresh-rotation-mandate`).
    step 1 already flagged them), the cycle's duty list itself is suspect:
    the review process changed three times in eighteen months, and the
    post-approval rules have moved with it. List the stale entries that
-   *gate this partner* (the ones whose `applies_to` intersects the scope
-   manifest), confirm each through the Partner Account Manager or the
-   partner Slack, and write the confirmed dates — or corrected facts —
+   *gate this partner*: the ones whose ids are in the manifest's
+   `applicableBaselineIds`, read verbatim. (Never re-intersect `applies_to`
+   against the manifest's element types — a synonym-typed element matches no
+   raw `applies_to` token, so re-intersection silently drops the entries
+   gated on its canonical type; where element-type matching is genuinely
+   needed, it goes through the canonical form per
+   `harness/render-detected-elements.mjs`'s `ELEMENT_TYPE_SYNONYMS`.)
+   Confirm each through the Partner Account Manager or the partner Slack,
+   and write the confirmed dates — or corrected facts —
    back into `baseline/requirements-baseline.yaml`. The currency model
    (CONVENTIONS §4) only works if some cycle closes the loop; this is the
    cycle that does.

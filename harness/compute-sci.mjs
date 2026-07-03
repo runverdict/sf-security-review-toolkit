@@ -33,10 +33,17 @@
  *     over-crediting index under-credits (safe) instead of inflating the headline.
  *
  * Usage: node compute-sci.mjs --target <repo> --plugin <pluginRoot> [--date YYYY-MM-DD] [--json]
+ *
+ * Exit codes: 0 — SCI computed. 2 — STALE SCOPE MANIFEST refusal: the manifest's
+ * stored `applicableBaselineIds` no longer equals a recompute from the manifest's
+ * own elements against the current baseline (see the stale-manifest block below).
+ * The refusal block is plain text on BOTH the text and --json paths — a non-zero
+ * exit means there is no SCI to parse.
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseBaselineApplies, computeApplicable } from './applicable-requirements.mjs'
 
 // ---------------------------------------------------------------------------
 function arg(flag, def) {
@@ -59,6 +66,67 @@ const evidence = readJSON(join(SR, 'evidence', 'index.json'), { entries: [] })
 const findings = Array.isArray(ledger.findings) ? ledger.findings : []
 const applicable = Array.isArray(manifest.applicableBaselineIds) ? manifest.applicableBaselineIds : []
 const evEntries = Array.isArray(evidence.entries) ? evidence.entries : []
+
+// ---------------------------------------------------------------------------
+// Stale-scope-manifest refusal (exit code 2).
+// `applicableBaselineIds` is the single persisted applicable-set authority every
+// number below keys off — but it is a CACHE of scope-submission's computation.
+// Two drift classes make the cache lie: a manifest scoped before the
+// applicability gate canonicalized element-type synonyms persists a truncated
+// set (an under-scoped set INFLATES the completeness % and under-requires the
+// blocker floor — the falsely-ready failure), and a plugin upgrade can change
+// the baseline after the manifest was scoped. So when the manifest carries
+// elements, recompute the set from them (applicable-requirements.mjs — the same
+// engine scope-submission ran, canonicalization included) against the same
+// baseline file this script already reads, and REFUSE on any set difference
+// (order-insensitive; duplicate ids ignored). Never silently proceed with
+// EITHER set: the stored one under-requires, and silently substituting the
+// recompute would mask the drift compile-submission's manifest spot-check
+// exists to catch. A manifest with no usable element types has no scope to
+// recompute from, so the check is skipped there (the same "scope not computed
+// yet" doctrine renderApplicable applies): the empty-STORED case still fails
+// closed via the NOT-READY band below, while stored ids WITHOUT elements are
+// out of this check's reach — a hand-edited shape scope-submission never
+// writes, and the compile prose forbids hand-editing the manifest. The check
+// itself can only refuse, never alter a passing run. Element-type strings are
+// trimmed to mirror the applicable-requirements `--elements` producer path, so
+// stray whitespace in an element type can never false-positive the refusal.
+// ---------------------------------------------------------------------------
+const manifestElementTypes = (Array.isArray(manifest.elements) ? manifest.elements : [])
+  .map((e) => e && e.type)
+  .map((t) => (typeof t === 'string' ? t.trim() : t))
+  .filter((t) => t != null && t !== '')
+if (manifestElementTypes.length) {
+  const baselinePath = join(PLUGIN, 'baseline', 'requirements-baseline.yaml')
+  const baselineEntries = existsSync(baselinePath)
+    ? parseBaselineApplies(readFileSync(baselinePath, 'utf8'))
+    : []
+  if (baselineEntries.length) {
+    const storedSet = new Set(applicable)
+    const recomputedSet = new Set(computeApplicable(baselineEntries, manifestElementTypes))
+    const missing = [...recomputedSet].filter((id) => !storedSet.has(id)).sort()
+    const extra = [...storedSet].filter((id) => !recomputedSet.has(id)).sort()
+    if (missing.length || extra.length) {
+      const sample = (ids) => ids.slice(0, 5).join(', ') + (ids.length > 5 ? ` … (+${ids.length - 5} more)` : '')
+      const L = []
+      L.push('STALE SCOPE MANIFEST — refusing to compute the SCI.')
+      L.push(
+        `The manifest's stored applicable set (${storedSet.size} distinct id(s)) no longer matches a recompute from ` +
+          `its own elements (${manifestElementTypes.join(', ')}) against the current baseline (${recomputedSet.size} id(s)).`
+      )
+      if (missing.length) L.push(`  Missing from stored (under-required): ${sample(missing)}`)
+      if (extra.length) L.push(`  Stored but no longer applicable: ${sample(extra)}`)
+      L.push(
+        'An under-scoped applicable set INFLATES the completeness % and under-requires the blocker floor. Likely ' +
+          'causes: the manifest was scoped before element-type synonyms were canonicalized, or a plugin upgrade ' +
+          'changed the baseline after scoping. Re-run /sf-security-review-toolkit:scope-submission to regenerate ' +
+          'the manifest, then re-run this step.'
+      )
+      process.stdout.write(L.join('\n') + '\n')
+      process.exit(2)
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Baseline field extract — dependency-free line parse of requirements-baseline.yaml.

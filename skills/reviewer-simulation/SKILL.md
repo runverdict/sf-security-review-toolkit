@@ -44,7 +44,11 @@ reviewer intent, **not** the reviewer's live penetration test (CONVENTIONS §2).
 ## Steps
 
 1. **Load the manifest and filter the checklist.** Read `reviewer-challenges.md`
-   and keep only the challenges whose element is present in the manifest. A
+   and keep only the challenges whose element is present in the manifest —
+   matching element types through their canonical form (synonyms per
+   `harness/render-detected-elements.mjs`'s `ELEMENT_TYPE_SYNONYMS`, e.g.
+   `external-web-app` ≡ `external-endpoint`), so a synonym-typed manifest keeps
+   exactly the challenges its canonical twin would. A
    challenge for an absent element is N/A — drop it silently (it would read as
    false coverage), but record the dropped count in the run log so "0 MCP
    challenges" is visible as a scoping fact, not a gap.

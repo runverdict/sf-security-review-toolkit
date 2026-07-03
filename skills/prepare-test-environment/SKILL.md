@@ -60,7 +60,10 @@ bounce.
 
 1. **Read the manifest and the baseline; surface the conflicts before
    provisioning anything.** Select components from the manifest's elements
-   (table above). Warn when any `testenv-*`/`artifact-*` entry this run uses
+   (table above), matching element types through their canonical form
+   (synonyms per `harness/render-detected-elements.mjs`'s
+   `ELEMENT_TYPE_SYNONYMS` — a manifest typed `external-web-app` selects the
+   `external-endpoint` rows). Warn when any `testenv-*`/`artifact-*` entry this run uses
    has `last_verified` older than 90 days (CONVENTIONS §4). Surface every
    `conflicting` entry with its `conflicts` text — never silently pick a
    side. As of the 2026-06 sweep, no entry this phase uses remains
