@@ -51,6 +51,63 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.61] — 2026-07-03
+
+**Reachability now flows on current tooling: the ingest reads the standardized SARIF
+`codeFlows` taint path through a version-portable normalizer, and Opengrep joins the Family 7
+scan set as the OSS engine that actually emits the trace.** 0.8.57 built the
+`reachabilityPath` capture and 0.8.60 wired the live scan to request it — but current Semgrep
+CE (1.168.0) omits the machine-readable trace from `--json` entirely, leaving the substrate
+dormant on up-to-date installs. This release makes it flow, engine-agnostically, from two new
+surfaces:
+
+**The `sarif` ingest adapter.** SARIF 2.1.0 is the OASIS-standardized output format every
+serious SAST engine emits, and its `codeFlows → threadFlows → locations` construct is the
+standardized serialization of the source→sink taint path. The new adapter ingests any SARIF
+2.1.0 file (`--all` now enumerates `evidence/*.sarif` alongside `*.json`): the engine label
+comes from the file's own `tool.driver.name` (never hardcoded — Opengrep, Semgrep, and CodeQL
+captures all self-identify), severity maps tool→band from the result `level` (via the rule's
+`defaultConfiguration` fallback — the SARIF defaulting chain), the rule's `CWE-###` tags
+route injection findings to the `injection-xss` dimension exactly like the JSON adapters do,
+and `codeFlows` normalizes to the SAME `{source, intermediate[], sink}` `reachabilityPath`
+shape as the Semgrep-JSON dataflow trace — one normal form across engines and formats, proven
+by a standing equivalence check over genuine captures of the identical seeded sample. Every
+`codeFlows` sub-object is spec-optional, so the normalizer is defensive end-to-end: zero,
+partial, or malformed flows attach nothing and never throw; a SARIF finding owns no toolkit
+class (severity is the tool band; it supersedes nothing).
+
+**Opengrep, wired as a scanner.** Opengrep (the LGPL-2.1, consortium-governed Semgrep fork)
+empirically emits the taint trace current Semgrep CE withholds — in BOTH `--json`
+(`extra.dataflow_trace`, parsed by the existing normalizer unchanged) and `--sarif`
+(`codeFlows`) — and adds cross-function intra-file taint via `--taint-intrafile`. It is now
+detectable (Family 7, external-SAST), installable on consent as a sha256-pinned v1.25.0
+release binary (four platforms, raw single-file assets, each hash verified against the
+release's published per-asset digests; an unpinned platform fails closed), and documented in
+the run-scans Family 7 invocation capturing both output surfaces. Empirical flag truth,
+pinned by fixture and standing check: Opengrep's JSON carries the trace even without
+`--dataflow-traces`, but its SARIF emits `codeFlows` ONLY with the flag — the documented
+commands keep it on both. The Semgrep invocation gains a parallel `--sarif` capture.
+
+**Engine-label honesty.** Opengrep's JSON output is content-indistinguishable from Semgrep's
+format (verified on the captured fixture pair: identical key sets at every level,
+`engine_kind: 'OSS'` on both — no distinguishing field exists), so a naive ingest would
+mislabel Opengrep findings `engine: 'semgrep'`. The new `opengrep` adapter (explicit
+`--scanner opengrep`) and an evidence-name refinement in `--all` (a semgrep-shaped file under
+the documented `opengrep-<date>.json` name re-labels, with a visible note) keep provenance
+honest — an Opengrep finding never says `semgrep`, and the JSON + SARIF captures of the same
+hit converge on ONE finding id (same engine + rule + locus) instead of double-reporting.
+
+**The Semgrep-SARIF question, adjudicated by capture.** On the identical seeded source→sink
+sample and taint rule where Opengrep emits a 4-step `codeFlows` flow, Semgrep CE 1.168.0
+`--sarif --dataflow-traces` emitted NO `codeFlows` — the CE SARIF taint path is Pro-gated.
+The captured fixture is committed as the adjudication record and a standing check pins the
+status: the Semgrep-SARIF reachability surface is **pending** (nothing fabricated); Opengrep
+is the OSS engine the reachability substrate relies on today. The Semgrep-JSON ingest path is
+byte-unchanged.
+
+Suite **62 files / 905 checks** (was 895), all green. Mutation-proven: nulling the SARIF
+codeFlows normalizer turns the SG-RP-SARIF1 anchor red.
+
 ## [0.8.60] — 2026-07-03
 
 **The live Family 7 external-SAST scan now requests the source→sink dataflow trace, so the

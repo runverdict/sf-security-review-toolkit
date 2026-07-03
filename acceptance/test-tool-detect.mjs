@@ -125,6 +125,18 @@ check('T8 regexploit (0.8.56 — the Family-7 ReDoS leg): pip-installable in ext
   assert.ok(!missingNames(present).includes('regexploit'), 'a present regexploit is never re-installed')
 })
 
+check('T9 opengrep (0.8.61 — the Family-7 reachability leg): BINARY-installable in external-sast (never pip — it is not on PyPI); a present bin is used as-is', () => {
+  const r = detectTools('')
+  const og = fam(r, 'external-sast').tools.find((t) => t.name === 'opengrep')
+  assert.ok(og, 'opengrep rides the external-sast family (Family 7) — no new family')
+  assert.equal(og.install, 'binary', 'binary release, never pip — opengrep is not on PyPI (a pip install would 404)')
+  assert.ok(missingNames(r).includes('opengrep'), 'absent → installable-on-consent (binary), like osv-scanner')
+  const present = detectTools(binDir(['opengrep']))
+  const ogPresent = fam(present, 'external-sast').tools.find((t) => t.name === 'opengrep')
+  assert.equal(ogPresent.present, true)
+  assert.ok(!missingNames(present).includes('opengrep'), 'a present opengrep is never re-installed')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

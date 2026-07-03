@@ -211,11 +211,11 @@
           "minLength": 1
         },
         "reachable": {
-          "description": "True when the producing scanner PROVED a source→sink dataflow path for this finding (Semgrep taint mode — B5 · E0.1). Present iff `reachabilityPath` is. ABSENCE means the scanner recorded no path — 'not analyzed', never 'unreachable'; no finding carries `reachable: false`.",
+          "description": "True when the producing scanner PROVED a source→sink dataflow path for this finding (Semgrep/Opengrep taint-mode JSON — B5 · E0.1; SARIF codeFlows from any engine — B5 · E0.2b). Present iff `reachabilityPath` is. ABSENCE means the scanner recorded no path — 'not analyzed', never 'unreachable'; no finding carries `reachable: false`.",
           "type": "boolean"
         },
         "reachabilityPath": {
-          "description": "The scanner-computed source→sink dataflow trace, normalized from Semgrep taint-mode `extra.dataflow_trace` by harness/ingest-scanner-findings.mjs (B5 · E0.1): the untrusted-input source location, the ordered intermediate propagation steps (may be empty), and the sensitive-sink location. Relayed MECHANICALLY from captured scanner output — never LLM-authored, never entering the finding's id/severity/band. Locations only; matched source text is never recorded here. Present iff `reachable` is.",
+          "description": "The scanner-computed source→sink dataflow trace, normalized by harness/ingest-scanner-findings.mjs from Semgrep/Opengrep taint-mode `extra.dataflow_trace` (B5 · E0.1) or from the standardized SARIF 2.1.0 `codeFlows` taint path of any producing engine — opengrep, semgrep-Pro, CodeQL (B5 · E0.2b, one normal form across engines and formats): the untrusted-input source location, the ordered intermediate propagation steps (may be empty), and the sensitive-sink location. Relayed MECHANICALLY from captured scanner output — never LLM-authored, never entering the finding's id/severity/band. Locations only; matched source text is never recorded here. Present iff `reachable` is.",
           "type": "object",
           "additionalProperties": false,
           "required": ["source", "intermediate", "sink"],

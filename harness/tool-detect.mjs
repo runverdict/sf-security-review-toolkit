@@ -58,6 +58,10 @@ const FAMILIES = [
     key: 'external-sast', label: 'External SAST (Semgrep keystone)',
     tools: [
       { name: 'semgrep', bins: ['semgrep'], install: 'pip', hint: 'pip install semgrep' },
+      // Opengrep (LGPL-2.1 semgrep fork) is the reachability leg: it emits the taint dataflow
+      // trace in BOTH --json and --sarif on current versions, where semgrep CE omits it (JSON)
+      // or Pro-gates it (SARIF codeFlows). Release BINARY only — it is NOT on PyPI (pip 404s).
+      { name: 'opengrep', bins: ['opengrep'], install: 'binary', hint: 'download the opengrep release binary (emits the source→sink taint trace in JSON + SARIF; adds cross-function intra-file taint)' },
       { name: 'bandit', bins: ['bandit'], install: 'pip', hint: 'pip install bandit (Python)' },
       { name: 'njsscan', bins: ['njsscan'], install: 'pip', hint: 'pip install njsscan (Node)' },
       { name: 'gosec', bins: ['gosec'], install: 'binary', hint: 'download the gosec release binary (Go)' },

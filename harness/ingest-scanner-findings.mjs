@@ -116,6 +116,21 @@
  *                       WHY owning a class here would be a correctness hazard (resource-consumption-
  *                       abuse is a MULTI-SHAPE dimension). Gated by `resource-consumption-abuse`
  *                       (the RCA baseline id, major — the osv gateLabel-param precedent).
+ *                     Adapter #13 (B5 · E0.2b, 0.8.61): `sarif` (SARIF 2.1.0 JSON; engine from
+ *                       `run.tool.driver.name`, NEVER hardcoded — 'opengrep'/'semgrep'/'codeql') —
+ *                       the VERSION-PORTABLE reachability surface: SARIF `codeFlows` is the
+ *                       OASIS-standardized taint-path serialization, normalized by
+ *                       _sarifReachabilityPath into the SAME `reachabilityPath` shape as the
+ *                       semgrep-JSON dataflow_trace path (one normal form across engines).
+ *                       Tool→band from result `level` (via the rule's defaultConfiguration
+ *                       fallback); the same per-hit CWE routing (rule properties.tags); classify()
+ *                       → null. `--all` now also enumerates evidence/*.sarif.
+ *                     Adapter #14 (B5 · E0.2b, 0.8.61): `opengrep` (engine:'opengrep') — the honest
+ *                       engine label for Opengrep --json output, which is content-INDISTINGUISHABLE
+ *                       from semgrep's (verified on the fixture pair): parse delegates to
+ *                       semgrepAdapter verbatim + re-labels the engine; NO detect (the format
+ *                       recognizer honestly says 'semgrep'; the explicit --scanner form and
+ *                       ingestAll's documented opengrep-* evidence-name refinement carry provenance).
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -236,6 +251,16 @@ export const BANDIT_SEVERITY_TO_FINDING = { HIGH: 'high', MEDIUM: 'medium', LOW:
 // secrets-scanner finding is cross-engine dedup = roadmap §10 extension #3 (Phase-2b), NOT this
 // slice (the SAFE under-merge — a duplicate may survive in the band, never a dropped finding).
 export const NJSSCAN_SEVERITY_TO_FINDING = { ERROR: 'high', WARNING: 'medium', INFO: 'low' }
+// SARIF's per-result `level` (B5 · E0.2b — the version-portable `sarif` adapter). SARIF 2.1.0
+// defines exactly `error`/`warning`/`note` (+ `none`) as the result-level vocabulary, and every
+// SARIF-emitting SAST engine (opengrep / semgrep / codeql) serializes its own tier onto that
+// scale (opengrep/semgrep: ERROR→error, WARNING→warning, INFO→note — verified on the captured
+// fixtures), so `error → high` here IS the same calibration call as SEMGREP_SEVERITY_TO_FINDING's
+// `ERROR → high` (never critical/blocker — reachability stays the labelled residual even when the
+// SAME result carries a codeFlows trace; the trace is attribute capture, not band escalation).
+// A result with no own `level` inherits its rule's `defaultConfiguration.level` (the SARIF
+// defaulting chain — both captured fixtures use it); unknown/absent after that → `info`, never dropped.
+export const SARIF_LEVEL_TO_FINDING = { error: 'high', warning: 'medium', note: 'low', none: 'info' }
 // OSV-Scanner's per-advisory severity (Phase 2 · 2a #7 — the dependency-CVE scanner, run-scans Family 8
 // over every lockfile under a non-package source root). This is **Extension A: the CVSS→enum severity fork**
 // (roadmap §10 extension #1) — the FIRST adapter whose severity is neither a toolkit CLASS (checkov/secrets)
@@ -987,6 +1012,60 @@ function _reachabilityPath(trace) {
     .filter(Boolean) // a malformed middle step is skipped; the proven ends still stand
   return { source, intermediate, sink }
 }
+
+// ---- SARIF codeFlows reachability normalization (B5 · E0.2b, 0.8.61) ----
+// The engine-agnostic sibling of _traceStep/_reachabilityPath: SARIF 2.1.0 standardizes the
+// taint path as `result.codeFlows[] → threadFlows[] → locations[]` (threadFlowLocation), and
+// opengrep, semgrep-Pro, and CodeQL (`@kind path-problem`) all emit that IDENTICAL shape — so
+// ONE normalizer covers every SARIF-emitting engine, current and future. Steps are ordered by
+// `executionOrder` when every location carries one (SARIF: absent means unspecified), else by
+// array order (the captured opengrep 1.25.0 fixture has no executionOrder — array order IS the
+// flow order); `[0]` = source, `[last]` = sink, the middle steps are the intermediates. Every
+// sub-object on this path is spec-OPTIONAL ("MAY"), so each access is guarded: zero/malformed
+// codeFlows → null (no attribute, base finding unchanged), NEVER a throw. Multiple
+// codeFlows/threadFlows (CodeQL emits several per result) → take `[0]` — one proven path is the
+// attribute's contract; enumerating alternates is a future refinement, not a correctness gap.
+// `artifactLocation.uri` is used VERBATIM (minus a defensive file:// scheme-strip): the captured
+// engines emit repo-relative URIs (uriBaseId %SRCROOT%), which is exactly the locus shape every
+// adapter emits — resolving against `originalUriBaseIds` would re-embed the SCAN HOST's absolute
+// path into the ledger, the opposite of the genericization rule. Code snippets/messages DROPPED
+// (locations only), same discipline as _traceStep.
+const _sarifTraceStep = (tfl) => {
+  if (!_isObj(tfl)) return null
+  const loc = _isObj(tfl.location) ? tfl.location : null
+  const phys = loc && _isObj(loc.physicalLocation) ? loc.physicalLocation : null
+  if (!phys) return null
+  const art = _isObj(phys.artifactLocation) ? phys.artifactLocation : null
+  const uri = art && typeof art.uri === 'string' ? art.uri.replace(/^file:\/\//, '') : ''
+  const region = _isObj(phys.region) ? phys.region : null
+  const rawLine = region ? region.startLine : null
+  // coerce a numeric-string startLine (a producer quirk SARIF consumers tolerate); ≥1 or nothing
+  const line = Number.isInteger(rawLine)
+    ? rawLine
+    : typeof rawLine === 'string' && /^\d+$/.test(rawLine)
+      ? parseInt(rawLine, 10)
+      : null
+  return uri && Number.isInteger(line) && line >= 1 ? { file: uri, line } : null
+}
+function _sarifReachabilityPath(result) {
+  if (!_isObj(result) || !Array.isArray(result.codeFlows)) return null
+  const flow = _isObj(result.codeFlows[0]) ? result.codeFlows[0] : null
+  const threads = flow && Array.isArray(flow.threadFlows) ? flow.threadFlows : []
+  const thread = _isObj(threads[0]) ? threads[0] : null
+  const locs = thread && Array.isArray(thread.locations) ? thread.locations : []
+  if (locs.length < 2) return null // a 1-step flow has no source→sink pair to relay
+  // executionOrder ONLY when every step carries an integer one (mixed presence = unspecified
+  // relative order per spec → keep array order); the sort is stable, so ties keep array order
+  const ordered = locs.every((l) => _isObj(l) && Number.isInteger(l.executionOrder))
+    ? [...locs].sort((a, b) => a.executionOrder - b.executionOrder)
+    : locs
+  const steps = ordered.map((l) => _sarifTraceStep(l))
+  const source = steps[0]
+  const sink = steps[steps.length - 1]
+  if (!source || !sink) return null // same contract as _reachabilityPath: BOTH ends or nothing
+  const intermediate = steps.slice(1, -1).filter(Boolean) // a malformed middle step is skipped
+  return { source, intermediate, sink }
+}
 export const semgrepAdapter = {
   name: 'semgrep',
   kind: 'file-parser',
@@ -1053,6 +1132,50 @@ export const semgrepAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (the security rulesets), like checkov/metadata.
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #14 — opengrep (file-parser, B5 · E0.2b, 0.8.61): the HONEST ENGINE LABEL for
+// Opengrep's `--json` output. Opengrep (the LGPL-2.1, consortium-governed Semgrep fork) emits
+// JSON that is BYTE-SHAPE-COMPATIBLE with Semgrep CE's — verified on the captured fixture pair:
+// identical top-level keys, identical `results[].extra.*` keys, `engine_kind: 'OSS'` on BOTH —
+// so NO content shape can distinguish the two engines' JSON, and this adapter deliberately
+// carries NO `detect` (like metadata-viewall it is invisible to recognizeScanner; the format
+// recognizer honestly routes the SHAPE to 'semgrep'). Provenance instead comes from the two
+// places that genuinely know the producer:
+//   1. the explicit `--scanner opengrep --input …` CLI form (the operator names the engine), and
+//   2. ingestAll's evidence-name refinement: a semgrep-SHAPED file captured under the documented
+//      `opengrep-<date>.json` evidence name (run-scans Family 7) re-labels to this adapter — the
+//      FILENAME refines only the LABEL, never the routing (a renamed capture still ingests
+//      correctly as the semgrep FORMAT; it just keeps the semgrep label — the honest ceiling of
+//      an indistinguishable format, noted in the ingest output).
+// parse DELEGATES to semgrepAdapter.parse verbatim (dataflow_trace→reachabilityPath, CWE routing,
+// tool→band — all identical semantics; Opengrep emits `extra.dataflow_trace` in `--json` even
+// without `--dataflow-traces`, verified 1.25.0) and re-labels `engine: 'opengrep'` — so the
+// finding id (engine+ruleId+file:line) honestly attributes the producer, and an opengrep JSON +
+// SARIF capture of the SAME hit converge on the SAME id (cross-surface dedup by construction).
+export const opengrepAdapter = {
+  name: 'opengrep',
+  kind: 'file-parser',
+  // NO detect — see above: opengrep JSON is content-indistinguishable from semgrep JSON.
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    return semgrepAdapter.parse(raw).map((h) => ({ ...h, engine: 'opengrep' }))
+  },
+  // Constant null, same reasoning as semgrep: tool→band, owns no class, supersedes nothing.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (the security rulesets), like semgrep.
 }
 
 // ----------------------------------------------------------------------------
@@ -1803,11 +1926,125 @@ export const regexploitAdapter = {
   // NO securityRelevant — security-by-construction (every reported block is an ambiguous regex).
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #13 — sarif (file-parser, B5 · E0.2b, 0.8.61): parses captured SARIF 2.1.0 output —
+// the VERSION-PORTABLE reachability surface. SARIF is the OASIS-standardized interchange format
+// every serious SAST engine emits (`--sarif` on opengrep/semgrep, CodeQL's native output), and
+// its `codeFlows` construct is the STANDARDIZED serialization of the source→sink taint path —
+// so one adapter + one normalizer (_sarifReachabilityPath) ingests the reachability substrate
+// from ANY of those engines, decoupled from any single tool's JSON quirks (the durable bet:
+// Semgrep CE 1.168 omits `dataflow_trace` from --json AND Pro-gates SARIF codeFlows, while
+// Opengrep 1.25.0 emits codeFlows for free — the adapter doesn't care which engine wins).
+//   engine    — from `run.tool.driver.name`, first token lowercased ('Opengrep OSS'→'opengrep',
+//               'Semgrep OSS'→'semgrep', 'CodeQL'→'codeql') — NEVER hardcoded: provenance is the
+//               producer's own declaration; an unnamed driver falls back to 'sarif'.
+//   severity  — tool→band like semgrep: `result.level`, else the rule's
+//               `defaultConfiguration.level` (the SARIF defaulting chain — both captured
+//               fixtures rely on it), via SARIF_LEVEL_TO_FINDING (error→high · warning→medium ·
+//               note→low · unknown→info, never dropped).
+//   dimension — the SAME per-hit CWE routing as semgrep/bandit/njsscan: the rule's
+//               `properties.tags` carry 'CWE-###' strings (the exact array shape cweIdsOf
+//               already normalizes), so an allowlisted injection CWE routes to `injection-xss`;
+//               everything else keeps 'external-sast'. ROUTING/ATTRIBUTE ONLY — classify() is
+//               constant null (owns no class, supersedes nothing — the semgrep posture).
+//   reachability — `result.codeFlows` → _sarifReachabilityPath, attached in a try/catch exactly
+//               like the semgrep-JSON path: extraction failure = no attribute, never a lost finding.
+// Only `runs[].results[]` become findings. NO securityRelevant — the documented invocations run
+// the security rulesets (security-by-construction, like semgrep).
+export const sarifAdapter = {
+  name: 'sarif',
+  kind: 'file-parser',
+  // CONTENT-SHAPE recognizer: a top-level `runs[]` ARRAY plus a SARIF version/schema marker.
+  // Provably disjoint from all other detects: no other adapter's shape carries `runs[]` (the
+  // SAST trio keys on a top-level `results[]`, which SARIF nests INSIDE runs[]).
+  detect: (r) =>
+    _isObj(r) &&
+    Array.isArray(r.runs) &&
+    ((typeof r.version === 'string' && r.version.startsWith('2.')) ||
+      (typeof r.$schema === 'string' && r.$schema.toLowerCase().includes('sarif'))),
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (!_isObj(raw) || !Array.isArray(raw.runs)) return []
+    const hits = []
+    for (const run of raw.runs) {
+      if (!_isObj(run)) continue
+      const driver = _isObj(run.tool) && _isObj(run.tool.driver) ? run.tool.driver : {}
+      const engine =
+        typeof driver.name === 'string' && driver.name.trim()
+          ? driver.name.trim().split(/\s+/)[0].toLowerCase()
+          : 'sarif' // an unnamed driver — honest fallback, never a guessed engine
+      // rule index by id — the SARIF defaulting chain reads level/tags/helpUri off the rule
+      const ruleById = new Map()
+      for (const ru of Array.isArray(driver.rules) ? driver.rules : []) {
+        if (_isObj(ru) && typeof ru.id === 'string') ruleById.set(ru.id, ru)
+      }
+      for (const r of Array.isArray(run.results) ? run.results : []) {
+        if (!_isObj(r) || r.ruleId == null) continue
+        const rule = ruleById.get(r.ruleId)
+        const level =
+          typeof r.level === 'string' && r.level
+            ? r.level
+            : rule && _isObj(rule.defaultConfiguration) && typeof rule.defaultConfiguration.level === 'string'
+              ? rule.defaultConfiguration.level
+              : ''
+        const loc = Array.isArray(r.locations) && _isObj(r.locations[0]) ? r.locations[0] : null
+        const phys = loc && _isObj(loc.physicalLocation) ? loc.physicalLocation : null
+        const art = phys && _isObj(phys.artifactLocation) ? phys.artifactLocation : null
+        // uri VERBATIM minus a defensive file:// strip — see the _sarifTraceStep rationale
+        const file = art && typeof art.uri === 'string' && art.uri ? art.uri.replace(/^file:\/\//, '') : null
+        const region = phys && _isObj(phys.region) ? phys.region : null
+        const tags = rule && _isObj(rule.properties) && Array.isArray(rule.properties.tags) ? rule.properties.tags : []
+        const hit = {
+          engine,
+          ruleId: String(r.ruleId),
+          severityNum: null, // SARIF has no 1-5 number; the band comes from level
+          file,
+          startLine: region && Number.isInteger(region.startLine) ? region.startLine : null,
+          message: _isObj(r.message) && typeof r.message.text === 'string' ? r.message.text : '',
+          resources: rule && typeof rule.helpUri === 'string' && rule.helpUri ? [rule.helpUri] : [],
+          bandFromTool: SARIF_LEVEL_TO_FINDING[level] || 'info', // unknown level → info, never dropped
+          toolSevLabel: String(level || 'unknown'),
+          // per-hit CWE routing (the semgrep/bandit/njsscan posture): rule tags carry 'CWE-###'
+          dimensionHint: dimensionForCwes(tags),
+          tags: [],
+        }
+        // B5 · E0.2b: the standardized codeFlows taint path → reachabilityPath. Wrapped so a
+        // malformed flow can NEVER take down the base finding (mirrors the semgrep-JSON path).
+        let reachabilityPath = null
+        try {
+          reachabilityPath = _sarifReachabilityPath(r)
+        } catch {
+          reachabilityPath = null
+        }
+        if (reachabilityPath) hit.reachabilityPath = reachabilityPath
+        hits.push(hit)
+      }
+    }
+    return hits
+  },
+  // Constant null: a SARIF finding owns NO toolkit class (tool→band severity; an owned class
+  // would over-escalate + supersede co-located LLM findings across every producing engine).
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (the documented security-ruleset invocations).
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
+  'opengrep': opengrepAdapter,
   'bandit': banditAdapter,
   'njsscan': njsscanAdapter,
   'gitleaks': gitleaksAdapter,
@@ -1816,6 +2053,7 @@ export const ADAPTERS = {
   'npm-audit': npmAuditAdapter,
   'trivy': trivyAdapter,
   'regexploit': regexploitAdapter,
+  'sarif': sarifAdapter,
 }
 
 // ----------------------------------------------------------------------------
@@ -1823,7 +2061,8 @@ export const ADAPTERS = {
 // Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
 // match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
 // logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
-// carry a `detect` fn (metadata-viewall, the source-scanner, has none). Each `detect` is
+// carry a `detect` fn (metadata-viewall, the source-scanner, has none; opengrep has none
+// BY DESIGN — its JSON is content-indistinguishable from semgrep's, see the adapter). Each `detect` is
 // wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
 // crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
 // match is the norm; the >1 branch exists so a future shape collision fails LOUD, not silent.
@@ -1946,11 +2185,14 @@ export function ingestAll({ target, pass, dryRun } = {}) {
     status: metaRes.findings.length ? 'ran' : 'clean',
   })
 
-  // (2) enumerate evidence/*.json — TOP LEVEL only (skip subdirs like dast/), sorted for determinism.
+  // (2) enumerate evidence/*.json + *.sarif — TOP LEVEL only (skip subdirs like dast/), sorted
+  // for determinism. .sarif joined in B5 · E0.2b (0.8.61): SARIF is JSON on the wire, so the
+  // same JSON.parse + content-shape recognition below routes it (the sarif adapter's runs[]
+  // shape is disjoint from every .json adapter's).
   let files = []
   try {
     files = readdirSync(evidenceDir, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.json'))
+      .filter((e) => e.isFile() && /\.(json|sarif)$/.test(e.name.toLowerCase()))
       .map((e) => e.name)
       .sort()
   } catch {
@@ -1973,7 +2215,7 @@ export function ingestAll({ target, pass, dryRun } = {}) {
       notes.push(`${rel} is not valid JSON (${e && e.message}) — skipped`)
       continue
     }
-    const rec = recognizeScanner(raw)
+    let rec = recognizeScanner(raw)
     if (rec == null) {
       skipped.push({ file: rel, reason: 'not recognized by any adapter' })
       notes.push(`${rel} not recognized by any adapter — skipped`)
@@ -1983,6 +2225,19 @@ export function ingestAll({ target, pass, dryRun } = {}) {
       skipped.push({ file: rel, reason: `ambiguous — matched ${rec.ambiguous.join(', ')}` })
       notes.push(`${rel} matched MULTIPLE adapters (${rec.ambiguous.join(', ')}) — recognizer bug, skipped (never guess)`)
       continue
+    }
+    // Engine-label refinement (B5 · E0.2b — the D1 provenance fix): Opengrep's --json is
+    // byte-shape-compatible with Semgrep's (verified: no distinguishing field exists), so the
+    // FORMAT recognizer above honestly says 'semgrep'. When the file was captured under the
+    // documented `opengrep-<date>.json` evidence name (run-scans Family 7), re-label to the
+    // opengrep adapter — same parse, honest `engine:'opengrep'` provenance. The filename refines
+    // ONLY the label, never the routing; a renamed capture still ingests as the semgrep format.
+    if (rec === 'semgrep' && name.toLowerCase().startsWith('opengrep')) {
+      rec = 'opengrep'
+      notes.push(
+        `${rel} carries the semgrep JSON format under the documented opengrep-* evidence name — ` +
+          `engine label refined to 'opengrep' (the two engines' JSON is content-indistinguishable)`
+      )
     }
     const adapter = ADAPTERS[rec]
     const res = ingest(raw, adapter, { repoRoot: root, pass: passId })

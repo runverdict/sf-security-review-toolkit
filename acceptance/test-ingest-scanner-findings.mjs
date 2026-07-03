@@ -24,8 +24,8 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 12 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 14 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -49,6 +49,13 @@
  *        class-proven (see the honesty caveat on the allowlist). classify() stays null on ALL THREE
  *        adapters, locked by INJ-non-supersession (an owned class would silence a co-located
  *        llm-inferred injection finding of a DIFFERENT shape; mutation-proven — the RD posture ported).
+ *   SG-RP-SARIF/SG-RP-OG/SG-SARIF-CE-PENDING/ALL-SARIF — the SARIF codeFlows reachability surface
+ *        (B5 · E0.2b, 0.8.61): the version-portable `sarif` adapter (engine from tool.driver.name,
+ *        codeFlows→reachabilityPath via _sarifReachabilityPath, level→band, rule-tag CWE routing,
+ *        classify()→null) + the `opengrep` engine-label adapter (D1: opengrep JSON is content-
+ *        indistinguishable from semgrep's — the honest label comes from --scanner/the documented
+ *        opengrep-* evidence name, never a content guess) + the --all *.sarif enumeration + the
+ *        CE-SARIF adjudication pin (semgrep 1.168.0 emitted NO codeFlows — PENDING, not fabricated).
  *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
  *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
  *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
@@ -71,6 +78,8 @@ import {
   metadataViewAllAdapter,
   checkovAdapter,
   semgrepAdapter,
+  opengrepAdapter,
+  sarifAdapter,
   banditAdapter,
   njsscanAdapter,
   gitleaksAdapter,
@@ -90,6 +99,7 @@ import {
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
   SEMGREP_SEVERITY_TO_FINDING,
+  SARIF_LEVEL_TO_FINDING,
   BANDIT_SEVERITY_TO_FINDING,
   NJSSCAN_SEVERITY_TO_FINDING,
   CVSS_SCORE_TO_FINDING,
@@ -495,8 +505,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 12 adapters (regexploit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'regexploit', 'semgrep', 'trivy'])
+check('AD1 registry has 14 adapters (sarif + opengrep added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -1032,6 +1042,186 @@ check('SG-RP4 wiring: the run-scans Family 7 Semgrep invocation carries --datafl
   for (const b of semgrepBlocks) {
     assert.ok(b.includes('--dataflow-traces'), `a Family 7 semgrep invocation lost --dataflow-traces:\n${b}`)
     assert.ok(b.includes('--json'), `a Family 7 semgrep invocation lost --json (the ingest input format):\n${b}`)
+  }
+})
+
+// ───────────── SARIF codeFlows reachability (B5 · E0.2b — the version-portable taint-path surface)
+// SARIF 2.1.0 standardizes the source→sink taint path as `result.codeFlows[] → threadFlows[] →
+// locations[]`, and opengrep / semgrep-Pro / CodeQL all emit that IDENTICAL construct — so the ONE
+// `sarif` adapter + _sarifReachabilityPath normalizer ingests reachability from any of them,
+// decoupled from any single tool's JSON. The fixtures are GENUINE captured output over the SAME
+// seeded request-parameter→SQL-sink sample as semgrep-taint-seeded.json (leak-clean relative paths):
+//   opengrep-taint-seeded.sarif — opengrep 1.25.0 `opengrep scan --config <taint rule>
+//       --taint-intrafile --dataflow-traces --sarif` — 1 result WITH codeFlows (4 threadFlow
+//       locations: source :10 → propagators :10/:11 → sink :13; NO executionOrder — array order).
+//       Flag truth (empirical, 1.25.0): opengrep SARIF emits codeFlows ONLY WITH --dataflow-traces.
+//   opengrep-taint-seeded.json  — opengrep 1.25.0 `opengrep scan --config <taint rule>
+//       --taint-intrafile --json` (NO --dataflow-traces — the JSON trace is default-on) —
+//       byte-shape-COMPATIBLE with semgrep's JSON (identical key sets, engine_kind 'OSS' on both;
+//       NO distinguishing field exists — the D1 engine-label ceiling the OG checks pin).
+//   semgrep-taint-seeded.sarif  — semgrep 1.168.0 `semgrep scan --config <taint rule>
+//       --dataflow-traces --sarif` — the CE-SARIF ADJUDICATION fixture (see SG-SARIF-CE-PENDING).
+const OPENGREP_SARIF = join(FIX, 'opengrep-taint-seeded.sarif')
+const OPENGREP_JSON = join(FIX, 'opengrep-taint-seeded.json')
+const SEMGREP_SARIF = join(FIX, 'semgrep-taint-seeded.sarif')
+const ingestSarif = (raw) => ingest(raw, sarifAdapter, { repoRoot: '', pass: 1 })
+
+check('SG-RP-SARIF1 reachability: the opengrep SARIF fixture → reachabilityPath {source app.py:10, intermediates :10/:11, sink app.py:13} + reachable:true; engine \'opengrep\' from tool.driver.name; CWE-89 rule tag routes to injection-xss; level from the rule\'s defaultConfiguration (error → high); additive-only; validates', () => {
+  const { findings } = ingestSarif(readJSON(OPENGREP_SARIF))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.engine, 'opengrep') // 'Opengrep OSS' lowercased first token — NEVER hardcoded
+  assert.equal(f.reachable, true)
+  assert.equal(f.dimension, 'injection-xss') // the rule's properties.tags carry 'CWE-89'
+  assert.deepEqual(f.reachabilityPath, {
+    source: { file: 'app.py', line: 10 },
+    intermediate: [
+      { file: 'app.py', line: 10 },
+      { file: 'app.py', line: 11 },
+    ],
+    sink: { file: 'app.py', line: 13 },
+  })
+  // the result carries NO own `level` — the band comes from the rule's defaultConfiguration
+  // ('error' → high via SARIF_LEVEL_TO_FINDING); the trace does NOT move the band
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(SARIF_LEVEL_TO_FINDING['error'], 'high')
+  assert.ok(f.file.endsWith('app.py:13'), `file was ${f.file}`)
+  assert.equal(f.provenance, 'deterministic')
+  assert.ok(!('class' in f), 'a sarif finding owns NO toolkit class (classify → null)')
+  // additive-only: the same fixture with codeFlows REMOVED → byte-identical minus the two fields
+  const raw = clone(readJSON(OPENGREP_SARIF))
+  delete raw.runs[0].results[0].codeFlows
+  const bare = ingestSarif(raw).findings[0]
+  const { reachabilityPath: _rp, reachable: _re, ...rest } = f
+  assert.equal(JSON.stringify(rest), JSON.stringify(bare))
+  assert.deepEqual(validateFinding(f), []) // the E0.1 schema already covers the attribute
+})
+
+check('SG-RP-SARIF2 additive-only on a codeFlows-less SARIF: the semgrep 1.168.0 SARIF fixture ingests a base finding (engine \'semgrep\' from ITS driver name, error→high, injection-xss) with NEITHER reachabilityPath NOR reachable', () => {
+  const { findings } = ingestSarif(readJSON(SEMGREP_SARIF))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.engine, 'semgrep') // 'Semgrep OSS' — the same driver-name derivation, different producer
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.dimension, 'injection-xss')
+  assert.ok(!('reachabilityPath' in f), 'no fabricated trace on a trace-less SARIF')
+  assert.ok(!('reachable' in f))
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('SG-RP-SARIF3 malformed/partial codeFlows safety: every spec-optional sub-object missing/junk → NO attribute, base finding intact, never a throw; a malformed MIDDLE step is skipped; executionOrder orders when complete', () => {
+  const mutate = (fn) => {
+    const raw = clone(readJSON(OPENGREP_SARIF))
+    fn(raw.runs[0].results[0])
+    return raw
+  }
+  const noAttr = [
+    (r) => { r.codeFlows = [] }, // zero codeFlows
+    (r) => { r.codeFlows = [{}] }, // a codeFlow with no threadFlows
+    (r) => { r.codeFlows = 'junk' }, // non-array codeFlows
+    (r) => { r.codeFlows[0].threadFlows = [] }, // zero threadFlows
+    (r) => { r.codeFlows[0].threadFlows = [{}] }, // a threadFlow with no locations
+    (r) => { r.codeFlows[0].threadFlows[0].locations = [] }, // zero steps
+    (r) => { r.codeFlows[0].threadFlows[0].locations.length = 1 }, // ONE step — no source→sink pair
+    (r) => { r.codeFlows[0].threadFlows[0].locations[0] = { location: {} } }, // source unresolvable → BOTH-ends contract
+    (r) => { r.codeFlows[0].threadFlows[0].locations[3] = 42 }, // sink junk → BOTH-ends contract
+    // multiple codeFlows: [0] is taken AND guarded — a junk [0] yields nothing even with a valid [1]
+    (r) => { r.codeFlows = ['junk', r.codeFlows[0]] },
+  ]
+  for (const [i, fn] of noAttr.entries()) {
+    const { findings } = ingestSarif(mutate(fn))
+    assert.equal(findings.length, 1, `variant ${i}: the base finding must still be emitted`)
+    assert.ok(!('reachabilityPath' in findings[0]) && !('reachable' in findings[0]), `variant ${i}: no attribute`)
+  }
+  // a malformed MIDDLE step is skipped — the proven ends still stand (the _reachabilityPath contract)
+  const mid = ingestSarif(mutate((r) => { r.codeFlows[0].threadFlows[0].locations[1] = null })).findings[0]
+  assert.equal(mid.reachable, true)
+  assert.deepEqual(mid.reachabilityPath.source, { file: 'app.py', line: 10 })
+  assert.deepEqual(mid.reachabilityPath.intermediate, [{ file: 'app.py', line: 11 }])
+  assert.deepEqual(mid.reachabilityPath.sink, { file: 'app.py', line: 13 })
+  // executionOrder: REVERSE the array but stamp each step with its true order → the normalizer
+  // re-orders by executionOrder (when EVERY step carries one) and yields the SAME path
+  const eo = ingestSarif(mutate((r) => {
+    const locs = r.codeFlows[0].threadFlows[0].locations
+    locs.forEach((l, i) => { l.executionOrder = i })
+    locs.reverse()
+  })).findings[0]
+  assert.deepEqual(eo.reachabilityPath, {
+    source: { file: 'app.py', line: 10 },
+    intermediate: [{ file: 'app.py', line: 10 }, { file: 'app.py', line: 11 }],
+    sink: { file: 'app.py', line: 13 },
+  })
+  // a numeric-string startLine coerces (producer quirk); a file:// scheme is stripped, never joined
+  // against originalUriBaseIds (which would re-embed the scan host's absolute path)
+  const co = ingestSarif(mutate((r) => {
+    r.codeFlows[0].threadFlows[0].locations[0].location.physicalLocation.region.startLine = '10'
+  })).findings[0]
+  assert.deepEqual(co.reachabilityPath.source, { file: 'app.py', line: 10 })
+  const fu = ingestSarif(mutate((r) => {
+    const pl = r.codeFlows[0].threadFlows[0].locations[0].location.physicalLocation
+    pl.artifactLocation.uri = 'file://app.py'
+  })).findings[0]
+  assert.deepEqual(fu.reachabilityPath.source, { file: 'app.py', line: 10 })
+})
+
+check('SG-RP-SARIF-EQ engine-agnostic equivalence: the opengrep SARIF codeFlows and the semgrep-JSON dataflow_trace normalize to the SAME {source,intermediate,sink} — one normal form across engines and formats', () => {
+  const viaSarif = ingestSarif(readJSON(OPENGREP_SARIF)).findings[0].reachabilityPath
+  const viaJson = ingestSemgrep(readJSON(SEMGREP_TAINT)).findings[0].reachabilityPath
+  assert.deepEqual(viaSarif, viaJson) // both describe the identical seeded sample — the E0.2b payoff
+})
+
+check('SG-RP-OG1 engine-label (D1): opengrep JSON ingests with engine \'opengrep\' — NEVER \'semgrep\' — via the opengrep adapter; the existing _reachabilityPath parses it (trace default-on in opengrep --json); the JSON-route and SARIF-route ids CONVERGE', () => {
+  const { findings } = ingest(readJSON(OPENGREP_JSON), opengrepAdapter, { repoRoot: '', pass: 1 })
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.engine, 'opengrep')
+  assert.equal(f.reachable, true)
+  assert.deepEqual(f.reachabilityPath, {
+    source: { file: 'app.py', line: 10 },
+    intermediate: [{ file: 'app.py', line: 10 }, { file: 'app.py', line: 11 }],
+    sink: { file: 'app.py', line: 13 },
+  })
+  assert.ok(f.verdict_reasoning.includes('OPENGREP'), 'the reasoning names the real producer')
+  assert.deepEqual(validateFinding(f), [])
+  // the SAME hit captured on the SARIF surface converges on the SAME id (engine+ruleId+file:line)
+  // — an opengrep JSON + SARIF evidence pair dedups idempotently instead of double-reporting
+  const viaSarif = ingestSarif(readJSON(OPENGREP_SARIF)).findings[0]
+  assert.equal(f.id, viaSarif.id)
+  // the D1 honest ceiling, pinned: opengrep JSON is content-INDISTINGUISHABLE from semgrep JSON
+  // (verified: identical key sets), so the FORMAT recognizer says 'semgrep' and the opengrep
+  // adapter carries NO detect — provenance comes from --scanner opengrep / the documented
+  // opengrep-* evidence name (ALL-SARIF1), never from a content guess
+  assert.equal(recognizeScanner(readJSON(OPENGREP_JSON)), 'semgrep')
+  assert.equal(opengrepAdapter.detect, undefined)
+})
+
+check('SG-SARIF-CE-PENDING adjudication: semgrep CE 1.168.0 `--sarif --dataflow-traces` emitted NO codeFlows on a taint finding that PROVABLY has a trace (opengrep emits a 4-step flow on the same sample+rule) — CE-SARIF reachability stays PENDING (Pro-gated), relied on from Opengrep instead; nothing fabricated', () => {
+  const raw = readJSON(SEMGREP_SARIF)
+  assert.equal(raw.runs[0].tool.driver.semanticVersion, '1.168.0') // the capture IS the claimed version
+  assert.equal(raw.runs[0].results.length, 1)
+  assert.ok(!('codeFlows' in raw.runs[0].results[0]),
+    'the captured CE fixture carries no codeFlows — if a re-capture ever changes this, flip the semgrep-SARIF status from pending to proven (docs + this check)')
+  // and the opengrep capture of the SAME sample DOES carry the flow — the contrast that adjudicates
+  const og = readJSON(OPENGREP_SARIF)
+  assert.equal(og.runs[0].results[0].codeFlows[0].threadFlows[0].locations.length, 4)
+})
+
+// The SARIF ingest above is worthless if the LIVE scan never captures the surface — the SG-RP4
+// posture, extended to E0.2b's two new invocations. Scoped to the fenced blocks, NOT the prose.
+check('SG-RP-SARIF-wiring: run-scans Family 7 carries a semgrep --sarif capture WITH --dataflow-traces, and an opengrep invocation emitting BOTH --json and --sarif WITH --taint-intrafile + --dataflow-traces (opengrep SARIF codeFlows needs the flag — verified 1.25.0)', () => {
+  const skill = readText(join(PLUGIN, 'skills', 'run-scans', 'SKILL.md'))
+  const blocks = [...skill.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1])
+  const sgSarif = blocks.filter((b) => b.includes('semgrep scan') && b.includes('--sarif'))
+  assert.ok(sgSarif.length >= 1, 'no fenced `semgrep scan … --sarif` capture in skills/run-scans/SKILL.md')
+  for (const b of sgSarif) assert.ok(b.includes('--dataflow-traces'), `the semgrep SARIF capture lost --dataflow-traces (required for CE/Pro codeFlows):\n${b}`)
+  const ogBlocks = blocks.filter((b) => b.includes('opengrep scan'))
+  assert.ok(ogBlocks.length >= 1, 'no fenced `opengrep scan` invocation in skills/run-scans/SKILL.md')
+  assert.ok(ogBlocks.some((b) => b.includes('--json')), 'the opengrep invocation lost its --json surface')
+  assert.ok(ogBlocks.some((b) => b.includes('--sarif')), 'the opengrep invocation lost its --sarif surface (the codeFlows producer)')
+  for (const b of ogBlocks) {
+    assert.ok(b.includes('--taint-intrafile'), `an opengrep invocation lost --taint-intrafile (the cross-function taint CE cannot do):\n${b}`)
+    assert.ok(b.includes('--dataflow-traces'), `an opengrep invocation lost --dataflow-traces (SARIF codeFlows require it on 1.25.0):\n${b}`)
+    assert.ok(b.includes('evidence/opengrep-'), `an opengrep invocation lost the documented opengrep-* evidence name (the D1 engine-label anchor):\n${b}`)
   }
 })
 
@@ -2956,6 +3146,14 @@ check('RC-each: every committed fixture recognizes as its OWN adapter (content s
   // the format-C TEXT fixture (0.8.56): a STRING shape, provably disjoint from every JSON adapter
   // by construction (all 11 other detects require an object/array) — a single match, never ambiguous.
   assert.equal(recognizeScanner(readText(REDOS)), 'regexploit')
+  // the SARIF fixtures (0.8.61): the top-level runs[] shape is disjoint from every other detect
+  // (the SAST trio keys on a TOP-LEVEL results[], which SARIF nests inside runs[]) — a single
+  // match each, 0 ambiguous, whichever engine produced the file
+  assert.equal(recognizeScanner(readJSON(join(FIX, 'opengrep-taint-seeded.sarif'))), 'sarif')
+  assert.equal(recognizeScanner(readJSON(join(FIX, 'semgrep-taint-seeded.sarif'))), 'sarif')
+  // opengrep JSON: content-INDISTINGUISHABLE from semgrep's format (D1) — the recognizer honestly
+  // reports the FORMAT; the engine label comes from --scanner opengrep / the opengrep-* evidence name
+  assert.equal(recognizeScanner(readJSON(join(FIX, 'opengrep-taint-seeded.json'))), 'semgrep')
 })
 
 check('RC-regexploit-honest-false: detect() is false for EVERY parsed-JSON shape (the --all path never routes a JSON file to the text adapter) and for a marker-less string', () => {
@@ -3107,7 +3305,42 @@ check('ALL5 secret-never-leaks holds THROUGH --all — no secret/PII/hash token 
   }
 })
 
-check('ALL6 format-C evidence (0.8.56): redos-*.txt is invisible to --all (JSON-only enumeration — no crash, no row); the same text misnamed .json is skipped HONESTLY as unparseable; the explicit --scanner path ingests it', () => {
+check('ALL-SARIF1 (0.8.61): --all enumerates evidence/*.sarif; SARIF findings label their engine from tool.driver.name; the opengrep-*.json evidence name refines the semgrep-format label to \'opengrep\' (D1 — never \'semgrep\'); JSON+SARIF of the same hit merge to ONE row; byte-deterministic', () => {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-sarif-'))
+  dirs.push(T)
+  const ev = join(T, '.security-review', 'evidence')
+  mkdirSync(ev, { recursive: true })
+  writeFileSync(join(ev, 'opengrep-2026-07-03.json'), readText(OPENGREP_JSON))
+  writeFileSync(join(ev, 'opengrep-2026-07-03.sarif'), readText(OPENGREP_SARIF))
+  writeFileSync(join(ev, 'semgrep-2026-07-03.sarif'), readText(SEMGREP_SARIF))
+  const out = runAll(T)
+  // both .sarif files are enumerated and route to the sarif adapter
+  const sarifRows = out.scanners.filter((s) => s.scanner === 'sarif')
+  assert.equal(sarifRows.length, 2, `.sarif evidence enumerated (got ${JSON.stringify(out.scanners)})`)
+  // the JSON capture lands under the opengrep adapter via the documented evidence name, with a note
+  assert.ok(out.scanners.some((s) => s.scanner === 'opengrep' && s.file === 'evidence/opengrep-2026-07-03.json'))
+  assert.ok(out.notes.some((n) => /engine label refined to 'opengrep'/.test(n)), 'the label refinement is honest + visible')
+  // engine labels: the seeded rule appears ONCE per producer — opengrep (JSON+SARIF converge on
+  // ONE id: same engine+ruleId+file:line) and semgrep (its own SARIF) — and the opengrep rows
+  // NEVER say semgrep
+  const seeded = out.findings.filter((f) => f.ruleId === 'seeded-request-param-to-sql-sink')
+  const og = seeded.filter((f) => f.engine === 'opengrep')
+  const sg = seeded.filter((f) => f.engine === 'semgrep')
+  assert.equal(new Set(og.map((f) => f.id)).size, 1, 'the JSON-route and SARIF-route opengrep findings share ONE id')
+  assert.equal(sg.length, 1)
+  assert.ok(og.every((f) => f.reachable === true), 'the opengrep rows carry the trace')
+  assert.ok(!('reachable' in sg[0]), 'the CE-semgrep row honestly carries none')
+  // ledger: the converged opengrep id is ONE row (idempotent same-id merge), and re-running --all
+  // twice yields a byte-identical ledger (determinism holds through the .sarif enumeration)
+  const lp = join(T, '.security-review', 'audit-ledger.json')
+  const l1 = readFileSync(lp, 'utf8')
+  const ledger = JSON.parse(l1)
+  assert.equal(ledger.findings.filter((f) => f.engine === 'opengrep').length, 1)
+  execFileSync('node', [CLI, '--all', '--target', T], { encoding: 'utf8' })
+  assert.equal(readFileSync(lp, 'utf8'), l1, 'the ledger is byte-identical on the second --all run')
+})
+
+check('ALL6 format-C evidence (0.8.56): redos-*.txt is invisible to --all (the .json/.sarif enumeration — no crash, no row); the same text misnamed .json is skipped HONESTLY as unparseable; the explicit --scanner path ingests it', () => {
   const T = setupAllTarget()
   const ev = join(T, '.security-review', 'evidence')
   writeFileSync(join(ev, 'redos-2026-07-03.txt'), readText(REDOS))

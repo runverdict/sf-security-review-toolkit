@@ -126,7 +126,7 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 | 4. TLS grade (SSL Labs **or** local testssl.sh/sslyze) | external-endpoint / mcp-server | agent | `ssllabs-<host>.json` **or** `tls-<host>-<date>.json` + capture | `endpoint-ssl-labs-a-grade` (qualitative bar; local TLS evidence satisfies it deterministically) |
 | 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
 | 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
-| 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language, + `redos-<date>.txt` — the regexploit ReDoS leg, verbatim text) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code); ReDoS leg → `resource-consumption-abuse` (major) |
+| 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json`/`.sarif` + `opengrep-<date>.json`/`.sarif` (the reachability leg) (+ `bandit`/`njsscan`/`gosec`-<date>.json per language, + `redos-<date>.txt` — the regexploit ReDoS leg, verbatim text) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code); ReDoS leg → `resource-consumption-abuse` (major) |
 | 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
 
 The *Applies when (manifest)* column — here and in every per-family *Applies
@@ -555,6 +555,9 @@ families PENDING until a re-audit.
    semgrep scan --config p/security-audit --config p/secrets \
      --config p/<language> --json --dataflow-traces \
      --output evidence/semgrep-<date>.json <server-root>
+   semgrep scan --config p/security-audit --config p/secrets \
+     --config p/<language> --sarif --dataflow-traces \
+     --output evidence/semgrep-<date>.sarif <server-root>
    ```
 
    `--dataflow-traces` is load-bearing: it explicitly requests the source→sink
@@ -565,10 +568,40 @@ families PENDING until a re-audit.
    actually carries the trace is version-dependent (verified on a seeded
    source→sink sample: 1.85.0 emits `extra.dataflow_trace`; 1.168.0 omits it
    even with the flag — newer CLIs serialize the trace to text/SARIF output
-   only). If the evidence JSON carries no `dataflow_trace` on a taint finding,
-   report "reachability substrate unavailable on this Semgrep version" in the
-   evidence summary rather than silently shipping trace-less findings — the
-   findings themselves still ingest normally; only `reachabilityPath` is absent.
+   only). The `--sarif` capture is the version-portable second surface: SARIF
+   `codeFlows` is the standardized taint-path serialization the ingest also
+   normalizes to `reachabilityPath` — but on current Semgrep CE the SARIF
+   codeFlows may be ABSENT too (verified 1.168.0: none emitted on a taint
+   finding that provably has a trace — Pro-gated), so **Opengrep below is the
+   OSS engine that actually produces the trace on current tooling**. If neither
+   evidence surface carries a trace on a taint finding, report "reachability
+   substrate unavailable on this Semgrep version" in the evidence summary
+   rather than silently shipping trace-less findings — the findings themselves
+   still ingest normally; only `reachabilityPath` is absent.
+
+   **The Opengrep reachability leg (rides this family).** Opengrep (the
+   LGPL-2.1, consortium-governed Semgrep fork; installed as a pinned release
+   binary — it is not on PyPI) empirically emits the machine-readable trace
+   current Semgrep CE withholds, in BOTH output formats, and adds
+   cross-function (intra-file) taint via `--taint-intrafile`. Capture both
+   surfaces:
+
+   ```bash
+   opengrep scan --config <rules> --taint-intrafile --dataflow-traces \
+     --json --output evidence/opengrep-<date>.json <server-root>
+   opengrep scan --config <rules> --taint-intrafile --dataflow-traces \
+     --sarif --output evidence/opengrep-<date>.sarif <server-root>
+   ```
+
+   Flag note (verified on 1.25.0 over a seeded source→sink sample): Opengrep's
+   `--json` emits `extra.dataflow_trace` even WITHOUT `--dataflow-traces`, but
+   its `--sarif` emits `codeFlows` ONLY WITH the flag — keep it on both so the
+   two surfaces stay consistent. The `--all` ingest enumerates both
+   `evidence/*.json` and `evidence/*.sarif`; keep the `opengrep-<date>.*`
+   evidence names as written — Opengrep's JSON is content-identical to
+   Semgrep's format, and the documented name is what lets the ingest label the
+   findings' provenance `engine: 'opengrep'` honestly (SARIF self-identifies
+   via `tool.driver.name`; the JSON cannot).
 
    The registry configs are fetched once; if the host is offline, vendor the rules
    first (`semgrep --config <dir>`). *Agent runs:* the scan, JSON parsing, diffing
@@ -594,8 +627,8 @@ families PENDING until a re-audit.
 
    regexploit emits TEXT only (no JSON output exists in the tool), so the evidence
    file is its VERBATIM stdout — and because the `--all` ingest enumerates
-   `evidence/*.json`, the ReDoS evidence is NOT auto-recognized there; ingest it
-   with the explicit scanner form (see step 9b):
+   `evidence/*.json` + `evidence/*.sarif`, the ReDoS TEXT evidence is NOT
+   auto-recognized there; ingest it with the explicit scanner form (see step 9b):
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs \

@@ -138,6 +138,30 @@ check('P3b the pinned Go binaries (gosec/trivy/nuclei) DO plan on linux-x64, wit
   }
 })
 
+check('P3c opengrep pin (0.8.61 — the Family-7 reachability leg): pinned v1.25.0 raw single-file binaries (archive none, like osv-scanner) with a 64-hex sha256 on all four platforms; an unpinned platform FAILS CLOSED', () => {
+  const want = [{ name: 'opengrep', family: 'external-sast', install: 'binary' }]
+  for (const [platform, arch, file] of [
+    ['linux', 'x64', 'opengrep_manylinux_x86'],
+    ['linux', 'arm64', 'opengrep_manylinux_aarch64'],
+    ['darwin', 'x64', 'opengrep_osx_x86'],
+    ['darwin', 'arm64', 'opengrep_osx_arm64'],
+  ]) {
+    const p = planInstalls(want, { runId: 'og', tmpRoot: ROOT0, platform, arch })
+    assert.equal(p.installs.length, 1, `${platform}-${arch} resolves a plan`)
+    const i = p.installs[0]
+    assert.equal(i.method, 'binary')
+    assert.equal(i.version, '1.25.0')
+    assert.equal(i.archive, 'none', 'raw single-file binary — the verified download IS the binary')
+    assert.match(i.checksum, /^[0-9a-f]{64}$/)
+    assert.ok(i.source.endsWith(`/v1.25.0/${file}`), `${platform}-${arch} → ${i.source}`)
+    assert.equal(i.expectedBin, join(ROOT0, 'opengrep', 'opengrep'))
+  }
+  // win32 carries no pin → fail closed, PENDING-OWNER-RUN, never an unverified install
+  const w = planInstalls(want, { runId: 'og', tmpRoot: ROOT0, platform: 'win32', arch: 'x64' })
+  assert.equal(w.installs.length, 0)
+  assert.ok(w.skipped.some((s) => s.name === 'opengrep' && /no pinned opengrep v1\.25\.0 release for win32-x64/.test(s.reason)))
+})
+
 check('P4 only-filter, de-dup, pathPrepend = per-tool bin dirs', () => {
   const p = planFixed({ only: ['semgrep', 'testssl'] })
   assert.deepEqual(p.installs.map((i) => i.name).sort(), ['semgrep', 'testssl'])
