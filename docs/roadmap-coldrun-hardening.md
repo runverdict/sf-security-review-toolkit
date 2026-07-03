@@ -558,10 +558,20 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
       raw-callout host↔NamedCredential join; Apex `setEndpoint('http://…')` literals.
   - **E0.3c — CRUD/FLS grant matrix + release-widening diff [UNGATED].** `.permissionset/.profile-meta.xml`
     `<objectPermissions>`/`<fieldPermissions>`/`<classAccesses>`/`<userPermissions>`{ModifyAllData/ViewAllData/
-    AuthorApex/ManageUsers}. Release diff = pure git-ref XML diff (v29+ serializes ONLY enabled perms →
-    **absent→present = widening**); no org. The **PSG+muting algebra's** cleanest deterministic HOME:
-    `effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG (global
-    muting = a correctness bug); naive `profile∪permset` OVER-states (the flagship FP).
+    AuthorApex/ManageUsers}. **Non-overlap note:** `metadata-viewall` already flags per-object
+    `viewAllRecords`/`modifyAllRecords` on CUSTOM objects in **permsets only** (`viewall-overgrant`); it does
+    NOT read `<userPermissions>` and does NOT scan profiles — that is E0.3c's gap. Sub-sliced (sequence FIRST,
+    each its own class/locus, non-supersession + mutations):
+    - **E0.3c-1 (STAGED next):** org-wide **`ViewAllData`/`ModifyAllData`** granted (`enabled=true`) in
+      `<userPermissions>` of permsets AND profiles → new class **`view-modify-all-data`** →
+      `fail-sharing-model`/`admin-surface` (high). The org-wide analogue of `viewall-overgrant`; covers the
+      userPermissions+profile gap; PV-no-overlap test proves disjointness. Exact-name + `enabled=true` +
+      element-scoped guards.
+    - **E0.3c-2/3 (follow-ons):** `ManageUsers`/`AuthorApex` (a distinct privilege class); per-object
+      `viewAllRecords`/`modifyAllRecords` in PROFILES; the **PSG+muting effective-permission helper**
+      (`effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG,
+      global muting = a bug; naive `profile∪permset` OVER-states — the flagship FP); the **release-widening
+      diff** (pure git-ref XML diff; v29+ serializes ONLY enabled perms → **absent→present = widening**; no org).
   **Severity two-band (within the cap):** HIGH = sharing-BYPASSING grants (ModifyAll/ViewAll data + per-object
   VAR/MAR) + APIEnabled amplifier; MEDIUM = standard CRUD (OWD-gated). Owning a single-shape class is OK
   (metadata-viewall precedent); must not bleed into the multi-shape tenant-isolation dimension. Sequence:
