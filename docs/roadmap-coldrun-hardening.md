@@ -380,8 +380,7 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   taint for JS/TS/Py/Go/Java — deeper `reachabilityPath` for the same E0.1 classes, reusing the adapter
   verbatim. **Critic note:** Opengrep is ~2025-new — keep **Semgrep CE as the baseline** and Opengrep as
   the deepening swap so an Opengrep instability can't break the taint substrate. Cross-*file* bridging is
-  neither engine's job (that stays LLM/human; CodeQL only where license permits — see below). Same Apex
-  blind spot as Semgrep (SFGE owns Apex).
+  neither engine's job — that stays LLM/human. Same Apex blind spot as Semgrep (SFGE owns Apex).
 - **E0.3 — Salesforce Guest/Metadata Exposure Mapper (the single most novel + timely BUILD).** *BUILD a
   novel `source-scanner` (clone the `metadata-viewall` kind — glob XML → parse → class-severity finding,
   zero harness-core change).* Computes, from metadata XML with **no live org**: (a) guest/site profile →
@@ -470,11 +469,13 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
 #### Explicitly DROP / do not add (hygiene)
 tfsec (deprecated — *is* trivy-config now), terrascan (archived Nov 2025), grype/pip-audit/cargo-audit/
 KICS (redundant with osv-scanner V2 SCALIBR + checkov + trivy — marginal substrate, multiplies dedup
-burden), **CodeQL as a default** (free-for-OSS-ONLY; the CLI/engine license forbids scanning a closed
-partner package outside GitHub Advanced Security — our users' exact case; Apex isn't supported anyway,
-SFGE covers it; offer at most an OPT-IN, license-gated SARIF adapter for partners who open-source or hold
-GHAS), Snyk Code (commercial + ML-nondeterministic — violates the determinism contract), promptmap
-(GPL-3.0 — never vendor).
+burden), **CodeQL — excluded entirely** (the CLI/engine is free-for-OSS-ONLY; its license forbids
+scanning a closed partner package outside GitHub Advanced Security, which is our users' exact case, so it
+is untestable and inapplicable for most partners; it does not support Apex anyway, and SFGE already owns
+that substrate; Opengrep is the free-for-commercial taint engine the toolkit uses instead — an
+adapter the toolkit cannot install, run, or validate for its own users is pure liability, so CodeQL is
+not offered in any form), Snyk Code (commercial + ML-nondeterministic — violates the determinism
+contract), promptmap (GPL-3.0 — never vendor).
 
 #### Recommended sequence (ReDoS DONE; each slice one-at-a-time, test-backed, Fable-5-safe scaffold prepended)
 1. **E0.1 reachability-path ingest** (+ **E0.1b routing fix** — pair them; cheapest, zero new tools,
