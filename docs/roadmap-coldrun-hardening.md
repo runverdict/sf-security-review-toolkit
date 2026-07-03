@@ -10,8 +10,12 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.55**, suite **62 files / 864 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.56**, suite **62 files / 882 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
+- **B5 is being RE-SCOPED (2026-07-03)** from the original 4-slice list into a broader enterprise-grade
+  engine buildout (cross-cutting taint/reachability + Salesforce-metadata exposure engines + the named
+  classes + completeness-audit misses). ReDoS (0.8.56) shipped under the original framing; the rest of
+  the B5 section below is superseded by the re-scope in progress.
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
@@ -334,11 +338,11 @@ Build deterministic engines that move each residual class's reachability/exposur
 LLM-inferred to deterministic, leaving only the semantic judgment labelled `llm-inferred`. **This is FOUR
 separate slices, not one — a review (2026-07-02) confirmed only ReDoS is ready to implement directly;
 the other three need a DESIGN DECISION resolved first (below).** Sequence: ReDoS → then the design calls.
-- **ReDoS (buildable first)** — `regexploit`/`recheck` (regex-AST/NFA ambiguity; near-zero-FP; drop-in).
-  A new tool → its own owned class + an `ingest-scanner-findings` adapter. Note: the
-  `resource-consumption-abuse` dimension ALSO owns an algorithmic-amplification/ReDoS shape — decide
-  whether the deterministic ReDoS engine SUPERSEDES that LLM shape (via reconcile-provenance) or sits
-  beside it. That reconciliation is the one design point even here.
+- ~~**ReDoS (buildable first)**~~ **DONE (0.8.56)** — `regexploit` adapter (format-C text parse; degree→band
+  exponential→high / polynomial→medium, never critical). The design point resolved BESIDE, not supersede:
+  `classify()→null` (RCA is a multi-shape dimension; an owned class would wrongly supersede a co-located
+  rate-limit/DoW sibling via reconcile's dimension-fallback). Graded off disk — safety is defense-in-depth
+  (classify-null AND buildFinding won't attach an unregistered class; both must fail for the hazard).
 - **Prompt-injection reachability** *(DESIGN FIRST)* — Semgrep taint off `p/ai-best-practices` (untrusted
   source → LLM-prompt sink); the LLM judges exploitability. **Open design Q:** the existing semgrep
   adapter is tool→band (→ `scan-external-sast`); a prompt-injection-reachability finding is a DIFFERENT
