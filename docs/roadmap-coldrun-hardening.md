@@ -9,12 +9,16 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.57**, suite **62 files / 885 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.58**, suite **62 files / 889 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 - **B5 was RE-SCOPED (2026-07-03)** from the original 4-slice list into a tiered enterprise-grade engine
   buildout (cross-cutting reachability/exposure enablers + the named classes + completeness-audit misses).
-  Shipped since: ReDoS (0.8.56), E0.1 reachability-path ingest (0.8.57). The B5 section below is the
-  current source of truth; the Tier-0 sequence starts at E0.1b.
+  Shipped since: ReDoS (0.8.56), E0.1 reachability-path ingest (0.8.57), E0.1b injection-xss routing —
+  narrow first pass, CWE-89/78 (0.8.58). **Coverage principle (corrected 2026-07-03): route the FULL
+  vuln taxonomy and GENERATE genuine per-class fixtures to test each — do NOT limit routing to the vuln
+  classes a captured-from-dogfood fixture happens to contain (that calibrates the tool to one codebase's
+  profile, not the general partner). The CWE→dimension map is a scanner-agnostic knowledge artifact.**
+  The Tier-0 sequence continues at E0.1b-EXPAND (the full injection taxonomy).
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
@@ -362,16 +366,25 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   `dataflow_trace` from `--json` (text/SARIF only), and run-scans Family 7 doesn't yet pass
   `--dataflow-traces` — wiring that flag / the Opengrep engine is E0.2's job. SARIF `codeFlows` + SFGE
   entry-point→DML vertices remain the other normal-form inputs to fold in as those engines land.
-- **E0.1b — ingest-ROUTING fix (cheap, high-value; pairs with E0.1).** *WIRE — reclassify already-
-  captured findings.* Scanner output for SOQLi/XSS (Code Analyzer), pickle/yaml/XXE (bandit B301/B506,
-  semgrep, njsscan) and `getSessionId` retrieval (Code Analyzer) ALREADY fires but is tagged class-less
-  or under the wrong label (`external-sast`/`apex-exposed-surface`), so it never routes to
-  injection-xss / untrusted-deserialization / sessionid-egress and never informs those dimensions. This
-  is an ingest-routing gap, not a detection gap. Route each to its dimension via `dimensionHint`.
-  **Supersession-safety:** injection-xss + untrusted-deserialization are MULTI-SHAPE → keep
-  `classify()=null` (route the dimension, do NOT own a class), so a SOQLi row never silences a co-located
-  XSS judgment. Standing test: a captured SOQLi/XXE fixture lands in the right dimension, class-less, and
-  does not supersede a co-located LLM sibling.
+- **E0.1b — ingest-ROUTING (external-SAST findings → the dimension their CWE owns).** The external-SAST
+  adapters filed every finding under the catch-all `external-sast`; a per-hit exact-integer-CWE allowlist
+  now routes injection-class findings to `injection-xss` via `dimensionHint`, `classify()=null` (route
+  the dimension, never own a class — the multi-shape supersession hazard). Shared helpers
+  `INJECTION_XSS_CWES` / `cweIdsOf` (anchored `^CWE-(\d+)\b` parse, so `CWE-789` ≠ `78`) / `dimensionForCwes`.
+  - ~~**Narrow first pass**~~ **DONE (0.8.58)** — CWE-89 (SQLi) + CWE-78 (command injection) in semgrep +
+    bandit, proven by existing fixtures; SSRF (939) / path-traversal (22) / secrets (798) / misconfig
+    (693) verified to STAY `external-sast`; non-supersession standing lock + 2 mutations. Graded off disk.
+  - **E0.1b-EXPAND (THE NEXT SLICE) — full injection taxonomy + GENERATED fixtures.** Expand
+    `INJECTION_XSS_CWES` to the whole injection set (79 XSS, 94 code-injection, 917/1336 SSTI, 643 XPath,
+    90 LDAP, 943 NoSQL, 91 XML) and add njsscan, GENERATING a genuine fixture per sub-class the OSS
+    scanners emit (seed a minimal sample → run the real scanner → capture output, the E0.1 technique) so
+    the routing is proven for ANY partner, not the dogfood profile. `classify()` stays null; exact-CWE
+    allowlist; honest `// fixture-pending` for any anchor no OSS rule emits.
+- **E0.1c — untrusted-deserialization routing + generated fixtures** (CWE-502 native-deser, 1321
+  prototype-pollution, 611 XXE). Same comprehensive + generated-fixture approach; `classify()=null`.
+- **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval). Needs a
+  generated Code Analyzer fixture; if the CA stack can't run in the slice, defer honestly as
+  "pending CA stack," never as a coverage choice.
 - **E0.2 — Opengrep swap for the external/JS-LWC taint tier.** *WIRE — adapter drop-in (byte-compatible
   CLI+JSON).* Opengrep (LGPL-2.1, the OSS Semgrep fork) deepens intra-file → interprocedural (intra-file)
   taint for JS/TS/Py/Go/Java — deeper `reachabilityPath` for the same E0.1 classes, reusing the adapter
@@ -476,9 +489,10 @@ not offered in any form), Snyk Code (commercial + ML-nondeterministic — violat
 contract), promptmap (GPL-3.0 — never vendor).
 
 #### Recommended sequence (each slice one-at-a-time, test-backed)
-1. ~~**E0.1 reachability-path ingest**~~ **DONE (0.8.57).** Next: **E0.1b routing fix** (reclassify the
-   already-captured SOQLi/XSS/deser/sessionid findings to their dimensions; cheapest, zero new tools,
-   near-zero FP; `classify()=null` on the multi-shape dimensions).
+1. ~~**E0.1 reachability-path ingest**~~ **DONE (0.8.57)** · ~~**E0.1b injection routing, narrow
+   (CWE-89/78)**~~ **DONE (0.8.58).** Next: **E0.1b-EXPAND** (full injection taxonomy + generated
+   fixtures) → **E0.1c** (deserialization) → **E0.1d** (sessionid/Apex) — each comprehensive +
+   generated-fixture, `classify()=null` on the multi-shape dimensions.
 2. **T1.1 prompt-injection reachability** (custom LLM-SDK / MCP / SF-write-back sink overlay on the E0.1 edge).
 3. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point).
 4. **E0.3 guest-exposure mapper** (novel cold-install source-scanner; highest novel value, no running
