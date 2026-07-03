@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (egress-plain-http adapter). Synthetic toolkit test data — NOT a partner artifact.
+  NEGATIVE (the precision guards): the <url> endpoint is https:// -> NOT flagged;
+  the <description> mentions http://legacy.example.com in prose -> NOT flagged
+  (the extractor is element-scoped, never a whole-file grep); and the xmlns URI on
+  every root element in this directory is http:// and must never flag either.
+-->
+<RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Replaced the retired http://legacy.example.com integration endpoint.</description>
+    <disableProtocolSecurity>false</disableProtocolSecurity>
+    <isActive>true</isActive>
+    <url>https://api.example.com</url>
+</RemoteSiteSetting>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (egress-plain-http adapter). Synthetic toolkit test data — NOT a partner artifact.
+  POSITIVE: the <endpointUrl> is declared over plain http:// -> FLAGGED. (A wildcard
+  host in an endpointUrl is a DIFFERENT check — the named follow-on slice, not this
+  adapter; only the http:// scheme matters here.)
+-->
+<CspTrustedSite xmlns="http://soap.sforce.com/2006/04/metadata">
+    <context>All</context>
+    <endpointUrl>http://cdn.example.com</endpointUrl>
+    <isActive>true</isActive>
+</CspTrustedSite>

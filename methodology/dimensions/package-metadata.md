@@ -161,6 +161,12 @@ downstream work rather than being findings in isolation:
   the *enumeration* and the `http://`/wildcard flags, which stand on their own).
   Cross-references `endpoint-https-only` (a hardcoded `http://` in a Remote Site
   Setting is itself a finding) and `violation-insecure-storage-sensitive-data`.
+  As of 0.8.66 the `http://` flag routes here deterministically: the
+  `egress-plain-http` source-scanner ingests every plain-HTTP endpoint declared
+  in Remote Site Settings, CSP Trusted Sites, and Named Credentials (legacy and
+  modern shapes) as an owned-class `plain-http-egress` finding grounded in
+  `endpoint-https-only` — the wildcard-host and staleness judgments above stay
+  this dimension's finder/verifier residual.
 
 - **Packaged-UI URL sensitive-info** — record Ids or sensitive parameters
   placed into Visualforce page URLs or `NavigationMixin.Navigate` `state`

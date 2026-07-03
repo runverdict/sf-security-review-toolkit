@@ -136,6 +136,18 @@
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
  *                     over-grants, the one class Code Analyzer doesn't cover (it's
  *                     permission-set XML, not Apex).
+ *                     Adapter #15 (B5 · E0.3b-1, 0.8.66): `egress-plain-http`
+ *                       (engine:'metadata') — scans the package's declarative
+ *                       egress-config metadata (*.remoteSite-meta.xml <url>,
+ *                       *.cspTrustedSite-meta.xml <endpointUrl>,
+ *                       *.namedCredential-meta.xml <endpoint> legacy /
+ *                       <parameterValue> where the sibling <parameterType> is Url,
+ *                       modern) and flags every endpoint declared over plain
+ *                       http:// — the codified Secure Communication violation
+ *                       (class `plain-http-egress` → endpoint-https-only, high,
+ *                       dimension package-metadata). Scheme-anchored (https://
+ *                       never flags) and element-scoped (an http:// inside a
+ *                       <description> never flags).
  *
  * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
  * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
@@ -160,6 +172,7 @@
  * Usage:
  *   node ingest-scanner-findings.mjs --scanner code-analyzer  --input CodeAnalyzer.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner egress-plain-http                         --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
@@ -174,7 +187,8 @@
  *      it; this explicit form is the ingest path for the ReDoS leg. See adapter #12.)
  *
  *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
- *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs metadata-viewall (source scan) +
+ *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs the source-scanners
+ *     (metadata-viewall + egress-plain-http, 0.8.66) +
  *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
  *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
  *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
@@ -378,6 +392,15 @@ export const CLASS_DEFS = {
   'viewall-overgrant': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
   'iac-misconfig': { baselineId: 'scan-iac-misconfig', dimension: 'infrastructure-iac', fallback: 'high' },
   'hardcoded-secrets': { baselineId: 'fail-hardcoded-secrets', dimension: 'secrets-credentials', fallback: 'high' },
+  // B5 · E0.3b-1 (0.8.66): a plain-http:// endpoint statically declared in the package's
+  // egress-config metadata (RemoteSiteSetting / CspTrustedSite / NamedCredential) — the
+  // codified Secure Communication violation. endpoint-https-only is major → high, and
+  // package-metadata is the dimension whose charter owns the trusted-host XML flags.
+  // SINGLE-SHAPE at its locus: the finding sits on the specific http:// URL line, so the
+  // owned class supersedes only a co-located LLM finding at that same endpoint (correct —
+  // the deterministic row is authoritative there), never a different-shape package-metadata
+  // finding elsewhere in the file (sameLocation is line-span-scoped).
+  'plain-http-egress': { baselineId: 'endpoint-https-only', dimension: 'package-metadata', fallback: 'high' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -496,6 +519,8 @@ function recommendationFor(classKey) {
       return 'Remediate the flagged infrastructure-as-code misconfiguration (or document a justified false positive in the dossier — scan-iac-misconfig). Follow the linked Checkov guideline.'
     case 'hardcoded-secrets':
       return 'Remove the hardcoded credential and move it to an approved store (named credential, protected custom metadata/settings, or an env var/vault); rotate the exposed secret. Do not rely on code obscurity — it is explicitly not a defense.'
+    case 'plain-http-egress':
+      return 'Declare the endpoint over https:// — all connections to and from the platform must use TLS (the codified Secure Communication requirement, endpoint-https-only); update the Remote Site Setting / CSP Trusted Site / Named Credential accordingly, or document a justified false positive in the dossier.'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -839,6 +864,146 @@ export const metadataViewAllAdapter = {
   },
   classify() {
     return 'viewall-overgrant'
+  },
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #15 — egress-plain-http (source-scanner, B5 · E0.3b-1): scans the repo's
+// declarative egress-config metadata and flags every endpoint declared over plain
+// http:// — the codified Secure Communication violation (endpoint-https-only,
+// Top-20 #17 "Insecure endpoint"). The clone of metadata-viewall: same walk, a pure
+// per-file extractor, CONSTANT classify(), NO securityRelevant (security-by-
+// construction — every emission is a statically-declared insecure-transport
+// endpoint). The endpoint-bearing elements per metadata type (Metadata API schema):
+//   *.remoteSite-meta.xml      — RemoteSiteSetting <url>
+//   *.cspTrustedSite-meta.xml  — CspTrustedSite <endpointUrl>
+//   *.namedCredential-meta.xml — NamedCredential <endpoint> (legacy) OR the modern
+//                                (API 56.0+) <namedCredentialParameters> block's
+//                                <parameterValue> where the sibling <parameterType>
+//                                is Url — BOTH shapes are read.
+// PRECISION: the scheme test is ANCHORED at the value's start and case-insensitive,
+// so https:// never matches (no /https?/ shortcut), and the URL is read ONLY from
+// the named elements of the file type that owns them — an http:// inside a
+// <description> (or anywhere else in the file) never flags.
+// HONEST FLOOR: the finding is a statically-declared plain-HTTP endpoint in
+// committed config — a transport-security misconfiguration; whether data actually
+// flows over it is runtime behavior (the DAST/TLS scan families). NO "secret"
+// finding is ever emitted from a credential file: the secret VALUE is org-encrypted
+// and never present in metadata, and hardcoded-secret detection is a different
+// engine. Wildcard-host / over-broad egress, Apex setEndpoint('http://…') literals,
+// and the host↔NamedCredential join are named follow-on slices — NOT this adapter.
+// ----------------------------------------------------------------------------
+const EGRESS_HTTPS_DOC =
+  'https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_code_violation_communication.htm'
+// endpoint-bearing simple elements, keyed by the metadata-file suffix that owns them
+const EGRESS_META_ELEMENTS = [
+  { suffix: '.remoteSite-meta.xml', type: 'Remote Site Setting', elements: ['url'] },
+  { suffix: '.cspTrustedSite-meta.xml', type: 'CSP Trusted Site', elements: ['endpointUrl'] },
+  { suffix: '.namedCredential-meta.xml', type: 'Named Credential', elements: ['endpoint'] },
+]
+// anchored + case-insensitive: `http://` only — the trailing-`s` exclusion is by
+// construction (the literal `p://` after `htt` cannot match `https://`)
+const PLAIN_HTTP_RE = /^http:\/\//i
+function findEgressMetadataFiles(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue
+        walk(join(dir, e.name))
+      } else if (e.isFile() && EGRESS_META_ELEMENTS.some((t) => e.name.endsWith(t.suffix))) {
+        out.push(join(dir, e.name))
+      }
+    }
+  }
+  walk(root)
+  out.sort()
+  return out
+}
+// PURE: extract each plain-http endpoint from one egress-config file's XML. `path`
+// picks WHICH elements are read (element-scoped, never a whole-file grep); the line
+// points at the offending URL value itself.
+function extractPlainHttpEndpoints(path, text) {
+  const meta = EGRESS_META_ELEMENTS.find((t) => String(path || '').endsWith(t.suffix))
+  if (!meta) return []
+  const out = []
+  const pushIfPlainHttp = (element, url, urlAbsIdx) => {
+    const u = String(url).trim()
+    if (!PLAIN_HTTP_RE.test(u)) return
+    out.push({ type: meta.type, element, url: u, line: lineOfIndex(text, urlAbsIdx) })
+  }
+  for (const el of meta.elements) {
+    const re = new RegExp(`<${el}>\\s*([^<]*?)\\s*</${el}>`, 'g')
+    let m
+    while ((m = re.exec(text)) !== null) {
+      pushIfPlainHttp(el, m[1], m.index + m[0].indexOf(m[1]))
+    }
+  }
+  // the modern NamedCredential shape: a <namedCredentialParameters> block whose
+  // <parameterType> is Url carries the endpoint in <parameterValue>
+  if (meta.suffix === '.namedCredential-meta.xml') {
+    const blockRe = /<namedCredentialParameters>([\s\S]*?)<\/namedCredentialParameters>/g
+    let b
+    while ((b = blockRe.exec(text)) !== null) {
+      const block = b[1]
+      const typeM = /<parameterType>\s*Url\s*<\/parameterType>/i.exec(block)
+      if (!typeM) continue
+      const valM = /<parameterValue>\s*([^<]*?)\s*<\/parameterValue>/.exec(block)
+      if (!valM) continue
+      pushIfPlainHttp('parameterValue', valM[1], b.index + b[0].indexOf(valM[0]) + valM[0].indexOf(valM[1]))
+    }
+  }
+  return out
+}
+export const egressPlainHttpAdapter = {
+  name: 'egress-plain-http',
+  kind: 'source-scanner',
+  collect({ target } = {}) {
+    if (!target) return null
+    let files
+    try {
+      files = findEgressMetadataFiles(target)
+    } catch {
+      return null
+    }
+    const out = []
+    for (const p of files) {
+      try {
+        out.push({ path: p, text: readFileSync(p, 'utf8') })
+      } catch {
+        /* unreadable file — skip, never crash */
+      }
+    }
+    return { files: out, repoRoot: target }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.files)) return []
+    const hits = []
+    for (const f of raw.files) {
+      if (!f || typeof f.text !== 'string') continue
+      for (const ep of extractPlainHttpEndpoints(f.path, f.text)) {
+        hits.push({
+          engine: 'metadata',
+          ruleId: 'plain-http-egress',
+          severityNum: null,
+          file: f.path,
+          startLine: ep.line,
+          message: `${ep.type} declares a plain-HTTP endpoint in <${ep.element}>: ${ep.url} — HTTPS is required for every connection to and from the platform (Secure Communication).`,
+          resources: [EGRESS_HTTPS_DOC],
+          tags: ['AppExchange', 'Security', 'Metadata'],
+        })
+      }
+    }
+    return hits
+  },
+  classify() {
+    return 'plain-http-egress'
   },
 }
 
@@ -2121,6 +2286,7 @@ export const sarifAdapter = {
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
+  'egress-plain-http': egressPlainHttpAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
   'opengrep': opengrepAdapter,
@@ -2140,7 +2306,7 @@ export const ADAPTERS = {
 // Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
 // match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
 // logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
-// carry a `detect` fn (metadata-viewall, the source-scanner, has none; opengrep has none
+// carry a `detect` fn (metadata-viewall + egress-plain-http, the source-scanners, have none; opengrep has none
 // BY DESIGN — its JSON is content-indistinguishable from semgrep's, see the adapter). Each `detect` is
 // wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
 // crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
@@ -2219,7 +2385,8 @@ export function mergeFindings(ledger, newFindings, pass) {
 
 // ----------------------------------------------------------------------------
 // ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
-// makes the whole Phase-2 build run in the real journey: it ALWAYS runs metadata-viewall, then
+// makes the whole Phase-2 build run in the real journey: it ALWAYS runs the source-scanners
+// (metadata-viewall + egress-plain-http), then
 // recognizes + ingests every scanner output present under <target>/.security-review/evidence/
 // by CONTENT SHAPE, and merges the whole deterministic band into the ledger in ONE pass. It
 // reuses the pure ingest() (per scanner) + loadLedger/mergeFindings verbatim; the existing
@@ -2246,8 +2413,9 @@ export function ingestAll({ target, pass, dryRun } = {}) {
   const allFindings = []
   const recognized = new Set()
 
-  // (1) ALWAYS run the metadata source scan — it needs no evidence file, no `sf`, no network
-  // (greps the repo's *.permissionset-meta.xml for ViewAll/ModifyAll over-grants).
+  // (1) ALWAYS run the metadata source scans — they need no evidence file, no `sf`, no network
+  // (metadata-viewall greps the repo's *.permissionset-meta.xml for ViewAll/ModifyAll
+  // over-grants; egress-plain-http greps the egress-config metadata for plain-http endpoints).
   let metaRaw = null
   try {
     metaRaw = metadataViewAllAdapter.collect({ target: root })
@@ -2262,6 +2430,21 @@ export function ingestAll({ target, pass, dryRun } = {}) {
     kind: metadataViewAllAdapter.kind,
     findings: metaRes.findings.length,
     status: metaRes.findings.length ? 'ran' : 'clean',
+  })
+  let egressRaw = null
+  try {
+    egressRaw = egressPlainHttpAdapter.collect({ target: root })
+  } catch {
+    egressRaw = null
+  }
+  const egressRes = ingest(egressRaw, egressPlainHttpAdapter, { repoRoot: root, pass: passId })
+  notes.push(...egressRes.notes)
+  allFindings.push(...egressRes.findings)
+  scanners.push({
+    scanner: 'egress-plain-http',
+    kind: egressPlainHttpAdapter.kind,
+    findings: egressRes.findings.length,
+    status: egressRes.findings.length ? 'ran' : 'clean',
   })
 
   // (2) enumerate evidence/*.json + *.sarif — TOP LEVEL only (skip subdirs like dast/), sorted

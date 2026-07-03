@@ -51,6 +51,47 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.66] — 2026-07-03
+
+**A new metadata source-scanner flags plain-HTTP (`http://`) endpoints declared in Remote Site
+Settings, CSP Trusted Sites, and Named Credentials — the codified Secure Communication
+violation — deterministically from source.** The `egress-plain-http` adapter is the third
+source-scanner (metadata-viewall's clone: same repo walk, a pure per-file extractor, constant
+`classify()`, security-by-construction — no tag filter) and needs no external tool, no `sf`,
+no network: it reads the package's declarative egress-config metadata and flags every endpoint
+declared over plain `http://` — `RemoteSiteSetting` `<url>`, `CspTrustedSite` `<endpointUrl>`,
+and `NamedCredential` in BOTH shapes (the legacy `<endpoint>` element and the modern API 56.0+
+`<namedCredentialParameters>` block's `<parameterValue>` where the sibling `<parameterType>` is
+`Url`). Each finding lands at the specific URL's file:line with the element and endpoint named,
+filed under `package-metadata` (the dimension whose charter owns the trusted-host XML `http://`
+flags), with severity grounded in the `endpoint-https-only` baseline requirement (major → high)
+via the new owned class `plain-http-egress`. The `--all` journey mode now always runs both
+source-scanners, so the finding appears in every cold audit pass with zero configuration.
+
+**Precision.** The scheme match is anchored and case-insensitive — `https://` can never match
+(no `/https?/` shortcut) — and the URL is read only from the endpoint-bearing elements of the
+metadata type that owns them, never a whole-file grep: an `http://` inside a `<description>`
+(or the metadata `xmlns` URI itself) never flags. The class is single-shape at its locus: the
+deterministic finding sits on the specific `http://` URL line, so it supersedes only a
+co-located model-inferred finding at that same endpoint (where it is authoritative), never a
+different-shape `package-metadata` finding elsewhere in the file — locked by the
+EG-non-supersession standing check.
+
+**Honest floor.** The finding is a **statically-declared insecure-transport endpoint in
+committed configuration** — not a confirmed data leak: whether traffic actually flows over the
+endpoint, and how its TLS behaves, are runtime questions that belong to the DAST/TLS scan
+families. And no "secret" finding is ever emitted from a credential file: a Named/External
+Credential's secret value is org-encrypted and never present in metadata (hardcoded-secret
+detection is a different engine). Wildcard-host / over-broad egress, Apex
+`setEndpoint('http://…')` literals, and the Remote-Site-host↔Named-Credential join are named
+follow-on slices.
+
+Suite **62 files / 932 checks** (was 924), all green. Mutation-proven: dropping the
+trailing-`s` exclusion from the scheme match (flagging `https://` too) turns the EG2 precision
+check red; pointing the non-supersession pair at the same locus turns EG-non-supersession red
+(the supersession visibly fires — proving the protection is locus-specificity, not an
+accident).
+
 ## [0.8.65] — 2026-07-03
 
 **Code Analyzer's built-in `pmd-appexchange` session-id retrieval rules now file under the

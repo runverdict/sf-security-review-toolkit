@@ -17,6 +17,19 @@
  *       NOT move a mapped finding's severity; the canonical taxonomy maps are correct.
  *   SH/V — sharing (SFGE) + ViewAll/ModifyAll (metadata source-scanner) ingest with the
  *       right engine/class/severity; standard objects + non-over-grants are NOT flagged.
+ *   EG — the egress-plain-http source-scanner (B5 · E0.3b-1, 0.8.66): flags every endpoint
+ *       declared over plain http:// in the package's egress-config metadata (RemoteSiteSetting
+ *       <url> · CspTrustedSite <endpointUrl> · NamedCredential legacy <endpoint> + modern
+ *       <parameterValue> with sibling <parameterType>Url) — the codified Secure Communication
+ *       violation, class plain-http-egress → endpoint-https-only (major → high), dimension
+ *       package-metadata. PRECISION: scheme-anchored (https:// never flags) + element-scoped
+ *       (an http:// in a <description>, or the xmlns URI itself, never flags). The owned class
+ *       is SINGLE-SHAPE at its locus — the finding sits on the specific http:// URL line, so
+ *       supersession never reaches a different-shape package-metadata finding at a different
+ *       locus (EG-non-supersession; a SAME-locus supersession would be correct — the
+ *       deterministic row is authoritative for that endpoint). HONEST FLOOR: a statically-
+ *       declared insecure-transport endpoint, never a confirmed leak, and NO secret finding
+ *       is emitted from a credential file (secret values are org-encrypted, never in metadata).
  *   U — an unmapped rule is still ingested as deterministic (never dropped) with the
  *       documented Code-Analyzer-severity fallback + a note.
  *   M — merge is additive + idempotent (re-ingest → no duplicates; LLM findings survive).
@@ -24,8 +37,8 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 14 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 15 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -87,6 +100,7 @@ import {
   buildFinding,
   codeAnalyzerAdapter,
   metadataViewAllAdapter,
+  egressPlainHttpAdapter,
   checkovAdapter,
   semgrepAdapter,
   opengrepAdapter,
@@ -339,6 +353,135 @@ check('V3 classSeverity: viewall-overgrant grounds in fail-sharing-model (a shar
   assert.equal(CLASS_DEFS['viewall-overgrant'].dimension, 'admin-surface')
 })
 
+// ────────────────────────── egress plain-HTTP metadata (source-scanner, B5 · E0.3b-1)
+// The THIRD source-scanner (metadata-viewall's clone): reads the package's declarative
+// egress-config metadata and flags every endpoint declared over plain http:// — the codified
+// Secure Communication violation (endpoint-https-only, major → high, dimension
+// package-metadata, whose charter owns the trusted-host XML http:// flags). The fixtures are
+// AUTHORED schema-faithful metadata XML (the permissionsets/ source-scanner convention):
+// 4 positives (RemoteSiteSetting <url> · CspTrustedSite <endpointUrl> · legacy NamedCredential
+// <endpoint> · modern NamedCredential <parameterValue> with sibling <parameterType>Url) +
+// 2 https negatives, one carrying an http:// inside its <description> (the element-scoped
+// guard; the xmlns URI on every root element is http:// and must never flag either).
+const EGFIX = join(FIX, 'egress-metadata')
+const ingestEgress = () => {
+  const raw = egressPlainHttpAdapter.collect({ target: EGFIX })
+  return ingest(raw, egressPlainHttpAdapter, { repoRoot: EGFIX, pass: 1 })
+}
+// the fixture line that carries the offending element — computed from the fixture itself so
+// the exact-locus assertions never go stale
+const egLineOf = (file, needle) => readText(join(EGFIX, file)).split('\n').findIndex((l) => l.includes(needle)) + 1
+
+check('EG1 egress-plain-http (source-scanner): a plain-http RemoteSiteSetting <url> → metadata/plain-http-egress/high/package-metadata at the <url> line, deterministic + schema-valid', () => {
+  const { findings } = ingestEgress()
+  const f = findings.find((x) => /Insecure_RSS\.remoteSite-meta\.xml/.test(x.file))
+  assert.ok(f, 'the plain-http Remote Site Setting is flagged')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'metadata')
+  assert.equal(f.ruleId, 'plain-http-egress')
+  assert.equal(f.class, 'plain-http-egress')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.dimension, 'package-metadata')
+  // the locus is the <url> line itself, not the file or the root element
+  assert.equal(f.file, `Insecure_RSS.remoteSite-meta.xml:${egLineOf('Insecure_RSS.remoteSite-meta.xml', '<url>http://api.example.com')}`)
+  assert.match(f.title, /<url>: http:\/\/api\.example\.com/)
+  assert.match(f.verdict_reasoning, /severity fixed from the plain-http-egress class \(baseline requirement endpoint-https-only = major\)/)
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('EG2 precision: https endpoints are NOT flagged; an http:// inside a <description> is NOT flagged (element-scoped, never a whole-file grep); the http:// xmlns URI never flags', () => {
+  const { findings } = ingestEgress()
+  assert.equal(findings.length, 4, 'exactly the four declared plain-http endpoints in the fixture dir — nothing more')
+  assert.ok(!findings.some((f) => /Secure_RSS/.test(f.file)), 'the https <url> file is clean — including its <description> mentioning http://legacy.example.com')
+  assert.ok(!findings.some((f) => /^Modern_NC\.namedCredential/.test(f.file)), 'the modern https <parameterValue> file is clean')
+  assert.ok(!findings.some((f) => f.title.includes('soap.sforce.com')), 'the http:// metadata-namespace URI on every root element never flags')
+})
+
+check('EG3 a plain-http CspTrustedSite <endpointUrl> flags at the <endpointUrl> line', () => {
+  const f = ingestEgress().findings.find((x) => /Insecure_CSP\.cspTrustedSite-meta\.xml/.test(x.file))
+  assert.ok(f, 'the plain-http CSP Trusted Site is flagged')
+  assert.equal(f.file, `Insecure_CSP.cspTrustedSite-meta.xml:${egLineOf('Insecure_CSP.cspTrustedSite-meta.xml', '<endpointUrl>http://cdn.example.com')}`)
+  assert.match(f.title, /<endpointUrl>: http:\/\/cdn\.example\.com/)
+  assert.equal(f.class, 'plain-http-egress')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.dimension, 'package-metadata')
+})
+
+check('EG4 NamedCredential: the legacy <endpoint> shape flags, the modern <parameterValue> (sibling <parameterType>Url) shape flags, the modern https shape does not — and NO secret finding is emitted from a credential file', () => {
+  const { findings } = ingestEgress()
+  const legacy = findings.find((x) => /Legacy_NC\.namedCredential-meta\.xml/.test(x.file))
+  assert.ok(legacy, 'the legacy <endpoint> shape flags')
+  assert.match(legacy.title, /<endpoint>: http:\/\/legacy\.example\.com/)
+  const modern = findings.find((x) => /Modern_NC_Insecure\.namedCredential-meta\.xml/.test(x.file))
+  assert.ok(modern, 'the modern <parameterValue> shape flags')
+  assert.match(modern.title, /<parameterValue>: http:\/\/callout\.example\.com/)
+  assert.equal(modern.file, `Modern_NC_Insecure.namedCredential-meta.xml:${egLineOf('Modern_NC_Insecure.namedCredential-meta.xml', '<parameterValue>http://callout.example.com')}`)
+  assert.ok(!findings.some((x) => /^Modern_NC\.namedCredential/.test(x.file)), 'the modern https shape stays clean')
+  // the honest floor: every emission from a credential file is the insecure-transport
+  // endpoint — never a "secret" finding (the secret value is org-encrypted, not in metadata)
+  assert.ok(findings.every((x) => x.ruleId === 'plain-http-egress'))
+  assert.ok(!findings.some((x) => /secret|credential value/i.test(x.title)))
+})
+
+check('EG-classSeverity: plain-http-egress grounds in the BASELINE endpoint-https-only (major) → high, dimension package-metadata', () => {
+  assert.equal(baselineSeverityFor('endpoint-https-only'), 'major')
+  const cs = classSeverity('plain-http-egress')
+  assert.equal(cs.severity, 'high')
+  assert.equal(cs.baselineId, 'endpoint-https-only')
+  assert.equal(cs.fromBaseline, true)
+  assert.equal(CLASS_DEFS['plain-http-egress'].dimension, 'package-metadata')
+})
+
+check('EG-adapter: egress-plain-http is a registered source-scanner ({name,kind,collect,parse,classify}, NO securityRelevant, NO detect) and ingest is byte-deterministic', () => {
+  assert.equal(ADAPTERS['egress-plain-http'], egressPlainHttpAdapter)
+  assert.equal(egressPlainHttpAdapter.name, 'egress-plain-http')
+  assert.equal(egressPlainHttpAdapter.kind, 'source-scanner')
+  for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof egressPlainHttpAdapter[m], 'function')
+  // security-by-construction: every emission is a declared plain-http endpoint → no filter
+  assert.equal(egressPlainHttpAdapter.securityRelevant, undefined)
+  // a source-scanner has no evidence file → invisible to the content-shape recognizer
+  assert.equal(egressPlainHttpAdapter.detect, undefined)
+  assert.equal(egressPlainHttpAdapter.classify('anything'), 'plain-http-egress')
+  const a = ingestEgress().findings
+  const b = ingestEgress().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('EG-non-supersession: an owned-class plain-http-egress finding does NOT supersede a co-located llm-inferred package-metadata finding of a DIFFERENT shape at a DIFFERENT locus — locus-specificity is the protection', () => {
+  const det = ingestEgress().findings.find((x) => /Insecure_RSS/.test(x.file)) // …remoteSite-meta.xml:<url> line
+  assert.equal(det.class, 'plain-http-egress')
+  assert.equal(det.dimension, 'package-metadata')
+  // an llm-inferred package-metadata finding of a DIFFERENT shape (the trusted-host-inventory
+  // staleness reasoning the dimension charter also owns), SAME file, NON-overlapping lines —
+  // class-less, so sameOwnedClass falls back to the dimension match, which DOES hold here:
+  const llm = {
+    id: '7'.repeat(16),
+    dimension: 'package-metadata',
+    title: 'Trusted-host inventory entry looks stale — host ownership should be re-verified',
+    severity: 'medium',
+    adjusted_severity: 'medium',
+    file: 'Insecure_RSS.remoteSite-meta.xml:1-7', // the file header block, NOT the <url> line
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the trusted-host inventory',
+  }
+  // the dimension fallback WOULD match (det owns a class, llm is class-less, same dimension);
+  // the ONLY missing supersession ingredient is the locus — assert that explicitly:
+  assert.equal(sameLocation(det, llm), false, 'different line span → not the same locus')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the different-locus LLM finding is NOT superseded — the deterministic row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed')
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // NOTE: at the SAME locus (an LLM finding on the same http:// URL line) supersession WOULD
+  // fire and WOULD be correct — the deterministic finding is authoritative for that endpoint.
+  // The guard is that ownership never reaches a different-shape finding elsewhere in the file.
+  // MUTATION: pointing llm.file at det's exact line turns `superseded === 0` red (the
+  // supersession visibly fires), proving the protection is locus-specificity, not an accident.
+})
+
 // ──────────────────────────────────────────────── Security/AppExchange tag filter
 check('U1 tag filter: a non-security rule (ApexDoc, tags Documentation/BestPractices) → 0 findings; the Performance-tagged MissingNullCheckOnSoqlVariable is filtered out of the real fixture', () => {
   // inline a synthetic non-security best-practices violation (NOT in the real captured
@@ -519,10 +662,11 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 14 adapters (sarif + opengrep added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy'])
+check('AD1 registry has 15 adapters (egress-plain-http added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
+  assert.equal(ADAPTERS['egress-plain-http'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
@@ -3321,8 +3465,9 @@ check('TRV-reuses-class: trivyAdapter.classify() is the constant iac-misconfig �
   // ONE definition: the iac-misconfig entry is checkov's, grounded in scan-iac-misconfig / infrastructure-iac
   assert.equal(CLASS_DEFS['iac-misconfig'].baselineId, 'scan-iac-misconfig')
   assert.equal(CLASS_DEFS['iac-misconfig'].dimension, 'infrastructure-iac')
-  // NO new CLASS_DEFS entry for trivy — the class map is unchanged (the original 5)
-  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'sharing', 'viewall-overgrant'])
+  // NO new CLASS_DEFS entry for trivy — the class map is the original 5 + plain-http-egress
+  // (the egress source-scanner's own class, 0.8.66 — not trivy's)
+  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'sharing', 'viewall-overgrant'])
   assert.equal(CLASS_DEFS['trivy'], undefined)
 })
 
@@ -3843,6 +3988,32 @@ check('ALL6 format-C evidence (0.8.56): redos-*.txt is invisible to --all (the .
   const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
   assert.equal(ledger.findings.filter((f) => f.engine === 'regexploit').length, 4)
   assert.ok(ledger.findings.every((f) => f.engine !== 'regexploit' || !('class' in f)))
+})
+
+check('EG-all (--all journey wiring): egress-plain-http ALWAYS runs — a plain-http RemoteSiteSetting under the target lands in the band + ledger with a scanner row; a target with no egress metadata reports it clean', () => {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-egress-all-'))
+  dirs.push(T)
+  // copy the fixture under the target so the source-scanner finds it (no evidence/ needed)
+  mkdirSync(join(T, 'force-app', 'main', 'default', 'remoteSiteSettings'), { recursive: true })
+  writeFileSync(
+    join(T, 'force-app', 'main', 'default', 'remoteSiteSettings', 'Insecure_RSS.remoteSite-meta.xml'),
+    readFileSync(join(EGFIX, 'Insecure_RSS.remoteSite-meta.xml'), 'utf8')
+  )
+  const out = runAll(T)
+  assert.ok(
+    out.scanners.some((s) => s.scanner === 'egress-plain-http' && s.kind === 'source-scanner' && s.findings === 1 && s.status === 'ran'),
+    `egress-plain-http scanner row present (got ${JSON.stringify(out.scanners)})`
+  )
+  const f = out.findings.find((x) => x.ruleId === 'plain-http-egress')
+  assert.ok(f, 'the declared plain-http endpoint is in the --all band')
+  assert.equal(f.class, 'plain-http-egress')
+  assert.equal(f.dimension, 'package-metadata')
+  assert.equal(f.adjusted_severity, 'high')
+  const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
+  assert.ok(ledger.findings.some((x) => x.ruleId === 'plain-http-egress'), 'merged into the ledger')
+  // and a target with NO egress-config metadata reports the scanner honestly clean — no crash
+  const out2 = runAll(setupAllTarget())
+  assert.ok(out2.scanners.some((s) => s.scanner === 'egress-plain-http' && s.findings === 0 && s.status === 'clean'))
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup
