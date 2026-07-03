@@ -51,6 +51,36 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.57] — 2026-07-03
+
+**The Semgrep ingest now captures the scanner's source→sink dataflow path as a
+`reachabilityPath` finding attribute — the deterministic reachability substrate the later
+residual-shrinking slices consume.** A Semgrep taint-mode result carries `extra.dataflow_trace`
+— the ordered path the engine computed from the untrusted-input source, through each
+intermediate propagation step, to the sensitive sink — and the adapter previously discarded it.
+It is now normalized onto the finding as `reachabilityPath` (`source`/`intermediate[]`/`sink`,
+each a `{file, line}` step; the trace's matched-text strings are deliberately dropped —
+locations only) together with `reachable: true`, so a downstream consumer can see the path the
+scanner already proved instead of re-deriving reachability.
+
+**Additive only — no band change.** The attribute never enters the finding's id hash, severity,
+band, or reasoning; a result without a trace (including every capture from the Semgrep CLIs
+that serialize the trace to text/SARIF output only, whose `--json` omits it) attaches neither
+field and ingests byte-identically to before. A malformed trace attaches nothing and never
+throws — the base finding always still lands. The other eleven adapters, the class definitions,
+and every severity map are untouched; the ledger schema gains the matching optional
+`reachable`/`reachabilityPath` finding properties. The fixture anchoring the shape is genuine
+Semgrep 1.85.0 `--json --dataflow-traces` output over a seeded request-parameter→SQL-string
+sample (`acceptance/fixtures/semgrep-taint-seeded.json`).
+
+Suite **62 files / 885 checks** (was 882), all green — the captured-trace anchor (source
+`app.py:10` → intermediates `:10`/`:11` → sink `app.py:13`, schema-validated), the
+additive-only lock (the existing trace-less fixtures carry neither new field, and the same
+fixture with the trace removed produces a byte-identical finding minus the two attributes), and
+the malformed-trace safety battery (non-object trace / missing sink / junk steps → no
+attribute, base finding intact). Mutation-proven: neutralizing the trace extraction turns the
+anchor check red.
+
 ## [0.8.56] — 2026-07-03
 
 **ReDoS joins the deterministic band: the catastrophic-regex pattern substrate of

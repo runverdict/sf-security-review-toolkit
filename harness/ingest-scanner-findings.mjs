@@ -24,7 +24,13 @@
  *                     Adapter #3 (Phase 2 · 2a #1): `checkov` (IaC-misconfig JSON; engine:'checkov').
  *                     Adapter #4 (Phase 2 · 2a #2): `semgrep` (multi-language SAST JSON;
  *                       engine:'semgrep') — the FIRST tool→band adapter (severity from the
- *                       tool's own ERROR/WARNING/INFO, owns no toolkit class).
+ *                       tool's own ERROR/WARNING/INFO, owns no toolkit class). B5 · E0.1
+ *                       (0.8.57): a taint-mode result's `extra.dataflow_trace` — the
+ *                       source→sink dataflow path the engine computed — is captured as a
+ *                       `reachabilityPath` attribute (+ `reachable:true`) on the finding;
+ *                       an absent/malformed trace attaches NOTHING (attribute capture only —
+ *                       no id/severity/band/reasoning change, every trace-less finding is
+ *                       byte-identical).
  *                     Adapter #5 (Phase 2 · 2a #3): `bandit` (Python SAST JSON; engine:'bandit')
  *                       — the SECOND tool→band adapter, the proof the Semgrep tool→band path
  *                       GENERALIZES (severity from HIGH/MEDIUM/LOW, owns no class, NO harness change).
@@ -480,7 +486,7 @@ const _osvMarks = (r) => 'experimental_config' in r
 // ----------------------------------------------------------------------------
 // the finding builder — shared by every adapter / kind
 // ----------------------------------------------------------------------------
-export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel, gateLabel }) {
+export function buildFinding({ engine, ruleId, severityNum, file, startLine, message, resources, classKey, repoRoot, pass, bandFromTool, dimensionHint, toolSevLabel, gateLabel, reachabilityPath }) {
   const passId = Number.isInteger(pass) && pass >= 1 ? pass : 1
   const rel = repoRel(file, repoRoot)
   const loc = startLine != null ? `${rel}:${startLine}` : rel
@@ -553,6 +559,16 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
   // supersedes a co-located LLM finding ONLY in a class it owns — so an unmapped
   // deterministic finding (no `class`) never supersedes anything.
   if (classKey && CLASS_DEFS[classKey]) finding.class = classKey
+  // Reachability (B5 · E0.1): the scanner-computed source→sink dataflow path, relayed when
+  // the producing adapter captured one (Semgrep taint mode — see _reachabilityPath). A PURE
+  // ADDITIVE attribute: it never enters the id hash, the severity, the band, or the
+  // reasoning, and a finding without a trace carries NEITHER field (absence means "the
+  // scanner recorded no path", never "unreachable") — so every trace-less finding, from
+  // every adapter, stays byte-identical.
+  if (_isObj(reachabilityPath)) {
+    finding.reachabilityPath = reachabilityPath
+    finding.reachable = true
+  }
   return finding
 }
 
@@ -857,6 +873,47 @@ export const checkovAdapter = {
 // kebab-case string, so no methodology/dimensions/ file is needed. Like checkov/metadata it is
 // SECURITY-BY-CONSTRUCTION (the security rulesets), so NO `securityRelevant` — the ingest core
 // keeps every emitted hit. Only `results[]` become findings.
+//
+// ---- reachability-path normalization (B5 · E0.1, 0.8.57) ----
+// A Semgrep taint-mode result can carry `extra.dataflow_trace` — the ordered source→sink
+// dataflow path the engine computed. That path is the deterministic reachability substrate
+// the residual-shrinking slices consume, so the adapter captures it as a `reachabilityPath`
+// attribute instead of discarding it. The REAL captured shape (semgrep 1.85.0 JSON, fixture
+// acceptance/fixtures/semgrep-taint-seeded.json):
+//   taint_source / taint_sink — a TAGGED PAIR: ['CliLoc', [ { path, start:{line,col,offset},
+//                               end:{…} }, '<matched content>' ]] (the pair's second element
+//                               carries the location object first);
+//   intermediate_vars         — [ { content, location: { path, start:{line,…}, end:{…} } }, … ]
+//                               (may be empty).
+// _traceStep normalizes ANY of those step encodings to { file, line }; the content strings
+// are DROPPED — the attribute records WHERE the path runs, never source text. Newer Semgrep
+// CLIs serialize the trace to text/SARIF output only (their --json omits it); a capture from
+// one carries no attribute — the designed degradation: an absent or malformed trace yields
+// null (no attribute, base finding unchanged), NEVER a throw.
+const _traceStep = (x, depth = 0) => {
+  if (x == null || depth > 4) return null
+  if (Array.isArray(x)) {
+    // tagged pair ['CliLoc', [location, content]] → recurse into the tagged value; a bare
+    // [location, …] value → recurse into its first element.
+    if (typeof x[0] === 'string' && x.length > 1) return _traceStep(x[1], depth + 1)
+    return _traceStep(x[0], depth + 1)
+  }
+  if (!_isObj(x)) return null
+  if (x.location) return _traceStep(x.location, depth + 1)
+  const file = typeof x.path === 'string' && x.path ? x.path : null
+  const line = _isObj(x.start) && Number.isInteger(x.start.line) && x.start.line >= 1 ? x.start.line : null
+  return file && line ? { file, line } : null
+}
+function _reachabilityPath(trace) {
+  if (!_isObj(trace)) return null
+  const source = _traceStep(trace.taint_source)
+  const sink = _traceStep(trace.taint_sink)
+  if (!source || !sink) return null // a path needs BOTH ends — anything less attaches nothing
+  const intermediate = (Array.isArray(trace.intermediate_vars) ? trace.intermediate_vars : [])
+    .map((v) => _traceStep(v))
+    .filter(Boolean) // a malformed middle step is skipped; the proven ends still stand
+  return { source, intermediate, sink }
+}
 export const semgrepAdapter = {
   name: 'semgrep',
   kind: 'file-parser',
@@ -888,7 +945,7 @@ export const semgrepAdapter = {
       const sev = extra.severity
       const refs =
         Array.isArray(metadata.references) && metadata.references[0] ? [String(metadata.references[0])] : []
-      hits.push({
+      const hit = {
         engine: 'semgrep',
         ruleId: String(r.check_id),
         severityNum: null, // Semgrep has no 1-5 number; the band comes from extra.severity
@@ -900,7 +957,18 @@ export const semgrepAdapter = {
         toolSevLabel: String(sev || 'unknown'),
         dimensionHint: 'external-sast',
         tags: [],
-      })
+      }
+      // B5 · E0.1: capture the taint-mode source→sink dataflow path when the result carries
+      // one. Wrapped so a malformed trace can NEVER take down the base finding — extraction
+      // failure = no attribute, nothing else changes.
+      let reachabilityPath = null
+      try {
+        reachabilityPath = _reachabilityPath(extra.dataflow_trace)
+      } catch {
+        reachabilityPath = null
+      }
+      if (reachabilityPath) hit.reachabilityPath = reachabilityPath
+      hits.push(hit)
     }
     return hits
   },

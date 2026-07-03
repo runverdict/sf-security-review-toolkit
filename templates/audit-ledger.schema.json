@@ -53,6 +53,16 @@
         "last_seen": { "$ref": "#/$defs/pass_id" }
       }
     },
+    "trace_step": {
+      "description": "One location on a scanner-computed dataflow trace (B5 · E0.1): the repo-relative file and 1-based line of a source, intermediate, or sink step. Location only — the step's matched source text is intentionally not recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
     "finding": {
       "type": "object",
       "additionalProperties": false,
@@ -199,6 +209,24 @@
           "description": "The scanner/metadata rule that fired (e.g. `ApexCRUDViolation`, `DatabaseOperationsMustUseWithSharing`, `viewall-overgrant`). Present iff `provenance` is `deterministic`; the LLM never invents one. Recorded verbatim so the finding is reviewer-reproducible against the same scanner run.",
           "type": "string",
           "minLength": 1
+        },
+        "reachable": {
+          "description": "True when the producing scanner PROVED a source→sink dataflow path for this finding (Semgrep taint mode — B5 · E0.1). Present iff `reachabilityPath` is. ABSENCE means the scanner recorded no path — 'not analyzed', never 'unreachable'; no finding carries `reachable: false`.",
+          "type": "boolean"
+        },
+        "reachabilityPath": {
+          "description": "The scanner-computed source→sink dataflow trace, normalized from Semgrep taint-mode `extra.dataflow_trace` by harness/ingest-scanner-findings.mjs (B5 · E0.1): the untrusted-input source location, the ordered intermediate propagation steps (may be empty), and the sensitive-sink location. Relayed MECHANICALLY from captured scanner output — never LLM-authored, never entering the finding's id/severity/band. Locations only; matched source text is never recorded here. Present iff `reachable` is.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "intermediate", "sink"],
+          "properties": {
+            "source": { "$ref": "#/$defs/trace_step" },
+            "intermediate": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/trace_step" }
+            },
+            "sink": { "$ref": "#/$defs/trace_step" }
+          }
         }
       },
       "allOf": [

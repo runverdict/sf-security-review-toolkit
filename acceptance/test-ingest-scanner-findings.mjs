@@ -930,6 +930,79 @@ check('SG-schema: a Semgrep finding (no class, dimension external-sast) validate
   assert.deepEqual(validateFinding(f), [])
 })
 
+// ───────────── semgrep reachability path (B5 · E0.1 — the taint-mode source→sink dataflow trace)
+// A Semgrep taint-mode result carries `extra.dataflow_trace` — the ordered source→sink dataflow
+// path the engine computed. The adapter captures it as a `reachabilityPath` attribute
+// (+ `reachable: true`) instead of discarding it; EVERYTHING else about the finding is untouched,
+// and a trace-less result attaches NEITHER field. The fixture is GENUINE semgrep 1.85.0
+// `--json --dataflow-traces` output over a seeded request-parameter→SQL-sink sample (newer
+// Semgrep CLIs serialize the trace to text/SARIF only — a capture from one carries no
+// attribute, the exact degradation RP2 locks).
+const SEMGREP_TAINT = join(FIX, 'semgrep-taint-seeded.json') // genuine 1.85.0: 1× ERROR taint result WITH extra.dataflow_trace (source app.py:10 → intermediates :10/:11 → sink app.py:13)
+
+check('SG-RP1 reachability: the taint fixture → reachabilityPath {source app.py:10, ordered intermediates :10/:11, sink app.py:13} + reachable:true; id/band/reasoning untouched; validates against $defs/finding', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_TAINT))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.reachable, true)
+  assert.deepEqual(f.reachabilityPath, {
+    source: { file: 'app.py', line: 10 },
+    intermediate: [
+      { file: 'app.py', line: 10 },
+      { file: 'app.py', line: 11 },
+    ],
+    sink: { file: 'app.py', line: 13 },
+  })
+  assert.equal(f.adjusted_severity, 'high') // ERROR → high — the trace does NOT move the band
+  assert.ok(f.file.endsWith('app.py:13'), `file was ${f.file}`)
+  // The attribute is INVISIBLE to everything else: the same fixture with the trace REMOVED
+  // must produce a finding byte-identical to this one minus the two new fields (same id, same
+  // band, same reasoning — attribute capture only).
+  const raw = clone(readJSON(SEMGREP_TAINT))
+  delete raw.results[0].extra.dataflow_trace
+  const bare = ingestSemgrep(raw).findings[0]
+  const { reachabilityPath: _rp, reachable: _re, ...rest } = f
+  assert.equal(JSON.stringify(rest), JSON.stringify(bare))
+  assert.deepEqual(validateFinding(f), []) // the ledger schema covers the new attribute
+})
+
+check('SG-RP2 additive-only: the existing coldstart-full + helios fixtures (no dataflow_trace) produce findings with NEITHER reachabilityPath NOR reachable', () => {
+  for (const fx of [SEMGREP_WARN, SEMGREP_ERR]) {
+    const { findings } = ingestSemgrep(readJSON(fx))
+    assert.ok(findings.length >= 1)
+    for (const f of findings) {
+      assert.ok(!('reachabilityPath' in f), `unexpected reachabilityPath on ${f.file}`)
+      assert.ok(!('reachable' in f), `unexpected reachable on ${f.file}`)
+    }
+  }
+})
+
+check('SG-RP3 malformed-trace safety: non-object trace / missing taint_sink / junk steps → NO attribute, base finding still emitted, never a throw', () => {
+  const variants = [
+    () => 'not-an-object', // a non-object trace
+    (t) => {
+      delete t.taint_sink // a path needs BOTH ends
+      return t
+    },
+    (t) => ({ ...t, taint_source: 42 }), // a junk source step
+    (t) => ({ ...t, taint_sink: [] }), // an empty tagged pair — no location to normalize
+  ]
+  for (const mutate of variants) {
+    const raw = clone(readJSON(SEMGREP_TAINT))
+    raw.results[0].extra.dataflow_trace = mutate(raw.results[0].extra.dataflow_trace)
+    const { findings } = ingestSemgrep(raw)
+    assert.equal(findings.length, 1, 'the base finding must still be emitted')
+    assert.ok(!('reachabilityPath' in findings[0]) && !('reachable' in findings[0]))
+  }
+  // a malformed MIDDLE step is skipped (the proven source/sink ends still stand, the
+  // intermediate list is present-but-empty — the schema-required shape)
+  const raw = clone(readJSON(SEMGREP_TAINT))
+  raw.results[0].extra.dataflow_trace.intermediate_vars = [null, { content: 'x' }, 7]
+  const f = ingestSemgrep(raw).findings[0]
+  assert.equal(f.reachable, true)
+  assert.deepEqual(f.reachabilityPath.intermediate, [])
+})
+
 check('SG-CLI: --scanner semgrep --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
   const out = execFileSync(
     'node',

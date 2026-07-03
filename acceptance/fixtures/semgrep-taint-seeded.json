@@ -1,0 +1,144 @@
+{
+    "errors": [],
+    "interfile_languages_used": [],
+    "paths": {
+        "scanned": [
+            "app.py"
+        ]
+    },
+    "results": [
+        {
+            "check_id": "seeded-request-param-to-sql-sink",
+            "end": {
+                "col": 31,
+                "line": 13,
+                "offset": 474
+            },
+            "extra": {
+                "dataflow_trace": {
+                    "intermediate_vars": [
+                        {
+                            "content": "user_id",
+                            "location": {
+                                "end": {
+                                    "col": 12,
+                                    "line": 10,
+                                    "offset": 310
+                                },
+                                "path": "app.py",
+                                "start": {
+                                    "col": 5,
+                                    "line": 10,
+                                    "offset": 303
+                                }
+                            }
+                        },
+                        {
+                            "content": "query",
+                            "location": {
+                                "end": {
+                                    "col": 10,
+                                    "line": 11,
+                                    "offset": 350
+                                },
+                                "path": "app.py",
+                                "start": {
+                                    "col": 5,
+                                    "line": 11,
+                                    "offset": 345
+                                }
+                            }
+                        }
+                    ],
+                    "taint_sink": [
+                        "CliLoc",
+                        [
+                            {
+                                "end": {
+                                    "col": 31,
+                                    "line": 13,
+                                    "offset": 474
+                                },
+                                "path": "app.py",
+                                "start": {
+                                    "col": 12,
+                                    "line": 13,
+                                    "offset": 455
+                                }
+                            },
+                            "conn.execute(query)"
+                        ]
+                    ],
+                    "taint_source": [
+                        "CliLoc",
+                        [
+                            {
+                                "end": {
+                                    "col": 42,
+                                    "line": 10,
+                                    "offset": 340
+                                },
+                                "path": "app.py",
+                                "start": {
+                                    "col": 15,
+                                    "line": 10,
+                                    "offset": 313
+                                }
+                            },
+                            "request.args.get(\"user_id\")"
+                        ]
+                    ]
+                },
+                "engine_kind": "OSS",
+                "fingerprint": "3e9f9c99dc849fcdbb3f5467aae4e8f43ca0b0ea6d287a33799288ff116c99727c1d9e055f18995bd608334b09df1e0b08159d1a567c6a84ae1b04718f2b3b77_0",
+                "is_ignored": false,
+                "lines": "    return conn.execute(query)",
+                "message": "Untrusted request parameter reaches a SQL execution sink via string concatenation (CWE-89). Use a parameterized query.",
+                "metadata": {
+                    "cwe": "CWE-89",
+                    "references": [
+                        "https://cwe.mitre.org/data/definitions/89.html"
+                    ]
+                },
+                "metavars": {
+                    "$CONN": {
+                        "abstract_content": "conn",
+                        "end": {
+                            "col": 16,
+                            "line": 13,
+                            "offset": 459
+                        },
+                        "propagated_value": {
+                            "svalue_abstract_content": "sqlite3.connect(\"app.db\")",
+                            "svalue_end": {
+                                "col": 37,
+                                "line": 12,
+                                "offset": 443
+                            },
+                            "svalue_start": {
+                                "col": 12,
+                                "line": 12,
+                                "offset": 418
+                            }
+                        },
+                        "start": {
+                            "col": 12,
+                            "line": 13,
+                            "offset": 455
+                        }
+                    }
+                },
+                "severity": "ERROR",
+                "validation_state": "NO_VALIDATOR"
+            },
+            "path": "app.py",
+            "start": {
+                "col": 12,
+                "line": 13,
+                "offset": 455
+            }
+        }
+    ],
+    "skipped_rules": [],
+    "version": "1.85.0"
+}
