@@ -553,8 +553,22 @@ families PENDING until a re-audit.
 
    ```bash
    semgrep scan --config p/security-audit --config p/secrets \
-     --config p/<language> --json --output evidence/semgrep-<date>.json <server-root>
+     --config p/<language> --json --dataflow-traces \
+     --output evidence/semgrep-<date>.json <server-root>
    ```
+
+   `--dataflow-traces` is load-bearing: it explicitly requests the source→sink
+   dataflow trace for taint-mode results — `extra.dataflow_trace` in the JSON is
+   what the ingest adapter captures as the finding's `reachabilityPath`
+   (+ `reachable: true`), so the live command must ask for the trace rather than
+   depend on any version's default. *Substrate ceiling:* whether `--json`
+   actually carries the trace is version-dependent (verified on a seeded
+   source→sink sample: 1.85.0 emits `extra.dataflow_trace`; 1.168.0 omits it
+   even with the flag — newer CLIs serialize the trace to text/SARIF output
+   only). If the evidence JSON carries no `dataflow_trace` on a taint finding,
+   report "reachability substrate unavailable on this Semgrep version" in the
+   evidence summary rather than silently shipping trace-less findings — the
+   findings themselves still ingest normally; only `reachabilityPath` is absent.
 
    The registry configs are fetched once; if the host is offline, vendor the rules
    first (`semgrep --config <dir>`). *Agent runs:* the scan, JSON parsing, diffing

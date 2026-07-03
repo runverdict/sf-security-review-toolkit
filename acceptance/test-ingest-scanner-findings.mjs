@@ -1017,6 +1017,24 @@ check('SG-RP3 malformed-trace safety: non-object trace / missing taint_sink / ju
   assert.deepEqual(f.reachabilityPath.intermediate, [])
 })
 
+// The reachabilityPath capture above is worthless if the LIVE scan stops requesting the trace:
+// `--dataflow-traces` is the explicit ask for `extra.dataflow_trace`, and whether `--json`
+// carries it is VERSION-dependent (verified: 1.85.0 emits it, 1.168.0 serializes traces to
+// text/SARIF only) — dropping the flag from the documented command silently re-dormants the
+// feature on every version that honors the request (B5 · E0.2a). The borrowed substrate must
+// assert its input: lock the documented Family 7 command shape. Scoped to the fenced invocation
+// blocks, NOT the prose — a note mentioning the flag while the command lost it must still go red.
+check('SG-RP4 wiring: the run-scans Family 7 Semgrep invocation carries --dataflow-traces (the flag that makes reachabilityPath populate on a live run) alongside --json', () => {
+  const skill = readText(join(PLUGIN, 'skills', 'run-scans', 'SKILL.md'))
+  const blocks = [...skill.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1])
+  const semgrepBlocks = blocks.filter((b) => b.includes('semgrep scan'))
+  assert.ok(semgrepBlocks.length >= 1, 'no fenced `semgrep scan` invocation found in skills/run-scans/SKILL.md')
+  for (const b of semgrepBlocks) {
+    assert.ok(b.includes('--dataflow-traces'), `a Family 7 semgrep invocation lost --dataflow-traces:\n${b}`)
+    assert.ok(b.includes('--json'), `a Family 7 semgrep invocation lost --json (the ingest input format):\n${b}`)
+  }
+})
+
 check('SG-CLI: --scanner semgrep --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
   const out = execFileSync(
     'node',

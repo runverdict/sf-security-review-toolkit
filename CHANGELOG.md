@@ -51,6 +51,34 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.60] — 2026-07-03
+
+**The live Family 7 external-SAST scan now requests the source→sink dataflow trace, so the
+`reachabilityPath` capture shipped at 0.8.57 populates on real runs — not only against
+fixtures.** The documented run-scans Semgrep invocation gains `--dataflow-traces`: the
+explicit ask for `extra.dataflow_trace`, the taint-mode source→sink path the ingest adapter
+normalizes onto the finding as `reachabilityPath` + `reachable: true`. Until now the live
+command never requested the trace, leaving the reachability capture proven at the adapter but
+dormant end-to-end. The standing taint fixture already matches the wired command (genuine
+Semgrep 1.85.0 `--json --dataflow-traces` capture) and is unchanged; no adapter or harness
+logic changed — this is a scan-command + test change.
+
+**The honest ceiling, verified live on a seeded source→sink sample:** whether `--json`
+actually carries the trace is Semgrep-version-dependent — 1.85.0 emits `extra.dataflow_trace`,
+while 1.168.0 serializes traces to text/SARIF output only and omits it even with the flag.
+The run-scans prose now instructs the operator to report "reachability substrate unavailable
+on this Semgrep version" when a taint finding's evidence JSON carries no trace, rather than
+silently shipping trace-less findings (which still ingest normally — only `reachabilityPath`
+is absent).
+
+**A standing wiring check locks the command shape.** The fenced Family 7 invocation must
+carry `--dataflow-traces` alongside `--json` — scoped to the invocation blocks, not the
+prose, so a future edit that drops the flag (silently re-dormanting the reachability
+capture) fails the build even if a note still mentions it.
+
+Suite **62 files / 895 checks** (was 894), all green. Mutation-proven: removing
+`--dataflow-traces` from the documented invocation turns the wiring check red.
+
 ## [0.8.59] — 2026-07-03
 
 **`injection-xss` routing now covers the full injection taxonomy — cross-site scripting,
