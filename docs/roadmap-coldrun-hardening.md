@@ -408,21 +408,22 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   `p/ai-best-practices` rules are Pro-gated and silently drop on a cold install; the pack is deprecated,
   migrated into semgrep-rules) + a custom sink overlay.* Substrate = the taint EDGE (E0.1): untrusted
   request/tool data → LLM-prompt sink, and LLM-output → dangerous sink. The load-bearing custom piece off-
-  the-shelf packs miss (they target LangChain/CrewAI): a rule for the partner's hand-rolled surface —
-  `google-genai .generate_content`, copilot tool-dispatch, MCP tool handlers as sinks, and
-  **`LLM-output → Salesforce write-back | SF callout | JSX render without human-in-loop`** (LLM05+LLM06;
-  matches CLAUDE.md rule-8 `str()` surface — covered by nothing OSS). `classify()=null` (injection-xss +
-  agentforce are multi-shape). Residual: injectability/exploitability.
+  the-shelf packs miss (they target LangChain/CrewAI): a rule for a partner's hand-rolled surface — direct
+  LLM-SDK calls (google-genai / openai / vertex / etc.), custom tool-dispatch, and MCP tool handlers as
+  sinks, and **`LLM-output → Salesforce write-back | SF callout | JSX/DOM render without escaping`**
+  (LLM05+LLM06 — the render-without-escaping surface covered by nothing OSS). `classify()=null`
+  (injection-xss + agentforce are multi-shape). Residual: injectability/exploitability.
 - **T1.2 — denial-of-wallet.** *WIRE a first-party Semgrep pack (+ recheck for the regex arm).*
   Deterministic substrate = pure AST-presence guard checks with **no external compensating control**:
   query-without-`.limit()`, LLM-call-missing-`max_tokens`, unbounded decompression (`io.Copy` vs
-  `io.CopyN`, `extractall` with no threshold), and **unbounded `.delay()`/`.apply_async()` in a loop**
-  (a real fan-out vector no OSS pack models). **THE track's #1 honesty guardrail (hard rule):
-  "missing rate-limit" MUST NOT be emitted `deterministic`** — compensating controls at Cloudflare/nginx
-  are invisible to any source scanner, so a naive rule over-reports every handler. Route missing-rate-
-  limit through LLM/owner adjudication (or ingest gateway config first). `classify()=null` (RCA multi-
-  shape). Standing test asserts missing-rate-limit is tagged adjudicated/`llm-inferred`, NEVER
-  `deterministic` — that assertion is the slice's point.
+  `io.CopyN`, `extractall` with no threshold), and an **unbounded task-queue enqueue in a loop** (Celery
+  `.delay()`/`.apply_async()`, RQ, Sidekiq — a fan-out vector no OSS pack models). **THE track's #1
+  honesty guardrail (hard rule): "missing rate-limit" MUST NOT be emitted `deterministic`** —
+  compensating controls at the CDN / gateway / reverse-proxy layer are invisible to any source scanner,
+  so a naive rule over-reports every handler. Route missing-rate-limit through LLM/owner adjudication (or
+  ingest gateway config first). `classify()=null` (RCA multi-shape). Standing test asserts
+  missing-rate-limit is tagged adjudicated/`llm-inferred`, NEVER `deterministic` — that assertion is the
+  slice's point.
 - **T1.3 — IDOR/BOLA.** *Split by surface: WIRE SFGE for Apex; BUILD a 2-identity loopback differential
   for the external app.* **Apex:** pin SFGE `ApexFlsViolation` as the CRUD/FLS substrate + PMD
   `ApexCRUDViolation` as the coarse fallback; upgrade SFGE ingest to capture entry-point→DML vertices
@@ -439,8 +440,8 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   not apply. Needs a running target → gate behind the existing scan-org consent (the one Tier-1 slice
   that is not cold-install-only). `classify()`: the RLS-oracle finding may own a class (single-shape:
   cross-tenant read = auto-fail); the static prefilter emits PLAUSIBLE class-less and only feeds the
-  dynamic oracle. FP note: loopback-mirror fidelity (RLS/GUC, Celery, rate-limits) must be faithful or
-  the differential runs against a non-representative app.
+  dynamic oracle. FP note: loopback-mirror fidelity (the app's tenant-isolation binding, async workers,
+  and rate-limits) must be faithful or the differential runs against a non-representative app.
 
 #### Tier 2 — backlog adapters (net-new classes; mostly cold-install drop-ins, cheapest-first)
 - **@salesforce/eslint-plugin-lwc** — LWC DOM-XSS (Top-20 class with ZERO deterministic engine today);
@@ -480,7 +481,7 @@ contract), promptmap (GPL-3.0 — never vendor).
 #### Recommended sequence (ReDoS DONE; each slice one-at-a-time, test-backed, Fable-5-safe scaffold prepended)
 1. **E0.1 reachability-path ingest** (+ **E0.1b routing fix** — pair them; cheapest, zero new tools,
    near-zero FP; unlocks the rest).
-2. **T1.1 prompt-injection reachability** (custom google-genai/MCP/SF-write-back overlay on the E0.1 edge).
+2. **T1.1 prompt-injection reachability** (custom LLM-SDK / MCP / SF-write-back sink overlay on the E0.1 edge).
 3. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point).
 4. **E0.3 guest-exposure mapper** (novel cold-install source-scanner; highest novel value, no running
    target — could be pulled earlier if the guest surface is the priority).
@@ -493,8 +494,9 @@ contract), promptmap (GPL-3.0 — never vendor).
 deterministic" is a whole-program-WITH-live-endpoint figure — the cold-install static pass is far lower;
 "missing rate-limit is a deterministic hit" is DANGEROUS (compensating controls invisible to source);
 agent-audit / trufflehog / semgrep-AI vendor benchmarks are self-reported on framework-native code —
-Verdict's hand-rolled MCP/google-genai will under-fire without the custom overlay; the RLS oracle is
-"CONFIRMED" only if the loopback mirror faithfully reproduces RLS/GUC + Celery + rate-limits; SFGE
+a partner's hand-rolled LLM/MCP surface will under-fire without the custom overlay; the RLS oracle is
+"CONFIRMED" only if the loopback mirror faithfully reproduces the app's tenant-isolation binding, async
+workers, and rate-limits; SFGE
 Graph-Engine CRUD/FLS currency (v4 vs v5) must be pinned or coverage silently lapses.
 
 ### B6 — "human" → conversational prose sweep  *(SURGICAL, not blanket — a review flagged the old framing as DANGEROUS)*
