@@ -9,8 +9,9 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.65**, suite **62 files / 924 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  E0.1d shipped (sessionid-egress rule-name routing — see the Tier-0 entry).
+- **`main` @ 0.8.66**, suite **62 files / 932 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  E0.1d shipped (sessionid-egress rule-name routing); E0.3b-1 shipped (plain-HTTP egress source-scanner) —
+  see the Tier-0 entries.
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -543,10 +544,18 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
     meta.xml <authenticationProtocol>`, Apex `setEndpoint('callout:…')` governed vs raw literal. Flags:
     plain-HTTP (baseline `endpoint-https-only`, major→high), `*`/`disableProtocolSecurity` over-broad,
     host-with-no-matching-NamedCredential = raw-callout. Secret VALUES are org-only (never claim "hardcoded
-    secret" from a cred file). **Cleanest / lowest-FP — sequenced FIRST.** Sub-sliced: **E0.3b-1 =
-    plain-HTTP in the declarative egress metadata (RemoteSite/CspTrustedSite/NamedCredential URLs), one class
-    `plain-http-egress`, dimension `package-metadata`** (its charter owns "trusted-host XML"); wildcard,
-    raw-callout host-join, and Apex-literal are follow-ons.
+    secret" from a cred file). **Cleanest / lowest-FP — sequenced FIRST.** Sub-sliced:
+    - ~~**E0.3b-1 = plain-HTTP in the declarative egress metadata**~~ **DONE (0.8.66)** — a NEW
+      `egress-plain-http` source-scanner (adapter #15, `metadata-viewall` clone, zero harness-core change)
+      flags `http://` in RemoteSiteSetting `<url>` / CspTrustedSite `<endpointUrl>` / NamedCredential legacy
+      `<endpoint>` + modern `<parameterValue>`(sibling `<parameterType>`Url). Owns class **`plain-http-egress`**
+      → baseline `endpoint-https-only` (major→high) → dimension `package-metadata`. Scheme-anchored
+      (`https://` never flags) + element-scoped (an `http://` in a `<description>` or the `xmlns` URI never
+      flags). Verified off disk (fixture schema-faithful; independent battery + both mutations reproduced;
+      no secret finding emitted). Known limitation (precedent-consistent with metadata-viewall): a
+      commented-out `<url>` would flag — dispositionable, low-risk.
+    - **E0.3b-2/3 (follow-ons):** wildcard-host / `disableProtocolSecurity` over-broad egress; the
+      raw-callout host↔NamedCredential join; Apex `setEndpoint('http://…')` literals.
   - **E0.3c — CRUD/FLS grant matrix + release-widening diff [UNGATED].** `.permissionset/.profile-meta.xml`
     `<objectPermissions>`/`<fieldPermissions>`/`<classAccesses>`/`<userPermissions>`{ModifyAllData/ViewAllData/
     AuthorApex/ManageUsers}. Release diff = pure git-ref XML diff (v29+ serializes ONLY enabled perms →
