@@ -105,6 +105,16 @@ Grep the deserializer call sites first, then trace each one's *input source* to
 decide whether it crosses a trust boundary. The dangerous APIs are syntactically
 loud; the judgment is reachability.
 
+There is a deterministic substrate under this dimension: an external-SAST hit the
+scanner already labelled with a deserialization-family CWE routes here automatically
+via the shared `CWE_TO_DIMENSION` map in `harness/ingest-scanner-findings.mjs` —
+native-object deserialization (CWE-502, from `pickle`/`node-serialize`), XXE (CWE-611),
+and JavaScript prototype pollution (CWE-915, the id the OSS rule emits; CWE-1321 is
+tracked as fixture-pending). The Apex `JSON.deserialize` → sObject mass-assignment /
+BOPLA variant (the Apex threat in §1) has no OSS scanner rule, so it is not routed automatically and
+stays a model-inferred residual — the finder/verifier blocks below are its only
+coverage.
+
 **All stacks** — grep seeds: `pickle`, `cPickle`, `yaml.load(` (without
 `Loader=SafeLoader`/`safe_load`), `jsonpickle`, `marshal.loads`, `shelve`,
 `__reduce__`, `node-serialize`, `serialize-to-js`, `funcster`, `cryo`,

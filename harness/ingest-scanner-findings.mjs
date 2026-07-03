@@ -879,7 +879,13 @@ export const checkovAdapter = {
 
 // ----------------------------------------------------------------------------
 // CWE→dimension ROUTING for the external-SAST adapters (B5 · E0.1b, 0.8.58;
-// taxonomy EXPANDED across the injection classes + njsscan wired, E0.1b-EXPAND, 0.8.59).
+// taxonomy EXPANDED across the injection classes + njsscan wired, E0.1b-EXPAND, 0.8.59;
+// unified into a single extensible CWE_TO_DIMENSION map + the untrusted-deserialization
+// family activated, E0.1c, 0.8.62). The routing key is the shared `CWE_TO_DIMENSION` table
+// below: every SAST adapter calls `dimensionForCwes(<cwe field>)`, which reads the ids the
+// scanner already emitted and looks them up in that one map — so adding a class = adding rows,
+// and the new class routes across all five adapters (semgrep/bandit/njsscan/SARIF/opengrep) for
+// free, with no adapter or call-site change.
 // `injection-xss` is a REAL methodology dimension (methodology/dimensions/injection-xss.md),
 // so an external-SAST finding the scanner has ALREADY labelled with an injection-class CWE
 // belongs under that heading, not the catch-all 'external-sast' grouping label. The routing
@@ -908,19 +914,49 @@ export const checkovAdapter = {
 // sameOwnedClass's dimension fallback — the exact over-supersede the regexploit adapter's design
 // (the RD-non-supersession lock) already rejects. A class-less finding creates no owner and
 // supersedes nothing (reconcile-provenance filters owners on classOf(f)).
-export const INJECTION_XSS_CWES = new Set([
-  89, // SQL/SOQL injection (bandit issue_cwe.id integer; semgrep metadata.cwe 'CWE-89')
-  78, // OS command injection (semgrep 'CWE-78'; bandit B307 issue_cwe.id 78)
-  79, // XSS (njsscan express_xss 'CWE-79'; semgrep raw-html-format/direct-response-write 'CWE-79')
-  94, // code injection (bandit B701 jinja2_autoescape_false issue_cwe.id 94)
-  95, // eval / dynamically-evaluated code (njsscan eval_nodejs 'CWE-95'; semgrep eval-injection 'CWE-95')
-  96, // template / SSTI — statically-saved code (semgrep render-template-string 'CWE-96')
-  943, // NoSQL / data-query injection (njsscan node_nosqli_js_injection 'CWE-943')
-  // fixture-pending (comment only — NOT active; NO OSS rule emitted the id on a minimal seed):
-  //   643 XPath · 90 LDAP · 91 XML injection · 917/1336 expression-language / SSTI variants
-  //   (the real tools tag server-side template injection as 96, not 917/1336). XXE CWE-611 is
-  //   deliberately NOT here — it routes to untrusted-deserialization in a sibling slice.
-])
+// The single extensible CWE→dimension table (B5 · E0.1c). One row per fixture-proven CWE id;
+// every SAST adapter routes through it via dimensionForCwes. Every ACTIVE id is proven by a
+// GENUINE captured scanner run on a minimal seed — an id no OSS rule emits on a minimal seed
+// stays `// fixture-pending` (comment only, NOT active) so the router never claims coverage a
+// fixture doesn't back. classify() stays null on every SAST adapter, so a routed finding owns
+// no class and supersedes nothing (see the multi-shape note above) regardless of its dimension.
+export const CWE_TO_DIMENSION = {
+  // ── injection-xss (methodology/dimensions/injection-xss.md) ──
+  // The pre-0.8.62 allowlist, UNCHANGED — every id below already routed to injection-xss, and
+  // the whole injection suite (INJ-allowlist + INJ-fixture-* + INJ-negative-* + SG/BN anchors)
+  // proves the map moved none of it (behavior-identical refactor). Each id is fixture-proven.
+  89: 'injection-xss', // SQL/SOQL injection (bandit issue_cwe.id integer; semgrep metadata.cwe 'CWE-89')
+  78: 'injection-xss', // OS command injection (semgrep 'CWE-78'; bandit issue_cwe.id 78)
+  79: 'injection-xss', // XSS (njsscan express_xss 'CWE-79'; semgrep raw-html-format/direct-response-write 'CWE-79')
+  94: 'injection-xss', // code injection (bandit B701 jinja2_autoescape_false issue_cwe.id 94)
+  95: 'injection-xss', // eval / dynamically-evaluated code (njsscan eval_nodejs 'CWE-95'; semgrep eval-injection 'CWE-95')
+  96: 'injection-xss', // template / SSTI — statically-saved code (semgrep render-template-string 'CWE-96')
+  943: 'injection-xss', // NoSQL / data-query injection (njsscan node_nosqli_js_injection 'CWE-943')
+  // ── untrusted-deserialization (methodology/dimensions/untrusted-deserialization.md; B5 · E0.1c) ──
+  // The deser family: native-object deserializers, XXE, JS prototype pollution. Each ACTIVE id
+  // is proven by a genuine captured fixture (bandit 1.9.4 / semgrep 1.168.0 / njsscan 0.4.2 —
+  // acceptance/fixtures/{bandit,semgrep,njsscan}-deser-seeded.json).
+  502: 'untrusted-deserialization', // native-object deserialization — Python pickle (bandit B403/B301 issue_cwe.id 502; semgrep avoid-pickle 'CWE-502') AND Node node-serialize.unserialize (njsscan node_deserialize 'CWE-502'; semgrep express-third-party-object-deserialization 'CWE-502')
+  611: 'untrusted-deserialization', // XXE / XML external entity (semgrep use-defused-xml 'CWE-611'). NOTE: bandit's XML rules (B314/B405) tag the SAME sink 'CWE-20', which stays external-sast (INJ-allowlist proves it) — a live illustration that scanners tag one class inconsistently across rules (the fixture, never a guessed CWE, is the source of truth).
+  915: 'untrusted-deserialization', // JS prototype pollution as the OSS tool tags it: semgrep prototype-pollution-loop emits 'CWE-915' (Improperly Controlled Modification of Dynamically-Determined Object Attributes) on a minimal seed — NOT 1321. 1321 (the more specific id) is fixture-pending below.
+  // fixture-pending / future (comment only — NOT active until a genuine fixture proves the id):
+  //   injection-xss: 643 XPath · 90 LDAP · 91 XML injection · 917/1336 expression-language / SSTI
+  //     variants (the real tools tag server-side template injection as 96, not 917/1336).
+  //   untrusted-deserialization: 1321 JS prototype pollution — semgrep emits 915 (above) for the
+  //     prototype-pollution-loop rule and njsscan 0.4.2 has no prototype-pollution rule, so NO OSS
+  //     rule emitted 1321 on a minimal seed. The Apex JSON.deserialize → sObject mass-assignment /
+  //     BOPLA deser variant has NO OSS scanner rule at all (Code Analyzer/PMD don't cover it) → it
+  //     stays an LLM-residual finding, never routed here (an LLM finding carries no scanner CWE and
+  //     never reaches dimensionForCwes) — the honest uncovered sub-shape, same posture as XPath/LDAP.
+}
+// A DERIVED view: the injection subset of the map. Kept so INJ-allowlist and any consumer that
+// wants "just the injection ids" still reads a Set, while the map stays the single source of
+// truth — the two can never drift (the behavior-identity assertion in INJ-allowlist locks it).
+export const INJECTION_XSS_CWES = new Set(
+  Object.entries(CWE_TO_DIMENSION)
+    .filter(([, dim]) => dim === 'injection-xss')
+    .map(([cwe]) => Number(cwe))
+)
 // Normalize a scanner-emitted CWE field to a set of integer CWE ids. Accepts the REAL
 // captured shapes: bandit `issue_cwe.id` (an integer) and semgrep `extra.metadata.cwe`
 // (a 'CWE-###[: title]' string OR an array of them). The string pattern is anchored, so
@@ -939,10 +975,15 @@ export function cweIdsOf(value) {
   else add(value)
   return ids
 }
-// The routing decision: any allowlisted CWE id → 'injection-xss'; anything else — including
-// a malformed or absent CWE — keeps the current 'external-sast' default.
+// The routing decision: the FIRST CWE id present in CWE_TO_DIMENSION wins (a finding almost
+// always carries exactly one CWE; cweIdsOf returns a Set, iterated in insertion order — the
+// same first-match-wins semantics as the pre-0.8.62 early-return). Anything else — including a
+// malformed or absent CWE, or a CWE with no map row — keeps the current 'external-sast' default.
 export function dimensionForCwes(value) {
-  for (const id of cweIdsOf(value)) if (INJECTION_XSS_CWES.has(id)) return 'injection-xss'
+  for (const id of cweIdsOf(value)) {
+    const dim = CWE_TO_DIMENSION[id]
+    if (dim) return dim
+  }
   return 'external-sast'
 }
 

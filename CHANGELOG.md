@@ -51,6 +51,42 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.62] — 2026-07-03
+
+**CWE-based dimension routing is now one extensible map, and the untrusted-deserialization
+family files under its own methodology dimension.** The five SAST adapters (Semgrep, Bandit,
+njsscan, the SARIF adapter, Opengrep) already routed a scanner-emitted CWE to a review
+dimension; this release unifies that routing into a single `CWE_TO_DIMENSION` table so every
+current and future class routes through one place across all five adapters — adding a class is
+adding rows, not editing adapters. The injection-xss routing is byte-behavior-unchanged (the
+whole injection test suite stays green, and a behavior-identity assertion pins the map's
+injection subset to the prior allowlist).
+
+On top of that substrate, the **untrusted-deserialization** family now routes to its real
+dimension (`methodology/dimensions/untrusted-deserialization.md`) instead of the catch-all
+`external-sast` grouping: native-object deserializers (Python `pickle` → CWE-502; Node
+`node-serialize` → CWE-502), XML external entity / XXE (CWE-611), and JavaScript prototype
+pollution (CWE-915 — the id the OSS rule actually emits). Each active CWE is proven by a
+genuine captured scanner fixture over a minimal seeded sample (Bandit 1.9.4, Semgrep 1.168.0,
+njsscan 0.4.2), and the map routes the family across multiple adapters from one table. Routing
+only: `classify()` stays null on every SAST adapter, so a routed deser finding owns no toolkit
+class and supersedes nothing — a deterministic deser finding never silences a co-located
+model-inferred deser finding of a different shape (native-deser vs prototype-pollution vs XXE).
+
+**Honest floor.** CWE-1321 (prototype pollution's specific id) is left fixture-pending — the
+OSS rule tags that sub-class CWE-915, and no minimal seed emitted 1321. The Apex
+`JSON.deserialize` → sObject mass-assignment / BOPLA variant has no OSS scanner rule at all and
+stays a model-residual finding, never routed here — the uncovered sub-shape, stated not faked
+(the same posture as the XPath/LDAP injection residuals). Bandit tags its XML rules CWE-20, so
+those XXE hits stay `external-sast` — a live illustration that scanners tag one class
+inconsistently across rules, which is exactly why the fixture, never a guessed id, is the
+source of truth.
+
+Suite **62 files / 911 checks** (was 905), all green. Mutation-proven: removing an active deser
+CWE from `CWE_TO_DIMENSION` turns its routing fixture test red; adding a
+`CLASS_DEFS['untrusted-deserialization']` + a non-null `classify()` turns the deser
+non-supersession lock red.
+
 ## [0.8.61] — 2026-07-03
 
 **Reachability now flows on current tooling: the ingest reads the standardized SARIF

@@ -107,6 +107,7 @@ import {
   NPM_SEVERITY_TO_FINDING,
   REDOS_DEGREE_TO_FINDING,
   INJECTION_XSS_CWES,
+  CWE_TO_DIMENSION,
   dimensionForCwes,
   CLASS_DEFS,
   RULE_CLASS,
@@ -1453,9 +1454,11 @@ check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,94,95,96,943} (eac
   }
   // co-resident non-injection CWEs (fixtures) + fixture-pending ids all stay external-sast:
   // 939 URL-scheme-authz · 352 CSRF · 918 SSRF (→data-export) · 22 path-traversal (→data-export) ·
-  // 798 secrets · 693 protection-mechanism · 605 · and the fixture-pending 90/91/643/917/1336/611
+  // 798 secrets · 693 protection-mechanism · 605 · 20 (bandit's XXE tag) · the fixture-pending
+  // injection 90/91/643/917/1336 · and the fixture-pending deser 1321. (611/502/915 no longer stay
+  // here — they route to untrusted-deserialization as of 0.8.62; see the DESER-routing section.)
   for (const kept of [
-    939, 352, 918, 22, 798, 693, 605, 90, 91, 643, 917, 1336, 611,
+    939, 352, 918, 22, 798, 693, 605, 20, 90, 91, 643, 917, 1336, 1321,
     'CWE-939: Improper Authorization in Handler for Custom URL Scheme', 'CWE-352: Cross-Site Request Forgery (CSRF)', 'CWE-22',
   ]) {
     assert.equal(dimensionForCwes(kept), 'external-sast', `CWE ${kept} must stay external-sast`)
@@ -1464,6 +1467,14 @@ check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,94,95,96,943} (eac
   for (const junk of [null, undefined, '', 'not-a-cwe', {}, [], ['x', null], NaN, -89, 89.5]) {
     assert.equal(dimensionForCwes(junk), 'external-sast')
   }
+  // behavior-identity (the refactor proof): CWE_TO_DIMENSION maps EVERY injection id to
+  // 'injection-xss', and INJECTION_XSS_CWES is EXACTLY the injection subset of the map — the two
+  // can never drift, so the map is a byte-behavior-identical replacement for the pre-0.8.62 Set.
+  for (const id of INJECTION_XSS_CWES) assert.equal(CWE_TO_DIMENSION[id], 'injection-xss', `map row ${id} must be injection-xss`)
+  const injectionSubset = Object.entries(CWE_TO_DIMENSION)
+    .filter(([, dim]) => dim === 'injection-xss')
+    .map(([cwe]) => Number(cwe))
+  assert.deepEqual(injectionSubset.sort((a, b) => a - b), [...INJECTION_XSS_CWES].sort((a, b) => a - b))
 })
 
 check('INJ-negative-semgrep: dynamic-urllib (CWE-939, custom-URL-scheme authorization) stays external-sast — the FP guard against substring/rule-name routing', () => {
@@ -1837,6 +1848,138 @@ check('INJ-non-supersession-new-subclass: a routed NEWLY-ACTIVATED sub-class fin
   const { superseded, supersededIds } = reconcileProvenance([det, llm])
   assert.equal(superseded, 0, 'the LLM SOQL-shape finding is NOT superseded by the routed XSS row')
   assert.deepEqual(supersededIds, [])
+  assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
+})
+
+// ─────────────────── generated-fixture untrusted-deserialization routing (B5 · E0.1c, 0.8.62)
+// The unified CWE_TO_DIMENSION map (the scalability refactor) now files the deser FAMILY under its
+// real methodology dimension (methodology/dimensions/untrusted-deserialization.md): native-object
+// deserializers (pickle/node-serialize, CWE-502), XXE (CWE-611), and JS prototype pollution
+// (CWE-915, as semgrep's prototype-pollution-loop rule actually tags it). Each ACTIVE deser id is
+// proven by a GENUINE captured scanner fixture (bandit 1.9.4 / semgrep 1.168.0 / njsscan 0.4.2) —
+// never by the CWE a test names; the fixture is the source of truth. classify() stays null on every
+// SAST adapter, so a routed deser finding owns no class and supersedes nothing (DESER-non-supersession,
+// the RD/INJ posture ported to the multi-shape deser dimension). RULE-PATH-PROVEN, not class-proven:
+// a green fixture proves the ONE rule that fired on the seed. HONEST FLOOR: 1321 (prototype pollution's
+// specific id) stayed fixture-pending — semgrep emits 915 for prototype-pollution-loop and njsscan
+// 0.4.2 has no prototype-pollution rule, so NO OSS rule emitted 1321 on a minimal seed; the Apex
+// JSON.deserialize → sObject mass-assignment variant has NO OSS rule at all and stays LLM-residual.
+const SEMGREP_DESER = join(FIX, 'semgrep-deser-seeded.json') // semgrep 1.168.0: avoid-pickle 502 + express-third-party-object-deserialization 502 + use-defused-xml 611 + prototype-pollution-loop 915
+const BANDIT_DESER = join(FIX, 'bandit-deser-seeded.json') // bandit 1.9.4: B403/B301 pickle issue_cwe.id 502 (positives) + B405/B314 XML issue_cwe.id 20 (co-resident NEGATIVES → external-sast — bandit tags XXE 20, NOT 611)
+const NJSSCAN_DESER = join(FIX, 'njsscan-deser-seeded.json') // njsscan 0.4.2: node_deserialize (node-serialize.unserialize) CWE-502
+
+check('DESER-fixture-semgrep: the generated semgrep fixture routes native-deser pickle(502) + node-serialize(502), XXE(611), and prototype pollution(915) ALL to untrusted-deserialization, class-less; the band is the tool band (routing only)', () => {
+  const raw = readJSON(SEMGREP_DESER)
+  // source of truth: the fixture genuinely carries these CWEs (never a guessed id)
+  const cweOf = (suffix) => raw.results.find((r) => r.check_id.endsWith(suffix)).extra.metadata.cwe
+  assert.equal(dimensionForCwes(cweOf('avoid-pickle')), 'untrusted-deserialization') // 502 (python pickle)
+  assert.equal(dimensionForCwes(cweOf('express-third-party-object-deserialization')), 'untrusted-deserialization') // 502 (node-serialize)
+  assert.equal(dimensionForCwes(cweOf('use-defused-xml')), 'untrusted-deserialization') // 611 (XXE)
+  assert.equal(dimensionForCwes(cweOf('prototype-pollution-loop')), 'untrusted-deserialization') // 915 (prototype pollution)
+  const { findings } = ingestSemgrep(raw)
+  assert.equal(findings.length, 4)
+  for (const f of findings) {
+    assert.equal(f.dimension, 'untrusted-deserialization', `${f.ruleId} must route to untrusted-deserialization`)
+    assert.ok(!('class' in f), 'routing only — classify() stays null, no owned class')
+  }
+  // the band is the tool band, untouched by routing (ERROR→high on the XXE rule, WARNING→medium elsewhere)
+  const bySuffix = (s) => findings.find((f) => f.ruleId.endsWith(s))
+  assert.equal(bySuffix('use-defused-xml').adjusted_severity, 'high')
+  assert.equal(bySuffix('prototype-pollution-loop').adjusted_severity, 'medium')
+})
+
+check('DESER-fixture-bandit: pickle (B403 import + B301 loads, issue_cwe.id 502) routes to untrusted-deserialization; the co-resident XML rules (B405/B314, issue_cwe.id 20) STAY external-sast — the exact-id negative on the SAME seed', () => {
+  const raw = readJSON(BANDIT_DESER)
+  // source of truth: pickle rules tag 502; XML rules tag 20 (bandit tags XXE CWE-20, NOT 611)
+  const byId = Object.fromEntries(raw.results.map((r) => [r.test_id, r.issue_cwe.id]))
+  assert.equal(byId.B403, 502)
+  assert.equal(byId.B301, 502)
+  assert.equal(byId.B405, 20)
+  assert.equal(byId.B314, 20)
+  const { findings } = ingestBandit(raw)
+  assert.equal(findings.length, 4)
+  const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
+  for (const id of ['B403', 'B301']) {
+    assert.equal(byRule[id].dimension, 'untrusted-deserialization', `${id} (pickle CWE-502) must route`)
+    assert.ok(!('class' in byRule[id]), 'routing only — no owned class')
+  }
+  for (const id of ['B405', 'B314']) {
+    assert.equal(byRule[id].dimension, 'external-sast', `${id} (XML CWE-20) must stay external-sast`)
+  }
+})
+
+check('DESER-fixture-njsscan: node_deserialize (node-serialize.unserialize, CWE-502) routes to untrusted-deserialization; carries the derived CWE-502 URL; the tool band (ERROR→high) is untouched', () => {
+  const raw = readJSON(NJSSCAN_DESER)
+  assert.ok(raw.nodejs.node_deserialize.metadata.cwe.startsWith('CWE-502'), 'source of truth: the njsscan rule tags CWE-502')
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.ruleId, 'node_deserialize')
+  assert.equal(f.dimension, 'untrusted-deserialization')
+  assert.equal(f.adjusted_severity, 'high') // ERROR → high, the tool band, unchanged by routing
+  assert.ok(!('class' in f), 'routing only — no owned class')
+  assert.ok(f.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/502.html'), 'the derived CWE-502 URL must appear in verdict_reasoning')
+})
+
+check('DESER-cross-adapter: the ONE unified CWE_TO_DIMENSION map routes deser across MULTIPLE adapters — 502 from bandit AND njsscan AND semgrep, 611 + 915 from semgrep — proving the map (not per-adapter code) does the routing', () => {
+  const bn = ingestBandit(readJSON(BANDIT_DESER)).findings.filter((f) => f.dimension === 'untrusted-deserialization')
+  const nj = ingestNjsscan(readJSON(NJSSCAN_DESER)).findings.filter((f) => f.dimension === 'untrusted-deserialization')
+  const sg = ingestSemgrep(readJSON(SEMGREP_DESER)).findings.filter((f) => f.dimension === 'untrusted-deserialization')
+  assert.ok(bn.length >= 1 && nj.length >= 1 && sg.length >= 1, 'deser routed from bandit, njsscan, AND semgrep — the cross-adapter proof')
+  assert.ok(bn.some((f) => f.ruleId === 'B301'), 'bandit pickle → 502 → deser')
+  assert.ok(nj.some((f) => f.ruleId === 'node_deserialize'), 'njsscan node-serialize → 502 → deser')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('use-defused-xml')), 'semgrep XXE → 611 → deser')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('prototype-pollution-loop')), 'semgrep prototype pollution → 915 → deser')
+  // the map is the single source: the active deser subset is EXACTLY {502,611,915}, adapter-independent
+  assert.deepEqual(
+    Object.entries(CWE_TO_DIMENSION)
+      .filter(([, d]) => d === 'untrusted-deserialization')
+      .map(([c]) => Number(c))
+      .sort((a, b) => a - b),
+    [502, 611, 915]
+  )
+})
+
+check('DESER-negative: activating the deser family did NOT blanket-route non-deser findings — a real njsscan secrets hit (node_secret CWE-798) + helmet (CWE-693) stay external-sast, and the bandit XML CWE-20 rows stay external-sast', () => {
+  const nj = ingestNjsscan(readJSON(NJSSCAN)).findings // the pre-existing real fixture: node_secret 798 + helmet 693
+  assert.equal(nj.length, 2)
+  for (const f of nj) assert.equal(f.dimension, 'external-sast', `${f.ruleId} (non-deser) must stay external-sast`)
+  const xml = ingestBandit(readJSON(BANDIT_DESER)).findings.filter((f) => f.ruleId === 'B405' || f.ruleId === 'B314')
+  assert.equal(xml.length, 2)
+  for (const f of xml) assert.equal(f.dimension, 'external-sast', `${f.ruleId} (CWE-20) must stay external-sast`)
+})
+
+check('DESER-non-supersession (the standing lock): a routed deterministic untrusted-deserialization finding does NOT supersede a co-located llm-inferred untrusted-deserialization finding of a DIFFERENT deser shape — the null classify() is the protection', () => {
+  const det = ingestNjsscan(readJSON(NJSSCAN_DESER)).findings[0] // node_deserialize CWE-502 → untrusted-deserialization @ server/nodeserialize.js:5
+  assert.equal(det.provenance, 'deterministic')
+  assert.equal(det.dimension, 'untrusted-deserialization')
+  // an llm untrusted-deserialization finding of a DIFFERENT deser SHAPE (a prototype-pollution shape —
+  // a shape no native-object-deserialization CWE describes), same file, overlapping lines
+  const llm = {
+    id: '9'.repeat(16),
+    dimension: 'untrusted-deserialization',
+    title: 'User JSON deep-merged into an object without a __proto__ guard',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: `${det.file.split(':')[0]}:1-40`, // overlaps det's :5
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the merge path',
+  }
+  // PRECONDITIONS that WOULD fire supersession if the adapter owned a class: same dimension + same
+  // locus. The ONLY missing ingredient is the owned class (classify()→null on every SAST adapter).
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  // MUTATION: adding CLASS_DEFS['untrusted-deserialization'] + a classify()→'untrusted-deserialization'
+  // turns THIS red at `superseded === 0` (the supersession visibly FIRES), proving the protection is the
+  // null classify, not an accident — AND that an owned class would over-supersede across the multi-shape
+  // deser dimension (native-deser vs prototype-pollution vs XXE vs Apex mass-assignment).
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM prototype-pollution finding is NOT superseded by the routed native-deser row')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
   assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
 })
 
