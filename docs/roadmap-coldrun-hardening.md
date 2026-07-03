@@ -414,7 +414,7 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   `extra.dataflow_trace` (source→intermediate→sink, locations only — matched-content strings dropped) as
   a `reachabilityPath` attribute + `reachable:true`, purely additive (absent/malformed trace → no
   attribute, trace-less findings byte-identical; `classify()` unchanged). `templates/audit-ledger.schema.json`
-  gained the optional properties (finding is `additionalProperties:false`). Graded off disk: RP1/RP2/RP3
+  gained the optional properties (finding is `additionalProperties:false`). Verified: RP1/RP2/RP3
   + mutation, independently reproduced. **Note for later slices:** newer Semgrep CLIs omit
   `dataflow_trace` from `--json` (text/SARIF only), and run-scans Family 7 doesn't yet pass
   `--dataflow-traces` — wiring that flag / the Opengrep engine is E0.2's job. SARIF `codeFlows` + SFGE
@@ -426,14 +426,14 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   `INJECTION_XSS_CWES` / `cweIdsOf` (anchored `^CWE-(\d+)\b` parse, so `CWE-789` ≠ `78`) / `dimensionForCwes`.
   - ~~**Narrow first pass**~~ **DONE (0.8.58)** — CWE-89 (SQLi) + CWE-78 (command injection) in semgrep +
     bandit, proven by existing fixtures; SSRF (939) / path-traversal (22) / secrets (798) / misconfig
-    (693) verified to STAY `external-sast`; non-supersession standing lock + 2 mutations. Graded off disk.
+    (693) verified to STAY `external-sast`; non-supersession standing lock + 2 mutations. Verified.
   - ~~**E0.1b-EXPAND — full injection taxonomy + GENERATED fixtures**~~ **DONE (0.8.59).** Active,
     each fixture-proven from genuine captured output: **78 cmd, 89 SQL, 79 XSS, 94 code-injection,
     95 eval, 96 SSTI (semgrep tags static-code-injection), 943 NoSQL** — routed via per-hit
     `dimensionForCwes` across semgrep + bandit + **njsscan** (wired; `metadata.cwe` is the same
     `CWE-###:` string shape, zero helper change). `classify()=null` throughout; 3 genuine fixtures
     (njsscan/semgrep/bandit); the SSRF/CWE-939 record error corrected; CSRF-352 added as a co-resident
-    negative. Graded off disk (fixtures verified genuine tool-output, routing + 2 mutations reproduced).
+    negative. Verified (fixtures confirmed genuine tool-output, routing + 2 mutations reproduced).
     **Injection residual — GROUNDED RESOLUTION (2026-07-03, empirical: semgrep run per class/language).**
     SSTI is actually covered (CWE-96). The residual is XPath (643), LDAP (90), XML-injection (91). Key
     insight: **"a pack already fires" ≠ "the dimension gap is closed"** — Java/C# XPath+LDAP DO fire
@@ -465,11 +465,36 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   prototype pollution — semgrep emits 915, NOT 1321; 1321 left fixture-pending). Honest floor: bandit tags
   XXE as CWE-20 → stays external-sast (live inconsistent-tagging illustration); **Apex `JSON.deserialize`
   → sObject mass-assignment is LLM-residual** (no scanner CWE, never reaches the router — stated, not
-  faked). `classify()=null`, no CLASS_DEFS entry, non-supersession locked. Graded off disk (genuine
+  faked). `classify()=null`, no CLASS_DEFS entry, non-supersession locked. Verified (genuine
   fixtures + 10/10 battery + 2 mutations). The unified map is now the routing foundation E0.1e builds on.
-- **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval). Needs a
-  generated Code Analyzer fixture; if the CA stack can't run in the slice, defer honestly as
-  "pending CA stack," never as a coverage choice.
+- **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval).
+  **GROUNDED (2026-07-03, authoritative Salesforce/PMD docs + off-disk fixture inspection):**
+  - **CA output carries NO CWE for any engine** (violation = `{rule, engine, severity, tags[],
+    primaryLocationIndex, locations[], message, resources[]}` — confirmed against both committed CA fixtures
+    AND the CA v5 output-schema docs). So `CWE_TO_DIMENSION`/`dimensionForCwes` (the E0.1b/c mechanism)
+    **cannot** route CA findings — E0.1d routing is by **rule NAME**: a new `RULE_DIMENSION` map (sibling to
+    `RULE_CLASS`), consumed via a `dimensionHint` the CA adapter's `parse` sets; `classify()` stays
+    `RULE_CLASS[ruleId] || null` so a session-id rule owns no class.
+  - **The substrate is a genuine BUILT-IN rule, not a custom one:** neither PMD `category/apex/security.xml`
+    (10 rules; `ApexDangerousMethods`'s name-regex even excludes `session`+`id`) nor the SFGE graph engine
+    (7 rules; callouts never a modeled sink) flags `getSessionId`. But Salesforce's first-party
+    **`pmd-appexchange`** ruleset ships **`AvoidGetSessionId`** ("Detects use of `UserInfo.getSessionId()`")
+    + `$Api.Session_ID`/Visualforce siblings — and run-scans ALREADY selects `-r AppExchange` (load-bearing,
+    baseline `scan-pmd-appexchange-rules`), so it fires in production and passes `hasSecurityTag`. No custom
+    PMD rule needed.
+  - **Bare-retrieval → verdict residual:** `AvoidGetSessionId` fires on EVERY retrieval site incl. approved
+    on-platform uses (Salesforce's "Session Id Guidance") — it does NOT model egress. So the routing makes
+    the retrieval SITE deterministic + correctly filed under the auto-fail heading; the egress VERDICT stays
+    the labelled LLM/human residual (the E0.1 substrate-deterministic/verdict-residual posture). `sessionid-
+    egress` is MULTI-SHAPE + auto-fail ⇒ `classify()=null`, no `CLASS_DEFS` entry (supersedes nothing).
+  - **Scope = the package/Apex side only.** The external-service side (inbound-token passthrough /
+    Authorization-header logging / raw persistence / URL-embedding) has no clean deterministic substrate — a
+    generic CWE-532/CWE-200 log-exposure hit would OVER-ROUTE into this auto-fail band (that class is
+    secrets-credentials, not the Salesforce-session auto-fail) — so it stays LLM-residual; do NOT route
+    generic log/info-exposure CWEs here.
+  - Honesty floor holds: promote a `RULE_DIMENSION` row ONLY after a genuine captured CA fixture emits that
+    exact rule name (fixture-proven, not doc-proven); if the CA stack genuinely can't run, defer as
+    "pending CA stack" — nothing activated, never doc-promote, never hand-author CA JSON.
 - **E0.2 — Opengrep swap for the external/JS-LWC taint tier.** *WIRE — adapter drop-in (byte-compatible
   CLI+JSON).* Opengrep (LGPL-2.1, the OSS Semgrep fork) deepens intra-file → interprocedural (intra-file)
   taint for JS/TS/Py/Go/Java — deeper `reachabilityPath` for the same E0.1 classes, reusing the adapter
