@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.62**, suite **62 files / 911 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.63**, suite **62 files / 915 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -439,10 +439,11 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
     insight: **"a pack already fires" ≠ "the dimension gap is closed"** — Java/C# XPath+LDAP DO fire
     (p/security-audit + p/csharp) but tag 643/90 which route to the catch-all `external-sast` because those
     ids aren't in `CWE_TO_DIMENSION` yet. So the fill is a tiered plan (E0.1e), NOT a single decision:
-    - **E0.1e-A (cheap routing wins, capture-only):** Java/C# XPath+LDAP (packs already fire) + Node XPath
-      (njsscan `node_xpath_injection` — `xpath.parse()` ONLY, narrow) → capture genuine fixtures, then
-      promote **643 + 90** into `CWE_TO_DIMENSION`. Zero rule-authoring; closes the dimension gap for those
-      languages. De-risks the routing edit first.
+    - ~~**E0.1e-A (cheap routing wins, capture-only)**~~ **DONE (0.8.63)** — Java/C# XPath+LDAP (semgrep
+      p/security-audit + p/csharp) + Node XPath (njsscan `node_xpath_injection`, `xpath.parse()` only)
+      captured as genuine fixtures; **643 + 90 promoted** into `CWE_TO_DIMENSION` (`INJECTION_XSS_CWES`
+      now {78,79,89,90,94,95,96,643,943}); co-resident md5/CWE-328 stays external-sast (negative). Graded
+      off disk. NEXT: E0.1e-B.
     - **E0.1e-B (custom taint rules — the real engine authoring):** no OSS rule for Python XPath+LDAP,
       JS/Go LDAP, Go XPath (CodeQL covers them but is license-barred on proprietary code). Ship a curated
       `rules/injection/*.yaml` dir (mode:taint, framework-request sources → enumerated sinks: lxml/ldap3/
