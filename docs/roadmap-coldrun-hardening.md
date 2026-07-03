@@ -10,7 +10,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.54**, suite **61 files / 835 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.55**, suite **62 files / 864 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 
 ## Shipped + cold-validated this arc (context — DONE)
@@ -218,13 +218,40 @@
   shuffled/dup not stale; missing-stored stale; whitespace-trim) + W1-W3 (the three compile sites +
   journey routing + the four notes, with negative assertions on the old re-intersect phrasings); the
   staleness check is mutation-proven. Suite 61 files / 835 checks.
+- **0.8.55 B3c — `write-drafted-content.mjs`, the path-scoped drafted-artifact writer (GAP-Z)**
+  *(shipped + test-backed; the guard verified by direct attack + two independent mutation proofs)*.
+  The artifact Workflow's drafting agents are read-only (the engine returns
+  `{ drafted: [{ key, out, content }] }`); generate-artifacts step (d) had the driver improvise the
+  extract-and-write each run, and NOTHING validated the Workflow-returned `out` — LLM-influenced data
+  crossing a write boundary (`build-artifact-engine` stores it unguarded). The new harness is the
+  single write point: unwraps the task-output envelope per merge-ledger's two-shape doctrine (keyed on
+  the `drafted` payload), validates EVERY output path on its RESOLVED and symlink-REALIZED form
+  (no absolute/NUL/empty, strict `startsWith(repo + sep)` containment — sibling-prefix safe, nothing
+  at/under `.git/`, an allowed-roots floor of `docs/security-review/` + `.security-review/`, an
+  lstat-aware deepest-existing-ancestor realpath re-assert so symlinked-dir escapes, planted symlink
+  FILES at the target, and dangling links are refused, not written through), and is PLAN-then-EXECUTE
+  **all-or-nothing** — one invalid path refuses the whole envelope (exit 2, zero writes; a poisoned
+  path refuses even a gate-suppressed entry; duplicate resolved targets refused; each entry
+  re-validated immediately before its own write). Byte-exact utf8; empty/dead-agent drafts skip LOUD
+  (never blank a prior draft); `--input` cross-checks `gate.suppress` (a stale/resumed envelope cannot
+  resurrect a withheld doc; the engine stays the enforcement point; the WITHHELD placeholder stays
+  driver-side). The audit substrate needs no sibling — its synthesis step writes its own report
+  (verified: `workflow-template.mjs` ~488); engine/template untouched; step (d) now invokes the
+  harness with the matching allowed-tools grant. Standing tests: 29 checks (G1-G9 the guard by direct
+  attack incl. planted/dangling symlinks + NUL + `.git` routed through an allowed root; R1-R6
+  byte-exact/envelope-shapes/idempotence/overwrite; A1-A2 duplicate-refusal + read-only plan; GC1-GC4
+  gate/empty-content; D1-D2 dry-run/json; E1-E2 degenerate envelopes; W1-W4 wiring incl.
+  audit-untouched). Mutation-proven twice: rule set neutralized → 9 checks RED; realized re-assert
+  alone neutralized → exactly the two symlink checks RED (the layer is independently load-bearing).
+  Suite 62 files / 864 checks.
 
 ---
 
 ## OPEN BACKLOG — prioritized
 
-Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → B3 (verdict-reflection — B3a/B3b/B3b-2/
-B3b-3 DONE; B3c GAP-Z is THE NEXT ITEM) → B4 (PENDING labeling) → B5 (residual-shrinking) → B6 (prose) →
+Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → ~~B3 (verdict-reflection)~~ DONE
+(B3a/B3b/B3b-2/B3b-3/B3c all shipped) → ~~B4 (PENDING labeling)~~ RESOLVED by re-grounding (no code
+change — see below) → B5 (residual-shrinking — **ReDoS is THE NEXT ITEM**) → B6 (prose) →
 B7 (gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
 the post-hardening build justifies it.
 
@@ -275,44 +302,32 @@ pending the one clean cold run that cold-validates B1..B2 (that run also gates t
   carryover was resolved as a deterministic `STALE SCOPE MANIFEST` refusal in `compute-sci` (exit 2,
   refuse-only, fresh-path byte-identical); the four note-severity consumers carry the canonical-form
   note (stay-listed also reads the persisted set verbatim).
-- **GAP-Z / B3c — extract-drafted-content + write harness** *(THE NEXT ITEM — minor scope, but a NEW
-  file-write surface — not trivial).* The Workflow runtime is read-only ("no filesystem access" —
-  `artifact-workflow-template.mjs:22-25,132-134`), so `generate-artifacts` step (d) and `audit-codebase`
-  step 6 have the driver hand-script the extract-content-from-envelope + write each pass (the
-  shell-escaping slips are an *observed-in-cold-runs* motivation, not a code fact — treat as such).
-  **Build `harness/write-drafted-content.mjs`:** unwrap the Workflow task-output envelope
-  (`.result.drafted[] = [{key, out, content}]` — REUSE `merge-ledger.mjs:60`'s `wrapper.result ?
-  wrapper.result : wrapper` unwrap, don't re-derive it) and write each `content` to `join(repo, out)`;
-  wire it into `generate-artifacts` step (d) in place of the improvised write (the audit-report return in
-  `audit-codebase` step 6 is the same shape — generalize or ship a sibling). **Net-new SECURITY
-  invariant not to miss:** because this is the first code that WRITES from a Workflow-returned
-  `out` path, it MUST path-scope every `out` under `<repo>` and refuse `../`/absolute escapes — no such
-  guard exists today (`build-artifact-engine.mjs` stores `out` unguarded). Standing test: an envelope
-  whose `content` carries backticks/quotes/newlines writes byte-exact files; a `../` traversal `out` is
-  REFUSED; a gate-suppressed key is not written; both wrapped + bare envelope shapes unwrap; idempotent
-  re-run.
+- ~~**GAP-Z / B3c — extract-drafted-content + write harness**~~ **DONE (0.8.55)** — see "Shipped this
+  arc" above. `harness/write-drafted-content.mjs` shipped as the single write point with the
+  path-scoping guard (lexical + symlink-realized double assert, allowed-roots floor, all-or-nothing),
+  wired into generate-artifacts step (d); audit-codebase confirmed to need no sibling (its synthesis
+  step writes its own report).
 
-### B4 — PENDING labeling / wiring fixes  *(stop narrating resolved items as PENDING — RE-GROUND before building)*
-> **A review (2026-07-02) found this item partly stale/ungrounded — do NOT build it as previously
-> written. Corrected below; the FIRST step of the slice is to re-verify each bullet against the code and
-> drop what's already done.**
-- **(a) UEC grant / `04t` PENDING relabel — RE-GROUND FIRST.** The facts hold (the install-time UEC grant
-  + released `04t` ARE verified headlessly inside install), but the audit could not locate a
-  `PENDING-OWNER-RUN` *mislabel* in code — the only "pending" narration near the deployed-org audit
-  (`render-preflight.mjs:155`, `package-readiness.mjs:18`) is the HONEST `sf`/Dev-Hub/scratch-org
-  precondition, which is correct. So either the mislabel lives only in the live cold-run driver transcript
-  (a prompt/skill-prose fix, not a harness fix) or it no longer exists. **Grep for the actual mislabel
-  before writing anything; if there's nothing to relabel, drop this bullet.**
-- **(b) local-TLS SCI currency — the one genuinely-open, narrow fix.** Local `testssl`/`sslyze` already
-  clears `endpoint-ssl-labs-a-grade` and `render-scan-status` Family 4 already shows it DONE; there is
-  **no literal "PENDING SSL Labs" string**. The residual is narrower than the old phrasing implied:
-  confirm whether `compute-sci` gives local-TLS evidence full SATISFIED *currency* credit (vs
-  statically-cleared / stale), and fix only that seam. Scope it to compute-sci currency — do NOT rewrite
-  the render (already correct).
-- ~~**(c) always-emit checkmarx-prediction + `CX_APIKEY` cx-scan**~~ **ALREADY SHIPPED (0.4.4, commit
-  47efea0)** — lives in `run-scans/SKILL.md` (~lines 324-356). **STALE — delete this bullet; do not
-  rebuild it.**
-- Net: B4 may shrink to just bullet (b) once (a) is re-grounded and (c) is dropped. Verify first.
+### ~~B4 — PENDING labeling / wiring fixes~~  **RESOLVED by re-grounding (2026-07-03) — no code change**
+A code-grounding pass ran all three bullets to ground; every one closed without a slice:
+- **(a) UEC grant / `04t` PENDING relabel — NO MISLABEL EXISTS.** Every `PENDING-OWNER-RUN` near
+  UEC/`04t`/install/package in `harness/` + `skills/` is the HONEST fail-closed precondition narration
+  (absent tool → owner installs; unpinned binary → refused; `render-preflight`'s
+  "READY — pending sf install + Dev Hub auth" is the correct qualified label;
+  `package-readiness.mjs`'s verdicts are accurate). The mislabel lived only in a past live-run
+  transcript, not in the toolkit. Dropped.
+- **(b) local-TLS SCI currency — NO SEAM EXISTS; already correct.** `compute-sci`'s crediting is
+  generic and evidence-keyed (`disposition:'satisfied'` + `verified.value:true` +
+  `reviewer_reproducible:true` → full SATISFIED); nothing anywhere distinguishes local
+  `tls-<host>-<date>.json` from `ssllabs-<host>.json`, and `build-evidence-index` applies
+  `statically-cleared` ONLY to white-box-audit-backed clears (a testssl/sslyze report registered as
+  evidence gets the generic reviewer-reproducible treatment). The currency caveat that DOES ride on
+  `endpoint-ssl-labs-a-grade` is the baseline entry's own `verification: conflicting` bucket (whether
+  reviewers enforce the letter grade — the deliberate confirm-with-your-PAM surface, independent of
+  which TLS evidence was captured), and its `last_verified: 2026-06-12` is inside the 90-day window.
+  Fixing that caveat would mean removing an honest signal — not a fix. Dropped.
+- **(c) checkmarx-prediction + `CX_APIKEY` cx-scan** — already shipped (0.4.4, commit 47efea0);
+  deleted from this doc 2026-07-02.
 
 ### B5 — Residual-shrinking track  *(the differentiator; see roadmap-deterministic-findings §4)*
 Build deterministic engines that move each residual class's reachability/exposure/pattern substrate from
