@@ -1,0 +1,29 @@
+{
+  "errors": [],
+  "njsscan_version": "0.4.2",
+  "nodejs": {
+    "node_xpath_injection": {
+      "files": [
+        {
+          "file_path": "node/xpathsink.js",
+          "match_lines": [
+            6,
+            7
+          ],
+          "match_position": [
+            3,
+            59
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')",
+        "description": "User controlled data in xpath.parse() can result in XPATH injection vulnerability.",
+        "owasp-web": "A1: Injection",
+        "severity": "ERROR"
+      }
+    }
+  },
+  "templates": {}
+}

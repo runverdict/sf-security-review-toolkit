@@ -38,11 +38,14 @@
  *        RD-non-supersession check (a co-located llm-inferred resource-consumption-abuse finding is NOT
  *        superseded — the dimension is multi-shape, so an owned class here would silence rate-limit /
  *        denial-of-wallet findings; mutation-proven).
- *   INJ — the CWE→dimension routing (B5 · E0.1b, 0.8.58; taxonomy EXPANDED + njsscan wired, E0.1b-
- *        EXPAND, 0.8.59): a semgrep/bandit/njsscan hit whose scanner-emitted CWE is in the exact
- *        INJECTION_XSS_CWES allowlist (89 SQL/SOQLi · 78 OS-command · 79 XSS · 94/95 code/eval ·
- *        96 template/SSTI · 943 NoSQL — each proven by a GENERATED per-sub-class fixture, semgrep
- *        1.168.0 / bandit 1.9.4 / njsscan 0.4.2) files under the REAL injection-xss dimension;
+ *   INJ / XPATHLDAP — the CWE→dimension routing (B5 · E0.1b, 0.8.58; taxonomy EXPANDED + njsscan
+ *        wired, E0.1b-EXPAND, 0.8.59; XPath 643 + LDAP 90 promoted, E0.1e-A, 0.8.63): a
+ *        semgrep/bandit/njsscan hit whose scanner-emitted CWE is in the exact INJECTION_XSS_CWES
+ *        allowlist (89 SQL/SOQLi · 78 OS-command · 79 XSS · 94/95 code/eval · 96 template/SSTI ·
+ *        90 LDAP · 643 XPath · 943 NoSQL — each proven by a GENERATED per-sub-class fixture, semgrep
+ *        1.168.0 / bandit 1.9.4 / njsscan 0.4.2; XPath/LDAP from semgrep-xpath-ldap-seeded.json
+ *        [java+csharp] + njsscan-xpath-seeded.json [node xpath.parse() only]) files under the REAL
+ *        injection-xss dimension;
  *        CWE-939 / CWE-22 / CWE-352 CSRF / every other co-resident stays external-sast (the
  *        negative-routing lock — exact integer membership, never a substring/rule-name match; SSRF
  *        918 and path-traversal 22 belong to data-export). Fixtures are RULE-PATH-PROVEN, not
@@ -1436,8 +1439,8 @@ check('BN-CLI-merge: --scanner bandit writes the deterministic findings to the t
 // SG-anchor-ERROR / SG-RP1 / BN-anchor / BN-count above; this section holds the allowlist unit,
 // the negative-routing (FP) guards, and the non-supersession standing lock.
 
-check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,94,95,96,943} (each fixture-proven); dimensionForCwes is EXACT integer membership over the real captured shapes — never substring; fixture-pending + malformed/absent → external-sast, no throw', () => {
-  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 79, 89, 94, 95, 96, 943])
+check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,90,94,95,96,643,943} (each fixture-proven); dimensionForCwes is EXACT integer membership over the real captured shapes — never substring; fixture-pending + malformed/absent → external-sast, no throw', () => {
+  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 79, 89, 90, 94, 95, 96, 643, 943])
   // the real captured shapes: bandit integer id / njsscan+semgrep titled string / semgrep titled-array
   assert.equal(dimensionForCwes(89), 'injection-xss') // bandit int
   assert.equal(dimensionForCwes('CWE-89'), 'injection-xss')
@@ -1448,17 +1451,25 @@ check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,94,95,96,943} (eac
   assert.equal(dimensionForCwes("CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"), 'injection-xss') // eval (njsscan/semgrep)
   assert.equal(dimensionForCwes(['CWE-96: Improper Neutralization of Directives in Statically Saved Code']), 'injection-xss') // SSTI (semgrep)
   assert.equal(dimensionForCwes('CWE-943: Improper Neutralization of Special Elements in Data Query Logic'), 'injection-xss') // NoSQL (njsscan)
+  // XPath (643) + LDAP (90) — PROMOTED in E0.1e-A once genuine Java/C#/Node fixtures emitted each
+  // (see XPATHLDAP-fixture-*). The real captured shapes: semgrep titled-array + njsscan titled string.
+  assert.equal(dimensionForCwes(["CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"]), 'injection-xss') // XPath (semgrep java/csharp + njsscan node)
+  assert.equal(dimensionForCwes("CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"), 'injection-xss') // XPath (njsscan titled string)
+  assert.equal(dimensionForCwes(["CWE-90: Improper Neutralization of Special Elements used in an LDAP Query ('LDAP Injection')"]), 'injection-xss') // LDAP (semgrep java/csharp)
   // EXACT membership, not substring: a longer/shorter neighbour must NOT read as an active id
-  for (const trap of ['CWE-789', ['CWE-8'], 'CWE-790', 'CWE-940', 'CWE-9430', 'CWE-960']) {
+  // (incl. the newly-active 90 → 900/9 traps and 643 → 6430/64 traps)
+  for (const trap of ['CWE-789', ['CWE-8'], 'CWE-790', 'CWE-940', 'CWE-9430', 'CWE-960', 'CWE-900', ['CWE-9'], 'CWE-6430', 'CWE-64']) {
     assert.equal(dimensionForCwes(trap), 'external-sast', `substring trap ${JSON.stringify(trap)} must NOT route`)
   }
   // co-resident non-injection CWEs (fixtures) + fixture-pending ids all stay external-sast:
   // 939 URL-scheme-authz · 352 CSRF · 918 SSRF (→data-export) · 22 path-traversal (→data-export) ·
-  // 798 secrets · 693 protection-mechanism · 605 · 20 (bandit's XXE tag) · the fixture-pending
-  // injection 90/91/643/917/1336 · and the fixture-pending deser 1321. (611/502/915 no longer stay
-  // here — they route to untrusted-deserialization as of 0.8.62; see the DESER-routing section.)
+  // 798 secrets · 693 protection-mechanism · 605 · 20 (bandit's XXE tag) · 328 (weak-hash MD5, the
+  // xpath-ldap fixture's co-resident negative) · the fixture-pending injection 91/917/1336 · and the
+  // fixture-pending deser 1321. (611/502/915 no longer stay here — they route to
+  // untrusted-deserialization as of 0.8.62; 90/643 no longer stay here — they route to injection-xss
+  // as of 0.8.63/E0.1e-A; see the DESER-routing and XPATHLDAP-routing sections.)
   for (const kept of [
-    939, 352, 918, 22, 798, 693, 605, 20, 90, 91, 643, 917, 1336, 1321,
+    939, 352, 918, 22, 798, 693, 605, 20, 328, 91, 917, 1336, 1321,
     'CWE-939: Improper Authorization in Handler for Custom URL Scheme', 'CWE-352: Cross-Site Request Forgery (CSRF)', 'CWE-22',
   ]) {
     assert.equal(dimensionForCwes(kept), 'external-sast', `CWE ${kept} must stay external-sast`)
@@ -1978,6 +1989,117 @@ check('DESER-non-supersession (the standing lock): a routed deterministic untrus
   // deser dimension (native-deser vs prototype-pollution vs XXE vs Apex mass-assignment).
   const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
   assert.equal(superseded, 0, 'the LLM prototype-pollution finding is NOT superseded by the routed native-deser row')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
+  assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
+})
+
+// ───────────────────────────────────── XPath (643) + LDAP (90) routing (B5 · E0.1e-A — the injection-gap close)
+// XPath (CWE-643) and LDAP (CWE-90) injection findings ALREADY FIRED for Java + C# (semgrep
+// p/security-audit + p/csharp) and Node XPath via njsscan, but they routed to the catch-all
+// 'external-sast' because 643/90 were parked as fixture-pending comments — NOT in CWE_TO_DIMENSION.
+// "A pack fires" ≠ "the dimension gap is closed." E0.1e-A captures the genuine fixtures below and
+// PROMOTES 643 + 90 into the map (→ injection-xss), routing them across every SAST adapter for free
+// (the unified-map property, E0.1c). CAPTURE-ONLY: no rule was authored — Python/Go/JS XPath+LDAP
+// (no OSS rule) are the sibling slice E0.1e-B's custom taint rules, and XML-injection (91) stays the
+// LLM-residual E0.1e-C. classify() stays null on every SAST adapter, so a routed XPath/LDAP finding
+// owns no class and supersedes nothing (XPATHLDAP-non-supersession, the RD/INJ/DESER posture ported).
+// RULE-PATH-PROVEN, not class-proven: each green fixture proves the ONE rule that fired on the seed.
+const SEMGREP_XPATHLDAP = join(FIX, 'semgrep-xpath-ldap-seeded.json') // semgrep 1.168.0 (p/security-audit + p/csharp): java tainted-xpath-from-http-request 643 + tainted-ldapi-from-http-request 90 (taint) + ldap-injection 90 (structural); csharp xpath-injection 643 + ldap-injection 90; co-resident use-of-md5 328 (weak-hash NEGATIVE → external-sast)
+const NJSSCAN_XPATH = join(FIX, 'njsscan-xpath-seeded.json') // njsscan 0.4.2: node_xpath_injection (xpath.parse() only) CWE-643
+
+check('XPATHLDAP-fixture-semgrep: the generated semgrep fixture routes XPath(643) — java tainted-xpath + csharp xpath-injection — and LDAP(90) — java tainted-ldapi(taint) + java ldap-injection(structural) + csharp ldap-injection — ALL to injection-xss, class-less; the band is the tool band; the co-resident weak-hash use-of-md5(328) STAYS external-sast (the exact-id negative on the SAME seed)', () => {
+  const raw = readJSON(SEMGREP_XPATHLDAP)
+  // source of truth: the fixture genuinely carries these CWEs (never a guessed id)
+  const cweOf = (suffix) => raw.results.find((r) => r.check_id.endsWith(suffix)).extra.metadata.cwe
+  assert.equal(dimensionForCwes(cweOf('tainted-xpath-from-http-request')), 'injection-xss') // 643 (java XPath, taint)
+  assert.equal(dimensionForCwes(cweOf('xpath-injection.xpath-injection')), 'injection-xss') // 643 (csharp XPath)
+  assert.equal(dimensionForCwes(cweOf('tainted-ldapi-from-http-request')), 'injection-xss') // 90 (java LDAP, taint)
+  assert.equal(dimensionForCwes(cweOf('java.lang.security.audit.ldap-injection.ldap-injection')), 'injection-xss') // 90 (java LDAP, structural)
+  assert.equal(dimensionForCwes(cweOf('csharp.dotnet.security.audit.ldap-injection.ldap-injection')), 'injection-xss') // 90 (csharp LDAP)
+  assert.equal(dimensionForCwes(cweOf('use-of-md5')), 'external-sast') // 328 (weak-hash) STAYS external-sast
+  const { findings } = ingestSemgrep(raw)
+  assert.equal(findings.length, 6)
+  const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
+  // the FIVE XPath/LDAP injection findings route + own no class
+  const injRules = [
+    'java.lang.security.audit.tainted-xpath-from-http-request.tainted-xpath-from-http-request',
+    'csharp.dotnet.security.audit.xpath-injection.xpath-injection',
+    'java.lang.security.audit.tainted-ldapi-from-http-request.tainted-ldapi-from-http-request',
+    'java.lang.security.audit.ldap-injection.ldap-injection',
+    'csharp.dotnet.security.audit.ldap-injection.ldap-injection',
+  ]
+  for (const rid of injRules) {
+    assert.equal(byRule[rid].dimension, 'injection-xss', `${rid} must route to injection-xss`)
+    assert.ok(!('class' in byRule[rid]), 'routing only — classify() stays null, no owned class')
+  }
+  // the co-resident weak-hash finding is the NEGATIVE — a non-injection CWE stays external-sast
+  const md5 = byRule['java.lang.security.audit.crypto.use-of-md5.use-of-md5']
+  assert.equal(md5.dimension, 'external-sast', 'use-of-md5 (CWE-328) must stay external-sast')
+  // the band is the tool band, untouched by routing (csharp ERROR→high; java WARNING→medium)
+  assert.equal(byRule['csharp.dotnet.security.audit.xpath-injection.xpath-injection'].adjusted_severity, 'high')
+  assert.equal(byRule['csharp.dotnet.security.audit.ldap-injection.ldap-injection'].adjusted_severity, 'high')
+  assert.equal(byRule['java.lang.security.audit.tainted-xpath-from-http-request.tainted-xpath-from-http-request'].adjusted_severity, 'medium')
+})
+
+check('XPATHLDAP-fixture-njsscan: node_xpath_injection (xpath.parse(), CWE-643) routes to injection-xss; carries the derived CWE-643 URL; the tool band (ERROR→high) is untouched; class-less. NARROW — the njsscan rule flags parse() only, not select()/evaluate()', () => {
+  const raw = readJSON(NJSSCAN_XPATH)
+  assert.ok(raw.nodejs.node_xpath_injection.metadata.cwe.startsWith('CWE-643'), 'source of truth: the njsscan rule tags CWE-643')
+  const { findings } = ingestNjsscan(raw)
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.ruleId, 'node_xpath_injection')
+  assert.equal(f.dimension, 'injection-xss')
+  assert.equal(f.adjusted_severity, 'high') // ERROR → high, the tool band, unchanged by routing
+  assert.ok(!('class' in f), 'routing only — no owned class')
+  assert.ok(f.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/643.html'), 'the derived CWE-643 URL must appear in verdict_reasoning')
+})
+
+check('XPATHLDAP-cross-adapter: the ONE unified CWE_TO_DIMENSION map routes XPath/LDAP across MULTIPLE adapters — 643 from semgrep (java+csharp) AND njsscan, 90 from semgrep (java+csharp) — proving the map (not per-adapter code) does the routing; the active injection subset now includes 90+643', () => {
+  const sg = ingestSemgrep(readJSON(SEMGREP_XPATHLDAP)).findings.filter((f) => f.dimension === 'injection-xss')
+  const nj = ingestNjsscan(readJSON(NJSSCAN_XPATH)).findings.filter((f) => f.dimension === 'injection-xss')
+  assert.ok(sg.length === 5 && nj.length === 1, 'XPath/LDAP routed from semgrep (5) AND njsscan (1) — the cross-adapter proof')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('tainted-xpath-from-http-request.tainted-xpath-from-http-request')), 'semgrep java XPath → 643 → injection-xss')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('xpath-injection.xpath-injection')), 'semgrep csharp XPath → 643 → injection-xss')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('tainted-ldapi-from-http-request.tainted-ldapi-from-http-request')), 'semgrep java LDAP → 90 → injection-xss')
+  assert.ok(sg.some((f) => f.ruleId.endsWith('csharp.dotnet.security.audit.ldap-injection.ldap-injection')), 'semgrep csharp LDAP → 90 → injection-xss')
+  assert.ok(nj.some((f) => f.ruleId === 'node_xpath_injection'), 'njsscan node XPath → 643 → injection-xss')
+  // the map is the single source: the active injection subset now contains BOTH 90 and 643
+  assert.ok(INJECTION_XSS_CWES.has(90) && INJECTION_XSS_CWES.has(643), 'the promoted ids are in the derived injection subset')
+  assert.equal(CWE_TO_DIMENSION[90], 'injection-xss')
+  assert.equal(CWE_TO_DIMENSION[643], 'injection-xss')
+})
+
+check('XPATHLDAP-non-supersession (the standing lock): a routed deterministic injection-xss finding (semgrep XPath, CWE-643) does NOT supersede a co-located llm-inferred injection-xss finding of a DIFFERENT injection shape — the null classify() is the protection, now proven for the newly-promoted 643/90', () => {
+  const det = ingestSemgrep(readJSON(SEMGREP_XPATHLDAP)).findings.find((f) =>
+    f.ruleId.endsWith('tainted-xpath-from-http-request.tainted-xpath-from-http-request')
+  ) // CWE-643 → injection-xss @ java/XPathSink.java:19
+  assert.equal(det.provenance, 'deterministic')
+  assert.equal(det.dimension, 'injection-xss')
+  // an llm injection-xss finding of a DIFFERENT SHAPE (an OS-command shape — a shape no XPath CWE
+  // describes), same file, overlapping lines
+  const llm = {
+    id: '7'.repeat(16),
+    dimension: 'injection-xss',
+    title: 'Shell command interpolates request input without escaping',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: `${det.file.split(':')[0]}:10-30`, // overlaps det's :19
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the process-exec path',
+  }
+  // PRECONDITIONS that WOULD fire supersession if the adapter owned a class: same dimension + same
+  // locus. The ONLY missing ingredient is the owned class (classify()→null on every SAST adapter).
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  // MUTATION: adding CLASS_DEFS['injection-xss'] + a classify()→'injection-xss' turns THIS red at
+  // `superseded === 0` (the supersession visibly FIRES), proving the protection is the null classify —
+  // AND that an owned class would over-supersede across the multi-shape injection dimension.
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM OS-command finding is NOT superseded by the routed XPath row')
   assert.deepEqual(supersededIds, [])
   assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
   assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')

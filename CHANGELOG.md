@@ -51,6 +51,39 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.63] — 2026-07-03
+
+**XPath (CWE-643) and LDAP (CWE-90) injection findings now file under `injection-xss` for the
+languages an OSS rule already covers.** These findings already fired — Semgrep flags them on
+Java (`p/security-audit`) and C# (`p/csharp`), and njsscan flags Node XPath — but because 643
+and 90 were not yet rows in the `CWE_TO_DIMENSION` table, every hit routed to the catch-all
+`external-sast` grouping instead of the `injection-xss` methodology dimension that owns it. A
+pack firing is not the same as the dimension gap being closed. This release promotes 643 and 90
+into the map, so those hits route to `injection-xss` across every SAST adapter from one table
+(the unified-map property added in 0.8.62). No rule was authored — this is a routing-only
+change.
+
+Each promoted CWE is backed by a genuine captured scanner fixture over a minimal seeded sample:
+Semgrep 1.168.0 emits CWE-643 (Java `tainted-xpath-from-http-request` + C#
+`xpath-injection`) and CWE-90 (Java `tainted-ldapi-from-http-request` taint rule + the
+structural `ldap-injection` + C# `ldap-injection` on `DirectorySearcher.Filter`); njsscan 0.4.2
+emits CWE-643 for Node `xpath.parse()` (narrow — the rule flags `parse()` only, not
+`select()`/`evaluate()`). Routing only: `classify()` stays null on every SAST adapter, so a
+routed XPath/LDAP finding owns no toolkit class and supersedes nothing — a deterministic finding
+never silences a co-located model-inferred injection finding of a different shape.
+
+**Honest floor.** Only the languages an OSS rule already covers are closed here (Java/C# for
+both classes, plus Node XPath). XPath and LDAP in Python, Go, and JavaScript (no LDAP) have no
+community rule and are tracked as a separate slice that must author custom taint rules; nothing
+speculative was promoted — a CWE is added to the map only after a captured fixture emits it. XML
+injection (CWE-91) stays a model-residual finding, not added. The co-resident weak-hash finding
+(CWE-328) in the same Semgrep capture stays `external-sast`, the exact-id negative proving the
+promotion routes only what it should.
+
+Suite **62 files / 915 checks** (was 911), all green. Mutation-proven: removing 643 (or 90) from
+`CWE_TO_DIMENSION` turns its routing fixture test red; adding a `CLASS_DEFS['injection-xss']` +
+a non-null `classify()` turns the XPath/LDAP non-supersession lock red.
+
 ## [0.8.62] — 2026-07-03
 
 **CWE-based dimension routing is now one extensible map, and the untrusted-deserialization

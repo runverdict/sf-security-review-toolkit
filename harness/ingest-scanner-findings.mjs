@@ -931,6 +931,8 @@ export const CWE_TO_DIMENSION = {
   94: 'injection-xss', // code injection (bandit B701 jinja2_autoescape_false issue_cwe.id 94)
   95: 'injection-xss', // eval / dynamically-evaluated code (njsscan eval_nodejs 'CWE-95'; semgrep eval-injection 'CWE-95')
   96: 'injection-xss', // template / SSTI — statically-saved code (semgrep render-template-string 'CWE-96')
+  643: 'injection-xss', // XPath injection (B5 · E0.1e-A, 0.8.63). semgrep 'CWE-643' from p/security-audit java tainted-xpath-from-http-request AND p/csharp csharp.dotnet.security.audit.xpath-injection; njsscan node_xpath_injection 'CWE-643' (xpath.parse() only). acceptance/fixtures/{semgrep-xpath-ldap,njsscan-xpath}-seeded.json. Python/Go/JS XPath have no OSS rule → E0.1e-B custom taint rules.
+  90: 'injection-xss', // LDAP injection (B5 · E0.1e-A, 0.8.63). semgrep 'CWE-90' from p/security-audit java tainted-ldapi-from-http-request (taint) + ldap-injection (structural) AND p/csharp csharp.dotnet.security.audit.ldap-injection (DirectorySearcher.Filter). acceptance/fixtures/semgrep-xpath-ldap-seeded.json. Python/Go/JS LDAP have no OSS rule → E0.1e-B custom taint rules.
   943: 'injection-xss', // NoSQL / data-query injection (njsscan node_nosqli_js_injection 'CWE-943')
   // ── untrusted-deserialization (methodology/dimensions/untrusted-deserialization.md; B5 · E0.1c) ──
   // The deser family: native-object deserializers, XXE, JS prototype pollution. Each ACTIVE id
@@ -940,14 +942,17 @@ export const CWE_TO_DIMENSION = {
   611: 'untrusted-deserialization', // XXE / XML external entity (semgrep use-defused-xml 'CWE-611'). NOTE: bandit's XML rules (B314/B405) tag the SAME sink 'CWE-20', which stays external-sast (INJ-allowlist proves it) — a live illustration that scanners tag one class inconsistently across rules (the fixture, never a guessed CWE, is the source of truth).
   915: 'untrusted-deserialization', // JS prototype pollution as the OSS tool tags it: semgrep prototype-pollution-loop emits 'CWE-915' (Improperly Controlled Modification of Dynamically-Determined Object Attributes) on a minimal seed — NOT 1321. 1321 (the more specific id) is fixture-pending below.
   // fixture-pending / future (comment only — NOT active until a genuine fixture proves the id):
-  //   injection-xss: 643 XPath · 90 LDAP · 91 XML injection · 917/1336 expression-language / SSTI
-  //     variants (the real tools tag server-side template injection as 96, not 917/1336).
+  //   injection-xss: 91 XML injection · 917/1336 expression-language / SSTI variants (the real tools
+  //     tag server-side template injection as 96, not 917/1336). 643 XPath + 90 LDAP were PROMOTED
+  //     (active above) in E0.1e-A once genuine Java/C#/Node fixtures emitted each — XML-91 stays
+  //     LLM-residual (E0.1e-C); Python/Go/JS XPath+LDAP need custom taint rules (E0.1e-B).
   //   untrusted-deserialization: 1321 JS prototype pollution — semgrep emits 915 (above) for the
   //     prototype-pollution-loop rule and njsscan 0.4.2 has no prototype-pollution rule, so NO OSS
   //     rule emitted 1321 on a minimal seed. The Apex JSON.deserialize → sObject mass-assignment /
   //     BOPLA deser variant has NO OSS scanner rule at all (Code Analyzer/PMD don't cover it) → it
   //     stays an LLM-residual finding, never routed here (an LLM finding carries no scanner CWE and
-  //     never reaches dimensionForCwes) — the honest uncovered sub-shape, same posture as XPath/LDAP.
+  //     never reaches dimensionForCwes) — the honest uncovered sub-shape, same posture as the
+  //     no-OSS-rule XPath/LDAP languages (Python/Go/JS) that E0.1e-B must cover with custom rules.
 }
 // A DERIVED view: the injection subset of the map. Kept so INJ-allowlist and any consumer that
 // wants "just the injection ids" still reads a Set, while the map stays the single source of

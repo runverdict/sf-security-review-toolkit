@@ -604,7 +604,14 @@ families PENDING until a re-audit.
    via `tool.driver.name`; the JSON cannot).
 
    The registry configs are fetched once; if the host is offline, vendor the rules
-   first (`semgrep --config <dir>`). *Agent runs:* the scan, JSON parsing, diffing
+   first (`semgrep --config <dir>`). The `--config p/security-audit --config
+   p/<language>` pair above is what routes findings to real methodology dimensions:
+   the ingest reads each scanner-emitted CWE and files injection-class hits under
+   `injection-xss` — including XPath (CWE-643) and LDAP (CWE-90), which route for
+   the languages an OSS rule already covers (Java + C# via `p/security-audit` +
+   `p/csharp`; Node XPath via njsscan's `node_xpath_injection`, `xpath.parse()`
+   only). No extra config is needed for those — njsscan already emits the routable
+   CWE. *Agent runs:* the scan, JSON parsing, diffing
    against the audit ledger (the `injection-xss`/`oauth-identity` dimensions may
    already have flagged the same sink — cross-reference, don't double-report),
    dossier rows. *Owner runs:* the code fixes. *Evidence:*
