@@ -51,6 +51,75 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.64] — 2026-07-03
+
+**The toolkit now ships its own curated `rules/injection/` Semgrep taint-rule pack, covering the
+XPath (CWE-643) and LDAP (CWE-90) injection classes no OSS pack detects.** 0.8.63 routed XPath
+and LDAP to `injection-xss` for the languages a community rule already covers (Java/C# via
+`p/security-audit` + `p/csharp`). But no OSS rule covers Python XPath or LDAP, Go XPath or LDAP,
+or Node LDAP — and njsscan's `node_xpath_injection` flags only `xpath.parse()`, leaving the common
+`xpath` npm evaluation sinks (`select`/`select1`/`evaluate`) uncovered. A partner on those stacks
+got no finding (or, for Node XPath, only the narrow `parse()` case). CodeQL covers them, but its
+license bars use on proprietary partner code. So this
+release adds six toolkit-authored taint rules — `{xpath,ldap}-{python,js,go}.yaml` — run via
+`--config ${CLAUDE_PLUGIN_ROOT}/rules/injection/` (a local directory: no network, no login, free
+Community Edition), wired into the run-scans Family 7 Semgrep invocation alongside the registry
+packs. This is a new capability: the toolkit authoring detection content, with the honesty floor
+intact.
+
+Every rule is `mode: taint` — it **requires a real source→sink flow, never a bare sink** (a
+sink-only rule is high-FP and is the anti-pattern). Sources are the framework request objects
+(Flask/Django `request.*`, Express `req.query/params/body`, Go `r.FormValue` / `r.URL.Query()` /
+`mux.Vars`). Sinks are the real evaluation/query calls, and every one is scoped to stay low-FP.
+The library-distinctive sinks fire directly: lxml `.xpath()` / `etree.XPath`, ElementTree
+`.findtext`/`.iterfind`, the `xpath` npm `select`/`select1`/`evaluate`, package-qualified
+antchfx/xmlquery + htmlquery + beevik/etree `CompilePath`, python-ldap's LDAP-exclusive
+`search_s`/`search_ext_s`/`search_st`, and go-ldap's `ldap.NewSearchRequest` / `ldap.SearchRequest`.
+The sinks whose method names collide with common non-XML/non-LDAP calls are **anchored** to their
+library — by import resolution, receiver type, or receiver factory — rather than shipped noisy:
+ElementTree `.find`/`.findall` require an XML-parse-derived receiver (with a reassignment guard, so
+rebinding that name to a `str` / `re.Pattern` cannot re-open the collision); ldap3 `.search()`
+requires a receiver from the import-resolved `ldap3.Connection` (so an in-house class that merely
+shares the name `Connection` does not fire); ldapjs/ldapts `.search(base, {filter})` requires a
+receiver from the import-resolved `ldapjs.createClient()` / `ldapts` `Client` (so redis / supabase /
+Elasticsearch / pg exports of the same factory name, and the ordinary `scope:` option key, do not
+fire); Go `FindElements`/`FindElement` require an `*etree.Element` / `*etree.Document` receiver (so
+a UI-tree or repository method of the same name does not fire); and a partner-defined
+`NewSearchRequest` helper is excluded by qualifying the sink to the go-ldap package. The Go request
+sources are typed to `*http.Request` so a same-named `FormValue`/`URL.Query` on a config struct is
+not a source. Recognized sanitizers (lxml parameterized `variables=`, `escape_filter_chars`,
+`ldap-escape`, `ldap.EscapeFilter`, and a `strconv` numeric coercion in Go) suppress the finding, and
+`focus-metavariable` narrows each match to the injectable expression. The Python/JS request sources
+are matched by framework name (the standard SAST model semgrep's own OSS packs use), so a value from
+an identically-named non-request object is a residual false positive — the accepted SAST baseline.
+
+Each rule is validated with `semgrep --test` (it fires on the vulnerable line and stays silent on
+the sanitized / parameterized / string-literal line AND on the specific benign collisions above —
+the per-rule correctness proof; the minimal vuln/safe samples live beside each rule as the
+semgrep-test convention requires), and a genuine
+`semgrep --config rules/injection/ --json` capture over a minimal seeded sample per (class,
+language) is committed as the routing fixture. **All six rules reached the low-FP bar and shipped;
+none had to be dropped to the model residual.**
+
+Routing rides the existing table: each rule tags CWE-643 or CWE-90, which the `CWE_TO_DIMENSION`
+map already carries from 0.8.63, so a hit routes to `injection-xss` through the same `metadata.cwe`
+path as every registry rule — **no new map integer and no ingest/harness change**. `classify()`
+stays null, so a routed hit owns no toolkit class and supersedes nothing.
+
+**Honest floor.** Community-Edition taint is **intra-file / intraprocedural**, so the pack is
+low-FP (a real source→sink flow is required) but moderate-FN: a tainted value that crosses a
+function or module boundary before the sink is not caught by the pack and falls to the model
+residual, not to a noisy rule. Two residuals are the accepted taint-SAST baseline every taint
+engine (including semgrep's own OSS packs and CodeQL) shares, not a defect of these rules: a value
+neutralized by a partner's *own* undeclared escape function still flows (only the recognized library
+escapers + numeric coercions are modeled as sanitizers — and a custom escaper flagged this way is
+worth confirming complete), and a request value used only as a key into a constant allowlist map is
+conservatively treated as tainted. XML injection (CWE-91) remains a model residual, not added.
+
+Suite **62 files / 919 checks** (was 915), all green. Mutation-proven: removing
+`--config …/rules/injection/` from the Family 7 command turns the wiring-lock check red, and
+neutralizing a rule's sink is caught by `semgrep --test` at authoring time.
+
 ## [0.8.63] — 2026-07-03
 
 **XPath (CWE-643) and LDAP (CWE-90) injection findings now file under `injection-xss` for the

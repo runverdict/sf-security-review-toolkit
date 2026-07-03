@@ -70,7 +70,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -2103,6 +2103,96 @@ check('XPATHLDAP-non-supersession (the standing lock): a routed deterministic in
   assert.deepEqual(supersededIds, [])
   assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
   assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
+})
+
+// ─────────────────── toolkit-authored custom injection taint rules (B5 · E0.1e-B — the OSS-gap close)
+// E0.1e-A promoted 643/90 into the map and captured the OSS packs' XPath/LDAP hits, but ONLY for the
+// languages an OSS rule covers (Java/C# via p/security-audit + p/csharp; Node XPath via njsscan parse()).
+// Python XPath+LDAP, JS/Go LDAP, and Go XPath have NO OSS rule at all. E0.1e-B ships the toolkit's OWN
+// curated Semgrep taint rules (rules/injection/*.yaml, mode: taint — a real source→sink flow is required,
+// never a bare sink) run via `--config`. NO harness change and NO new map int: each rule tags CWE-643 or
+// CWE-90, which the SAME unified CWE_TO_DIMENSION map (already carrying 643/90 from E0.1e-A) routes to
+// injection-xss via dimensionForCwes — the E0.1c unified-map property, now proven for toolkit-authored
+// content. classify() stays null, so a routed hit owns no class and supersedes nothing. HONEST SCOPE: CE
+// taint is intra-file, so the pack is low-FP (every fixture flow is a real source→sink) but moderate-FN
+// (cross-function flows fall to the LLM residual, not to a noisy rule). Every SHIPPED rule passed
+// `semgrep --test` (fires on the vuln line, silent on the sanitized/parameterized/string-literal line);
+// the fixture below is GENUINE `semgrep --config rules/injection/ --json` output (semgrep 1.168.0) over a
+// minimal seeded sample per (class, language) — never fabricated.
+const SEMGREP_CUSTOM_INJ = join(FIX, 'semgrep-custom-injection-seeded.json') // semgrep 1.168.0, --config rules/injection/: python/js/go XPath(643) + python/js/go LDAP(90) — 7 hits across the 6 toolkit-authored rules (xpath-python fires twice: ElementTree + lxml sinks)
+const RULES_INJ = join(PLUGIN, 'rules', 'injection')
+const CUSTOM_INJ_RULES = [
+  ['python-xpath-injection-taint', 643],
+  ['python-ldap-injection-taint', 90],
+  ['javascript-xpath-injection-taint', 643],
+  ['javascript-ldap-injection-taint', 90],
+  ['go-xpath-injection-taint', 643],
+  ['go-ldap-injection-taint', 90],
+]
+
+check('CUSTOM-INJ-fixture-routing: every hit in the genuine `semgrep --config rules/injection/` capture routes to injection-xss (class-less, engine semgrep, tool band medium); the CWE the rule tags (643 XPath / 90 LDAP) is what routes it — NOT the rule name; all 6 toolkit-authored rules are represented', () => {
+  const raw = readJSON(SEMGREP_CUSTOM_INJ)
+  // source of truth: the fixture genuinely carries a 643/90 CWE for each rule id (never a guessed id)
+  const cweOf = (idSuffix) => raw.results.find((r) => r.check_id.endsWith(idSuffix)).extra.metadata.cwe
+  for (const [id, cweInt] of CUSTOM_INJ_RULES) {
+    const cwe = cweOf(id)
+    assert.ok(String(cwe[0]).startsWith(`CWE-${cweInt}`), `${id} must tag CWE-${cweInt} in the captured fixture`)
+    assert.equal(dimensionForCwes(cwe), 'injection-xss', `${id} (CWE-${cweInt}) must route to injection-xss`)
+  }
+  const { findings } = ingestSemgrep(raw)
+  assert.equal(findings.length, 7) // 6 rules; xpath-python fires twice (ElementTree + lxml sinks) on its seed
+  for (const f of findings) {
+    assert.ok(f.ruleId.includes('.injection.'), `${f.ruleId} must come from the rules/injection/ pack`)
+    assert.equal(f.engine, 'semgrep', 'the toolkit pack is ingested by the semgrep adapter')
+    assert.equal(f.dimension, 'injection-xss', `${f.ruleId} must route to injection-xss`)
+    assert.ok(!('class' in f), 'routing only — classify() stays null, no owned class')
+    assert.equal(f.adjusted_severity, 'medium') // WARNING → medium tool band, untouched by routing
+  }
+  // all 6 rule ids are represented (no rule silently absent from the capture)
+  const ids = new Set(findings.map((f) => f.ruleId.replace(/^.*\.injection\./, '')))
+  for (const [id] of CUSTOM_INJ_RULES) assert.ok(ids.has(id), `${id} produced no finding in the capture`)
+})
+
+check('CUSTOM-INJ-no-new-map-ints: E0.1e-B adds ZERO map ints — the toolkit pack RIDES the 643/90 rows E0.1e-A already promoted; every CWE in the captured fixture is in the pre-existing injection allowlist, and the semgrep adapter classify() stays null (routed hit owns no class)', () => {
+  // the unified injection allowlist is UNCHANGED by this slice (same set as INJ-allowlist above)
+  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 79, 89, 90, 94, 95, 96, 643, 943])
+  const raw = readJSON(SEMGREP_CUSTOM_INJ)
+  for (const r of raw.results) {
+    // each fixture CWE is one of the pre-existing injection ids — no int was added for this slice
+    assert.equal(dimensionForCwes(r.extra.metadata.cwe), 'injection-xss')
+  }
+  assert.equal(CWE_TO_DIMENSION[643], 'injection-xss')
+  assert.equal(CWE_TO_DIMENSION[90], 'injection-xss')
+  assert.equal(semgrepAdapter.classify(), null) // the pack is routing-only; it supersedes nothing
+})
+
+check('CUSTOM-INJ-wiring-command (mirror SG-RP4): the run-scans Family 7 `semgrep scan` invocation carries --config .../rules/injection/ — scoped to the fenced command block, not the prose; dropping it re-dormants the toolkit pack on every live run', () => {
+  const skill = readText(join(PLUGIN, 'skills', 'run-scans', 'SKILL.md'))
+  const blocks = [...skill.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1])
+  const semgrepBlocks = blocks.filter((b) => b.includes('semgrep scan'))
+  assert.ok(semgrepBlocks.length >= 1, 'no fenced `semgrep scan` invocation in skills/run-scans/SKILL.md')
+  for (const b of semgrepBlocks) {
+    assert.ok(/--config\s+\S*rules\/injection\/?/.test(b), `a Family 7 semgrep invocation lost --config .../rules/injection/:\n${b}`)
+  }
+})
+
+check('CUSTOM-INJ-wiring-pack: rules/injection/ ships a .yaml + a matching `semgrep --test` companion for each rule (same basename), with NO dangling half either way — a rule dropped-to-residual removes BOTH its yaml and its companion', () => {
+  const SRC_EXTS = ['.py', '.js', '.ts', '.go', '.java', '.cs', '.rb', '.php']
+  const files = readdirSync(RULES_INJ)
+  const yamls = files.filter((f) => f.endsWith('.yaml')).map((f) => f.replace(/\.yaml$/, ''))
+  const companions = files.filter((f) => SRC_EXTS.some((e) => f.endsWith(e))).map((f) => f.replace(/\.[^.]+$/, ''))
+  assert.ok(yamls.length >= 6, `expected >=6 shipped rules in rules/injection/, found ${yamls.length}`)
+  for (const base of yamls) {
+    assert.ok(companions.includes(base), `rule ${base}.yaml has no semgrep --test companion (dangling rule)`)
+  }
+  for (const base of companions) {
+    assert.ok(yamls.includes(base), `companion ${base}.* has no rule yaml (dangling companion)`)
+  }
+  // the 6 shipped rules are exactly the (class, language) pairs the fixture routes
+  const bases = new Set(yamls)
+  for (const name of ['xpath-python', 'ldap-python', 'xpath-js', 'ldap-js', 'xpath-go', 'ldap-go']) {
+    assert.ok(bases.has(name), `expected rules/injection/${name}.yaml`)
+  }
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)

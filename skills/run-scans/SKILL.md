@@ -553,12 +553,26 @@ families PENDING until a re-audit.
 
    ```bash
    semgrep scan --config p/security-audit --config p/secrets \
-     --config p/<language> --json --dataflow-traces \
+     --config p/<language> --config ${CLAUDE_PLUGIN_ROOT}/rules/injection/ \
+     --json --dataflow-traces \
      --output evidence/semgrep-<date>.json <server-root>
    semgrep scan --config p/security-audit --config p/secrets \
-     --config p/<language> --sarif --dataflow-traces \
+     --config p/<language> --config ${CLAUDE_PLUGIN_ROOT}/rules/injection/ \
+     --sarif --dataflow-traces \
      --output evidence/semgrep-<date>.sarif <server-root>
    ```
+
+   `--config ${CLAUDE_PLUGIN_ROOT}/rules/injection/` is a toolkit-authored taint-rule
+   pack (additive with the registry packs above — a local directory, so no network or
+   login, free CE). It covers the XPath (CWE-643) + LDAP (CWE-90) injection classes the
+   OSS packs miss on Python/Go/JS (`p/security-audit` + `p/csharp` cover Java + C# only,
+   and njsscan's `node_xpath_injection` fires on `xpath.parse()` alone). Each rule is
+   `mode: taint` (it requires a real source→sink flow, never a bare sink) and
+   `semgrep --test`-validated; the CWE it tags routes the hit to `injection-xss` through
+   the same `metadata.cwe` path as the registry rules — no ingest change. *Honest scope:*
+   Semgrep CE taint is intra-file / intraprocedural, so the pack is low-FP but
+   moderate-FN — a tainted value that crosses a function or module boundary before the
+   sink falls to the LLM residual, not to a noisy bare-sink rule.
 
    `--dataflow-traces` is load-bearing: it explicitly requests the source→sink
    dataflow trace for taint-mode results — `extra.dataflow_trace` in the JSON is

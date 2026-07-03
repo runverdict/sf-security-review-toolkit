@@ -1,0 +1,95 @@
+# XPath injection (CWE-643) — Go. Toolkit-authored Semgrep taint rule.
+#
+# Why this rule exists: no OSS pack (p/security-audit, gosec) ships a Go
+# XPath-injection rule — a Go partner using antchfx/xmlquery|htmlquery or beevik/etree
+# and building the path from HTTP input gets no finding. CodeQL covers it but its
+# license bars use on proprietary partner code. This rule closes that gap, run via `--config`.
+#
+# Scope (honest): Semgrep CE taint is INTRA-FILE / intraprocedural — LOW-FP (a real
+# source→sink flow is required) but MODERATE-FN (a cross-function flow into the XPath
+# sink falls to the LLM residual, not to a noisy bare-sink rule).
+#
+# Low-FP construction: the package-qualified sinks (xmlquery/htmlquery `Find*`/`Query*`,
+# etree `CompilePath`, antchfx/xpath `Compile`) are collision-safe. The bare method names
+# `FindElements`/`FindElement` are generic (UI trees, repositories), so they fire ONLY
+# when the receiver is typed to `*etree.Element` / `*etree.Document`.
+rules:
+  - id: go-xpath-injection-taint
+    mode: taint
+    message: >-
+      Untrusted HTTP input flows into an XPath expression. Concatenating
+      request-controlled data into an XPath query allows an attacker to alter the
+      query structure (XPath injection), reading arbitrary nodes from the XML
+      document. Build the query with a precompiled/parameterized expression instead
+      of concatenating the untrusted value into the path string.
+    severity: WARNING
+    languages: [go]
+    metadata:
+      cwe:
+        - "CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"
+      category: security
+      confidence: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - go
+      references:
+        - https://cwe.mitre.org/data/definitions/643.html
+        - https://owasp.org/www-community/attacks/XPATH_Injection
+    pattern-sources:
+      # net/http request accessors — the receiver is typed to *http.Request so a
+      # same-named `FormValue` / `.URL.Query()` on a config/DTO struct does not match.
+      - patterns:
+          - pattern-either:
+              - pattern: $R.FormValue(...)
+              - pattern: $R.PostFormValue(...)
+              - pattern: $R.URL.Query()
+          - metavariable-type:
+              metavariable: $R
+              types:
+                - "*http.Request"
+      - pattern: mux.Vars($R)
+    pattern-sanitizers:
+      # A value coerced to a number cannot carry XPath metacharacters.
+      - pattern-either:
+          - pattern: strconv.Atoi(...)
+          - pattern: strconv.ParseInt(...)
+          - pattern: strconv.ParseUint(...)
+          - pattern: strconv.ParseFloat(...)
+    pattern-sinks:
+      # antchfx/xmlquery + htmlquery — Find / FindOne / QueryAll / Query take the expr
+      # as arg 2; package-qualified, collision-safe. antchfx/xpath Compile builds the
+      # *Expr from the string — the compile-time sink.
+      - patterns:
+          - pattern-either:
+              - pattern: xmlquery.Find($DOC, $EXPR)
+              - pattern: xmlquery.FindOne($DOC, $EXPR)
+              - pattern: xmlquery.QueryAll($DOC, $EXPR)
+              - pattern: xmlquery.Query($DOC, $EXPR)
+              - pattern: htmlquery.Find($DOC, $EXPR)
+              - pattern: htmlquery.FindOne($DOC, $EXPR)
+              - pattern: htmlquery.QueryAll($DOC, $EXPR)
+              - pattern: htmlquery.Query($DOC, $EXPR)
+              - pattern: xpath.Compile($EXPR)
+              - pattern: xpath.MustCompile($EXPR)
+          - focus-metavariable: $EXPR
+      # beevik/etree — CompilePath / MustCompilePath are package-qualified (safe).
+      - patterns:
+          - pattern-either:
+              - pattern: etree.CompilePath($EXPR)
+              - pattern: etree.MustCompilePath($EXPR)
+          - focus-metavariable: $EXPR
+      # beevik/etree — FindElements / FindElement collide with generic method names, so
+      # the receiver must be typed to an *etree.Element / *etree.Document.
+      - patterns:
+          - pattern-either:
+              - pattern: $EL.FindElements($EXPR)
+              - pattern: $EL.FindElement($EXPR)
+          - metavariable-type:
+              metavariable: $EL
+              types:
+                - "*etree.Element"
+                - "*etree.Document"
+                - "etree.Element"
+                - "etree.Document"
+          - focus-metavariable: $EXPR

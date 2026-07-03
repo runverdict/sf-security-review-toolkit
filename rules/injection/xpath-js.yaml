@@ -1,0 +1,67 @@
+# XPath injection (CWE-643) — JavaScript/TypeScript. Toolkit-authored Semgrep taint rule.
+#
+# Why this rule exists: njsscan's `node_xpath_injection` fires ONLY on `xpath.parse()`,
+# and no OSS pack covers the far more common evaluation sinks — so a partner using
+# `xpath.select()/select1()/evaluate()` on request input gets no finding. CodeQL covers
+# it but its license bars use on proprietary partner code. This rule EXTENDS njsscan's
+# parse()-only coverage to the real `xpath` npm evaluation sinks, run via `--config`.
+#
+# Scope (honest): Semgrep CE taint is INTRA-FILE / intraprocedural — LOW-FP (a real
+# source→sink flow is required) but MODERATE-FN (a cross-function flow into the XPath
+# sink falls to the LLM residual, not to a noisy bare-sink rule).
+#
+# Low-FP construction: the sinks are scoped to the `xpath` npm module surface only.
+# The DOM `document.evaluate` is deliberately NOT a sink here: this rule's sources are
+# server-side Express request objects, and no DOM `document` global exists server-side —
+# a `document.evaluate` reached by `req.*` is a non-DOM object's method (a formula/rules
+# engine), so including it would just poison the band.
+rules:
+  - id: javascript-xpath-injection-taint
+    mode: taint
+    message: >-
+      Untrusted HTTP input flows into an XPath expression. Concatenating
+      request-controlled data into an XPath query allows an attacker to alter the
+      query structure (XPath injection), reading arbitrary nodes from the XML
+      document. Build the query with a parameterized/precompiled expression instead
+      of concatenating the untrusted value into the path string.
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe:
+        - "CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"
+      category: security
+      confidence: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - javascript
+        - typescript
+        - express
+      references:
+        - https://cwe.mitre.org/data/definitions/643.html
+        - https://owasp.org/www-community/attacks/XPATH_Injection
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: req.query
+              - pattern: req.params
+              - pattern: req.body
+              - pattern: request.query
+              - pattern: request.params
+              - pattern: request.body
+    pattern-sanitizers:
+      # A value coerced to a number cannot carry XPath metacharacters.
+      - pattern-either:
+          - pattern: parseInt(...)
+          - pattern: parseFloat(...)
+          - pattern: Number(...)
+    pattern-sinks:
+      # `xpath` npm — select / select1 / evaluate / parse take the expression as arg 1.
+      - patterns:
+          - pattern-either:
+              - pattern: xpath.select($EXPR, ...)
+              - pattern: xpath.select1($EXPR, ...)
+              - pattern: xpath.evaluate($EXPR, ...)
+              - pattern: xpath.parse($EXPR, ...)
+          - pattern-not: xpath.select("...", ...)
+          - focus-metavariable: $EXPR

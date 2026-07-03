@@ -1,0 +1,90 @@
+# LDAP injection (CWE-90) — JavaScript/TypeScript. Toolkit-authored Semgrep taint rule.
+#
+# Why this rule exists: the OSS packs cover Java + C# LDAP injection, but no OSS rule
+# covers Node LDAP — a partner using ldapjs / ldapts and building the search filter
+# from HTTP input gets no finding. CodeQL covers it but its license bars use on
+# proprietary partner code. This rule closes that gap, run via `--config`.
+#
+# Scope (honest): Semgrep CE taint is INTRA-FILE / intraprocedural — LOW-FP (a real
+# source→sink flow is required) but MODERATE-FN (a cross-function flow into the
+# filter, OR a client created in another module and passed in, falls to the LLM
+# residual, not to a noisy bare-sink rule).
+#
+# Low-FP construction: `obj.search(base, { filter })` is NOT LDAP-exclusive — MeiliSearch,
+# Elasticsearch, redis, pg, and data-grid libraries share that exact shape, and `scope`
+# is an ordinary options key (result-visibility / RBAC scope), so neither the method
+# shape nor a `scope:` key is a reliable LDAP signal. This rule fires ONLY when the
+# receiver is created from the IMPORT-RESOLVED ldapjs/ldapts client factory
+# (`require('ldapjs').createClient()` / an `ldapts` `Client`) in the same scope — Semgrep's
+# module resolution distinguishes those from a same-named `createClient`/`Client` exported
+# by redis / supabase / @elastic/elasticsearch / pg.
+rules:
+  - id: javascript-ldap-injection-taint
+    mode: taint
+    message: >-
+      Untrusted HTTP input flows into an LDAP search filter. Concatenating
+      request-controlled data into the `filter` option of an LDAP search allows an
+      attacker to alter the filter structure (LDAP injection) and read or bypass
+      directory records. Escape the untrusted value (e.g. the `ldap-escape` package)
+      before building the filter.
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe:
+        - "CWE-90: Improper Neutralization of Special Elements used in an LDAP Query ('LDAP Injection')"
+      category: security
+      confidence: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - javascript
+        - typescript
+        - express
+        - ldap
+      references:
+        - https://cwe.mitre.org/data/definitions/90.html
+        - https://owasp.org/www-community/attacks/LDAP_Injection
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: req.query
+              - pattern: req.params
+              - pattern: req.body
+              - pattern: request.query
+              - pattern: request.params
+              - pattern: request.body
+    pattern-sanitizers:
+      # `ldap-escape` (filter / dn tagged templates + functions) neutralizes the value.
+      - patterns:
+          - pattern-either:
+              - pattern: ldapEscape.filter(...)
+              - pattern: ldapEscape.filter`...`
+              - pattern: ldapescape.filter(...)
+      # A value coerced to a number cannot carry LDAP filter metacharacters.
+      - pattern-either:
+          - pattern: parseInt(...)
+          - pattern: parseFloat(...)
+          - pattern: Number(...)
+    pattern-sinks:
+      # The receiver must be an ldapjs/ldapts client created from the import-resolved
+      # factory in the same scope (excludes redis/supabase/elasticsearch/pg `.search`).
+      # (a) ldapjs — `require('ldapjs').createClient(...)`.
+      - patterns:
+          - pattern: '$C.search($BASE, {..., filter: $FILTER, ...}, ...)'
+          - pattern-inside: |
+              $C = $MK(...)
+              ...
+          - metavariable-pattern:
+              metavariable: $MK
+              pattern: ldapjs.createClient
+          - focus-metavariable: $FILTER
+      # (b) ldapts — `new Client(...)` imported from `ldapts`.
+      - patterns:
+          - pattern: '$C.search($BASE, {..., filter: $FILTER, ...}, ...)'
+          - pattern-inside: |
+              $C = new $MK(...)
+              ...
+          - metavariable-pattern:
+              metavariable: $MK
+              pattern: ldapts.Client
+          - focus-metavariable: $FILTER

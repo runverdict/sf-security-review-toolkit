@@ -121,6 +121,17 @@ that bypass form validation), and the rich-text fields the product
 intentionally renders (those need the sanitizer review, not a reflexive
 finding).
 
+For the XPath (CWE-643) and LDAP (CWE-90) sub-shapes, the toolkit ships its own
+curated Semgrep taint rules (`rules/injection/`, run by `/sf-security-review-toolkit:run-scans`
+Family 7 via `--config`) covering the stacks no OSS pack detects — Python XPath and
+LDAP, Go XPath and LDAP, Node LDAP, and the `xpath` npm evaluation sinks
+(`select`/`select1`/`evaluate`) that njsscan's `parse()`-only rule misses. They are
+`mode: taint` (a real source→sink flow is required, never a bare sink), and each
+collision-prone sink is anchored to its library (receiver type / import / factory) so
+it stays low-FP — but **intra-file / intraprocedural**: a tainted value that crosses a
+function or module boundary before the sink is a false negative for the pack and
+belongs to this dimension's model finder, not to a noisy rule.
+
 ## 4. Finder prompt block
 
 ```

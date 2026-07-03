@@ -1,0 +1,134 @@
+# XPath injection (CWE-643) — Python. Toolkit-authored Semgrep taint rule.
+#
+# Why this rule exists: the OSS security packs (p/security-audit, p/python) ship
+# NO XPath-injection rule for Python, and njsscan/gosec cover other stacks — so a
+# Python partner building XPath queries from HTTP input gets no finding at all.
+# CodeQL covers it but its license bars use on proprietary partner code. This rule
+# closes that gap with a curated taint rule run via `--config`.
+#
+# Scope (honest): Semgrep CE taint is INTRA-FILE / intraprocedural, so this rule is
+# LOW-FP (it requires a real source→sink flow) but MODERATE-FN — a tainted value
+# that crosses a function or module boundary before reaching the XPath sink is not
+# caught here and falls to the LLM residual, not to a noisy bare-sink rule.
+#
+# Low-FP construction: only lxml-distinctive sinks (`.xpath`, `etree.XPath`/`ETXPath`)
+# and ElementTree-distinctive sinks (`.findtext`/`.iterfind`) fire unconditionally.
+# `.find`/`.findall` collide with `str.find` / `re.Pattern.findall`, so they fire ONLY
+# on a receiver produced by an XML parse in the same scope AND not reassigned to a
+# non-parse value before the sink (the reassignment guard kills the str/regex collision).
+rules:
+  - id: python-xpath-injection-taint
+    mode: taint
+    message: >-
+      Untrusted HTTP input flows into an XPath expression. Concatenating
+      request-controlled data into an XPath query allows an attacker to alter the
+      query structure (XPath injection), reading arbitrary nodes from the XML
+      document. Use a parameterized XPath instead — build the query with variable
+      placeholders (e.g. lxml `etree.XPath("...=$v", ...)` bound via `variables=`
+      or a call-time keyword) so the untrusted value is data, never query syntax.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"
+      category: security
+      confidence: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - python
+        - flask
+        - django
+        - lxml
+      references:
+        - https://cwe.mitre.org/data/definitions/643.html
+        - https://owasp.org/www-community/attacks/XPATH_Injection
+    pattern-sources:
+      # Flask (bare `request` imported from flask, and the qualified `flask.request`)
+      # + Django (`request.GET/POST/body`). Tainting the container taints its
+      # `.get(...)` / subscript accessors via Semgrep's field/return propagation.
+      - patterns:
+          - pattern-either:
+              - pattern: flask.request.args
+              - pattern: flask.request.form
+              - pattern: flask.request.values
+              - pattern: flask.request.json
+              - pattern: request.args
+              - pattern: request.form
+              - pattern: request.values
+              - pattern: request.json
+              - pattern: request.GET
+              - pattern: request.POST
+              - pattern: request.body
+    pattern-sanitizers:
+      # A parameterized XPath (values bound through `variables=`) is safe — the
+      # untrusted data is bound as a value, never spliced into the query string.
+      - patterns:
+          - pattern-either:
+              - pattern: etree.XPath(..., variables=...)
+              - pattern: lxml.etree.XPath(..., variables=...)
+      # A value coerced to a number cannot carry XPath metacharacters.
+      - pattern-either:
+          - pattern: int(...)
+          - pattern: float(...)
+    pattern-sinks:
+      # (1) lxml — unambiguous XPath sinks. `.xpath()`, `etree.XPath()` / `.ETXPath()`
+      #     are lxml-specific method/constructor names with no common non-XML collision.
+      - patterns:
+          - pattern-either:
+              - pattern: $EL.xpath($EXPR, ...)
+              - pattern: etree.XPath($EXPR, ...)
+              - pattern: etree.ETXPath($EXPR, ...)
+              - pattern: lxml.etree.XPath($EXPR, ...)
+              - pattern: lxml.etree.ETXPath($EXPR, ...)
+          - pattern-not: $EL.xpath("...", ...)
+          - focus-metavariable: $EXPR
+      # (2) stdlib ElementTree — `.findtext()` / `.iterfind()` take an XPath-subset
+      #     path and are NOT methods on `str` / `bytes` / `re.Pattern`, so no gate is
+      #     needed to stay low-FP.
+      - patterns:
+          - pattern-either:
+              - pattern: $EL.findtext($EXPR, ...)
+              - pattern: $EL.iterfind($EXPR, ...)
+          - focus-metavariable: $EXPR
+      # (3) stdlib ElementTree — `.find()` / `.findall()` collide with `str.find`
+      #     and `re.Pattern.findall`, so they are GATED to a receiver produced by an
+      #     XML parse in the same scope. The `pattern-not-inside` reassignment guard
+      #     drops the case where that variable name is rebound to a str/regex before
+      #     the call (which would otherwise re-open the collision). Trade-off: the
+      #     intra-file scope above (a receiver passed in as a parameter, or built by a
+      #     helper other than the enumerated parse calls, is not gated in and falls to
+      #     the LLM residual).
+      - patterns:
+          - pattern-either:
+              - pattern: $EL.find($EXPR, ...)
+              - pattern: $EL.findall($EXPR, ...)
+          - pattern-inside: |
+              $EL = $PARSE(...)
+              ...
+          - metavariable-pattern:
+              metavariable: $PARSE
+              patterns:
+                - pattern-either:
+                    - pattern: ET.parse
+                    - pattern: ET.fromstring
+                    - pattern: etree.parse
+                    - pattern: etree.fromstring
+                    - pattern: ElementTree.parse
+                    - pattern: ElementTree.fromstring
+          - pattern-not-inside: |
+              $EL = $PARSE(...)
+              ...
+              $EL = $REBIND
+              ...
+          - focus-metavariable: $EXPR
+      # (4) inline-chained parse → find/findall (no intermediate variable to rebind).
+      - patterns:
+          - pattern-either:
+              - pattern: ET.parse(...).find($EXPR, ...)
+              - pattern: ET.parse(...).findall($EXPR, ...)
+              - pattern: ET.fromstring(...).find($EXPR, ...)
+              - pattern: ET.fromstring(...).findall($EXPR, ...)
+              - pattern: etree.parse(...).find($EXPR, ...)
+              - pattern: etree.parse(...).findall($EXPR, ...)
+          - focus-metavariable: $EXPR

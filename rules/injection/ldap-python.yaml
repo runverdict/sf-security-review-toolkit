@@ -1,0 +1,108 @@
+# LDAP injection (CWE-90) — Python. Toolkit-authored Semgrep taint rule.
+#
+# Why this rule exists: the OSS security packs cover Java + C# LDAP injection, but
+# ship NO LDAP-injection rule for Python — a Python partner building an LDAP filter
+# from HTTP input gets no finding. CodeQL covers it but its license bars use on
+# proprietary partner code. This rule closes that gap, run via `--config`.
+#
+# Scope (honest): Semgrep CE taint is INTRA-FILE / intraprocedural — LOW-FP (a real
+# source→sink flow is required) but MODERATE-FN (a cross-function flow into the
+# filter falls to the LLM residual, not to a noisy bare-sink rule).
+#
+# Low-FP construction: `.search()` alone is far too common a method name (Odoo ORM,
+# Elasticsearch, generic repositories, `re.Pattern.search`), so this rule NEVER fires
+# on a bare `.search()`. It fires only on (a) python-ldap's LDAP-EXCLUSIVE `_s`/`_st`
+# method names (`search_s` / `search_ext_s` / `search_st`), or (b) an ldap3 `.search()`
+# whose receiver is created from the IMPORT-RESOLVED `ldap3.Connection(...)` in the same
+# scope (import resolution excludes an in-house class that merely shares the name
+# `Connection`). Sources are matched by framework name (the standard SAST model), so a
+# value from an identically-named non-request object is a residual FP — the same
+# limitation the OSS flask/django rules carry.
+rules:
+  - id: python-ldap-injection-taint
+    mode: taint
+    message: >-
+      Untrusted HTTP input flows into an LDAP search filter. Concatenating
+      request-controlled data into an LDAP filter allows an attacker to alter the
+      filter structure (LDAP injection) and read or bypass directory records.
+      Escape the untrusted value with `ldap.filter.escape_filter_chars` (python-ldap)
+      or `ldap3.utils.conv.escape_filter_chars` before building the filter.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-90: Improper Neutralization of Special Elements used in an LDAP Query ('LDAP Injection')"
+      category: security
+      confidence: MEDIUM
+      subcategory:
+        - vuln
+      technology:
+        - python
+        - flask
+        - django
+        - ldap
+      references:
+        - https://cwe.mitre.org/data/definitions/90.html
+        - https://owasp.org/www-community/attacks/LDAP_Injection
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: flask.request.args
+              - pattern: flask.request.form
+              - pattern: flask.request.values
+              - pattern: flask.request.json
+              - pattern: request.args
+              - pattern: request.form
+              - pattern: request.values
+              - pattern: request.json
+              - pattern: request.GET
+              - pattern: request.POST
+              - pattern: request.body
+    pattern-sanitizers:
+      # A value routed through an LDAP filter escaper is neutralized.
+      - patterns:
+          - pattern-either:
+              - pattern: ldap.filter.escape_filter_chars(...)
+              - pattern: filter.escape_filter_chars(...)
+              - pattern: escape_filter_chars(...)
+              - pattern: ldap3.utils.conv.escape_filter_chars(...)
+              - pattern: ldap3.utils.conv.escape_bytes(...)
+              - pattern: conv.escape_filter_chars(...)
+              - pattern: escape_bytes(...)
+      # A value coerced to a number cannot carry LDAP filter metacharacters.
+      - pattern-either:
+          - pattern: int(...)
+          - pattern: float(...)
+    pattern-sinks:
+      # (1) python-ldap — LDAP-EXCLUSIVE method names (the `_s`/`_st` synchronous API).
+      #     The filter is the 3rd positional arg (`search_s(base, scope, filterstr, ...)`)
+      #     or the `filterstr=` keyword. These names collide with nothing common, so no
+      #     receiver gate is needed. (The bare `search_ext`, without the `_s` suffix, is
+      #     omitted — it is a plausible non-LDAP method name; `search_s`/`search_ext_s`/
+      #     `search_st` are the python-ldap-distinctive forms.)
+      - patterns:
+          - pattern-either:
+              - pattern: $CONN.search_s($BASE, $SCOPE, $FILTER, ...)
+              - pattern: $CONN.search_ext_s($BASE, $SCOPE, $FILTER, ...)
+              - pattern: $CONN.search_st($BASE, $SCOPE, $FILTER, ...)
+              - pattern: $CONN.search_s(..., filterstr=$FILTER, ...)
+              - pattern: $CONN.search_ext_s(..., filterstr=$FILTER, ...)
+              - pattern: $CONN.search_st(..., filterstr=$FILTER, ...)
+          - focus-metavariable: $FILTER
+      # (2) ldap3 — the generic `.search()` is gated to a receiver created from the
+      #     IMPORT-RESOLVED `ldap3.Connection(...)` in the same scope, so a benign
+      #     Odoo/Elasticsearch/repo/in-house `Connection.search()` never fires (Semgrep's
+      #     Python import resolution distinguishes `ldap3.Connection` from a same-named
+      #     class imported elsewhere). The filter is the 2nd positional arg or
+      #     `search_filter=`.
+      - patterns:
+          - pattern-either:
+              - pattern: $CONN.search($BASE, $FILTER, ...)
+              - pattern: $CONN.search(..., search_filter=$FILTER, ...)
+          - pattern-inside: |
+              $CONN = $MK(...)
+              ...
+          - metavariable-pattern:
+              metavariable: $MK
+              pattern: ldap3.Connection
+          - focus-metavariable: $FILTER
