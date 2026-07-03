@@ -10,12 +10,12 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.56**, suite **62 files / 882 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.57**, suite **62 files / 885 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
-- **B5 is being RE-SCOPED (2026-07-03)** from the original 4-slice list into a broader enterprise-grade
-  engine buildout (cross-cutting taint/reachability + Salesforce-metadata exposure engines + the named
-  classes + completeness-audit misses). ReDoS (0.8.56) shipped under the original framing; the rest of
-  the B5 section below is superseded by the re-scope in progress.
+- **B5 was RE-SCOPED (2026-07-03)** from the original 4-slice list into a tiered enterprise-grade engine
+  buildout (cross-cutting reachability/exposure enablers + the named classes + completeness-audit misses).
+  Shipped since: ReDoS (0.8.56), E0.1 reachability-path ingest (0.8.57). The B5 section below is the
+  current source of truth; the Tier-0 sequence starts at E0.1b.
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
@@ -354,17 +354,15 @@ is substrate; the trust-model GROUNDING of the path's source is residual. North 
 deterministic substrate maximized + a labelled semantic residual, NOT literal 100%.
 
 #### Tier 0 — cross-cutting enablers (build FIRST; each unlocks several classes; zero/low new tooling, near-zero FP)
-- **E0.1 — reachability-path ingest (THE next slice).** *WIRE — ingest upgrade, no new tool.* Verified
-  off disk: `semgrepAdapter` reads only `extra.severity/message` + `r.path/start.line` and **discards
-  `extra.dataflow_trace` entirely** — the source→sink path is already in captured output today and thrown
-  away. Parse it into a first-class `reachabilityPath` finding attribute (Semgrep `extra.dataflow_trace`
-  = `{taint_source, intermediate_vars[], taint_sink}`; SARIF `codeFlows[].threadFlows[].locations[]`;
-  SFGE entry-point→DML vertices — normalize all into one shape). Moves `reachable` from an LLM residual
-  to a deterministic ATTRIBUTE across injection-xss, prompt-injection, DoW, deserialization,
-  sessionid-egress, SSRF. Residual: trust grounding of the source + sanitizer adequacy. `classify()`
-  unchanged (still `null` — this adds an attribute, not a class). Near-zero FP (it's the engine's own
-  computed path). Standing test: a fixture with a known source→sink path asserts the path is captured
-  and no existing `external-sast` row regresses.
+- ~~**E0.1 — reachability-path ingest**~~ **DONE (0.8.57)** — the Semgrep adapter now captures
+  `extra.dataflow_trace` (source→intermediate→sink, locations only — matched-content strings dropped) as
+  a `reachabilityPath` attribute + `reachable:true`, purely additive (absent/malformed trace → no
+  attribute, trace-less findings byte-identical; `classify()` unchanged). `templates/audit-ledger.schema.json`
+  gained the optional properties (finding is `additionalProperties:false`). Graded off disk: RP1/RP2/RP3
+  + mutation, independently reproduced. **Note for later slices:** newer Semgrep CLIs omit
+  `dataflow_trace` from `--json` (text/SARIF only), and run-scans Family 7 doesn't yet pass
+  `--dataflow-traces` — wiring that flag / the Opengrep engine is E0.2's job. SARIF `codeFlows` + SFGE
+  entry-point→DML vertices remain the other normal-form inputs to fold in as those engines land.
 - **E0.1b — ingest-ROUTING fix (cheap, high-value; pairs with E0.1).** *WIRE — reclassify already-
   captured findings.* Scanner output for SOQLi/XSS (Code Analyzer), pickle/yaml/XXE (bandit B301/B506,
   semgrep, njsscan) and `getSessionId` retrieval (Code Analyzer) ALREADY fires but is tagged class-less
@@ -478,9 +476,10 @@ adapter the toolkit cannot install, run, or validate for its own users is pure l
 not offered in any form), Snyk Code (commercial + ML-nondeterministic — violates the determinism
 contract), promptmap (GPL-3.0 — never vendor).
 
-#### Recommended sequence (ReDoS DONE; each slice one-at-a-time, test-backed, Fable-5-safe scaffold prepended)
-1. **E0.1 reachability-path ingest** (+ **E0.1b routing fix** — pair them; cheapest, zero new tools,
-   near-zero FP; unlocks the rest).
+#### Recommended sequence (each slice one-at-a-time, test-backed)
+1. ~~**E0.1 reachability-path ingest**~~ **DONE (0.8.57).** Next: **E0.1b routing fix** (reclassify the
+   already-captured SOQLi/XSS/deser/sessionid findings to their dimensions; cheapest, zero new tools,
+   near-zero FP; `classify()=null` on the multi-shape dimensions).
 2. **T1.1 prompt-injection reachability** (custom LLM-SDK / MCP / SF-write-back sink overlay on the E0.1 edge).
 3. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point).
 4. **E0.3 guest-exposure mapper** (novel cold-install source-scanner; highest novel value, no running
