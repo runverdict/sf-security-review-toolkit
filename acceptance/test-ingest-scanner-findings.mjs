@@ -24,13 +24,20 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 11 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy + source-scanner: metadata-viewall).
+ *   AD — the pluggable adapter registry: 12 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit + source-scanner: metadata-viewall).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
  *        npm-audit dependency-CVE Extension-A reuse, label-only band · trivy IaC-misconfig config-mode,
  *        REUSES checkov's iac-misconfig class at class-severity — Trivy's own Severity recorded for reference only).
+ *   RD — the regexploit ReDoS adapter (residual-shrinking · B5 #1, 0.8.56): the FIRST format-C (non-JSON)
+ *        adapter — parses the tool's VERBATIM text (blocks, line loci, multi-record worst-degree), bands via
+ *        REDOS_DEGREE_TO_FINDING (exponential→high · polynomial→medium · unknown→medium, never blocker),
+ *        gated by resource-consumption-abuse; classify()→null is THE design decision, locked by the
+ *        RD-non-supersession check (a co-located llm-inferred resource-consumption-abuse finding is NOT
+ *        superseded — the dimension is multi-shape, so an owned class here would silence rate-limit /
+ *        denial-of-wallet findings; mutation-proven).
  *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
  *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
  *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
@@ -60,6 +67,7 @@ import {
   osvAdapter,
   npmAuditAdapter,
   trivyAdapter,
+  regexploitAdapter,
   ADAPTERS,
   classSeverity,
   baselineSeverityFor,
@@ -76,10 +84,12 @@ import {
   CVSS_SCORE_TO_FINDING,
   OSV_LABEL_TO_FINDING,
   NPM_SEVERITY_TO_FINDING,
+  REDOS_DEGREE_TO_FINDING,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
 import { reconcileProvenance } from '../harness/reconcile-provenance.mjs'
+import { sameLocation } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'ingest-scanner-findings.mjs')
@@ -96,9 +106,11 @@ const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect
 const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 source (mcp/requirements.txt), 3 PyPI pkgs, 11 vulns (1 critical h11 / 3 high / 6 medium / 1 low starlette)
 const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --json` v2: 4 vulnerable pkgs (body-parser/express/path-to-regexp/qs), moderate×2 + high×2
 const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 filesystem scan: 1 Class:'config' Result, 1 FAIL misconfig (DS-0026 No HEALTHCHECK, Severity LOW, no StartLine — the IaC anchor, class-severity high)
+const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VERBATIM stdout (format C — text, not JSON) over seeded vulnerable py/js: 4 blocks — (a+)+$ exp @server.py:3 + (.*)*x exp @:4 + a*a*a*$ cubic @:5 (Context lines) + (x+)+y(z+)+w exp @validate.js:1 (JS: no Context, TWO Redos records in ONE block), with a mid-file "Processed N regexes" trailer between the two tools' outputs
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
+const readText = (p) => readFileSync(p, 'utf8')
 const clone = (o) => JSON.parse(JSON.stringify(o))
 
 let pass = 0
@@ -470,8 +482,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 11 adapters (trivy added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'semgrep', 'trivy'])
+check('AD1 registry has 12 adapters (regexploit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'osv', 'regexploit', 'semgrep', 'trivy'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
@@ -483,6 +495,7 @@ check('AD1 registry has 11 adapters (trivy added), both KINDS, each {name,kind,c
   assert.equal(ADAPTERS['osv'].kind, 'file-parser')
   assert.equal(ADAPTERS['npm-audit'].kind, 'file-parser')
   assert.equal(ADAPTERS['trivy'].kind, 'file-parser')
+  assert.equal(ADAPTERS['regexploit'].kind, 'file-parser')
   for (const a of Object.values(ADAPTERS)) {
     for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof a[m], 'function', `${a.name}.${m}`)
     assert.equal(typeof a.name, 'string')
@@ -2426,6 +2439,207 @@ check('TRV-CLI-merge: --scanner trivy writes the deterministic finding to the ta
   assert.equal(l2.findings.filter((f) => f.engine === 'trivy').length, 1) // idempotent — no duplicate
 })
 
+// ───────────────────────────────── regexploit ReDoS adapter (RD*) — residual-shrinking · B5 #1 (0.8.56)
+// The FIRST format-C (non-JSON) adapter: regexploit emits VERBATIM text only, so the evidence file IS the
+// tool's stdout, `--all` (JSON-only enumeration) does not auto-recognize it (documented), and the explicit
+// `--scanner regexploit --input` path ingests it. Tool→band from the ambiguity DEGREE
+// (REDOS_DEGREE_TO_FINDING: exponential→high · polynomial→medium · unknown→medium — NEVER critical/blocker
+// from the tool alone; reachability is the labelled residual). THE DESIGN DECISION under standing guard:
+// classify()→null — resource-consumption-abuse is a MULTI-SHAPE dimension and sameOwnedClass falls back to
+// a dimension match, so an owned class here would supersede co-located rate-limit / denial-of-wallet LLM
+// findings (RD-non-supersession is the lock; its mutation — an owned class — turns it red). The fixture is
+// genuine regexploit 1.0.0 output over seeded vulnerable py/js (3 py blocks with Context + 1 js block with
+// no Context and TWO Redos records; a "Processed N regexes" trailer sits mid-file between the two tools).
+const ingestRedos = (raw) => ingest(raw === undefined ? readText(REDOS) : raw, regexploitAdapter, { repoRoot: '', pass: 1 })
+
+check('RD-determinism: ingest the real regexploit fixture twice → byte-identical findings', () => {
+  const a = ingestRedos().findings
+  const b = ingestRedos().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+  assert.equal(a.length, 4)
+})
+
+check('RD-count: the real fixture → exactly 4 findings (3 exponential high + 1 cubic medium), all regexploit/resource-consumption-abuse/deterministic/no-class', () => {
+  const fs = ingestRedos().findings
+  assert.equal(fs.length, 4)
+  assert.ok(fs.every((f) => f.engine === 'regexploit' && f.provenance === 'deterministic'))
+  assert.ok(fs.every((f) => f.dimension === 'resource-consumption-abuse'))
+  assert.ok(fs.every((f) => !('class' in f)), 'no regexploit finding ever carries an owned class')
+  assert.deepEqual(fs.map((f) => f.adjusted_severity).sort(), ['high', 'high', 'high', 'medium'])
+})
+
+check('RD-anchor-exponential: (a+)+$ @ api/server.py:3 → HIGH from the exponential degree; CWE-1333 + the RCA gate (major) in the reasoning; the pattern (code, not user data) in the title', () => {
+  const f = ingestRedos().findings.find((x) => x.file === 'api/server.py:3')
+  assert.ok(f, 'the exponential anchor exists at api/server.py:3 (the #3 suffix IS the source line)')
+  assert.equal(f.severity, 'high')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.match(f.ruleId, /^redos-[0-9a-f]{16}$/) // deterministic pattern derivation, no tool rule ids
+  assert.ok(f.title.includes('(a+)+$') && f.title.includes('exponential'), 'pattern + degree in the title')
+  assert.match(f.verdict_reasoning, /regex ambiguity exponential → high/)
+  assert.match(f.verdict_reasoning, /gated by resource-consumption-abuse \(major\)/) // the RCA gate, NOT scan-external-sast
+  assert.match(f.verdict_reasoning, /cwe\.mitre\.org\/data\/definitions\/1333/)
+  assert.equal(f.status, 'confirmed')
+  assert.equal(f.verdict, 'confirmed_real')
+})
+
+check('RD-anchor-polynomial: a*a*a*$ @ api/server.py:5 (cubic) → MEDIUM — a polynomial degree is never high, never dropped', () => {
+  const f = ingestRedos().findings.find((x) => x.file === 'api/server.py:5')
+  assert.ok(f, 'the cubic anchor exists')
+  assert.equal(f.adjusted_severity, 'medium')
+  assert.ok(f.title.includes('cubic'))
+  assert.match(f.verdict_reasoning, /regex ambiguity cubic → medium/)
+})
+
+check('RD-multi-record: the JS block (x+)+y(z+)+w carries TWO Redos records → ONE finding (one vulnerable regex at one locus), banded from the worst record', () => {
+  const js = ingestRedos().findings.filter((x) => x.file.startsWith('api/validate.js'))
+  assert.equal(js.length, 1, 'two Worst-case-complexity records in one block collapse to one finding')
+  assert.equal(js[0].file, 'api/validate.js:1')
+  assert.equal(js[0].adjusted_severity, 'high')
+  assert.ok(js[0].title.includes('(x+)+y(z+)+w'))
+})
+
+check('RD-degree-map: REDOS_DEGREE_TO_FINDING is exactly exponential→high + the 10 polynomial degrees→medium; an unknown degree (?) → medium via parse, never dropped', () => {
+  assert.equal(REDOS_DEGREE_TO_FINDING.exponential, 'high')
+  const poly = ['linear', 'quadratic', 'cubic', 'quartic', 'quintic', 'sextic', 'septic', 'octic', 'nonic', 'decic']
+  for (const d of poly) assert.equal(REDOS_DEGREE_TO_FINDING[d], 'medium', `${d} → medium`)
+  assert.deepEqual(Object.keys(REDOS_DEGREE_TO_FINDING).sort(), [...poly, 'exponential'].sort())
+  assert.ok(!Object.values(REDOS_DEGREE_TO_FINDING).some((v) => v === 'critical'), 'never critical/blocker from the tool alone')
+  // an unknown degree word (regexploit prints "(?)" for starriness ≤ 0) still ingests at medium
+  const synth = 'Vulnerable regex in a.py #7\nPattern: x*\n---\nWorst-case complexity: 1 ⭐ (?)\n'
+  const { findings } = ingestRedos(synth)
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].adjusted_severity, 'medium')
+  assert.match(findings[0].verdict_reasoning, /regex ambiguity \? → medium/)
+})
+
+check('RD-stable-ruleId: the ruleId is a deterministic derivation from the PATTERN — same pattern in two files → same ruleId but distinct ids (distinct loci); matches the fixture anchor', () => {
+  const synth =
+    'Vulnerable regex in a.py #1\nPattern: (a+)+$\n---\nWorst-case complexity: 11 ⭐ (exponential)\n\n' +
+    'Vulnerable regex in b.py #2\nPattern: (a+)+$\n---\nWorst-case complexity: 11 ⭐ (exponential)\n'
+  const { findings } = ingestRedos(synth)
+  assert.equal(findings.length, 2)
+  assert.equal(findings[0].ruleId, findings[1].ruleId, 'same pattern → same deterministic ruleId')
+  assert.notEqual(findings[0].id, findings[1].id, 'distinct loci → distinct finding ids')
+  const anchor = ingestRedos().findings.find((x) => x.file === 'api/server.py:3')
+  assert.equal(findings[0].ruleId, anchor.ruleId, 'the derivation is stable across inputs/runs (no timestamps)')
+})
+
+check('RD-no-class / classify: classify() is the constant null (THE design decision), no securityRelevant, findings carry no class', () => {
+  assert.equal(regexploitAdapter.classify('anything'), null)
+  assert.equal(regexploitAdapter.classify('redos-abc'), null)
+  assert.equal(regexploitAdapter.securityRelevant, undefined) // every reported block is an ambiguous regex
+  assert.ok(ingestRedos().findings.every((f) => !('class' in f)))
+})
+
+check('RD-non-supersession (the design-decision standing lock): a co-located llm-inferred resource-consumption-abuse finding (no class — a missing-rate-limit shape) is NOT superseded after ingest + reconcile', () => {
+  const det = ingestRedos().findings.find((x) => x.file === 'api/server.py:3')
+  assert.ok(det && det.provenance === 'deterministic')
+  // an llm-inferred RCA finding of a DIFFERENT SHAPE (missing rate limit), same file, overlapping lines
+  const llm = {
+    id: '3'.repeat(16),
+    dimension: 'resource-consumption-abuse',
+    title: 'No rate limit on the token-validation endpoint',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'api/server.py:1-40', // overlaps det's :3
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned the endpoint is unmetered',
+  }
+  // PRECONDITIONS that WOULD fire supersession if the adapter owned a class: same dimension + same locus.
+  // Asserting them makes the guard sharp — the ONLY missing ingredient is the owned class (classify()→null).
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM rate-limit finding is NOT superseded — the ReDoS row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // the guard itself, asserted LAST so a class-owning mutation fails first at "superseded === 0"
+  // (the supersession visibly FIRES), proving the protection is the null classify, not an accident
+  assert.equal('class' in det, false, 'no owned class on the deterministic finding')
+})
+
+check('RD-fail-safe: collect() missing/empty → null; parse over every degenerate + parsed-JSON shape → []/skip (a block missing Pattern or complexity is dropped); ingest(null) → 0 + honest note', () => {
+  assert.equal(regexploitAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-redos.txt') }), null)
+  const emptyP = join(tmpdir(), `redos-empty-${process.pid}.txt`)
+  writeFileSync(emptyP, '   \n')
+  assert.equal(regexploitAdapter.collect({ input: emptyP }), null)
+  rmSync(emptyP, { force: true })
+  // parse is format-C: only a marker-carrying STRING yields hits; parsed-JSON shapes are honest []
+  assert.deepEqual(regexploitAdapter.parse(null), [])
+  assert.deepEqual(regexploitAdapter.parse({}), [])
+  assert.deepEqual(regexploitAdapter.parse([]), [])
+  assert.deepEqual(regexploitAdapter.parse(42), [])
+  assert.deepEqual(regexploitAdapter.parse('Processed 12 regexes\n'), []) // a clean run — no blocks
+  assert.deepEqual(regexploitAdapter.parse('{"results":[]}'), []) // JSON text is not the regexploit format
+  // a header with no Pattern line, and a header+Pattern with no complexity line → both dropped, no crash
+  assert.deepEqual(regexploitAdapter.parse('Vulnerable regex in a.py #1\n---\n'), [])
+  assert.deepEqual(regexploitAdapter.parse('Vulnerable regex in a.py #1\nPattern: (a+)+$\n---\n'), [])
+  // a header with NO #line (stdin scans) still ingests, with a bare-file locus
+  const noLine = ingestRedos('Vulnerable regex in a.py\nPattern: (a+)+$\n---\nWorst-case complexity: 11 ⭐ (exponential)\n').findings
+  assert.equal(noLine.length, 1)
+  assert.equal(noLine[0].file, 'a.py')
+  const { findings, notes } = ingestRedos(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('RD-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '4'.repeat(16),
+    dimension: 'resource-consumption-abuse',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'medium',
+    adjusted_severity: 'medium',
+    file: 'api/other.py:9',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const rd = ingestRedos().findings
+  const r1 = mergeFindings(ledger, rd, 1)
+  assert.equal(r1.added, 4)
+  assert.equal(ledger.findings.length, 5) // 1 llm + 4 regexploit
+  const r2 = mergeFindings(ledger, rd, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 5) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '4'.repeat(16) && !('provenance' in f)))
+})
+
+check('RD-schema: a regexploit finding (no class, dimension resource-consumption-abuse) validates against $defs/finding', () => {
+  for (const f of ingestRedos().findings) assert.deepEqual(validateFinding(f), [])
+})
+
+check('RD-CLI: --scanner regexploit --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync('node', [CLI, '--scanner', 'regexploit', '--input', REDOS, '--json', '--dry-run'], {
+    encoding: 'utf8',
+  })
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'regexploit')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.findings.length, 4)
+  assert.ok(parsed.findings.some((f) => f.file === 'api/server.py:3' && f.adjusted_severity === 'high'))
+  assert.ok(parsed.findings.some((f) => f.file === 'api/server.py:5' && f.adjusted_severity === 'medium'))
+})
+
+check('RD-CLI-merge: --scanner regexploit writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-redos-'))
+  dirs.push(d)
+  execFileSync('node', [CLI, '--scanner', 'regexploit', '--input', REDOS, '--target', d], { encoding: 'utf8' })
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  const l1 = readJSON(lp)
+  assert.equal(l1.findings.filter((f) => f.engine === 'regexploit').length, 4)
+  execFileSync('node', [CLI, '--scanner', 'regexploit', '--input', REDOS, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'regexploit').length, 4) // idempotent — no duplicates
+})
+
 // ───────────────────────────────── recognizer (RC*) — content-shape routing for --all
 // Drives recognizeScanner() on the REAL committed fixtures + synthetic non-adapter shapes. The
 // shapes are provably disjoint (40/40 on real evidence); these guards lock that contract so a
@@ -2449,6 +2663,22 @@ check('RC-each: every committed fixture recognizes as its OWN adapter (content s
   // the second code-analyzer (SFGE) + the second semgrep (helios) fixtures also route correctly
   assert.equal(recognizeScanner(readJSON(SFGE)), 'code-analyzer')
   assert.equal(recognizeScanner(readJSON(SEMGREP_ERR)), 'semgrep')
+  // the format-C TEXT fixture (0.8.56): a STRING shape, provably disjoint from every JSON adapter
+  // by construction (all 11 other detects require an object/array) — a single match, never ambiguous.
+  assert.equal(recognizeScanner(readText(REDOS)), 'regexploit')
+})
+
+check('RC-regexploit-honest-false: detect() is false for EVERY parsed-JSON shape (the --all path never routes a JSON file to the text adapter) and for a marker-less string', () => {
+  // every committed JSON fixture → false (format C: --all JSON-parses evidence before recognition,
+  // so the regexploit detect can only ever see parsed JSON there — and honestly declines it all)
+  for (const path of [...Object.values(RC_FIXMAP), SFGE, SEMGREP_ERR]) {
+    assert.equal(regexploitAdapter.detect(readJSON(path)), false, `${path} → false`)
+  }
+  assert.equal(regexploitAdapter.detect({}), false)
+  assert.equal(regexploitAdapter.detect([]), false)
+  assert.equal(regexploitAdapter.detect(null), false)
+  assert.equal(regexploitAdapter.detect('Processed 12 regexes\n'), false) // a clean run carries no block markers
+  assert.equal(recognizeScanner('Processed 12 regexes\n'), null) // ...so the recognizer honestly declines it too
 })
 
 check('RC-empty: a clean (results:[]) scan is STILL recognized as its scanner (honest accounting)', () => {
@@ -2585,6 +2815,26 @@ check('ALL5 secret-never-leaks holds THROUGH --all — no secret/PII/hash token 
   for (const re of [/AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /ghp_[A-Za-z0-9]{20,}/, /xox[baprs]-[A-Za-z0-9-]{10,}/]) {
     assert.ok(!re.test(ledgerText), `no secret matching ${re} in the ledger`)
   }
+})
+
+check('ALL6 format-C evidence (0.8.56): redos-*.txt is invisible to --all (JSON-only enumeration — no crash, no row); the same text misnamed .json is skipped HONESTLY as unparseable; the explicit --scanner path ingests it', () => {
+  const T = setupAllTarget()
+  const ev = join(T, '.security-review', 'evidence')
+  writeFileSync(join(ev, 'redos-2026-07-03.txt'), readText(REDOS))
+  writeFileSync(join(ev, 'redos-misnamed-2026-07-03.json'), readText(REDOS)) // an operator misnaming the text .json
+  const out = runAll(T)
+  // the .txt is not even enumerated (documented format-C limitation) — no findings, no scanner row, no skip row
+  assert.ok(!out.findings.some((f) => f.engine === 'regexploit'), 'no regexploit findings via --all')
+  assert.ok(!out.scanners.some((s) => s.scanner === 'regexploit'), 'no regexploit scanner row via --all')
+  assert.ok(!out.skipped.some((s) => /redos-2026-07-03\.txt/.test(s.file || '')), 'the .txt is outside the *.json enumeration')
+  // the misnamed .json IS enumerated and skipped honestly (never guessed, never crashes the pass)
+  const sk = out.skipped.find((s) => s.file === 'evidence/redos-misnamed-2026-07-03.json')
+  assert.ok(sk && /not valid JSON|unparseable JSON/.test(`${sk.reason}`), 'the misnamed text is an honest unparseable-JSON skip')
+  // the documented ingest route: the explicit --scanner form lands all 4 findings in the SAME ledger
+  execFileSync('node', [CLI, '--scanner', 'regexploit', '--input', join(ev, 'redos-2026-07-03.txt'), '--target', T], { encoding: 'utf8' })
+  const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
+  assert.equal(ledger.findings.filter((f) => f.engine === 'regexploit').length, 4)
+  assert.ok(ledger.findings.every((f) => f.engine !== 'regexploit' || !('class' in f)))
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

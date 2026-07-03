@@ -51,6 +51,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.56] — 2026-07-03
+
+**ReDoS joins the deterministic band: the catastrophic-regex pattern substrate of
+`resource-consumption-abuse` is now scanner-proven, leaving reachability as the labelled
+residual.** The baseline entry's own automation note ("catastrophic regex patterns are
+statically detectable") is now true mechanically: run-scans Family 7 gains a ReDoS leg —
+**regexploit** (pip; `regexploit-py` for Python, `regexploit-js` for JS/TS after the one-time
+`npm install` the tool itself prints) runs over every detected non-package language root, and a
+new `regexploit` ingest adapter lands each vulnerable pattern as a `provenance:'deterministic'`
+finding with its real `file:line` locus. The band comes from the tool's regex-ambiguity degree
+(`REDOS_DEGREE_TO_FINDING`: exponential → high; the polynomial degrees → medium; an unknown
+degree → medium) and is deliberately never critical/blocker from the tool alone — the scanner
+proves the PATTERN backtracks catastrophically; whether attacker-controlled input reaches it
+stays the audit's judgment, and the dimension doc now says exactly that at its ReDoS bullet.
+Each finding is gated by `resource-consumption-abuse` (major), carries a CWE-1333 reference,
+and gets a deterministic `ruleId` derived from the pattern (`redos-<sha16>`) — same repo +
+pinned tool → byte-identical findings.
+
+**The finding sits beside, never silences, the dimension's other findings.** The adapter owns
+no toolkit class (`classify()` → null, the semgrep/bandit posture — not the gitleaks one):
+`resource-consumption-abuse` is a multi-shape dimension (rate limits, denial-of-wallet,
+algorithmic amplification), and the supersession engine's dimension-fallback match means a
+class-owning ReDoS finding would have demoted a co-located rate-limit or denial-of-wallet
+finding in the same file. A standing test locks the property — a co-located
+`resource-consumption-abuse` LLM finding survives ingest + reconcile unchanged — and two rows
+for the same regex (one deterministic, one pre-existing LLM) remain the documented safe
+under-merge.
+
+**Format C, honestly.** regexploit emits human-readable text only (no JSON output exists in the
+tool), so the evidence file is its VERBATIM stdout (`evidence/redos-<date>.txt`) — never a
+wrapper format that re-writes tool output. The `--all` ingest enumerates `evidence/*.json`, so
+it does not auto-recognize the ReDoS evidence (a documented limitation); the explicit
+`--scanner regexploit --input` form is the ingest route, stated where Family 7 and the scan-tail
+ingest are narrated. The adapter's content-shape recognizer matches only the raw text shape and
+declines every parsed-JSON shape, so recognizer disjointness holds across all twelve adapters.
+Cold-install wiring rides the existing paths: `regexploit` joins `PIP_TOOLS` and the
+`external-sast` tool-detect family (membership lines only — no executor change, no new consent
+surface). `buildFinding`/`ingest`/`CLASS_DEFS` and every existing adapter are byte-unchanged.
+
+Suite **62 files / 882 checks** (was 864), all green — adapter unit + degree-map, the
+non-supersession lock, recognizer disjointness over every committed fixture including the new
+genuine regexploit capture, `--all` format-C skip behavior, and the cold-install membership
+checks. Mutation-proven twice: breaking the degree map turns the band checks red, and giving
+the adapter an owned class turns the non-supersession lock red.
+
 ## [0.8.55] — 2026-07-03
 
 **The artifact phase's drafted content is now written by a deterministic harness that

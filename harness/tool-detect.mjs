@@ -61,6 +61,10 @@ const FAMILIES = [
       { name: 'bandit', bins: ['bandit'], install: 'pip', hint: 'pip install bandit (Python)' },
       { name: 'njsscan', bins: ['njsscan'], install: 'pip', hint: 'pip install njsscan (Node)' },
       { name: 'gosec', bins: ['gosec'], install: 'binary', hint: 'download the gosec release binary (Go)' },
+      // the ReDoS leg (Family 7): pip installs the `regexploit` package, whose file/dir scanners are
+      // regexploit-py (Python) + regexploit-js (JS/TS; one-time npm install inside the package — the
+      // tool prints the exact command). The pip-verified bin is plain `regexploit` (stdin patterns).
+      { name: 'regexploit', bins: ['regexploit-py', 'regexploit-js', 'regexploit'], install: 'pip', hint: 'pip install regexploit (ReDoS — catastrophic-backtracking regex)' },
     ],
   },
   {

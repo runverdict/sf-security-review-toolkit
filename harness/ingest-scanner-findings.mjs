@@ -92,6 +92,24 @@
  *                       for reference, never moving the band) — a per-tool-severity refinement for `iac-misconfig`
  *                       (Checkov + Trivy both) is the same Phase-2b item flagged at Checkov. Trivy + Checkov flag the
  *                       SAME Dockerfile misconfig (DS-0026 ↔ CKV_DOCKER_2) → two visible rows; collapsing = §10 ext #3.
+ *                     Adapter #12 (residual-shrinking · B5 #1): `regexploit` (ReDoS / catastrophic-
+ *                       backtracking-regex TEXT output; engine:'regexploit') — the FIRST format-C
+ *                       (non-JSON) adapter. regexploit emits human-readable text ONLY (its output/
+ *                       text.py is the package's only writer — no JSON/JSONL exists), so the evidence
+ *                       file is the tool's VERBATIM stdout (evidence/redos-<date>.txt), this adapter
+ *                       parses that format, and `--all` (which enumerates evidence/*.json and
+ *                       JSON-parses each) does NOT auto-recognize it — a DOCUMENTED limitation that
+ *                       beats a lossy wrapper format; the explicit `--scanner regexploit --input`
+ *                       path ingests it. `detect(raw)` matches only the raw TEXT shape (a string
+ *                       carrying the tool's own markers) and is an honest false for every parsed-JSON
+ *                       shape. Tool→band via REDOS_DEGREE_TO_FINDING (exponential → high; polynomial
+ *                       degrees → medium; unknown → medium) — NEVER critical/blocker from the tool
+ *                       alone: the scanner proves the PATTERN is catastrophic, and whether attacker-
+ *                       controlled input REACHES it is the reachability residual (the semgrep
+ *                       ERROR→high ceiling precedent). classify()→null — see the adapter comment for
+ *                       WHY owning a class here would be a correctness hazard (resource-consumption-
+ *                       abuse is a MULTI-SHAPE dimension). Gated by `resource-consumption-abuse`
+ *                       (the RCA baseline id, major — the osv gateLabel-param precedent).
  *   - source-scanner — collect() greps the repo source directly (no external tool).
  *                     Adapter #2: `metadata-viewall` (engine:'metadata') — scans
  *                     permissionsets/*.permissionset-meta.xml for ViewAll/ModifyAll
@@ -130,6 +148,9 @@
  *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner npm-audit       --input npm-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner trivy           --input trivy.json          --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner regexploit      --input redos.txt           --target <repo> [--json] [--dry-run] [--pass N]
+ *     (regexploit evidence is VERBATIM text, not JSON — the --all mode below does not auto-recognize
+ *      it; this explicit form is the ingest path for the ReDoS leg. See adapter #12.)
  *
  *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
  *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs metadata-viewall (source scan) +
@@ -253,6 +274,32 @@ export const OSV_LABEL_TO_FINDING = { CRITICAL: 'critical', HIGH: 'high', MODERA
 // ADAPTERS registry line — and is gated by `scan-dependency-vulnerabilities` (applies_to all, major), the npm-deps
 // gate (distinct from OSV's scan-external-sca; both major).
 export const NPM_SEVERITY_TO_FINDING = { critical: 'critical', high: 'high', moderate: 'medium', low: 'low', info: 'info' }
+// regexploit's per-pattern ambiguity degree (residual-shrinking · B5 #1 — the ReDoS scanner, run-scans
+// Family 7 leg over every non-package language root). regexploit derives a `starriness` per ambiguous
+// regex and prints its degree word: `exponential` (starriness > 10) or a polynomial-degree word
+// (`linear`…`decic` for starriness 1–10; the tool only REPORTS starriness > 2, i.e. cubic and up, but
+// the full scale is mapped so a future tool version reporting lower degrees still bands honestly).
+// The map is the DEGREE → finding band: an exponential (catastrophic) pattern is `high`; a polynomial
+// pattern is `medium`; an unknown/unparseable degree falls through to `medium` in the adapter (a
+// scanner-proven ambiguous regex of unknown degree is still real — the conservative middle, the same
+// judgment call as OSV's unscored CVE). DELIBERATE ceiling, same calibration as semgrep ERROR→high:
+// NEVER critical/blocker from the tool alone — regexploit proves the PATTERN backtracks
+// catastrophically; whether attacker-controlled input REACHES it is a reachability judgment that
+// belongs to the LLM/human residual (the resource-consumption-abuse dimension's own rule: "the regex
+// must be both catastrophic and fed untrusted input").
+export const REDOS_DEGREE_TO_FINDING = {
+  exponential: 'high',
+  linear: 'medium',
+  quadratic: 'medium',
+  cubic: 'medium',
+  quartic: 'medium',
+  quintic: 'medium',
+  sextic: 'medium',
+  septic: 'medium',
+  octic: 'medium',
+  nonic: 'medium',
+  decic: 'medium',
+}
 
 // ----------------------------------------------------------------------------
 // Security/AppExchange tag filter (Slice 2 — roadmap §10 extension #2).
@@ -1463,6 +1510,147 @@ export const trivyAdapter = {
   // NO securityRelevant — Trivy config findings are security/compliance by construction, like checkov/metadata.
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #12 — regexploit (file-parser, residual-shrinking · B5 #1): parses captured regexploit
+// TEXT output (ReDoS / catastrophic-backtracking regex — CWE-1333). regexploit is the toolkit's ReDoS
+// scanner (run-scans Family 7 leg: `regexploit-py` / `regexploit-js` over every detected non-package
+// language root; pip package `regexploit`, exit 0 whether or not vulnerable patterns are found). It
+// moves the catastrophic-regex *pattern* substrate of the `resource-consumption-abuse` dimension from
+// LLM-inferred to deterministic — the baseline entry's own automation note ("catastrophic regex
+// patterns are statically detectable") made true — leaving REACHABILITY as the labelled residual.
+//
+// FORMAT C — the FIRST non-JSON adapter. regexploit emits human-readable TEXT only (the package's
+// output/text.py is its only writer; no JSON/JSONL output exists, and the npm `recheck` alternative
+// ships no repo-scanning bin at all), so:
+//   - the evidence file is the tool's VERBATIM stdout (evidence/redos-<date>.txt) — never a wrapper
+//     format that re-writes tool output;
+//   - `collect()` reads the input as TEXT (no JSON.parse) and `parse()` parses the tool's own format;
+//   - `detect(raw)` matches ONLY the raw TEXT shape (a string carrying the tool's own markers) and is
+//     an honest `false` for every parsed-JSON shape — so `--all` (which enumerates evidence/*.json
+//     and JSON-parses each) does NOT auto-recognize regexploit evidence. DOCUMENTED limitation, not a
+//     bug: the explicit `--scanner regexploit --input <redos.txt>` path is the ingest route (run-scans
+//     Family 7 narrates it). A text fixture still proves detect-disjointness: every existing detect
+//     requires an object/array shape, so a string can never be ambiguous with them.
+//
+// THE PARSE (regexploit's own format, per its output/text.py):
+//   Vulnerable regex in <file> #<lineno>      ← one BLOCK per vulnerable regex; #<lineno> is the
+//   Pattern: <regex>                            source line (absent for stdin scans → startLine null)
+//   Context: <source line>                    ← optional (the JS scanner omits it)
+//   ---
+//   Redos(starriness=N, …)                    ← one or MORE records per block (one per ambiguous
+//   Worst-case complexity: N ⭐… (<degree>)     subsequence); the block's band is the WORST record
+//   …                                           (max starriness — exponential=11 always beats
+//   Example: …                                  polynomial ≤ 10)
+// Trailer lines ("Processed N regexes", parser errors) are ignored. ONE finding per block: file:line
+// + pattern IS the vulnerable regex; two blocks of the same pattern at distinct lines are distinct
+// findings (distinct loci).
+//
+// TOOL→BAND via REDOS_DEGREE_TO_FINDING (exponential → high · polynomial → medium · unknown →
+// medium), gated by `resource-consumption-abuse` (the RCA baseline id, major — the osv gateLabel-param
+// precedent, NOT the scan-external-sast default). NEVER critical/blocker from the tool alone —
+// reachability is the residual (the semgrep ERROR→high ceiling precedent).
+//
+// THE DESIGN DECISION — classify() is the CONSTANT null: this adapter owns NO class and supersedes
+// NOTHING (the semgrep/bandit precedent, NOT the gitleaks one). WHY, from the code:
+// reconcile-provenance.mjs::sameOwnedClass falls back to a DIMENSION match when the LLM finding
+// carries no explicit class (the realistic case) — and `resource-consumption-abuse` is a MULTI-SHAPE
+// dimension (unrestricted consumption / denial-of-wallet / algorithmic amplification). A class-owning
+// deterministic ReDoS finding at api/server.py would therefore supersede a co-located LLM
+// missing-rate-limit or denial-of-wallet finding in the same file — a real correctness hazard.
+// gitleaks could own its class safely ONLY because secrets-credentials is single-shape. So the
+// deterministic ReDoS row sits BESIDE, never silences, the dimension's other findings; two rows for
+// the same regex (one deterministic, one pre-existing LLM) is the documented SAFE under-merge, and
+// cross-engine dedup stays §10 extension #3 (Phase-2b). The B1 ordering (static substrate BEFORE the
+// LLM fan-out + the ledger digest compiled AFTER the deterministic pass) already prevents duplicate
+// find-time work. Locked by the RD-non-supersession standing test (mutation-proven: a classify() that
+// returns an owned class turns that test RED).
+//
+// `ruleId` is a deterministic derivation from the pattern (regexploit has no rule ids):
+// `redos-<sha16(pattern)>` — stable across runs, no timestamps. The pattern itself IS source code
+// (regexploit prints Pattern/Context from the scanned code, never runtime user data), so it appears
+// in the message; the hash keeps the ruleId flat. Like the other scanners it is SECURITY-BY-
+// CONSTRUCTION (every reported block is an ambiguous regex), so NO `securityRelevant`.
+const REDOS_DOC = 'https://cwe.mitre.org/data/definitions/1333.html'
+export const regexploitAdapter = {
+  name: 'regexploit',
+  kind: 'file-parser',
+  // CONTENT-SHAPE recognizer: the raw TEXT shape only (format C). Every parsed-JSON shape (object /
+  // array — all 11 existing file-parser detects require one) is an honest false, so `--all` never
+  // routes a JSON evidence file here and a string can never be ambiguous with the JSON adapters.
+  detect: (r) =>
+    typeof r === 'string' && /(^|\n)Vulnerable regex in /.test(r) && /(^|\n)Worst-case complexity: /.test(r),
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return txt // VERBATIM text — regexploit has no JSON output (format C); parse() reads this format
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    if (typeof raw !== 'string' || !raw.trim()) return [] // format C: the raw IS the tool's text
+    const hits = []
+    let cur = null // the open block: { file, line, pattern, star, degree }
+    const flush = () => {
+      if (cur && cur.pattern != null && cur.degree != null) {
+        hits.push({
+          engine: 'regexploit',
+          ruleId: `redos-${sha256id(cur.pattern)}`, // deterministic pattern derivation (no tool rule ids)
+          severityNum: null, // no 1-5 number; the band comes from the ambiguity degree
+          file: cur.file,
+          startLine: cur.line,
+          message:
+            `Catastrophic-backtracking regex (worst-case ${cur.degree}` +
+            `${Number.isInteger(cur.star) ? `, starriness ${cur.star}` : ''}): ${cur.pattern}`,
+          resources: [REDOS_DOC],
+          bandFromTool: REDOS_DEGREE_TO_FINDING[cur.degree] || 'medium', // unknown degree → medium, never dropped
+          toolSevLabel: `regex ambiguity ${cur.degree}`,
+          gateLabel: 'resource-consumption-abuse', // the RCA baseline id (major) — NOT scan-external-sast
+          dimensionHint: 'resource-consumption-abuse', // the REAL methodology dimension; no class → supersedes nothing
+          tags: [],
+        })
+      }
+      cur = null
+    }
+    for (const ln of raw.split(/\r?\n/)) {
+      const head = /^Vulnerable regex in (.+?)(?: #(\d+))?\s*$/.exec(ln)
+      if (head) {
+        flush() // close the previous block; a new vulnerable regex starts
+        cur = { file: head[1], line: head[2] ? parseInt(head[2], 10) : null, pattern: null, star: null, degree: null }
+        continue
+      }
+      if (!cur) continue // trailer/preamble lines outside a block are ignored
+      const pat = /^Pattern: (.*)$/.exec(ln)
+      if (pat && cur.pattern == null) {
+        cur.pattern = pat[1]
+        continue
+      }
+      // one or more records per block — keep the WORST (max starriness; exponential=11 > polynomial ≤ 10)
+      const wc = /^Worst-case complexity: (\d+) .*\((\S+?)\)\s*$/.exec(ln)
+      if (wc) {
+        const star = parseInt(wc[1], 10)
+        if (cur.star == null || star > cur.star) {
+          cur.star = star
+          cur.degree = wc[2]
+        }
+      }
+    }
+    flush() // close the final block (EOF ends it)
+    return hits
+  },
+  // Constant null — THE design decision: a regexploit finding owns NO toolkit class and supersedes
+  // NOTHING. resource-consumption-abuse is a MULTI-SHAPE dimension and sameOwnedClass falls back to a
+  // dimension match, so an owned class here would supersede co-located rate-limit/denial-of-wallet
+  // LLM findings (a correctness hazard). Do NOT change this to an owned class; the RD-non-supersession
+  // standing test goes red if you do.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (every reported block is an ambiguous regex).
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -1475,6 +1663,7 @@ export const ADAPTERS = {
   'osv': osvAdapter,
   'npm-audit': npmAuditAdapter,
   'trivy': trivyAdapter,
+  'regexploit': regexploitAdapter,
 }
 
 // ----------------------------------------------------------------------------

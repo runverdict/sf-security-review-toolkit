@@ -48,7 +48,11 @@ has never been a probe at all. The class splits three ways (baseline:
 3. **Algorithmic amplification (one request → disproportionate work).**
    - **ReDoS** — a regex with catastrophic backtracking (`(a+)+`, `(.*)*`,
      nested/overlapping quantifiers) evaluated against attacker-controlled input,
-     freezing the worker.
+     freezing the worker. The regex-ambiguity substrate here is deterministic
+     (the run-scans Family-7 ReDoS scanner leg proves a pattern catastrophic
+     mechanically), so treat scanner hits as substrate and spend this
+     dimension's judgment on reachability — whether attacker-controlled input
+     actually reaches the flagged pattern.
    - **Decompression / parser bombs** — a small upload that expands to gigabytes
      (zip/gzip bomb), or a deeply nested JSON/XML that blows the parser. (The
      *file intake* validation is `data-export`; the resource-exhaustion is here.)

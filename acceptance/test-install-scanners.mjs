@@ -90,6 +90,22 @@ check('P1 per-method plan shape (pip venv, binary url+sha256+archive, npm, git)'
   assert.equal(p.schema, MANIFEST_SCHEMA)
 })
 
+check('P1b regexploit (0.8.56 — the Family-7 ReDoS leg) is PIP_TOOLS-known: plans as a pip venv whose verified bin is `regexploit`; an unknown pip tool still skips', () => {
+  const p = planInstalls([{ name: 'regexploit', family: 'external-sast', install: 'pip' }], { runId: 'r', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' })
+  assert.equal(p.skipped.length, 0, 'regexploit is a known pip tool (membership only — no executor change)')
+  const rx = p.installs.find((i) => i.name === 'regexploit')
+  assert.ok(rx, 'regexploit planned')
+  assert.equal(rx.method, 'pip')
+  // the pip contract (token = tool name, produced bin = tool name) holds: pip install regexploit
+  // ships a bin literally named `regexploit` (alongside regexploit-py / regexploit-js)
+  assert.equal(rx.expectedBin, join(ROOT0, 'regexploit', 'venv', 'bin', 'regexploit'))
+  assert.equal(rx.source, 'pypi:regexploit')
+  // the membership gate still rejects an unknown pip tool (regexploit joined the set, it didn't open it)
+  const p2 = planInstalls([{ name: 'madeup-pip-tool', family: 'external-sast', install: 'pip' }], { runId: 'r', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' })
+  assert.equal(p2.installs.length, 0)
+  assert.ok(p2.skipped.some((s) => s.name === 'madeup-pip-tool' && /unknown pip tool/.test(s.reason)))
+})
+
 check('P2 determinism: same inputs → byte-identical plan', () => {
   assert.equal(JSON.stringify(planFixed()), JSON.stringify(planFixed()))
 })

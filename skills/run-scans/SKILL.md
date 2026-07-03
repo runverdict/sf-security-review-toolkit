@@ -126,7 +126,7 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 | 4. TLS grade (SSL Labs **or** local testssl.sh/sslyze) | external-endpoint / mcp-server | agent | `ssllabs-<host>.json` **or** `tls-<host>-<date>.json` + capture | `endpoint-ssl-labs-a-grade` (qualitative bar; local TLS evidence satisfies it deterministically) |
 | 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
 | 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
-| 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code) |
+| 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json` (+ `bandit`/`njsscan`/`gosec`-<date>.json per language, + `redos-<date>.txt` — the regexploit ReDoS leg, verbatim text) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code); ReDoS leg → `resource-consumption-abuse` (major) |
 | 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
 
 The *Applies when (manifest)* column — here and in every per-family *Applies
@@ -568,6 +568,35 @@ families PENDING until a re-audit.
    floor; it complements the LLM dimensions + the reviewer's pen test, it replaces
    neither.
 
+   **The ReDoS leg (rides this family).** When Family 7 runs, ALSO run the
+   **regexploit** ReDoS scan over every detected non-package language root — the
+   catastrophic-backtracking-regex *pattern* substrate of
+   `resource-consumption-abuse` is machine-checkable (regex-AST ambiguity
+   analysis), so it belongs to the deterministic band, not the LLM fan-out:
+
+   ```bash
+   { regexploit-py <server-root>; regexploit-js <server-root>; } > evidence/redos-<date>.txt
+   ```
+
+   regexploit emits TEXT only (no JSON output exists in the tool), so the evidence
+   file is its VERBATIM stdout — and because the `--all` ingest enumerates
+   `evidence/*.json`, the ReDoS evidence is NOT auto-recognized there; ingest it
+   with the explicit scanner form (see step 9b):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs \
+     --scanner regexploit --input evidence/redos-<date>.txt --target <target>
+   ```
+
+   The JS/TS parser needs a one-time `npm install` inside the regexploit package —
+   the tool prints the exact command when the modules are missing; `regexploit-py`
+   needs nothing extra. Exit code is 0 whether or not vulnerable patterns are
+   found. *Gate:* `resource-consumption-abuse` (major). *Honest note:* the scanner
+   proves the PATTERN is catastrophic (exponential/polynomial backtracking);
+   whether attacker-controlled input reaches it is the audit's judgment — the
+   labelled `llm-inferred` residual — and the deterministic row sits beside, never
+   silences, the dimension's rate-limit / denial-of-wallet findings.
+
 9. **Family 8 — External SCA + IaC.** *Applies when:* any lockfile, Dockerfile, or
    IaC file exists under a non-package source root — the supply-chain + infra
    surface the reviewer treats as in-scope when data flows through it. *Tools:*
@@ -620,6 +649,12 @@ families PENDING until a re-audit.
    `code-analyzer-*.json` is present, `--all` reports CRUD/FLS + sharing as
    PENDING-OWNER-RUN (never LLM-fill, never drop) — exactly the audit-codebase Step 4
    contract.**
+
+   One format-C exception: the Family-7 ReDoS evidence (`redos-<date>.txt`) is the
+   tool's verbatim TEXT, so `--all` does not auto-recognize it — ingest it with the
+   explicit `--scanner regexploit --input evidence/redos-<date>.txt` form (shown in
+   Family 7) alongside the `--all` run; reconcile then covers it like every other
+   deterministic finding.
 
    **Design note (in-pass ingest+reconcile, NOT a re-audit).** On a journey run the
    EARLY static substrate is what flips the deterministic families from PENDING to

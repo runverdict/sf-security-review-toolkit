@@ -112,6 +112,19 @@ check('T7 code-analyzer family: absent sf → installable via code-analyzer-stac
   assert.ok(!missingNames(present).includes('sf'), 'a present sf is never re-installed')
 })
 
+check('T8 regexploit (0.8.56 — the Family-7 ReDoS leg): pip-installable in external-sast; any of its three bins counts as present', () => {
+  const r = detectTools('')
+  const rx = fam(r, 'external-sast').tools.find((t) => t.name === 'regexploit')
+  assert.ok(rx, 'regexploit rides the external-sast family (Family 7) — no new family')
+  assert.equal(rx.install, 'pip')
+  assert.ok(missingNames(r).includes('regexploit'), 'absent → installable-on-consent (pip), like semgrep')
+  // multi-bin aliasing: the file/dir scanner bin alone (regexploit-py) satisfies the tool (the T3 pattern)
+  const present = detectTools(binDir(['regexploit-py']))
+  const rxPresent = fam(present, 'external-sast').tools.find((t) => t.name === 'regexploit')
+  assert.equal(rxPresent.present, true)
+  assert.ok(!missingNames(present).includes('regexploit'), 'a present regexploit is never re-installed')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
