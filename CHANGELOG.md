@@ -51,6 +51,52 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.55] — 2026-07-03
+
+**The artifact phase's drafted content is now written by a deterministic harness that
+path-scopes every Workflow-returned output path.** The generate-artifacts Workflow's drafting
+agents are read-only by design — the engine returns `{ drafted: [{ key, out, content }] }` and
+the invoking skill writes each artifact to disk. Step (d) previously had the driver improvise
+that extract-and-write per run; the new `harness/write-drafted-content.mjs` replaces it as the
+single write point, for determinism and byte-exactness — and because `out` round-trips
+**through** the Workflow, making it LLM-influenced data crossing a write boundary that nothing
+validated (`build-artifact-engine` stores it unguarded; a confused or hostile
+`../../../home/user/.bashrc`, `/etc/cron.d/x`, or `.git/hooks/pre-commit` — the last one
+code-execution-adjacent and invisible to a naive repo-containment check — would previously have
+been written wherever it said).
+
+The path guard enforces every rule on the RESOLVED path, twice — lexically, then re-asserted on
+the symlink-REALIZED tree (the deepest existing ancestor is `realpath`'d lstat-aware and the
+rules re-run, so a symlinked dir pointing outside the repo, a planted symlink *file* at the
+target, and a dangling link on the path are all refused, not written through): no absolute
+paths, strict repo containment (`startsWith(repo + sep)` — a `/repo-evil` sibling never passes
+for `/repo`), nothing at/under `.git/`, and an **allowed-roots** floor — drafted content lands
+only under `docs/security-review/` or `.security-review/`, where every artifact the toolkit
+drafts lives; a future artifact elsewhere is a deliberate one-line change, never a silent
+write. Application is PLAN-then-EXECUTE and **all-or-nothing**: one invalid path refuses the
+entire envelope with exit 2 and zero files written (a poisoned envelope must never produce
+partial writes; refusals route the operator back to the artifact engine, never to hand-editing
+paths). Writes are byte-exact utf8 (backticks, quotes, `$(cmd)`, unicode, no trailing-newline
+"help"; overwrite is normal — artifacts regenerate per pass; idempotent re-run, same bytes).
+Null/malformed entries and empty/dead-agent drafts are skipped LOUD — an agent that died never
+blanks a good prior draft. The envelope unwrap follows merge-ledger's two-shape doctrine
+verbatim (raw task-output envelope or pre-extracted `{ drafted }`, keyed on the payload; neither
+shape → exit 2 naming both), and `--input` cross-checks the artifact-input's `gate.suppress` so
+a stale or resumed envelope cannot resurrect a gate-withheld doc (the engine's pre-Workflow drop
+remains the enforcement point; the WITHHELD placeholder stays driver-side — it is
+gate-data-derived, not envelope content). The audit substrate needs no sibling harness: its
+synthesis agent writes the pass report itself, and merge-ledger already consumes that envelope
+for the ledger — there was no improvised driver-side write to replace. Engine and template are
+untouched; generate-artifacts step (d) now invokes the harness (with the matching
+`allowed-tools` grant).
+
+Suite **62 files / 864 checks** (was 835), all green. The guard is graded by direct attack in
+the new standing test: traversal, absolute, `.git/hooks/pre-commit` (direct and routed through
+an allowed root), sibling-prefix, symlinked-dir escape, planted-symlink-file target, dangling
+link, `''`, `'.'`, and NUL each refuse with exit 2 and zero files written — the valid sibling
+in the same envelope stays unwritten. Byte-exactness is buffer-compared from both envelope
+shapes. Mutation-proven: with the containment assert removed, the traversal check goes RED.
+
 ## [0.8.54] — 2026-07-03
 
 **The compile reads the manifest's persisted applicable set verbatim, and `compute-sci` refuses

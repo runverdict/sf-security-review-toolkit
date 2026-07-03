@@ -1,7 +1,7 @@
 ---
 name: generate-artifacts
 description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton, and the written-policy / org-config pack (incident-response, data-retention + deletion-on-uninstall, DR/backup, vuln-remediation SLA, hosting architecture, prior-pen-test attestation) as owner-completed stubs — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
-allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) Bash(node *harness/write-drafted-content.mjs *) AskUserQuestion
 ---
 
 # Generate Artifacts
@@ -222,11 +222,26 @@ longer hand-coded into a script.
   string and the engine fails fast). It fans out one read-only agent per artifact and
   returns `{ drafted: [{ key, out, content }] }`.
 
-- **(d) Write each `drafted.content` to its `out`** (the Workflow runtime has no
-  filesystem access — same return-then-write shape as the audit report). For every
-  artifact the gate suppressed (dropped by the engine in (b)), write the WITHHELD
-  placeholder instead (the step-6 withhold text). Then run the step-12 cross-read and the
-  step-13 provenance footers driver-side.
+- **(d) Write the drafted content with the write harness — never by hand** (the Workflow
+  runtime has no filesystem access; the same envelope doctrine as merge-ledger applies:
+  point `--result` DIRECTLY at the Workflow task-output file — do not hand-extract
+  `.result` or re-parse the envelope):
+
+  `node ${CLAUDE_PLUGIN_ROOT}/harness/write-drafted-content.mjs --repo <target> --result <workflow-task-output-file> --input <target>/.security-review/artifact-input.json`
+
+  It unwraps `{ drafted: [{ key, out, content }] }` (raw envelope or pre-extracted),
+  validates EVERY Workflow-returned `out` on its RESOLVED path — inside the repo, under
+  `docs/security-review/` or `.security-review/` only, never absolute / traversal /
+  `.git/` / through an escaping symlink — and is ALL-OR-NOTHING: one invalid path refuses
+  the entire envelope with zero files written (exit 2; re-run the engine, never hand-fix
+  a returned path). Valid entries are written byte-exact (parent dirs created inside the
+  allowed roots; overwrite is normal — artifacts regenerate per pass); an empty/dead-agent
+  draft is SKIPPED LOUDLY so it never blanks a good prior draft; `--input` cross-checks
+  `gate.suppress` so a stale/resumed envelope cannot resurrect a withheld doc (the engine
+  in (b) remains the enforcement point). For every artifact the gate suppressed, write the
+  WITHHELD placeholder driver-side instead (the step-6 withhold text — it is gate-data-
+  derived, not envelope content). Then run the step-12 cross-read and the step-13
+  provenance footers driver-side.
 
 The content contract each artifact's `focus` carries:
 
