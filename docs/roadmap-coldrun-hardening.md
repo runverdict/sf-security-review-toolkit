@@ -434,13 +434,28 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
     `CWE-###:` string shape, zero helper change). `classify()=null` throughout; 3 genuine fixtures
     (njsscan/semgrep/bandit); the SSRF/CWE-939 record error corrected; CSRF-352 added as a co-resident
     negative. Graded off disk (fixtures verified genuine tool-output, routing + 2 mutations reproduced).
-    **HONEST-FLOOR GAP (do NOT read as covered):** **XPath (643), LDAP (90), XML injection (91), and the
-    EL/SSTI variants 917/1336 have NO OSS rule that fires on a minimal seed** — they are `fixture-pending`
-    (comment-only, NOT active), so a partner hitting one of those classes still files under the catch-all
-    `external-sast`. Closing them is NOT another fixture-capture; it needs **custom Semgrep rules** (a real
-    deterministic-engine authoring effort) or they stay LLM-residual. **Decision pending: author custom
-    rules for 643/90/91 (a Tier-2-style "Salesforce/idiom custom ruleset" candidate) vs. accept them as
-    labelled LLM-residual.** 611 XXE deliberately excluded (→ E0.1c).
+    **Injection residual — GROUNDED RESOLUTION (2026-07-03, empirical: semgrep run per class/language).**
+    SSTI is actually covered (CWE-96). The residual is XPath (643), LDAP (90), XML-injection (91). Key
+    insight: **"a pack already fires" ≠ "the dimension gap is closed"** — Java/C# XPath+LDAP DO fire
+    (p/security-audit + p/csharp) but tag 643/90 which route to the catch-all `external-sast` because those
+    ids aren't in `CWE_TO_DIMENSION` yet. So the fill is a tiered plan (E0.1e), NOT a single decision:
+    - **E0.1e-A (cheap routing wins, capture-only):** Java/C# XPath+LDAP (packs already fire) + Node XPath
+      (njsscan `node_xpath_injection` — `xpath.parse()` ONLY, narrow) → capture genuine fixtures, then
+      promote **643 + 90** into `CWE_TO_DIMENSION`. Zero rule-authoring; closes the dimension gap for those
+      languages. De-risks the routing edit first.
+    - **E0.1e-B (custom taint rules — the real engine authoring):** no OSS rule for Python XPath+LDAP,
+      JS/Go LDAP, Go XPath (CodeQL covers them but is license-barred on proprietary code). Ship a curated
+      `rules/injection/*.yaml` dir (mode:taint, framework-request sources → enumerated sinks: lxml/ldap3/
+      ldapjs/go-ldap/xmlquery, `escape_filter_chars`/variable-binding sanitizers, `focus-metavariable`),
+      run via `--config rules/injection/`, each with a `semgrep --test` vuln/safe pair, then capture live
+      fixtures. Reuses the already-active 643/90 rows. CE taint is intra-file → low-FP / moderate-FN
+      (cross-function falls to the LLM residual, NOT a noisy rule).
+    - **E0.1e-C (honest residual):** XML-injection (91) has NO canonical low-FP sink (only a Twilio-TwiML
+      rule off-the-shelf; tangled with XXE/611) → **do NOT add 91; keep it LLM-residual** (blind-XPath
+      folds into 643, XXE into 611/E0.1c). A noisy 91 rule would poison the band — worse than the residual.
+    **Honest-floor guardrail throughout:** promote a CWE int ONLY after a genuine captured fixture emits
+    it; if a custom rule's `--test` safe sample trips (can't reach low-FP), DON'T ship it — leave that
+    (class,language) residual. 611 XXE handled in E0.1c.
 - **E0.1c — untrusted-deserialization routing + generated fixtures** (CWE-502 native-deser, 1321
   prototype-pollution, 611 XXE). Same comprehensive + generated-fixture approach; `classify()=null`.
 - **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval). Needs a
