@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.58**, suite **62 files / 889 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.59**, suite **62 files / 894 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 - **B5 was RE-SCOPED (2026-07-03)** from the original 4-slice list into a tiered enterprise-grade engine
   buildout (cross-cutting reachability/exposure enablers + the named classes + completeness-audit misses).
@@ -421,12 +421,20 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   - ~~**Narrow first pass**~~ **DONE (0.8.58)** — CWE-89 (SQLi) + CWE-78 (command injection) in semgrep +
     bandit, proven by existing fixtures; SSRF (939) / path-traversal (22) / secrets (798) / misconfig
     (693) verified to STAY `external-sast`; non-supersession standing lock + 2 mutations. Graded off disk.
-  - **E0.1b-EXPAND (THE NEXT SLICE) — full injection taxonomy + GENERATED fixtures.** Expand
-    `INJECTION_XSS_CWES` to the whole injection set (79 XSS, 94 code-injection, 917/1336 SSTI, 643 XPath,
-    90 LDAP, 943 NoSQL, 91 XML) and add njsscan, GENERATING a genuine fixture per sub-class the OSS
-    scanners emit (seed a minimal sample → run the real scanner → capture output, the E0.1 technique) so
-    the routing is proven for ANY partner, not the dogfood profile. `classify()` stays null; exact-CWE
-    allowlist; honest `// fixture-pending` for any anchor no OSS rule emits.
+  - ~~**E0.1b-EXPAND — full injection taxonomy + GENERATED fixtures**~~ **DONE (0.8.59).** Active,
+    each fixture-proven from genuine captured output: **78 cmd, 89 SQL, 79 XSS, 94 code-injection,
+    95 eval, 96 SSTI (semgrep tags static-code-injection), 943 NoSQL** — routed via per-hit
+    `dimensionForCwes` across semgrep + bandit + **njsscan** (wired; `metadata.cwe` is the same
+    `CWE-###:` string shape, zero helper change). `classify()=null` throughout; 3 genuine fixtures
+    (njsscan/semgrep/bandit); the SSRF/CWE-939 record error corrected; CSRF-352 added as a co-resident
+    negative. Graded off disk (fixtures verified genuine tool-output, routing + 2 mutations reproduced).
+    **HONEST-FLOOR GAP (do NOT read as covered):** **XPath (643), LDAP (90), XML injection (91), and the
+    EL/SSTI variants 917/1336 have NO OSS rule that fires on a minimal seed** — they are `fixture-pending`
+    (comment-only, NOT active), so a partner hitting one of those classes still files under the catch-all
+    `external-sast`. Closing them is NOT another fixture-capture; it needs **custom Semgrep rules** (a real
+    deterministic-engine authoring effort) or they stay LLM-residual. **Decision pending: author custom
+    rules for 643/90/91 (a Tier-2-style "Salesforce/idiom custom ruleset" candidate) vs. accept them as
+    labelled LLM-residual.** 611 XXE deliberately excluded (→ E0.1c).
 - **E0.1c — untrusted-deserialization routing + generated fixtures** (CWE-502 native-deser, 1321
   prototype-pollution, 611 XXE). Same comprehensive + generated-fixture approach; `classify()=null`.
 - **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval). Needs a
@@ -543,10 +551,12 @@ contract), promptmap (GPL-3.0 — never vendor).
    change + a live re-grade, low offensive-content density, and independent of the injection routing so it
    can run in PARALLEL with E0.1b-EXPAND.* The full Opengrep swap is **E0.2b**, later.)
 1. ~~**E0.1 reachability-path ingest**~~ **DONE at the adapter (0.8.57); DORMANT live until E0.2a wires
-   the flag** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58).** Next:
-   **E0.1b-EXPAND** (full injection taxonomy + generated fixtures) → **E0.1c** (deserialization) →
-   **E0.1d** (sessionid/Apex) — each comprehensive + generated-fixture, `classify()=null` on the
-   multi-shape dimensions.
+   the flag** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
+   ~~**E0.1b-EXPAND (full injection taxonomy + generated fixtures)**~~ **DONE (0.8.59)** — 7 CWEs active/
+   fixture-proven across semgrep+bandit+njsscan; XPath/LDAP/XML-injection are the honest uncovered
+   residual (need custom rules — see the E0.1b entry). Next: **E0.1c** (deserialization) → **E0.1d**
+   (sessionid/Apex) — each comprehensive + generated-fixture, `classify()=null` on the multi-shape
+   dimensions. (E0.2a above is parallel-safe / independent.)
 2. **E0.3 guest-exposure mapper** — PULLED FORWARD (was after T1.1/T1.2; the review flagged the
    Tier-0-"build-first"-but-sequenced-late contradiction). Most novel + most timely (models the live 2026
    guest/`/sfsites/aura` data-theft campaign), cold-install, no running target, clean severity cap. Ahead
