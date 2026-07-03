@@ -129,7 +129,7 @@ check('registered: installable → registered:true; no-package → registered:fa
 })
 
 // ── discoverPackages — NESTED-SFDX discovery (0.8.43, the headline cold-run gap) ──
-// A repo whose SFDX packages live in SUBDIRECTORIES (salesforce/ + salesforce-mcp/, no
+// A repo whose SFDX packages live in SUBDIRECTORIES (core/ + mcp/, no
 // root sfdx-project.json) returned no-package from a root-only read. discoverPackages
 // finds them all and classifies each; main() drives it so the CLI reports the roll-up.
 const INSTALLABLE_PKG = {
@@ -143,10 +143,10 @@ const NEEDS_BUILD_PKG = {
 // A nested-only repo: NO root sfdx-project.json, two packages each in a subdir.
 const mkNestedRepo = () => {
   const root = mktmp('srt-nested-')
-  mkdirSync(join(root, 'salesforce'), { recursive: true })
-  writeFileSync(join(root, 'salesforce', 'sfdx-project.json'), JSON.stringify(INSTALLABLE_PKG))
-  mkdirSync(join(root, 'salesforce-mcp'), { recursive: true })
-  writeFileSync(join(root, 'salesforce-mcp', 'sfdx-project.json'), JSON.stringify(NEEDS_BUILD_PKG))
+  mkdirSync(join(root, 'core'), { recursive: true })
+  writeFileSync(join(root, 'core', 'sfdx-project.json'), JSON.stringify(INSTALLABLE_PKG))
+  mkdirSync(join(root, 'mcp'), { recursive: true })
+  writeFileSync(join(root, 'mcp', 'sfdx-project.json'), JSON.stringify(NEEDS_BUILD_PKG))
   // decoys that MUST be skipped: a node_modules copy and a too-deep one (> maxDepth)
   mkdirSync(join(root, 'node_modules', 'pkg'), { recursive: true })
   writeFileSync(join(root, 'node_modules', 'pkg', 'sfdx-project.json'), JSON.stringify(INSTALLABLE_PKG))
@@ -158,10 +158,10 @@ check('discoverPackages: nested-only repo → finds BOTH, classifies each, anyIn
   const pkgs = discoverPackages(root)
   assert.equal(pkgs.length, 2, 'both nested packages discovered (node_modules copy skipped)')
   const byRel = Object.fromEntries(pkgs.map((p) => [p.relPath, p.readiness]))
-  assert.equal(byRel['salesforce'].status, 'installable', 'the 04t-bound nested package is installable')
-  assert.equal(byRel['salesforce'].versionAlias, 'Atlas@1.0.0-1')
-  assert.equal(byRel['salesforce-mcp'].status, 'needs-build', 'the .NEXT nested package needs a build')
-  assert.equal(byRel['salesforce-mcp'].registered, true, 'its 0Ho id means it is registered/buildable')
+  assert.equal(byRel['core'].status, 'installable', 'the 04t-bound nested package is installable')
+  assert.equal(byRel['core'].versionAlias, 'Atlas@1.0.0-1')
+  assert.equal(byRel['mcp'].status, 'needs-build', 'the .NEXT nested package needs a build')
+  assert.equal(byRel['mcp'].registered, true, 'its 0Ho id means it is registered/buildable')
   assert.equal(pkgs.some((p) => p.readiness.status === 'installable'), true, 'anyInstallable holds across the set')
   // the roll-up rep is the MOST-actionable (the installable one)
   assert.equal(rollupReadiness(pkgs).status, 'installable')
@@ -174,7 +174,7 @@ check('main() recurses (NOT root-only): CLI --json on a nested-only repo reports
   assert.equal(out.anyInstallable, true, 'roll-up reports an installable package — a root-only read would say no-package')
   assert.equal(out.status, 'installable', 'top-level roll-up rep is the installable nested package')
   assert.ok(Array.isArray(out.packages) && out.packages.length === 2, 'packages[] lists every discovered package')
-  assert.deepEqual(out.packages.map((p) => p.relPath).sort(), ['salesforce', 'salesforce-mcp'])
+  assert.deepEqual(out.packages.map((p) => p.relPath).sort(), ['core', 'mcp'])
 })
 
 check('single-root package: legacy top-level shape preserved + packages[] / anyInstallable ADDED', () => {

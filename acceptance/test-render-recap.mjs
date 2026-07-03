@@ -102,7 +102,7 @@ check('RC4c refuted-only ledger (no open) → PROCEED, never a false "secure"', 
   assert.match(block, /not "secure"/)
 })
 
-check('RC6 dict-vs-array guard (rule-8 corollary): PRESENT-but-non-array findings → UNAVAILABLE, never PROCEED', () => {
+check('RC6 dict-vs-array guard: PRESENT-but-non-array findings → UNAVAILABLE, never PROCEED', () => {
   // a dict-shaped `findings` ALONGSIDE a pass/dimensions field must NOT become a false PROCEED:
   // a malformed-but-present ledger is unreadable, not "zero findings".
   for (const facts of [
@@ -119,7 +119,7 @@ check('RC6 dict-vs-array guard (rule-8 corollary): PRESENT-but-non-array finding
 })
 
 check('RC7 --target dict-vs-array guard: a dict-findings ledger WITH passes[] → UNAVAILABLE via the CLI (the factsFromLedger path), never a false PROCEED', () => {
-  // The corrupted ledger: `findings` is a DICT (rule-8 shape) but a real pass IS recorded. The
+  // The corrupted ledger: `findings` is a DICT (dict-shaped payload) but a real pass IS recorded. The
   // OLD factsFromLedger coerced findings→[] BEFORE renderAuditRecap's guard, so `--target` read
   // "no open confirmed findings" + PROCEED on an unreadable ledger. It must now be UNAVAILABLE.
   const d = tmp(); mkdirSync(join(d, '.security-review'), { recursive: true })

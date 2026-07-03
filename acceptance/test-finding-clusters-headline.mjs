@@ -101,7 +101,7 @@ check('FH5 HONESTY: never will-pass/passed; pen-test caveat on non-PRESENT branc
   assert.match(renderClusterHeadline(clusterFindings([])), /never "secure"\/"clean"/)
 })
 
-check('FH7 dict-vs-array guard (rule-8 corollary): a PRESENT-but-non-array findings → UNAVAILABLE, never NONE', () => {
+check('FH7 dict-vs-array guard: a PRESENT-but-non-array findings → UNAVAILABLE, never NONE', () => {
   // a dict-shaped `findings` (e.g. {factor:{...}}) is an UNREADABLE shape, NOT "no findings"
   assert.equal(clusterOrNullFromFindings({ factor: { x: 1 } }), null, 'dict findings → null cluster (UNAVAILABLE)')
   // a legitimate empty array stays a real 0-count cluster (NONE), NOT UNAVAILABLE

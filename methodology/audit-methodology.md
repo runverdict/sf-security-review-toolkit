@@ -4,8 +4,7 @@ The engine `/sf-security-review-toolkit:audit-codebase` executes. It runs an
 autonomous, multi-agent, white-box security review of the partner's own codebase,
 shaped to what the AppExchange/AgentExchange security review actually probes. The
 method was extracted from workflow scripts an ISV partner ran against its own
-production multi-tenant SaaS (FastAPI + Postgres row-level security + an MCP
-server + a managed 2GP package) across three full passes before its own
+production multi-tenant SaaS across three full passes before its own
 submission prep — every rule below encodes something that either produced a real
 finding or wasted a verifier's time.
 
@@ -155,8 +154,8 @@ Rules:
   a path is approximate" — keep that instruction).
 - `stack_notes` carries the repo facts a finder needs to be effective: framework,
   ORM, where routes live, and — critically — the partner's *claimed* security
-  model ("tenant isolation enforced by Postgres row-level security keyed on a
-  session variable; in-tenant visibility filtered at the service layer").
+  model ("tenant isolation enforced at the database layer keyed on the authenticated
+  context; per-record visibility filtered in application code").
   Claims are labeled as claims. The single most productive instruction in the
   field runs was: **verify the claimed model against the actual code, do not
   assume it.** Most confirmed findings were gaps between the claimed model and

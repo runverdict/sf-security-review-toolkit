@@ -33,7 +33,7 @@ Create/Read/Update/Delete permissions and Field-Level Security — the access
 checks Apex skips unless you write them), un-testable
 review environments, incomplete artifacts, DAST reports that miss the identity
 endpoints, questionnaires with unexplained N/A answers. This toolkit encodes a
-methodology developed preparing Verdict's own AppExchange submission —
+methodology developed preparing the author's own AppExchange submission —
 multi-pass multi-agent audits with adversarial verification of every finding —
 and packages the artifact formats, scan harnesses, and runbooks that came out
 of it.
@@ -241,7 +241,7 @@ The model does the finding; deterministic code owns the guardrails — a weaker 
 
 ## How it was validated
 
-The methodology and harness were extracted from real multi-pass audits of **Verdict's own production codebase** — a multi-tenant revenue platform with database row-level tenant isolation, an OAuth 2.1 authorization server, an MCP server, and two managed 2GP packages — during its own AppExchange prep. Run cold from an empty ledger, the audit re-discovered every known-open finding, refuted false candidates with code evidence, and the generated artifact pack matched a hand-built reference. The acceptance suite additionally runs the toolkit cold against synthetic fixtures (a catastrophe-recall fixture and a mostly-compliant middle-band judgment fixture) on every change. **Honest ceiling:** this is the author's own code and self-authored fixtures — only a third-party package or a real Salesforce review tests generalization.
+The methodology and harness were extracted from real multi-pass audits of a production multi-tenant SaaS codebase during an actual AppExchange prep. Run cold from an empty ledger, the audit re-discovered every known-open finding, refuted false candidates with code evidence, and the generated artifact pack matched a hand-built reference. The acceptance suite additionally runs the toolkit cold against synthetic fixtures (a catastrophe-recall fixture and a mostly-compliant middle-band judgment fixture) on every change. **Honest ceiling:** this is the author's own code and self-authored fixtures — only a third-party package or a real Salesforce review tests generalization.
 
 ## Maturity & what's in the box
 

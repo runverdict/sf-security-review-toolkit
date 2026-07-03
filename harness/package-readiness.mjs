@@ -37,7 +37,7 @@
  * NESTED PACKAGES (0.8.43). `packageReadiness` stays per-project + pure; the CLI
  * now drives it via `discoverPackages(target)`, which finds EVERY sfdx-project.json
  * under the repo at a bounded depth (root included) — so a repo whose packages live
- * in subdirectories (`salesforce/`, `salesforce-mcp/`) is classified correctly
+ * in subdirectories (`packages/core/`, `packages/mcp/`) is classified correctly
  * instead of reading `no-package` from a root-only probe. The `--json` output keeps
  * the legacy single-package top-level shape (a single root package emits unchanged
  * keys) and ADDS a `packages[]` array + an `anyInstallable` roll-up, always.
@@ -113,8 +113,8 @@ const SKIP_DIRS = new Set(['node_modules'])
 /**
  * Discover EVERY sfdx-project.json under `target` (root included) at a bounded
  * depth, and run the pure `packageReadiness` on each. The headline 0.8.43 fix:
- * a repo whose SFDX packages live in SUBDIRECTORIES (e.g. `salesforce/` +
- * `salesforce-mcp/`, the nested-package layout a real cold run hit) returned
+ * a repo whose SFDX packages live in SUBDIRECTORIES (e.g. `packages/core/` +
+ * `packages/mcp/`, a nested-package layout) returned
  * `no-package` from a root-only read, forcing the journey to LLM-grep + re-run
  * per directory. This makes the discovery deterministic.
  *

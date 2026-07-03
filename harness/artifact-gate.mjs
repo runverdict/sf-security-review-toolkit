@@ -111,7 +111,7 @@ export const AUTHN_AUTHZ_DIMENSIONS = new Set([
  */
 export function computeGate(findings, triage) {
   // Fail SAFE on a MALFORMED ledger. `findings` present but NOT an array (a
-  // dict/string — the dict-shaped-payload class, CLAUDE-rule-8 corollary) must
+  // dict/string — the dict-shaped-payload class) must
   // never read as "no findings → clean → generate the AuthN/AuthZ doc". We cannot
   // verify there is no open auth hole, so WITHHOLD rather than draft over an
   // unverifiable ledger. (null/undefined keeps the documented "no findings" =

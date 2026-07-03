@@ -1,8 +1,7 @@
 # Roadmap — cold-run hardening backlog
 
 > Status: **ACTIVE backlog** (2026-06-30). Captures the toolkit-hardening work surfaced by a full
-> end-to-end **cold run** against a real partner-shaped target (an external FastAPI + Next.js app with
-> **nested** 2GP SFDX packages, an MCP server, Canvas SSO, and Agentforce — `sf`/scanners deliberately
+> end-to-end **cold run** against a real partner-shaped target (a nested-2GP SFDX repo with an external web app/API, an MCP server, Canvas, and Agentforce — `sf`/scanners deliberately
 > absent to exercise the cold-install path). Companion to
 > [`roadmap-deterministic-findings.md`](roadmap-deterministic-findings.md) (the deterministic-band arc)
 > and [`roadmap-preconditions-guided-remediation.md`](roadmap-preconditions-guided-remediation.md).

@@ -36,7 +36,7 @@ export function renderAuditRecap(facts) {
   // "Present" = facts is an object carrying real audit-pass signal. A null/missing facts (no
   // ledger, the audit never ran) is NOT "zero findings" — it must read UNAVAILABLE, never a
   // false PROCEED/clean. A bare {} likewise has no audit data. (Adversarial-review fix.)
-  // Honesty guard (CLAUDE.md rule-8 dict-vs-array corollary): a PRESENT-but-non-array
+  // Honesty guard (dict-vs-array corollary): a PRESENT-but-non-array
   // `findings` (a dict like `{factor:{...}}`) is an UNREADABLE shape, NOT "no findings" — it
   // forces UNAVAILABLE even when a pass/dimensions field would otherwise read as present, so a
   // malformed-but-present ledger can never become a false PROCEED / "no open confirmed findings".

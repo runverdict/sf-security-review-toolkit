@@ -671,8 +671,7 @@ in. Tag stays **HELD**.
 ## [0.8.43] — 2026-06-30
 
 **Preflight / detection-accuracy / gate-clarity hardening — four clear-cut gaps a live cold run
-against a real nested-SFDX multi-package repo surfaced.** The target was a FastAPI + Next.js product
-with NESTED SFDX packages (`salesforce/` + `salesforce-mcp/`), an MCP server, Canvas, and Agentforce,
+against a real nested-SFDX multi-package repo surfaced.** The target carried nested SFDX packages in subdirectories, plus an MCP server, Canvas, and Agentforce,
 with `sf` deliberately absent (the cold-install path). None of these touch the consent-safety floor
 structurally (that consolidation is a separate designed slice) — they are detection-accuracy + gate-
 message clarity, all additive on the harness. **(1) NESTED-SFDX discovery** (`harness/package-readiness.mjs`):
@@ -1760,7 +1759,7 @@ JSON — no LLM, no Date, no random — and fails safe to an HONEST line, never 
 render SURFACES every security flag + operator-answer conflict (never silently dropped or
 resolved) and NEVER renders a secret (a secret-named key / token-shaped value is redacted).
 Folds in two Slice-3 grade nits: the dict-vs-array honesty guard (a PRESENT-but-non-array
-`findings` renders UNAVAILABLE, never NONE/PROCEED — CLAUDE-rule-8 corollary) in
+`findings` renders UNAVAILABLE, never NONE/PROCEED) in
 `finding-clusters.mjs` + `render-recap.mjs`, and a `render-scan-status.mjs` docstring clarify
 (the DONE gate is enforced at the producer). Presentation-only — the finding band is unchanged,
 so the 0.8.21 cold tag still certifies it; do NOT re-run the campaign. Suite **50 files / 468
@@ -1807,7 +1806,7 @@ checks** (was 47 / 440). Tag stays **HELD**.
   prose), per the pinned-output contract.
 
 ### Fixed
-- **Dict-vs-array honesty guard (CLAUDE-rule-8 corollary), defense-in-depth.** In
+- **Dict-vs-array honesty guard, defense-in-depth.** In
   `harness/finding-clusters.mjs` (new exported `clusterOrNullFromFindings`, used by the
   `--headline` ledger-read path) and `harness/render-recap.mjs` (`renderAuditRecap` `present`
   derivation): a `findings` value that is PRESENT but NOT an array (a dict like `{factor:{...}}`)
@@ -2379,9 +2378,9 @@ cold campaign, not claimed here. Suite **34 files / 338 checks** (was 32 / 313).
 - **public-readiness scrub** (the repo is heading open-source as a portfolio piece; file-
   level only, no git-history rewrite). Portable defaults in `acceptance/build-run-args.mjs` (plugin
   root resolves from the file's own location via `import.meta.url`; the fixture repo defaults under
-  `os.homedir()` — no machine-specific droplet path baked into shipped code). `.gitignore` hardened so
+  `os.homedir()` — no machine-specific absolute path baked into shipped code). `.gitignore` hardened so
   a contributor can never commit a partner's run-state or findings (`.security-review/`,
-  `docs/security-review/`, `.claude/`, `*.jsonl`; verified none are currently tracked). Author droplet
+  `docs/security-review/`, `.claude/`, `*.jsonl`; verified none are currently tracked). Author host
   paths used as **test data** genericized to neutral roots (`/abs/repo`, `/home/user/project`) in
   `test-ledger-staleness-adversary.mjs` — input, repoRoot, and expected tokens changed together, both
   staleness tests re-run green — and the residual prose mention neutralized to "the host product repo".
@@ -3715,7 +3714,7 @@ in what order.
 
 WI-21 — reviewer-simulation. A new (14th) skill that reframes everything the audit
 + scans found as **what Salesforce Product Security will see**, ranked by the
-reviewer's own attack priority. ChatGPT rated "audit AS THE REVIEWER WILL" the
+reviewer's own attack priority. An external review rated "audit AS THE REVIEWER WILL" the
 toolkit's strongest idea; this makes it first-class. It introduces no new finding
 and no new SCI gate — it is the narrative over the ledger + SCI.
 
@@ -3829,8 +3828,7 @@ the dependency root the rest of the 0.4.x work hangs off. Built and wired into t
 existing journey so it fires with no manual step; the remaining extensions (WI-17
 OSS external-surface scanners, WI-19 written-policy artifacts, WI-21 reviewer-sim,
 WI-16 Checkmarx-predict, WI-22 path-to-green) are queued behind it. Provenance:
-synthesized from the 2026-06-15 external-review pass (Gemini / ChatGPT / Claude
-web), reconciled against the 0.3.1 dimension internals (most reviewer-flagged
+synthesized from the 2026-06-15 external design-review pass, reconciled against the 0.3.1 dimension internals (most reviewer-flagged
 code gaps were already covered — see the gap-audit §3a).
 
 ### Added — WI-20: the formal evidence model
@@ -3856,7 +3854,7 @@ code gaps were already covered — see the gap-audit §3a).
   standing "NOT verified by this toolkit" list. Bands:
   `BLOCKED → NOT READY → MATERIALS COMPLETE → NO-SURPRISES READY`. Honesty by
   construction: never a naked single number, never the % without the gate and the
-  not-verified list (CONVENTIONS §2; Claude-web's warning).
+  not-verified list (CONVENTIONS §2).
 
 ### Wired — autonomous orchestration
 - `compile-submission` (Phase 5) writes the evidence index, runs `compute-sci`, and
@@ -4088,10 +4086,7 @@ read-only on your source and never claims you "will pass."
 ## [0.1.1] — 2026-06-13
 
 First fine-tuning pass driven by a **fresh-context end-to-end validation run**: the
-toolkit was executed cold against a real production codebase (a multi-tenant FastAPI +
-Postgres row-level-security backend with an OAuth 2.1 authorization server, a partner-
-hosted MCP server, and two thin 2GP managed packages — a Canvas-on-ECA embed and an MCP
-registration package). The audit engine performed well — from an empty ledger it
+toolkit was executed cold against a real production codebase (a multi-tenant SaaS backend with an MCP server and two managed 2GP packages). The audit engine performed well — from an empty ledger it
 re-discovered every known-open finding, refuted 4 of 9 candidate findings against the
 source with precise code evidence (zero unverified), did not re-confirm a single
 already-fixed item, and surfaced real findings a prior hand-built audit had under-rated;

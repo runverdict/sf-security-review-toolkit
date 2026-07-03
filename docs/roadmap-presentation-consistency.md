@@ -337,7 +337,7 @@ options.
 ## Constraints
 
 - **Campaign-safe to build now.** These ship on the repo (→ 0.8.22+) but the
-  droplet keeps running the cached campaign plugin until a manual
+  deployed host keeps running the cached campaign plugin until a manual
   `plugin update`. Presentation-only → the finding band is unchanged, so the
   0.8.21 tag still certifies it; do NOT re-run the campaign for these.
 - **No silent behavior change.** Pinning a gate's options must preserve the

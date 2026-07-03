@@ -323,7 +323,7 @@ export function renderClusterHeadline(cluster) {
 }
 
 /**
- * Honesty guard (CLAUDE.md rule-8 dict-vs-array corollary): a ledger whose `findings` is
+ * Honesty guard (dict-vs-array corollary): a ledger whose `findings` is
  * PRESENT but NOT an array (a dict like `{factor:{...}}`) is an UNREADABLE shape, NOT
  * "no findings". Return null so `renderClusterHeadline` takes its UNAVAILABLE branch
  * ("could not read the ledger") — never the NONE branch ("no open confirmed findings"),
