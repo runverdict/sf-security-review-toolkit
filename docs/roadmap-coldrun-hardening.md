@@ -518,20 +518,45 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   verbatim. **Critic note:** Opengrep is ~2025-new — keep **Semgrep CE as the baseline** and Opengrep as
   the deepening swap so an Opengrep instability can't break the taint substrate. Cross-*file* bridging is
   neither engine's job — that stays LLM/human. Same Apex blind spot as Semgrep (SFGE owns Apex).
-- **E0.3 — Salesforce Guest/Metadata Exposure Mapper (the single most novel + timely BUILD).** *BUILD a
-  novel `source-scanner` (clone the `metadata-viewall` kind — glob XML → parse → class-severity finding,
-  zero harness-core change).* Computes, from metadata XML with **no live org**: (a) guest/site profile →
-  object/field/class/page grant join × entry-point (`@AuraEnabled`/`@RestResource`) × class
-  `with/without/inherited sharing`; (b) NamedCredential + RemoteSiteSetting + cspTrustedSite + Apex
-  `callout:` host inventory (flag plain-HTTP, wildcard hosts, remote sites with no matching Named
-  Credential); (c) permset/profile CRUD+FLS grant matrix + **release-to-release diff** (flag any grant
-  that widened). Moves guest-exposure + egress-trust + part of admin-surface/tenant-isolation from
-  llm-only → deterministic. No OSS tool builds this join; the commercial SF tools (Clayton/DigitSec) are
-  portal-only SaaS. Directly models the 2026 guest-`/sfsites/aura` data-theft campaign. **FP guardrail:**
-  source-only cannot see OWD/sharing rules → cap severity at **"statically-exposed grant," never
-  "confirmed leak."** **Scope-gate:** must NOT fire for a headless MCP-only package with no Experience
-  Cloud site (PENDING noise). Single-shape sub-classes it fully owns → may own a class, but must not
-  bleed into the multi-shape tenant-isolation dimension.
+- **E0.3 — Salesforce Guest/Metadata Exposure Mapper (the single most novel + timely BUILD).** *BUILD
+  novel `source-scanner`s (clone the `metadata-viewall` kind — glob XML → parse → class-severity finding,
+  zero harness-core change).* No OSS tool builds this; commercial SF tools (Clayton/DigitSec) are
+  portal-only SaaS. **FP guardrail:** source-only cannot see OWD/sharing rules → cap severity at
+  **"statically-exposed / widened grant," never "confirmed leak."**
+  **GROUNDED (2026-07-03, authoritative SF Metadata-API + platform docs). KEY REFRAME:** the guest→PS/PSG
+  **assignment edge** is the `PermissionSetAssignment` SObject (org-runtime SOQL, **NOT a Metadata API
+  type**), so a source scan reads the guest Profile + every PS/PSG/muting DEFINITION but never which is
+  assigned to the guest. So E0.3 splits into **three independent, differently-gated sub-mappers** (each its
+  own test-backed slice, one class per slice):
+  - **E0.3a — guest exposure [SITE-GATED].** Spine: `CustomSite .site-meta.xml <guestProfile>` → resolve
+    named `.profile-meta.xml` = the ONLY confirmed-from-source guest grant surface (tier a:
+    `<objectPermissions>` capped Read/Create + `<fieldPermissions>` + `<classAccesses>` + `<userPermissions>`
+    incl. APIEnabled amplifier). PS/PSG overlay = tier (b) "potential-IF-assigned", NEVER folded into (a).
+    Guest-reachable Apex = classAccesses(enabled) ∩ `@AuraEnabled` lacking `with sharing`/SECURITY_ENFORCED/
+    stripInaccessible (the `/s/sfsites/aura` ApexActionController path). Flagship, but narrowest
+    deterministic core + most FP-prone (@AuraEnabled reachability is heuristic). Scope-gate: fire ONLY if a
+    CustomSite resolves a guestProfile; suppress ALL guest findings otherwise (MCP-only case); never infer
+    from a profile merely NAMED "Guest".
+  - **E0.3b — egress inventory [UNGATED].** Metadata shapes: `.remoteSite-meta.xml <url>`,
+    `.cspTrustedSite-meta.xml <endpointUrl>` (`*` wildcard), `.namedCredential-meta.xml` (legacy `<endpoint>`
+    vs modern `<namedCredentialParameters>` `<parameterValue>` under parameterType Url), `.externalCredential-
+    meta.xml <authenticationProtocol>`, Apex `setEndpoint('callout:…')` governed vs raw literal. Flags:
+    plain-HTTP (baseline `endpoint-https-only`, major→high), `*`/`disableProtocolSecurity` over-broad,
+    host-with-no-matching-NamedCredential = raw-callout. Secret VALUES are org-only (never claim "hardcoded
+    secret" from a cred file). **Cleanest / lowest-FP — sequenced FIRST.** Sub-sliced: **E0.3b-1 =
+    plain-HTTP in the declarative egress metadata (RemoteSite/CspTrustedSite/NamedCredential URLs), one class
+    `plain-http-egress`, dimension `package-metadata`** (its charter owns "trusted-host XML"); wildcard,
+    raw-callout host-join, and Apex-literal are follow-ons.
+  - **E0.3c — CRUD/FLS grant matrix + release-widening diff [UNGATED].** `.permissionset/.profile-meta.xml`
+    `<objectPermissions>`/`<fieldPermissions>`/`<classAccesses>`/`<userPermissions>`{ModifyAllData/ViewAllData/
+    AuthorApex/ManageUsers}. Release diff = pure git-ref XML diff (v29+ serializes ONLY enabled perms →
+    **absent→present = widening**); no org. The **PSG+muting algebra's** cleanest deterministic HOME:
+    `effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG (global
+    muting = a correctness bug); naive `profile∪permset` OVER-states (the flagship FP).
+  **Severity two-band (within the cap):** HIGH = sharing-BYPASSING grants (ModifyAll/ViewAll data + per-object
+  VAR/MAR) + APIEnabled amplifier; MEDIUM = standard CRUD (OWD-gated). Owning a single-shape class is OK
+  (metadata-viewall precedent); must not bleed into the multi-shape tenant-isolation dimension. Sequence:
+  **E0.3b-1 → E0.3c (builds the PSG/muting helper) → E0.3a (reuses it).**
 
 #### Tier 1 — the four class slices, sharpened (build on the Tier-0 enablers)
 - **T1.0 — ReDoS oracle durability (OPTIONAL hardening; NOT urgent).** ReDoS **shipped + graded PASS
