@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.59**, suite **62 files / 894 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.60**, suite **62 files / 895 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 - **B5 was RE-SCOPED (2026-07-03)** from the original 4-slice list into a tiered enterprise-grade engine
   buildout (cross-cutting reachability/exposure enablers + the named classes + completeness-audit misses).
@@ -544,14 +544,18 @@ not offered in any form), Snyk Code (commercial + ML-nondeterministic — violat
 contract), promptmap (GPL-3.0 — never vendor).
 
 #### Recommended sequence (each slice one-at-a-time, test-backed) — REORDERED 2026-07-03 (outside review)
-0. **E0.2a — wire `--dataflow-traces` into run-scans Family 7 + re-grade E0.1 on a LIVE run.** *(NEW — the
-   review caught that E0.1's `reachabilityPath` is proven on fixtures but DORMANT live: run-scans' semgrep
-   command (`--config … --json`) never requests the trace, so a real scan populates no path. This is the
-   part of E0.2 that makes E0.1 actually flow — pull it out and do it FIRST; it's a one-line scan-command
-   change + a live re-grade, low offensive-content density, and independent of the injection routing so it
-   can run in PARALLEL with E0.1b-EXPAND.* The full Opengrep swap is **E0.2b**, later.)
-1. ~~**E0.1 reachability-path ingest**~~ **DONE at the adapter (0.8.57); DORMANT live until E0.2a wires
-   the flag** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
+0. ~~**E0.2a — wire `--dataflow-traces` into run-scans Family 7**~~ **DONE (0.8.60).** Flag added to the
+   live Family 7 command + a fenced-invocation-scoped standing check (`SG-RP4`) locks it. **KEY LIVE
+   FINDING (verified, encoded honestly):** the flag is necessary + version-portable, but whether `--json`
+   actually CARRIES the trace is **version-dependent** — Semgrep **1.85.0 emits `extra.dataflow_trace`;
+   1.168.0 (current pip) omits it even with the flag** (newer CLIs serialize traces to text/SARIF only).
+   So **E0.1's `reachabilityPath` flows live ONLY on Semgrep ≤~1.85, OR via the E0.2b Opengrep/SARIF
+   path** — on the current CLI it stays dormant despite the flag. SKILL.md instructs the operator to
+   report "reachability substrate unavailable on this Semgrep version" when a taint finding's evidence
+   JSON has no trace (the borrowed-substrate honesty marker). **Implication: E0.2b (Opengrep/SARIF) is now
+   the real path to live reachability on current tooling — promote it from "later" to a near-term slice.**
+1. ~~**E0.1 reachability-path ingest**~~ **DONE at the adapter (0.8.57); flows live only on Semgrep ≤~1.85
+   or via E0.2b (see E0.2a finding)** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
    ~~**E0.1b-EXPAND (full injection taxonomy + generated fixtures)**~~ **DONE (0.8.59)** — 7 CWEs active/
    fixture-proven across semgrep+bandit+njsscan; XPath/LDAP/XML-injection are the honest uncovered
    residual (need custom rules — see the E0.1b entry). Next: **E0.1c** (deserialization) → **E0.1d**
