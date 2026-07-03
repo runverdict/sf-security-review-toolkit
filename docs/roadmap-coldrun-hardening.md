@@ -393,7 +393,7 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   is CWE-**939** (Improper Authorization in a Custom-URL-Scheme handler), NOT SSRF — our test/prose
   MISLABELS it "SSRF". Real **SSRF is CWE-918** (→ data-export, not injection-xss); it has no fixture yet
   and is untested. No routing bug (neither 939 nor 918 is in the `{89,78}` allowlist), but correct the
-  record (test comment is code → fix in the next injection builder prompt; add a real-918 negative if a
+  record (the test comment is code → correct it in the next injection slice; add a real-918 negative if a
   fixture exists). **XXE (611)→deser vs XML-injection (91)→injection-xss** is a deliberate split — record
   the rationale in E0.1c and verify no scanner double-tags one XXE hit with both 611 and an injection CWE
   (would double-route).
