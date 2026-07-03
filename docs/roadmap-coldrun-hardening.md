@@ -351,10 +351,57 @@ things: judgments that are IRREDUCIBLE (Rice-theorem business-logic + multi-step
 reviewer pen-tests these by hand, they stay `llm-inferred`), and judgments left to the LLM ONLY because
 the toolkit never ingested a substrate its own scanners already compute. One-line floor: **the toolkit
 can deterministically decide "an unsafe path / an ungated grant / an unguarded sink / an unsafe regex
-exists here, and here is the path" — it cannot decide "and that path is reachable with hostile input, the
-sink is metered, the grant is on sensitive data, and nothing upstream saves it."** The reachability PATH
-is substrate; the trust-model GROUNDING of the path's source is residual. North Star unchanged:
+exists here, and here is the path (including the intra-file taint edge the engine computed)" — it cannot
+decide "and that path's SOURCE is attacker-controlled and untrusted, the sink is metered, the grant is on
+sensitive data, and nothing upstream saves it."** The reachability PATH (bounded, intra-file) is
+substrate; the trust-model GROUNDING of the path's source — is it really hostile-reachable — is residual.
+North Star unchanged:
 deterministic substrate maximized + a labelled semantic residual, NOT literal 100%.
+
+#### Outside-review corrections (2026-07-03) — framing + integrity (fold into each slice)
+- **Say "substrate + routing deterministic; class-VERDICT still residual", not "moves the class to
+  deterministic".** For every MULTI-SHAPE dimension the supersession rule FORCES `classify()=null`, so B5
+  can move the substrate (a sink/path/grant exists) and the dimension routing to deterministic, but it
+  structurally CANNOT move class ownership to deterministic there. Deterministic class ownership lives
+  only in the single-shape sub-dimensions the adapter fully owns (the RLS-oracle finding; E0.3's
+  single-shape sub-classes). Per-slice wins are "narrow + ground the residual" (a real win — the LLM's job
+  gets smaller and better-grounded, which is what the recurrence-confidence contract wants), not
+  class-level determinism.
+- **The supersession backstops catch UNDEFINED-class attachment, not shape-MISjudgment.** `classify()=null`
+  + `buildFinding` refusing a class absent from `CLASS_DEFS` together stop attaching an *undefined* class;
+  neither stops someone attaching a *defined* class to a dimension they WRONGLY believed single-shape.
+  There is no mechanical single-shape check — it rests on taxonomy discipline enforced per-dimension by a
+  standing non-supersession test (e.g. `INJ-non-supersession`, `RD-non-supersession`). Do NOT call this
+  "defense-in-depth" against the supersession hazard. **Hardening candidate:** an explicit single-shape
+  registry that any owning `classify()` is checked against, so shape-correctness stops being a silent
+  manual invariant.
+- **Borrowed-substrate honesty: distinguish "no signal applies" from "signal expected but the tool stopped
+  emitting it".** E0.1's additive "absent trace → no attribute, trace-less findings byte-identical" is
+  correct for not breaking findings but collapses those two states — so a Semgrep JSON-schema change (already
+  happening), a cold install silently dropping Pro-gated AI rules, or a CA bump landing SFGE v5 without
+  graph CRUD/FLS all regress coverage while producing output identical to the healthy case. **Standing rule
+  for any adapter depending on an external tool's OPTIONAL output:** assert that output's presence in
+  run-scans and emit a visible `substrate-unavailable` marker when missing (which also lets the residual
+  honestly say "reachability unknown here" rather than imply none).
+- **Measure the RESIDUAL's recurrence stability, not just its size.** B5 peels the tractable substrate-backed
+  parts into the deterministic layer; what's left for the LLM is the irreducible core (Rice business-logic,
+  multi-step authz, source trust-grounding) — the HARDEST judgments. Solano runs already showed LLM
+  finding-set instability (Jaccard 0.44–0.67); concentrating the hardest judgments could push per-finding
+  stability DOWN even as the residual count drops. Track residual recurrence stability before/after each
+  slice (via the recurrence-confidence contract), not only count.
+- **Routing-integer accuracy (the router keys on exact ints):** the `dynamic-urllib` negative-test finding
+  is CWE-**939** (Improper Authorization in a Custom-URL-Scheme handler), NOT SSRF — our test/prose
+  MISLABELS it "SSRF". Real **SSRF is CWE-918** (→ data-export, not injection-xss); it has no fixture yet
+  and is untested. No routing bug (neither 939 nor 918 is in the `{89,78}` allowlist), but correct the
+  record (test comment is code → fix in the next injection builder prompt; add a real-918 negative if a
+  fixture exists). **XXE (611)→deser vs XML-injection (91)→injection-xss** is a deliberate split — record
+  the rationale in E0.1c and verify no scanner double-tags one XXE hit with both 611 and an injection CWE
+  (would double-route).
+- **Fixture generation proves the RULE-PATH, not the CLASS.** A green generated fixture proves the router
+  handles the one rule that fired on the seed; scanners populate CWE inconsistently across rules for the
+  same class, so a partner hitting that class via a different rule (missing/different CWE metadata) can
+  still route wrong. `// fixture-pending` covers "no rule emits"; it does NOT cover "some rules emit CWE,
+  some don't." State fixtures as rule-path-proven, not class-proven.
 
 #### Tier 0 — cross-cutting enablers (build FIRST; each unlocks several classes; zero/low new tooling, near-zero FP)
 - ~~**E0.1 — reachability-path ingest**~~ **DONE (0.8.57)** — the Semgrep adapter now captures
@@ -488,19 +535,36 @@ adapter the toolkit cannot install, run, or validate for its own users is pure l
 not offered in any form), Snyk Code (commercial + ML-nondeterministic — violates the determinism
 contract), promptmap (GPL-3.0 — never vendor).
 
-#### Recommended sequence (each slice one-at-a-time, test-backed)
-1. ~~**E0.1 reachability-path ingest**~~ **DONE (0.8.57)** · ~~**E0.1b injection routing, narrow
-   (CWE-89/78)**~~ **DONE (0.8.58).** Next: **E0.1b-EXPAND** (full injection taxonomy + generated
-   fixtures) → **E0.1c** (deserialization) → **E0.1d** (sessionid/Apex) — each comprehensive +
-   generated-fixture, `classify()=null` on the multi-shape dimensions.
-2. **T1.1 prompt-injection reachability** (custom LLM-SDK / MCP / SF-write-back sink overlay on the E0.1 edge).
-3. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point).
-4. **E0.3 guest-exposure mapper** (novel cold-install source-scanner; highest novel value, no running
-   target — could be pulled earlier if the guest surface is the priority).
-5. **T1.3 IDOR/BOLA** (last in Tier 1 — needs a running target + the E0.1 prefilter; verify SFGE v4/v5
-   first; RLS oracle gated on the architecture).
-6. **Tier-2 drop-ins**, cheapest-first (@salesforce/eslint-plugin-lwc → Flow Scanner → syft → GuardDog →
-   ScanCode → network-gated trufflehog-verified / mcp-scan / Scorecard), then **cross-engine dedup**.
+#### Recommended sequence (each slice one-at-a-time, test-backed) — REORDERED 2026-07-03 (outside review)
+0. **E0.2a — wire `--dataflow-traces` into run-scans Family 7 + re-grade E0.1 on a LIVE run.** *(NEW — the
+   review caught that E0.1's `reachabilityPath` is proven on fixtures but DORMANT live: run-scans' semgrep
+   command (`--config … --json`) never requests the trace, so a real scan populates no path. This is the
+   part of E0.2 that makes E0.1 actually flow — pull it out and do it FIRST; it's a one-line scan-command
+   change + a live re-grade, low offensive-content density, and independent of the injection routing so it
+   can run in PARALLEL with E0.1b-EXPAND.* The full Opengrep swap is **E0.2b**, later.)
+1. ~~**E0.1 reachability-path ingest**~~ **DONE at the adapter (0.8.57); DORMANT live until E0.2a wires
+   the flag** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58).** Next:
+   **E0.1b-EXPAND** (full injection taxonomy + generated fixtures) → **E0.1c** (deserialization) →
+   **E0.1d** (sessionid/Apex) — each comprehensive + generated-fixture, `classify()=null` on the
+   multi-shape dimensions.
+2. **E0.3 guest-exposure mapper** — PULLED FORWARD (was after T1.1/T1.2; the review flagged the
+   Tier-0-"build-first"-but-sequenced-late contradiction). Most novel + most timely (models the live 2026
+   guest/`/sfsites/aura` data-theft campaign), cold-install, no running target, clean severity cap. Ahead
+   of the less-differentiated class slices. **Must compose Permission Set Groups + muting permission sets,
+   not just profile∪permset** (effective guest permission depends on PSGs + muting; a naive union
+   over/under-reports — and this is the flagship build whose credibility IS the accuracy of that join).
+3. **T1.1 prompt-injection reachability** (custom LLM-SDK / MCP / SF-write-back sink overlay on the E0.1 edge).
+4. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point;
+   `query-without-.limit()` + `LLM-call-missing-max_tokens` get the same "shape present, not vector
+   confirmed" care as rate-limit — both are FP-context-dependent, e.g. an indexed unique predicate bounds
+   a limitless query, some SDKs default/cap max_tokens).
+5. **T1.3 IDOR/BOLA** (last in Tier 1 — running target + E0.1 prefilter; verify SFGE v4/v5 first; the RLS
+   oracle is deterministic ONLY for the consenting-with-Postgres-RLS-and-faithful-mirror subset — for the
+   common partner IDOR stays LLM+human; do not over-count it as "IDOR → deterministic" generally).
+6. **E0.2b Opengrep swap** (confirm the interprocedural-taint delta EMPIRICALLY on a real target before
+   counting on it — Opengrep is new; keep Semgrep CE baseline) + **Tier-2 drop-ins**, cheapest-first
+   (@salesforce/eslint-plugin-lwc → Flow Scanner → syft → GuardDog → ScanCode → network-gated
+   trufflehog-verified / mcp-scan / Scorecard), then **cross-engine dedup**.
 
 **Over-optimistic claims flagged (do not budget on these):** "~80-90% of the class surface goes
 deterministic" is a whole-program-WITH-live-endpoint figure — the cold-install static pass is far lower;
