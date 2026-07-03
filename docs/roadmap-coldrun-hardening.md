@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.61**, suite **62 files / 905 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.62**, suite **62 files / 911 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -456,8 +456,16 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
     **Honest-floor guardrail throughout:** promote a CWE int ONLY after a genuine captured fixture emits
     it; if a custom rule's `--test` safe sample trips (can't reach low-FP), DON'T ship it — leave that
     (class,language) residual. 611 XXE handled in E0.1c.
-- **E0.1c — untrusted-deserialization routing + generated fixtures** (CWE-502 native-deser, 1321
-  prototype-pollution, 611 XXE). Same comprehensive + generated-fixture approach; `classify()=null`.
+- ~~**E0.1c — untrusted-deserialization routing + generated fixtures**~~ **DONE (0.8.62)** — and it landed
+  the **scalability refactor**: the single injection Set became a unified `CWE_TO_DIMENSION` map (every SAST
+  adapter routes through it; `INJECTION_XSS_CWES` is now a DERIVED view so they can't drift; injection
+  behavior byte-identical, proven by the whole suite + behavior-identity assertions). Deser active,
+  fixture-proven: **502** (pickle/node-serialize), **611** (XXE — moved out of injection), **915** (JS
+  prototype pollution — semgrep emits 915, NOT 1321; 1321 left fixture-pending). Honest floor: bandit tags
+  XXE as CWE-20 → stays external-sast (live inconsistent-tagging illustration); **Apex `JSON.deserialize`
+  → sObject mass-assignment is LLM-residual** (no scanner CWE, never reaches the router — stated, not
+  faked). `classify()=null`, no CLASS_DEFS entry, non-supersession locked. Graded off disk (genuine
+  fixtures + 10/10 battery + 2 mutations). The unified map is now the routing foundation E0.1e builds on.
 - **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval). Needs a
   generated Code Analyzer fixture; if the CA stack can't run in the slice, defer honestly as
   "pending CA stack," never as a coverage choice.
