@@ -1,0 +1,65 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 2,
+    "sev1": 0,
+    "sev2": 0,
+    "sev3": 2,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "pmd": "0.41.0"
+  },
+  "violations": [
+    {
+      "rule": "AvoidUnauthorizedGetSessionIdInApex",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedSession.cls",
+          "startLine": 3,
+          "startColumn": 22,
+          "endLine": 3,
+          "endColumn": 45
+        }
+      ],
+      "message": "User of UserInfo.getSessionId might not be authorized",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidunauthorizedgetsessionidinapex"
+      ]
+    },
+    {
+      "rule": "AvoidUnauthorizedApiSessionIdInVisualforce",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedSessionPage.page",
+          "startLine": 3,
+          "startColumn": 22,
+          "endLine": 3,
+          "endColumn": 37
+        }
+      ],
+      "message": "Retrieval of session ID using API.Session_ID is not authorized.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidunauthorizedapisessionidinvisualforce"
+      ]
+    }
+  ]
+}

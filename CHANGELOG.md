@@ -51,6 +51,49 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.65] — 2026-07-03
+
+**Code Analyzer's built-in `pmd-appexchange` session-id retrieval rules now file under the
+`sessionid-egress` dimension.** These findings already fired on every real scan — run-scans
+invokes Code Analyzer with the AppExchange rule selector, whose session-id rules flag every
+`UserInfo.getSessionId()` and `$Api.Session_ID` retrieval site — but because they own no toolkit
+class and carried no dimension hint, every hit landed in the catch-all `apex-exposed-surface`
+grouping instead of the auto-fail `sessionid-egress` dimension that owns it. Code Analyzer v5
+output carries **no CWE field** for any engine (verified against the committed fixtures and the
+v5 output schema), so the `CWE_TO_DIMENSION` mechanism the five SAST adapters share cannot apply:
+this release adds `RULE_DIMENSION`, a rule-NAME→dimension table (the class-less sibling of
+`RULE_CLASS` — the standing test asserts the two maps are disjoint), and the Code Analyzer
+adapter now sets the same `dimensionHint` its SAST siblings derive from CWEs. Routing only —
+`classify()` stays null, no `CLASS_DEFS['sessionid-egress']` entry exists, so a routed finding
+owns no toolkit class and supersedes nothing: `sessionid-egress` is a multi-shape dimension, and
+a routed retrieval-site row must never silence a co-located model-inferred finding of a
+different session-egress shape.
+
+Both active rows are fixture-proven, keyed on the exact spellings a genuine
+`sf code-analyzer run --rule-selector AppExchange` capture emitted (Code Analyzer core 0.48.0 /
+pmd engine 0.41.0 / `@salesforce/plugin-code-analyzer` 5.13.0) over a minimal seeded sample:
+`AvoidUnauthorizedGetSessionIdInApex` (Apex `UserInfo.getSessionId()`, tags
+AppExchange/Security/Apex, engine `pmd`) and `AvoidUnauthorizedApiSessionIdInVisualforce`
+(Visualforce `$Api.Session_ID`, tags AppExchange/Security/Visualforce). The formula/merge-field
+`GETSESSIONID()` sibling documented in the pmd-appexchange rule reference stays a fixture-pending
+comment — nothing speculative is activated.
+
+**Honest floor.** These are bare-retrieval rules: they flag the retrieval SITE, including the
+approved on-platform uses Salesforce's session-id guidance carves out, and do not model the value
+reaching an egress sink. The routing makes the retrieval substrate deterministic and correctly
+filed under the auto-fail heading; the egress VERDICT — does this retrieval actually leave the
+platform — stays the labelled model/human residual. Scope is the package/Apex side only: the
+external-service side of the dimension (inbound token passthrough, Authorization-header logging,
+raw persistence, URL embedding) has no clean deterministic substrate — a generic CWE-532/CWE-200
+sensitive-info-in-log hit is secrets-credentials territory and would over-route into an auto-fail
+band — so it stays model-residual, and no generic log/info-exposure CWE routes here.
+
+Suite **62 files / 924 checks** (was 919), all green. Mutation-proven: removing
+`AvoidUnauthorizedGetSessionIdInApex` from `RULE_DIMENSION` turns the routing + fixture checks
+red (the finding falls back to `apex-exposed-surface`); adding a `CLASS_DEFS['sessionid-egress']`
+entry + a non-null `classify()` for the routed rule turns the non-supersession lock red (the
+supersession visibly fires).
+
 ## [0.8.64] — 2026-07-03
 
 **The toolkit now ships its own curated `rules/injection/` Semgrep taint-rule pack, covering the

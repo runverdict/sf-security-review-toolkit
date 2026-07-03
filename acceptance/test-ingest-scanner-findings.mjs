@@ -52,6 +52,14 @@
  *        class-proven (see the honesty caveat on the allowlist). classify() stays null on ALL THREE
  *        adapters, locked by INJ-non-supersession (an owned class would silence a co-located
  *        llm-inferred injection finding of a DIFFERENT shape; mutation-proven — the RD posture ported).
+ *   SESS — the Code Analyzer rule-name→dimension routing (B5 · E0.1d, 0.8.65): CA v5 output
+ *        carries NO CWE field, so the pmd-appexchange session-id retrieval rules
+ *        (AvoidUnauthorizedGetSessionIdInApex + AvoidUnauthorizedApiSessionIdInVisualforce,
+ *        both fixture-proven from a genuine AppExchange-selector capture) route by RULE NAME
+ *        via RULE_DIMENSION (RULE_CLASS's disjoint class-less sibling) to the sessionid-egress
+ *        dimension. The routed finding is class-less (classify() stays null, AD2 intact) so it
+ *        supersedes nothing — the multi-shape lock, SESS-non-supersession (mutation-proven);
+ *        the retrieval SITE is deterministic, the egress VERDICT stays the labelled residual.
  *   SG-RP-SARIF/SG-RP-OG/SG-SARIF-CE-PENDING/ALL-SARIF — the SARIF codeFlows reachability surface
  *        (B5 · E0.2b, 0.8.61): the version-portable `sarif` adapter (engine from tool.driver.name,
  *        codeFlows→reachabilityPath via _sarifReachabilityPath, level→band, rule-tag CWE routing,
@@ -114,6 +122,7 @@ import {
   dimensionForCwes,
   CLASS_DEFS,
   RULE_CLASS,
+  RULE_DIMENSION,
 } from '../harness/ingest-scanner-findings.mjs'
 import { reconcileProvenance } from '../harness/reconcile-provenance.mjs'
 import { sameLocation } from '../harness/finding-clusters.mjs'
@@ -134,6 +143,7 @@ const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 sourc
 const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --json` v2: 4 vulnerable pkgs (body-parser/express/path-to-regexp/qs), moderate×2 + high×2
 const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 filesystem scan: 1 Class:'config' Result, 1 FAIL misconfig (DS-0026 No HEALTHCHECK, Severity LOW, no StartLine — the IaC anchor, class-severity high)
 const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VERBATIM stdout (format C — text, not JSON) over seeded vulnerable py/js: 4 blocks — (a+)+$ exp @server.py:3 + (.*)*x exp @:4 + a*a*a*$ cubic @:5 (Context lines) + (x+)+y(z+)+w exp @validate.js:1 (JS: no Context, TWO Redos records in ONE block), with a mid-file "Processed N regexes" trailer between the two tools' outputs
+const SESSFIX = join(FIX, 'code-analyzer-sessionid-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a minimal seeded sample: AvoidUnauthorizedGetSessionIdInApex @SeedSession.cls:3 + AvoidUnauthorizedApiSessionIdInVisualforce @SeedSessionPage.page:3 — the RULE_DIMENSION sessionid-egress routing anchors
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -2195,6 +2205,124 @@ check('CUSTOM-INJ-wiring-pack: rules/injection/ ships a .yaml + a matching `semg
   }
 })
 
+// ───────────────────────────────────── session-id retrieval routing (B5 · E0.1d, 0.8.65)
+// Code Analyzer's built-in pmd-appexchange session-id rules fire on EVERY retrieval site
+// (bare retrieval — including the approved on-platform uses Salesforce's session-id guidance
+// carves out), and CA v5 JSON carries NO CWE field for any engine — so these route by RULE
+// NAME via RULE_DIMENSION (RULE_CLASS's class-less sibling; the two maps are disjoint) to the
+// sessionid-egress methodology dimension. The routing files the retrieval SITE under the
+// auto-fail heading; the egress VERDICT (does the value leave the platform) stays the
+// labelled LLM/human residual, and the external-service token-passthrough side of the
+// dimension has no clean deterministic substrate (a generic log-exposure CWE would over-route
+// into an auto-fail band), so it stays LLM-residual too. Fixture: a GENUINE
+// `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 /
+// pmd engine 0.41.0 / @salesforce/plugin-code-analyzer 5.13.0) over a minimal seeded sample
+// (an Apex UserInfo.getSessionId() read + a Visualforce $Api.Session_ID merge-field),
+// emitting exactly AvoidUnauthorizedGetSessionIdInApex (tags AppExchange/Security/Apex,
+// engine 'pmd', severity 3) + AvoidUnauthorizedApiSessionIdInVisualforce (tags AppExchange/
+// Security/Visualforce, engine 'pmd', severity 3) — the exact spellings the map activates;
+// the formula/merge-field GETSESSIONID() sibling stays fixture-pending.
+const ingestSess = (raw) => ingest(raw === undefined ? readJSON(SESSFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+const sessHit = (rule) => ({
+  violations: [
+    {
+      rule,
+      engine: 'pmd',
+      severity: 3,
+      tags: ['AppExchange', 'Security', 'Apex'],
+      primaryLocationIndex: 0,
+      locations: [{ file: 'force-app/main/default/classes/Other.cls', startLine: 4 }],
+      message: 'm',
+      resources: [],
+    },
+  ],
+})
+
+check('SESS-routing: RULE_DIMENSION routes both fixture-proven pmd-appexchange session-id rules to sessionid-egress; a security-tagged CA hit with that rule name ingests deterministic/sessionid-egress with NO owned class', () => {
+  assert.equal(RULE_DIMENSION['AvoidUnauthorizedGetSessionIdInApex'], 'sessionid-egress')
+  assert.equal(RULE_DIMENSION['AvoidUnauthorizedApiSessionIdInVisualforce'], 'sessionid-egress')
+  const { findings } = ingestSess(sessHit('AvoidUnauthorizedGetSessionIdInApex'))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.dimension, 'sessionid-egress')
+  assert.equal(f.status, 'confirmed')
+  assert.ok(!('class' in f), 'a routed session-id finding owns no class')
+})
+
+check('SESS-fixture: the genuine CA AppExchange capture lands both retrieval sites deterministic/sessionid-egress, class-less, at the seed loci (CA core 0.48.0 / pmd 0.41.0 / plugin 5.13.0); byte-deterministic', () => {
+  const { findings } = ingestSess()
+  assert.equal(findings.length, 2)
+  const apex = findById(findings, (x) => x.ruleId === 'AvoidUnauthorizedGetSessionIdInApex')
+  const vf = findById(findings, (x) => x.ruleId === 'AvoidUnauthorizedApiSessionIdInVisualforce')
+  assert.ok(apex, 'the Apex retrieval-site finding is present')
+  assert.ok(vf, 'the Visualforce retrieval-site finding is present')
+  for (const f of [apex, vf]) {
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'pmd') // the engine label the capture emitted — routing keys on the rule NAME, not the engine
+    assert.equal(f.dimension, 'sessionid-egress')
+    assert.equal(f.adjusted_severity, 'medium') // class-less CA-severity fallback: sev 3 → medium
+    assert.ok(!('class' in f), 'no owned class')
+  }
+  assert.equal(apex.file, 'force-app/main/default/classes/SeedSession.cls:3')
+  assert.equal(vf.file, 'force-app/main/default/pages/SeedSessionPage.page:3')
+  assert.equal(JSON.stringify(findings), JSON.stringify(ingestSess().findings))
+})
+
+check('SESS-disjoint: RULE_DIMENSION and RULE_CLASS share no key — a rule either owns a class or routes a class-less dimension, never both', () => {
+  const overlap = Object.keys(RULE_DIMENSION).filter((k) => k in RULE_CLASS)
+  assert.deepEqual(overlap, [])
+  for (const v of Object.values(RULE_DIMENSION)) assert.equal(v, 'sessionid-egress')
+})
+
+check('SESS-negative: RULE_CLASS routing untouched (ApexCRUDViolation → crud-fls/apex-exposed-surface); a security-tagged rule in NEITHER map still falls to apex-exposed-surface; classify() stays null for the session-id rules (AD2 intact)', () => {
+  const crud = ingestSess(sessHit('ApexCRUDViolation')).findings[0]
+  assert.equal(crud.class, 'crud-fls')
+  assert.equal(crud.dimension, 'apex-exposed-surface')
+  const other = ingestSess(sessHit('SomeSecurityRuleInNeitherMap')).findings[0]
+  assert.equal(other.dimension, 'apex-exposed-surface')
+  assert.ok(!('class' in other))
+  assert.equal(codeAnalyzerAdapter.classify('AvoidUnauthorizedGetSessionIdInApex'), null)
+  assert.equal(codeAnalyzerAdapter.classify('AvoidUnauthorizedApiSessionIdInVisualforce'), null)
+})
+
+check('SESS-non-supersession (the standing lock — the RD/INJ/DESER posture ported): a routed deterministic sessionid-egress finding does NOT supersede a co-located llm-inferred sessionid-egress finding of a DIFFERENT session-egress shape', () => {
+  const det = findById(ingestSess().findings, (x) => x.ruleId === 'AvoidUnauthorizedGetSessionIdInApex')
+  assert.equal(det.provenance, 'deterministic')
+  assert.equal(det.dimension, 'sessionid-egress')
+  // an llm-inferred sessionid-egress finding of a DIFFERENT SHAPE (the retrieved value reaching
+  // a callout Authorization header — the egress-verdict shape no bare-retrieval rule describes),
+  // same file, overlapping lines
+  const llm = {
+    id: '6'.repeat(16),
+    dimension: 'sessionid-egress',
+    title: 'Retrieved session id reaches an external callout Authorization header',
+    severity: 'critical',
+    adjusted_severity: 'critical',
+    file: 'force-app/main/default/classes/SeedSession.cls:1-10', // overlaps det's :3
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the retrieval-to-callout dataflow',
+  }
+  // PRECONDITIONS that WOULD fire supersession if the adapter owned a class: same dimension +
+  // same locus. Asserting them keeps the guard sharp — the ONLY missing ingredient is the owned
+  // class (classify()→null + no CLASS_DEFS['sessionid-egress']). MUTATION: adding a
+  // CLASS_DEFS['sessionid-egress'] entry + a classify()→'sessionid-egress' for the routed rule
+  // turns THIS red at `superseded === 0` (the supersession visibly FIRES), proving the
+  // protection is the null classify, not an accident.
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM egress-verdict finding is NOT superseded — the routed retrieval-site row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // the guard itself, asserted LAST so a class-owning mutation fails first at "superseded === 0"
+  assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
+})
+
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)
 // The DESIGN PIVOT BACK to class-severity (like checkov, NOT the SG/BN/NJ tool→band path): a secret
 // has no tool-severity tier, so severity comes from the `fail-hardcoded-secrets` CLASS (major → high).
@@ -3495,8 +3623,10 @@ check('RC-each: every committed fixture recognizes as its OWN adapter (content s
   for (const [name, path] of Object.entries(RC_FIXMAP)) {
     assert.equal(recognizeScanner(readJSON(path)), name, `${path} → ${name}`)
   }
-  // the second code-analyzer (SFGE) + the second semgrep (helios) fixtures also route correctly
+  // the second code-analyzer (SFGE) + the second semgrep (helios) fixtures also route correctly,
+  // as does the sessionid-seeded CA capture (0.8.65)
   assert.equal(recognizeScanner(readJSON(SFGE)), 'code-analyzer')
+  assert.equal(recognizeScanner(readJSON(SESSFIX)), 'code-analyzer')
   assert.equal(recognizeScanner(readJSON(SEMGREP_ERR)), 'semgrep')
   // the format-C TEXT fixture (0.8.56): a STRING shape, provably disjoint from every JSON adapter
   // by construction (all 11 other detects require an object/array) — a single match, never ambiguous.

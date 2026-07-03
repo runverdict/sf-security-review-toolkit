@@ -80,7 +80,13 @@ recognize: endpoints of the form `callout:Name` and `{!$Credential…}` merge
 fields. Structured scanning of the same class is Code Analyzer's job
 (orchestrated by `/sf-security-review-toolkit:run-scans`) — this dimension's
 finder reads the retrieval sites the greps surface and traces whether each
-reaches an egress sink.
+reaches an egress sink. As of 0.8.65 that deterministic substrate routes here
+automatically: Code Analyzer's `pmd-appexchange` session-id retrieval rules
+(`AvoidUnauthorizedGetSessionIdInApex`, `AvoidUnauthorizedApiSessionIdInVisualforce`)
+ingest under this dimension by rule name (`RULE_DIMENSION`, class-less) — the
+retrieval SITE is deterministic, while the egress VERDICT on each site and the
+entire external-service side below stay this dimension's finder/verifier
+residual.
 
 **External service — sources**: routes receiving Salesforce traffic (webhook
 receivers, Canvas signed-request endpoints — grep `signed_request`,

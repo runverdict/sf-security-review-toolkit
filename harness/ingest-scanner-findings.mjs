@@ -392,6 +392,35 @@ export const RULE_CLASS = {
   ApexSharingViolations: 'sharing',
 }
 
+// Scanner rule name -> methodology DIMENSION (RULE_CLASS's class-less sibling), for
+// security-tagged Code Analyzer rules that own NO toolkit class but belong to a specific
+// dimension. A rule either owns a class OR routes a class-less dimension, never both —
+// the standing test asserts the two maps are disjoint. Code Analyzer v5 output carries NO
+// CWE field for any engine (verified against the committed CA fixtures + the v5 output
+// schema), so the CWE_TO_DIMENSION mechanism the semgrep/bandit/njsscan/sarif/opengrep
+// adapters share CANNOT apply here — CA routing is by RULE NAME. A routed hit stays
+// class-less (classify() reads only RULE_CLASS), takes buildFinding's dimensionHint path,
+// and supersedes nothing: `sessionid-egress` is a MULTI-SHAPE dimension (package-side
+// retrieval→callout plus the external-service token-passthrough / header-logging / raw-
+// persistence / URL-embedding shapes), so an owned class here would let a routed
+// retrieval-site finding silence a co-located LLM finding of a DIFFERENT shape via the
+// reconcile-provenance dimension fallback. HONEST FLOOR: the pmd-appexchange session-id
+// rules are BARE-RETRIEVAL detectors — they flag every UserInfo.getSessionId() /
+// $Api.Session_ID retrieval site, including the approved on-platform uses. The routing
+// makes the retrieval SITE deterministic and correctly filed under the auto-fail heading;
+// whether the value actually LEAVES the platform (the egress VERDICT) stays the labelled
+// LLM/human residual, as does the whole external-service side (no clean deterministic
+// substrate — a generic CWE-532/CWE-200 log-exposure hit is secrets-credentials territory
+// and would OVER-ROUTE into this auto-fail band). Activate a row ONLY once a genuine
+// captured CA fixture emits that exact rule name (code-analyzer-sessionid-seeded.json —
+// Code Analyzer core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0).
+export const RULE_DIMENSION = {
+  AvoidUnauthorizedGetSessionIdInApex: 'sessionid-egress', // UserInfo.getSessionId() retrieval site (Apex)
+  AvoidUnauthorizedApiSessionIdInVisualforce: 'sessionid-egress', // $Api.Session_ID retrieval site (Visualforce)
+  // fixture-pending (NOT active until a genuine capture emits the exact name): the formula /
+  // merge-field GETSESSIONID() sibling documented at rules-pmd-appexchange.html
+}
+
 const VIEWALL_DOC =
   'https://developer.salesforce.com/docs/atlas.en-us.packagingGuide.meta/packagingGuide/secure_code_violation_access_settings.htm'
 const PS_OVERGRANT_FLAGS = ['viewAllRecords', 'modifyAllRecords', 'modifyAllData']
@@ -696,6 +725,10 @@ export const codeAnalyzerAdapter = {
         message: v.message == null ? '' : String(v.message),
         resources: Array.isArray(v.resources) ? v.resources : [],
         tags: Array.isArray(v.tags) ? v.tags : [],
+        // rule-name dimension routing (RULE_DIMENSION — CA output carries no CWE, so this is
+        // the CA analogue of the SAST adapters' dimensionForCwes hint). undefined when
+        // unmapped (harmless); buildFinding ignores it for a class-owning rule.
+        dimensionHint: RULE_DIMENSION[String(v.rule)],
       })
     }
     return hits
