@@ -51,6 +51,52 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.59] — 2026-07-03
+
+**`injection-xss` routing now covers the full injection taxonomy — cross-site scripting,
+code and eval injection, server-side template injection, and NoSQL injection — across the
+`semgrep`, `bandit`, and `njsscan` scanners.** The previous release routed only SQL
+injection (CWE-89) and OS-command injection (CWE-78) to the `injection-xss` dimension. The
+exact integer-CWE allowlist now also carries **CWE-79** (XSS), **CWE-94** (code injection),
+**CWE-95** (eval / dynamically-evaluated code), **CWE-96** (server-side template injection /
+statically-saved code), and **CWE-943** (NoSQL / data-query injection); every other hit
+keeps the catch-all `external-sast` grouping label. `njsscan` joins `semgrep` and `bandit`
+as a CWE-routed adapter — an allowlisted CWE in its `metadata.cwe` field now files the hit
+under `injection-xss` too.
+
+**Each newly-routed CWE is proven by a genuine generated fixture** — a minimal seeded sample
+run through the real scanner, with the tool's actual output captured as the test fixture:
+XSS via njsscan `express_xss` and semgrep `raw-html-format` (CWE-79); code injection via
+bandit `jinja2_autoescape_false` (CWE-94); eval injection via njsscan `eval_nodejs` and
+semgrep `eval-injection` (CWE-95); template injection via semgrep `render-template-string`
+(CWE-96); NoSQL injection via njsscan `node_nosqli_js_injection` (CWE-943). Each fixture is
+**rule-path-proven, not class-proven**: it proves the router handles the one rule that fired
+on the seed — scanners populate the CWE field inconsistently across rules for the same
+class, so an app that hits the same class through a different rule (one with absent or
+different CWE metadata) can still route to `external-sast`. Sub-classes for which no OSS rule
+emitted a CWE on a minimal sample — XPath, LDAP, XML injection, and the
+expression-language / template variants some tools tag differently — are pre-registered as
+fixture-pending comments and stay `external-sast` until a fixture proves each.
+
+**Routing only, and the boundary holds.** The finding's band/severity, id hash, reasoning,
+and gate are untouched — only the `dimension` (the review heading) changes — and all three
+scanners keep `classify() → null`, so a routed finding owns no class and supersedes nothing.
+The exact-membership check keeps the non-injection findings put: server-side request
+forgery (CWE-918) and path traversal (CWE-22) belong to the `data-export` dimension, and
+cross-site request forgery (CWE-352), custom-URL-scheme authorization (CWE-939), hardcoded
+credentials (CWE-798), and protection-mechanism failures (CWE-693) all stay `external-sast`
+— locked by negative-routing tests, including a fresh CSRF negative captured alongside the
+XSS finding. One record correction: the `dynamic-urllib` negative anchor is CWE-939
+(custom-URL-scheme authorization), not SSRF — real SSRF is CWE-918 and routes to
+`data-export`.
+
+Suite **62 files / 894 checks** (was 889), all green — a positive routing check per
+generated fixture, an njsscan positive-and-negative pair, the expanded exact-membership
+allowlist unit (a neighbouring id like `CWE-940` / `CWE-9430` / `CWE-960` never reads as an active id),
+and the non-supersession lock now covers a newly-added sub-class. Mutation-proven: removing a
+newly-activated CWE from the allowlist turns its fixture's routing check red, and adding an
+owned `injection-xss` class fires the supersession lock.
+
 ## [0.8.58] — 2026-07-03
 
 **External-SAST SQL-injection and command-injection findings now file under the

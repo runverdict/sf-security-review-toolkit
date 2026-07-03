@@ -853,30 +853,48 @@ export const checkovAdapter = {
 }
 
 // ----------------------------------------------------------------------------
-// CWE→dimension ROUTING for the external-SAST adapters (B5 · E0.1b, 0.8.58).
+// CWE→dimension ROUTING for the external-SAST adapters (B5 · E0.1b, 0.8.58;
+// taxonomy EXPANDED across the injection classes + njsscan wired, E0.1b-EXPAND, 0.8.59).
 // `injection-xss` is a REAL methodology dimension (methodology/dimensions/injection-xss.md),
 // so an external-SAST finding the scanner has ALREADY labelled with an injection-class CWE
 // belongs under that heading, not the catch-all 'external-sast' grouping label. The routing
 // key is an EXACT integer-CWE membership check — never a substring / rule-name / message
 // match, which would misroute the co-resident non-injection findings (CWE-939 custom-URL-
 // scheme authorization, CWE-22 path traversal, CWE-798 hardcoded credential, CWE-693
-// protection-mechanism failure all live in the SAME captured fixtures and MUST stay
-// 'external-sast'). The allowlist holds ONLY the CWE ids a captured fixture proves
-// end-to-end; the other injection-class anchors (79 XSS, 94 code injection, 643 XPath
-// injection, 917 expression-language injection) are pre-registered as a comment and activate
-// in a follow-up slice when a fixture lands — the repo routes only what a fixture proves.
+// protection-mechanism failure, CWE-352 CSRF all live in the SAME captured fixtures and MUST
+// stay 'external-sast'; SSRF CWE-918 and path traversal CWE-22 belong to data-export per the
+// injection-xss.md boundary, NOT here). The allowlist holds ONLY the CWE ids a captured
+// fixture proves end-to-end — the repo routes only what a genuine scanner emitted on a minimal
+// seeded sample (each id below cites the tool + rule that produced it).
+//
+// HONESTY CAVEAT (fixture = source of truth, and its scope is narrow): a green fixture proves
+// the router handles the ONE RULE that fired on the seed — it is RULE-PATH-PROVEN, not
+// class-proven. Scanners populate the CWE field inconsistently across rules for the same class,
+// so a partner who hits the same class via a DIFFERENT rule (one with absent or different CWE
+// metadata) can still route to 'external-sast'. `// fixture-pending` below means "no OSS rule
+// emitted this id on a minimal seed"; it does NOT mean "every rule for the class emits it" —
+// for an ACTIVE id, some rules of its class may still omit the CWE and thus not route.
+//
 // ROUTING ONLY — nothing else moves: the band/severity, the id hash, the reasoning, and the
-// scan-external-sast gate are untouched, and BOTH consuming adapters keep classify()→null.
-// injection-xss is a MULTI-SHAPE dimension (SQL/SOQL, OS-command, XSS, template, URL-scheme
-// shapes), so an owned class here would let a routed finding supersede a co-located LLM
-// finding of a DIFFERENT injection shape via sameOwnedClass's dimension fallback — the exact
-// over-supersede the regexploit adapter's design (the RD-non-supersession lock) already
-// rejects. A class-less finding creates no owner and supersedes nothing (reconcile-provenance
-// filters owners on classOf(f)).
+// scan-external-sast gate are untouched, and ALL THREE consuming adapters (semgrep/bandit/
+// njsscan) keep classify()→null. injection-xss is a MULTI-SHAPE dimension (SQL/SOQL, OS-command,
+// XSS, code/eval, template/SSTI, NoSQL, URL-scheme shapes), so an owned class here would let a
+// routed finding supersede a co-located LLM finding of a DIFFERENT injection shape via
+// sameOwnedClass's dimension fallback — the exact over-supersede the regexploit adapter's design
+// (the RD-non-supersession lock) already rejects. A class-less finding creates no owner and
+// supersedes nothing (reconcile-provenance filters owners on classOf(f)).
 export const INJECTION_XSS_CWES = new Set([
   89, // SQL/SOQL injection (bandit issue_cwe.id integer; semgrep metadata.cwe 'CWE-89')
-  78, // OS command injection (semgrep metadata.cwe 'CWE-78: Improper Neutralization …')
-  // future fixture-gated anchors (comment only — NOT active): 79, 94, 643, 917
+  78, // OS command injection (semgrep 'CWE-78'; bandit B307 issue_cwe.id 78)
+  79, // XSS (njsscan express_xss 'CWE-79'; semgrep raw-html-format/direct-response-write 'CWE-79')
+  94, // code injection (bandit B701 jinja2_autoescape_false issue_cwe.id 94)
+  95, // eval / dynamically-evaluated code (njsscan eval_nodejs 'CWE-95'; semgrep eval-injection 'CWE-95')
+  96, // template / SSTI — statically-saved code (semgrep render-template-string 'CWE-96')
+  943, // NoSQL / data-query injection (njsscan node_nosqli_js_injection 'CWE-943')
+  // fixture-pending (comment only — NOT active; NO OSS rule emitted the id on a minimal seed):
+  //   643 XPath · 90 LDAP · 91 XML injection · 917/1336 expression-language / SSTI variants
+  //   (the real tools tag server-side template injection as 96, not 917/1336). XXE CWE-611 is
+  //   deliberately NOT here — it routes to untrusted-deserialization in a sibling slice.
 ])
 // Normalize a scanner-emitted CWE field to a set of integer CWE ids. Accepts the REAL
 // captured shapes: bandit `issue_cwe.id` (an integer) and semgrep `extra.metadata.cwe`
@@ -1125,9 +1143,11 @@ export const banditAdapter = {
 // hit owns NO toolkit class — `classify()` is constant `null` (it must not over-escalate onto a
 // `fail-*` blocker class; its severity source is the tool band, gated by scan-external-sast = major).
 // Owning no class, an njsscan finding SUPERSEDES nothing (cross-engine dedup is roadmap §10 ext #3,
-// Phase-2b — the SAFE under-merge). dimension 'external-sast' is the same deterministic-only grouping
-// label as Semgrep/Bandit. Like them it is SECURITY-BY-CONSTRUCTION (njsscan is a security scanner),
-// so NO `securityRelevant` — the ingest core keeps every emitted hit.
+// Phase-2b — the SAFE under-merge). dimension: the same per-hit CWE routing as Semgrep/Bandit (B5 ·
+// E0.1b-EXPAND, 0.8.59) — an allowlisted `metadata.cwe` (njsscan's real 'CWE-###: …' string shape)
+// routes the hit to `injection-xss` via dimensionForCwes; every other hit keeps the deterministic-only
+// 'external-sast' grouping label. Like Semgrep/Bandit it is SECURITY-BY-CONSTRUCTION (njsscan is a
+// security scanner), so NO `securityRelevant` — the ingest core keeps every emitted hit.
 //
 // THE ONE NEW SHAPE: njsscan's JSON is a NESTED OBJECT, not a flat `results[]`. The top level is
 // `{ errors, njsscan_version, nodejs:{…}, templates:{…} }`; `nodejs` and `templates` are each an
@@ -1179,7 +1199,10 @@ export const njsscanAdapter = {
             resources: cweNum ? [`https://cwe.mitre.org/data/definitions/${cweNum}.html`] : [],
             bandFromTool: NJSSCAN_SEVERITY_TO_FINDING[sev] || 'info', // unknown/missing → info, never dropped
             toolSevLabel: String(sev || 'unknown'),
-            dimensionHint: 'external-sast',
+            // per-hit CWE routing (B5 · E0.1b-EXPAND, 0.8.59): an allowlisted metadata.cwe (the real
+            // 'CWE-###: …' string shape — the SAME shape cweIdsOf already normalizes, so no helper
+            // change) → 'injection-xss'; everything else (incl. a malformed/absent CWE) → 'external-sast'
+            dimensionHint: dimensionForCwes(md.cwe),
             tags: [],
           })
         }

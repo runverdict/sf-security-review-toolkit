@@ -38,13 +38,17 @@
  *        RD-non-supersession check (a co-located llm-inferred resource-consumption-abuse finding is NOT
  *        superseded — the dimension is multi-shape, so an owned class here would silence rate-limit /
  *        denial-of-wallet findings; mutation-proven).
- *   INJ — the CWE→dimension routing (B5 · E0.1b, 0.8.58): a semgrep/bandit hit whose scanner-emitted
- *        CWE is in the exact INJECTION_XSS_CWES allowlist (89 SQL/SOQLi · 78 OS-command — the two
- *        fixture-proven ids) files under the REAL injection-xss dimension; CWE-939 / CWE-22 / every
- *        other co-resident stays external-sast (the negative-routing lock — exact integer membership,
- *        never a substring/rule-name match); classify() stays null on BOTH adapters, locked by
- *        INJ-non-supersession (an owned class would silence a co-located llm-inferred injection
- *        finding of a DIFFERENT shape; mutation-proven — the RD posture ported).
+ *   INJ — the CWE→dimension routing (B5 · E0.1b, 0.8.58; taxonomy EXPANDED + njsscan wired, E0.1b-
+ *        EXPAND, 0.8.59): a semgrep/bandit/njsscan hit whose scanner-emitted CWE is in the exact
+ *        INJECTION_XSS_CWES allowlist (89 SQL/SOQLi · 78 OS-command · 79 XSS · 94/95 code/eval ·
+ *        96 template/SSTI · 943 NoSQL — each proven by a GENERATED per-sub-class fixture, semgrep
+ *        1.168.0 / bandit 1.9.4 / njsscan 0.4.2) files under the REAL injection-xss dimension;
+ *        CWE-939 / CWE-22 / CWE-352 CSRF / every other co-resident stays external-sast (the
+ *        negative-routing lock — exact integer membership, never a substring/rule-name match; SSRF
+ *        918 and path-traversal 22 belong to data-export). Fixtures are RULE-PATH-PROVEN, not
+ *        class-proven (see the honesty caveat on the allowlist). classify() stays null on ALL THREE
+ *        adapters, locked by INJ-non-supersession (an owned class would silence a co-located
+ *        llm-inferred injection finding of a DIFFERENT shape; mutation-proven — the RD posture ported).
  *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
  *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
  *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
@@ -766,7 +770,7 @@ check('CK-CLI-merge: --scanner checkov writes the deterministic finding to the t
 // own band DRIVES the finding severity (the INVERSE of the class-severity adapters). Two REAL
 // fixtures anchor it: coldstart-full (2× WARNING → medium) and helios (1× ERROR → high).
 const ingestSemgrep = (raw) => ingest(raw, semgrepAdapter, { repoRoot: '', pass: 1 })
-const URLLIB_RULE = readJSON(SEMGREP_WARN).results[0].check_id // the dynamic-urllib SSRF rule
+const URLLIB_RULE = readJSON(SEMGREP_WARN).results[0].check_id // the dynamic-urllib rule (CWE-939 custom-URL-scheme authorization — NOT SSRF; real SSRF is CWE-918 → data-export)
 const URLLIB_REF = readJSON(SEMGREP_WARN).results[0].extra.metadata.references[0]
 
 check('SG-determinism: ingest the real coldstart-full fixture twice → byte-identical findings', () => {
@@ -1223,17 +1227,29 @@ check('BN-CLI-merge: --scanner bandit writes the deterministic findings to the t
 // SG-anchor-ERROR / SG-RP1 / BN-anchor / BN-count above; this section holds the allowlist unit,
 // the negative-routing (FP) guards, and the non-supersession standing lock.
 
-check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78, 89}; dimensionForCwes is EXACT integer membership over the real captured shapes — never substring; malformed/absent → external-sast, no throw', () => {
-  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 89])
-  // the real captured shapes: bandit integer id / semgrep bare string / semgrep titled-array
-  assert.equal(dimensionForCwes(89), 'injection-xss')
+check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78,79,89,94,95,96,943} (each fixture-proven); dimensionForCwes is EXACT integer membership over the real captured shapes — never substring; fixture-pending + malformed/absent → external-sast, no throw', () => {
+  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 79, 89, 94, 95, 96, 943])
+  // the real captured shapes: bandit integer id / njsscan+semgrep titled string / semgrep titled-array
+  assert.equal(dimensionForCwes(89), 'injection-xss') // bandit int
   assert.equal(dimensionForCwes('CWE-89'), 'injection-xss')
   assert.equal(dimensionForCwes(['CWE-78: Improper Neutralization of Special Elements used in an OS Command']), 'injection-xss')
-  // EXACT membership, not substring: CWE-789 must NOT read as 78; CWE-8 must NOT read as 89
-  assert.equal(dimensionForCwes('CWE-789'), 'external-sast')
-  assert.equal(dimensionForCwes(['CWE-8']), 'external-sast')
-  // the co-resident fixture CWEs stay put — the whole point of the exact-id check
-  for (const kept of [939, 22, 798, 693, 'CWE-939: Improper Authorization in Handler for Custom URL Scheme', 'CWE-22']) {
+  // the EXPANDED taxonomy — each id proven by a generated fixture (see INJ-fixture-*)
+  assert.equal(dimensionForCwes("CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"), 'injection-xss') // XSS (njsscan/semgrep)
+  assert.equal(dimensionForCwes(94), 'injection-xss') // code injection (bandit B701 integer id)
+  assert.equal(dimensionForCwes("CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"), 'injection-xss') // eval (njsscan/semgrep)
+  assert.equal(dimensionForCwes(['CWE-96: Improper Neutralization of Directives in Statically Saved Code']), 'injection-xss') // SSTI (semgrep)
+  assert.equal(dimensionForCwes('CWE-943: Improper Neutralization of Special Elements in Data Query Logic'), 'injection-xss') // NoSQL (njsscan)
+  // EXACT membership, not substring: a longer/shorter neighbour must NOT read as an active id
+  for (const trap of ['CWE-789', ['CWE-8'], 'CWE-790', 'CWE-940', 'CWE-9430', 'CWE-960']) {
+    assert.equal(dimensionForCwes(trap), 'external-sast', `substring trap ${JSON.stringify(trap)} must NOT route`)
+  }
+  // co-resident non-injection CWEs (fixtures) + fixture-pending ids all stay external-sast:
+  // 939 URL-scheme-authz · 352 CSRF · 918 SSRF (→data-export) · 22 path-traversal (→data-export) ·
+  // 798 secrets · 693 protection-mechanism · 605 · and the fixture-pending 90/91/643/917/1336/611
+  for (const kept of [
+    939, 352, 918, 22, 798, 693, 605, 90, 91, 643, 917, 1336, 611,
+    'CWE-939: Improper Authorization in Handler for Custom URL Scheme', 'CWE-352: Cross-Site Request Forgery (CSRF)', 'CWE-22',
+  ]) {
     assert.equal(dimensionForCwes(kept), 'external-sast', `CWE ${kept} must stay external-sast`)
   }
   // malformed / absent → the current default, never a throw
@@ -1524,6 +1540,96 @@ check('NJ-CLI-merge: --scanner njsscan writes the deterministic findings to the 
   execFileSync('node', [CLI, '--scanner', 'njsscan', '--input', NJSSCAN, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'njsscan').length, 2) // idempotent — no dupes
+})
+
+// ───────────────────────────── generated-fixture injection routing (B5 · E0.1b-EXPAND, 0.8.59)
+// The allowlist EXPANDED from {78,89} to the full injection taxonomy the OSS scanners actually emit
+// on minimal seeded samples, and njsscan JOINED semgrep/bandit as a CWE-routed adapter. Each new
+// active id is proven by a GENUINE captured scanner fixture (semgrep 1.168.0 / bandit 1.9.4 /
+// njsscan 0.4.2), not by the CWE this test names — the fixture is the source of truth. Placed after
+// the njsscan section because these lean on ingestNjsscan (defined above; `check` runs eagerly).
+// RULE-PATH-PROVEN, not class-proven: a green fixture proves the router handles the ONE rule that
+// fired on the seed; a partner hitting the same class through a rule with absent/different CWE
+// metadata can still land in external-sast. (Sub-classes 643 XPath / 90 LDAP / 91 XML-injection /
+// 917·1336 EL stayed fixture-pending — no OSS rule emitted those ids on a minimal seed.)
+const NJSSCAN_INJ = join(FIX, 'njsscan-injection-seeded.json') // njsscan 0.4.2: express_xss 79 + eval_nodejs 95 + node_nosqli_js_injection 943
+const SEMGREP_INJ = join(FIX, 'semgrep-injection-seeded.json') // semgrep 1.168.0: render-template-string 96 + raw-html-format/direct-response-write 79 (positives) + express-check-csurf-middleware-usage 352 CSRF (co-resident NEGATIVE)
+const BANDIT_INJ = join(FIX, 'bandit-injection-seeded.json') // bandit 1.9.4: B701 jinja2_autoescape_false issue_cwe.id 94
+
+check('INJ-fixture-njsscan: the generated njsscan fixture routes XSS(79) / eval(95) / NoSQL(943) to injection-xss — the njsscan wiring proof; each carries the derived CWE URL for the id the tool emitted', () => {
+  const { findings } = ingestNjsscan(readJSON(NJSSCAN_INJ))
+  assert.equal(findings.length, 3)
+  const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
+  for (const f of findings) assert.equal(f.dimension, 'injection-xss', `${f.ruleId} must route to injection-xss`) // njsscan wiring
+  assert.ok(byRule.express_xss.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/79.html'), 'XSS carries CWE-79')
+  assert.ok(byRule.eval_nodejs.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/95.html'), 'eval carries CWE-95')
+  assert.ok(byRule.node_nosqli_js_injection.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/943.html'), 'NoSQL carries CWE-943')
+  for (const f of findings) assert.ok(!('class' in f), 'routing only — no owned class') // classify() stays null
+})
+
+check('INJ-njsscan-negative: a non-injection njsscan finding (node_secret CWE-798, helmet_feature_disabled CWE-693) stays external-sast — wiring njsscan did NOT blanket-route it', () => {
+  const { findings } = ingestNjsscan(readJSON(NJSSCAN))
+  assert.equal(findings.length, 2)
+  for (const f of findings) assert.equal(f.dimension, 'external-sast', `${f.ruleId} (non-injection) must NOT route`)
+})
+
+check('INJ-fixture-semgrep: the generated semgrep fixture routes SSTI(96) + XSS(79) to injection-xss; the co-resident CSRF(352) stays external-sast — the exact-id negative on a fresh capture', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_INJ))
+  const ssti = findings.find((f) => f.ruleId.endsWith('render-template-string'))
+  assert.ok(ssti, 'render-template-string (CWE-96) present')
+  assert.equal(ssti.dimension, 'injection-xss') // CWE-96 routes
+  const xss = findings.filter((f) => f.ruleId.endsWith('raw-html-format') || f.ruleId.endsWith('direct-response-write'))
+  assert.ok(xss.length >= 1, 'at least one XSS (CWE-79) finding present')
+  for (const f of xss) assert.equal(f.dimension, 'injection-xss', `${f.ruleId} (CWE-79) must route`)
+  const csrf = findings.find((f) => f.ruleId.endsWith('express-check-csurf-middleware-usage'))
+  assert.ok(csrf, 'the co-resident CSRF finding is present')
+  assert.equal(csrf.dimension, 'external-sast') // CWE-352 CSRF is NOT injection — stays external-sast
+  for (const f of findings) assert.ok(!('class' in f), 'routing only — no owned class')
+  // belt-and-suspenders: the fixture genuinely carries the CWEs this test names (source of truth)
+  const raw = readJSON(SEMGREP_INJ)
+  const cweOf = (suffix) => raw.results.find((r) => r.check_id.endsWith(suffix)).extra.metadata.cwe
+  assert.equal(dimensionForCwes(cweOf('render-template-string')), 'injection-xss')
+  assert.equal(dimensionForCwes(cweOf('express-check-csurf-middleware-usage')), 'external-sast')
+})
+
+check('INJ-fixture-bandit: the generated bandit fixture routes code injection (B701 jinja2_autoescape_false, issue_cwe.id 94) to injection-xss', () => {
+  const raw = readJSON(BANDIT_INJ)
+  assert.equal(raw.results[0].issue_cwe.id, 94) // the real captured CWE — the source of truth, not this test's guess
+  const { findings } = ingestBandit(raw)
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].ruleId, 'B701')
+  assert.equal(findings[0].dimension, 'injection-xss') // CWE-94 routes
+  assert.equal(findings[0].adjusted_severity, 'high') // tool band unchanged (routing only)
+  assert.ok(!('class' in findings[0]), 'routing only — no owned class')
+})
+
+check('INJ-non-supersession-new-subclass: a routed NEWLY-ACTIVATED sub-class finding (njsscan express_xss, CWE-79) does NOT supersede a co-located llm injection finding of a DIFFERENT injection shape', () => {
+  const det = ingestNjsscan(readJSON(NJSSCAN_INJ)).findings.find((f) => f.ruleId === 'express_xss')
+  assert.equal(det.provenance, 'deterministic')
+  assert.equal(det.dimension, 'injection-xss') // CWE-79 → injection-xss @ server/xss.js:5
+  // an llm injection-xss finding of a DIFFERENT injection SHAPE (a SOQL/SQL query-construction shape
+  // — a shape no XSS CWE describes), same file, overlapping lines
+  const llm = {
+    id: '7'.repeat(16),
+    dimension: 'injection-xss',
+    title: 'User filter concatenated into a SOQL query',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: `${det.file.split(':')[0]}:1-40`, // overlaps det's :5
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the query-construction path',
+  }
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  // MUTATION: adding CLASS_DEFS['injection-xss'] + classify()→'injection-xss' turns this RED at
+  // `superseded === 0` — same lock as INJ-non-supersession, now proven for a newly-added sub-class.
+  const { superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM SOQL-shape finding is NOT superseded by the routed XSS row')
+  assert.deepEqual(supersededIds, [])
+  assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)

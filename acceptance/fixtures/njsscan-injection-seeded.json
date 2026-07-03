@@ -1,0 +1,73 @@
+{
+  "errors": [],
+  "njsscan_version": "0.4.2",
+  "nodejs": {
+    "eval_nodejs": {
+      "files": [
+        {
+          "file_path": "server/evalsink.js",
+          "match_lines": [
+            5,
+            6
+          ],
+          "match_position": [
+            3,
+            28
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')",
+        "description": "User controlled data in eval() or similar functions may result in Server Side Injection or Remote Code Injection",
+        "owasp-web": "A1: Injection",
+        "severity": "ERROR"
+      }
+    },
+    "express_xss": {
+      "files": [
+        {
+          "file_path": "server/xss.js",
+          "match_lines": [
+            5,
+            6
+          ],
+          "match_position": [
+            3,
+            42
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+        "description": "Untrusted User Input in Response will result in Reflected Cross Site Scripting Vulnerability.",
+        "owasp-web": "A1: Injection",
+        "severity": "ERROR"
+      }
+    },
+    "node_nosqli_js_injection": {
+      "files": [
+        {
+          "file_path": "server/nosql.js",
+          "match_lines": [
+            5,
+            6
+          ],
+          "match_position": [
+            3,
+            73
+          ],
+          "match_string": "requires login"
+        }
+      ],
+      "metadata": {
+        "cwe": "CWE-943: Improper Neutralization of Special Elements in Data Query Logic",
+        "description": "Untrusted user input in MongoDB $where operator can result in NoSQL JavaScript Injection.",
+        "owasp-web": "A1: Injection",
+        "severity": "ERROR"
+      }
+    }
+  },
+  "templates": {}
+}
