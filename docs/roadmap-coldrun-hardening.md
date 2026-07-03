@@ -9,7 +9,13 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.60**, suite **62 files / 895 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.61**, suite **62 files / 905 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
+  chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
+  normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
+  opengrep/codeql/semgrep-sarif) + Opengrep (OSS, emits the trace on current tooling where Semgrep CE
+  omits it) make `reachabilityPath` populate on a real scan, proven by genuine fixtures + an
+  engine-agnostic equivalence test (opengrep-sarif ≡ semgrep-json normal form).
   Each item below is its own change, with a standing test and housekeeping count-sync, landed one at a time.
 - **B5 was RE-SCOPED (2026-07-03)** from the original 4-slice list into a tiered enterprise-grade engine
   buildout (cross-cutting reachability/exposure enablers + the named classes + completeness-audit misses).
@@ -552,10 +558,11 @@ contract), promptmap (GPL-3.0 — never vendor).
    So **E0.1's `reachabilityPath` flows live ONLY on Semgrep ≤~1.85, OR via the E0.2b Opengrep/SARIF
    path** — on the current CLI it stays dormant despite the flag. SKILL.md instructs the operator to
    report "reachability substrate unavailable on this Semgrep version" when a taint finding's evidence
-   JSON has no trace (the borrowed-substrate honesty marker). **Implication: E0.2b (Opengrep/SARIF) is now
-   the real path to live reachability on current tooling — promote it from "later" to a near-term slice.**
-1. ~~**E0.1 reachability-path ingest**~~ **DONE at the adapter (0.8.57); flows live only on Semgrep ≤~1.85
-   or via E0.2b (see E0.2a finding)** · ~~**E0.1b injection routing, narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
+   JSON has no trace (the borrowed-substrate honesty marker). **RESOLVED by E0.2b (0.8.61): Opengrep is
+   the OSS engine that emits the trace on current tooling; reachability now flows live.**
+1. ~~**E0.1 reachability-path ingest**~~ **DONE (0.8.57); now flows LIVE via Opengrep (E0.2b) — on Semgrep
+   it needs ≤~1.85 (JSON) and CE never emits SARIF codeFlows (Pro-gated)** · ~~**E0.1b injection routing,
+   narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
    ~~**E0.1b-EXPAND (full injection taxonomy + generated fixtures)**~~ **DONE (0.8.59)** — 7 CWEs active/
    fixture-proven across semgrep+bandit+njsscan; XPath/LDAP/XML-injection are the honest uncovered
    residual (need custom rules — see the E0.1b entry). Next: **E0.1c** (deserialization) → **E0.1d**
@@ -575,10 +582,18 @@ contract), promptmap (GPL-3.0 — never vendor).
 5. **T1.3 IDOR/BOLA** (last in Tier 1 — running target + E0.1 prefilter; verify SFGE v4/v5 first; the RLS
    oracle is deterministic ONLY for the consenting-with-Postgres-RLS-and-faithful-mirror subset — for the
    common partner IDOR stays LLM+human; do not over-count it as "IDOR → deterministic" generally).
-6. **E0.2b Opengrep swap** (confirm the interprocedural-taint delta EMPIRICALLY on a real target before
-   counting on it — Opengrep is new; keep Semgrep CE baseline) + **Tier-2 drop-ins**, cheapest-first
-   (@salesforce/eslint-plugin-lwc → Flow Scanner → syft → GuardDog → ScanCode → network-gated
-   trufflehog-verified / mcp-scan / Scorecard), then **cross-engine dedup**.
+6. ~~**E0.2b SARIF-codeFlows normalizer + Opengrep**~~ **DONE (0.8.61)** — version-portable SARIF
+   `codeFlows` normalizer (`_sarifTraceStep`/`_sarifReachabilityPath` + `sarifAdapter`, engine from
+   `tool.driver.name`) covering opengrep/codeql/semgrep-sarif; Opengrep 1.25.0 wired (binary-pinned,
+   source-verified sha256, musllinux/win fail-closed); the interprocedural-taint delta + JSON/SARIF trace
+   emission were confirmed EMPIRICALLY (head-to-head vs Semgrep CE 1.168). Engine-label trap (D1) handled:
+   opengrep JSON is content-identical to semgrep (no `engine_kind` discriminator exists), so labeling is
+   by evidence filename + an explicit-`--scanner` opengrep adapter (label-only, never routing) — an
+   opengrep finding never says semgrep. **Semgrep-CE SARIF codeFlows adjudicated PENDING** (genuine
+   fixture shows none — Pro-gated; a standing check pins the contrast). Semgrep-JSON path byte-unchanged.
+   D4 correction: Opengrep SARIF ALSO needs `--dataflow-traces` (only its JSON is default-on). Then:
+   **Tier-2 drop-ins**, cheapest-first (@salesforce/eslint-plugin-lwc → Flow Scanner → syft → GuardDog →
+   ScanCode → network-gated trufflehog-verified / mcp-scan / Scorecard), then **cross-engine dedup**.
 
 **Over-optimistic claims flagged (do not budget on these):** "~80-90% of the class surface goes
 deterministic" is a whole-program-WITH-live-endpoint figure — the cold-install static pass is far lower;
