@@ -38,6 +38,13 @@
  *        RD-non-supersession check (a co-located llm-inferred resource-consumption-abuse finding is NOT
  *        superseded — the dimension is multi-shape, so an owned class here would silence rate-limit /
  *        denial-of-wallet findings; mutation-proven).
+ *   INJ — the CWE→dimension routing (B5 · E0.1b, 0.8.58): a semgrep/bandit hit whose scanner-emitted
+ *        CWE is in the exact INJECTION_XSS_CWES allowlist (89 SQL/SOQLi · 78 OS-command — the two
+ *        fixture-proven ids) files under the REAL injection-xss dimension; CWE-939 / CWE-22 / every
+ *        other co-resident stays external-sast (the negative-routing lock — exact integer membership,
+ *        never a substring/rule-name match); classify() stays null on BOTH adapters, locked by
+ *        INJ-non-supersession (an owned class would silence a co-located llm-inferred injection
+ *        finding of a DIFFERENT shape; mutation-proven — the RD posture ported).
  *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
  *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
  *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
@@ -85,6 +92,8 @@ import {
   OSV_LABEL_TO_FINDING,
   NPM_SEVERITY_TO_FINDING,
   REDOS_DEGREE_TO_FINDING,
+  INJECTION_XSS_CWES,
+  dimensionForCwes,
   CLASS_DEFS,
   RULE_CLASS,
 } from '../harness/ingest-scanner-findings.mjs'
@@ -97,9 +106,9 @@ const FIX = join(PLUGIN, 'acceptance', 'fixtures')
 const SOLANO = join(FIX, 'code-analyzer-solano.json')
 const SFGE = join(FIX, 'code-analyzer-sfge-meridian.json')
 const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
-const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib / SSRF)
-const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process / CWE-78)
-const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 SQLi anchor + 2× B310 + B104)
+const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib, CWE-939 — stays external-sast: the negative-routing anchor)
+const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process, CWE-78 → injection-xss: the semgrep routing anchor)
+const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 CWE-89 → injection-xss anchor + 2× B310 CWE-22 + B104 CWE-605 — all three stay external-sast)
 const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
@@ -782,13 +791,13 @@ check('SG-anchor-WARNING: coldstart urllib (severity WARNING) → deterministic/
   assert.ok(URLLIB_REF && f.verdict_reasoning.includes(URLLIB_REF), 'the metadata reference URL must appear in verdict_reasoning')
 })
 
-check('SG-anchor-ERROR: helios detect-child-process (severity ERROR) → HIGH, server/index.js:28', () => {
+check('SG-anchor-ERROR: helios detect-child-process (severity ERROR, CWE-78) → HIGH, injection-xss, server/index.js:28', () => {
   const { findings } = ingestSemgrep(readJSON(SEMGREP_ERR))
   assert.equal(findings.length, 1)
   const f = findings[0]
   assert.equal(f.engine, 'semgrep')
   assert.equal(f.adjusted_severity, 'high') // ERROR → high (the TOOL band)
-  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.dimension, 'injection-xss') // CWE-78 routes (B5 · E0.1b) — the real methodology dimension
   assert.ok(f.file.endsWith('server/index.js:28'), `file was ${f.file}`)
   assert.equal(f.class, undefined)
 })
@@ -925,7 +934,7 @@ check('SG-merge-idempotent: ingest the coldstart fixture twice into a ledger →
   assert.ok(ledger.findings.some((f) => f.id === 'd'.repeat(16) && !('provenance' in f)))
 })
 
-check('SG-schema: a Semgrep finding (no class, dimension external-sast) validates against $defs/finding', () => {
+check('SG-schema: a Semgrep finding (no class, CWE-routed dimension injection-xss) validates against $defs/finding', () => {
   const f = ingestSemgrep(readJSON(SEMGREP_ERR)).findings[0]
   assert.deepEqual(validateFinding(f), [])
 })
@@ -940,11 +949,12 @@ check('SG-schema: a Semgrep finding (no class, dimension external-sast) validate
 // attribute, the exact degradation RP2 locks).
 const SEMGREP_TAINT = join(FIX, 'semgrep-taint-seeded.json') // genuine 1.85.0: 1× ERROR taint result WITH extra.dataflow_trace (source app.py:10 → intermediates :10/:11 → sink app.py:13)
 
-check('SG-RP1 reachability: the taint fixture → reachabilityPath {source app.py:10, ordered intermediates :10/:11, sink app.py:13} + reachable:true; id/band/reasoning untouched; validates against $defs/finding', () => {
+check('SG-RP1 reachability: the taint fixture → reachabilityPath {source app.py:10, ordered intermediates :10/:11, sink app.py:13} + reachable:true; CWE-89 routes to injection-xss; id/band/reasoning untouched; validates against $defs/finding', () => {
   const { findings } = ingestSemgrep(readJSON(SEMGREP_TAINT))
   assert.equal(findings.length, 1)
   const f = findings[0]
   assert.equal(f.reachable, true)
+  assert.equal(f.dimension, 'injection-xss') // metadata.cwe 'CWE-89' routes (B5 · E0.1b)
   assert.deepEqual(f.reachabilityPath, {
     source: { file: 'app.py', line: 10 },
     intermediate: [
@@ -1043,7 +1053,7 @@ check('BN-determinism: ingest the real coldstart-full fixture twice → byte-ide
   assert.equal(JSON.stringify(a), JSON.stringify(b))
 })
 
-check('BN-anchor: B608 hardcoded_sql_expressions (severity MEDIUM) → deterministic/bandit/external-sast/MEDIUM, mcp/server.py:46, NO class, more_info URL in reasoning', () => {
+check('BN-anchor: B608 hardcoded_sql_expressions (severity MEDIUM, issue_cwe.id 89) → deterministic/bandit/injection-xss/MEDIUM, mcp/server.py:46, NO class, more_info URL in reasoning', () => {
   const raw = readJSON(BANDIT)
   const moreInfo = raw.results.find((r) => r.test_id === 'B608').more_info
   const { findings } = ingestBandit(raw)
@@ -1052,7 +1062,7 @@ check('BN-anchor: B608 hardcoded_sql_expressions (severity MEDIUM) → determini
   assert.equal(f.provenance, 'deterministic')
   assert.equal(f.engine, 'bandit')
   assert.equal(f.ruleId, 'B608')
-  assert.equal(f.dimension, 'external-sast')
+  assert.equal(f.dimension, 'injection-xss') // CWE-89 routes (B5 · E0.1b) — the real methodology dimension
   assert.equal(f.adjusted_severity, 'medium') // MEDIUM → medium (the TOOL band, not a class)
   assert.equal(f.status, 'confirmed')
   assert.equal(f.class, undefined) // owns NO toolkit class
@@ -1061,11 +1071,13 @@ check('BN-anchor: B608 hardcoded_sql_expressions (severity MEDIUM) → determini
   assert.ok(moreInfo && f.verdict_reasoning.includes(moreInfo), 'the more_info URL must appear in verdict_reasoning')
 })
 
-check('BN-count: the real fixture → exactly 4 findings, all medium (all 4 results are MEDIUM)', () => {
+check('BN-count: the real fixture → exactly 4 findings, all medium; B608 (CWE-89) files under injection-xss, B310/B104 stay external-sast', () => {
   const { findings } = ingestBandit(readJSON(BANDIT))
   assert.equal(findings.length, 4)
   assert.ok(findings.every((f) => f.adjusted_severity === 'medium'), 'every real-fixture finding is medium')
-  assert.ok(findings.every((f) => f.engine === 'bandit' && f.dimension === 'external-sast'))
+  assert.ok(findings.every((f) => f.engine === 'bandit'))
+  // per-hit CWE routing (B5 · E0.1b): ONLY the allowlisted CWE-89 hit moves; the rest keep the label
+  for (const f of findings) assert.equal(f.dimension, f.ruleId === 'B608' ? 'injection-xss' : 'external-sast', `dimension for ${f.ruleId}`)
   assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['B104', 'B310', 'B310', 'B608'])
 })
 
@@ -1096,6 +1108,8 @@ check('BN-band HIGH/LOW/unknown (inline synthetic): HIGH→high, LOW→low, CRIT
   const byRule = Object.fromEntries(findings.map((f) => [f.ruleId, f]))
   assert.equal(byRule.B602.adjusted_severity, 'high') // HIGH → high
   assert.ok(byRule.B602.verdict_reasoning.includes('https://bandit.example/b602'), 'more_info URL preferred for resources')
+  assert.equal(byRule.B602.dimension, 'injection-xss') // issue_cwe.id 78 routes — the bandit integer-shape proof for CWE-78
+  assert.equal(byRule.B311.dimension, 'external-sast') // issue_cwe.id 330 is not allowlisted — stays put
   assert.equal(byRule.B311.adjusted_severity, 'low') // LOW → low
   assert.ok(byRule.B311.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/330.html'), 'issue_cwe.link is the fallback when no more_info')
   assert.equal(byRule.B999.adjusted_severity, 'info') // unknown CRITICAL → info, never dropped
@@ -1166,7 +1180,7 @@ check('BN-merge-idempotent: ingest the fixture twice into a ledger → no dupes;
   assert.ok(ledger.findings.some((f) => f.id === 'e'.repeat(16) && !('provenance' in f)))
 })
 
-check('BN-schema: a Bandit finding (no class, dimension external-sast) validates against $defs/finding', () => {
+check('BN-schema: a Bandit finding (no class, CWE-routed dimension injection-xss) validates against $defs/finding', () => {
   const f = ingestBandit(readJSON(BANDIT)).findings[0]
   assert.deepEqual(validateFinding(f), [])
 })
@@ -1196,6 +1210,85 @@ check('BN-CLI-merge: --scanner bandit writes the deterministic findings to the t
   execFileSync('node', [CLI, '--scanner', 'bandit', '--input', BANDIT, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'bandit').length, 4) // idempotent — no dupes
+})
+
+// ───────────────────────────────────── CWE→dimension routing (B5 · E0.1b — semgrep + bandit)
+// An external-SAST hit the scanner already labelled with a fixture-proven injection CWE (89
+// SQL/SOQL, 78 OS command) files under the REAL `injection-xss` methodology dimension instead of
+// the catch-all 'external-sast' grouping label. The routing key is EXACT integer-CWE membership
+// over INJECTION_XSS_CWES — never a substring / rule-name / message match — and it moves ONLY the
+// `dimension` (the review heading): gate, band, id, and reasoning are untouched, and classify()
+// stays null on both adapters, so a routed finding owns no class and supersedes nothing (the
+// RD-non-supersession posture, ported here as INJ-non-supersession). The positive anchors live in
+// SG-anchor-ERROR / SG-RP1 / BN-anchor / BN-count above; this section holds the allowlist unit,
+// the negative-routing (FP) guards, and the non-supersession standing lock.
+
+check('INJ-allowlist: INJECTION_XSS_CWES is exactly {78, 89}; dimensionForCwes is EXACT integer membership over the real captured shapes — never substring; malformed/absent → external-sast, no throw', () => {
+  assert.deepEqual([...INJECTION_XSS_CWES].sort((a, b) => a - b), [78, 89])
+  // the real captured shapes: bandit integer id / semgrep bare string / semgrep titled-array
+  assert.equal(dimensionForCwes(89), 'injection-xss')
+  assert.equal(dimensionForCwes('CWE-89'), 'injection-xss')
+  assert.equal(dimensionForCwes(['CWE-78: Improper Neutralization of Special Elements used in an OS Command']), 'injection-xss')
+  // EXACT membership, not substring: CWE-789 must NOT read as 78; CWE-8 must NOT read as 89
+  assert.equal(dimensionForCwes('CWE-789'), 'external-sast')
+  assert.equal(dimensionForCwes(['CWE-8']), 'external-sast')
+  // the co-resident fixture CWEs stay put — the whole point of the exact-id check
+  for (const kept of [939, 22, 798, 693, 'CWE-939: Improper Authorization in Handler for Custom URL Scheme', 'CWE-22']) {
+    assert.equal(dimensionForCwes(kept), 'external-sast', `CWE ${kept} must stay external-sast`)
+  }
+  // malformed / absent → the current default, never a throw
+  for (const junk of [null, undefined, '', 'not-a-cwe', {}, [], ['x', null], NaN, -89, 89.5]) {
+    assert.equal(dimensionForCwes(junk), 'external-sast')
+  }
+})
+
+check('INJ-negative-semgrep: dynamic-urllib (CWE-939, custom-URL-scheme authorization) stays external-sast — the FP guard against substring/rule-name routing', () => {
+  const { findings } = ingestSemgrep(readJSON(SEMGREP_WARN))
+  const urllib = findings.filter((f) => f.ruleId === URLLIB_RULE)
+  assert.equal(urllib.length, 2)
+  for (const f of urllib) assert.equal(f.dimension, 'external-sast', `${f.file} must NOT route to injection-xss`)
+})
+
+check('INJ-negative-bandit: B310 (CWE-22 path traversal) ×2 and B104 (CWE-605) stay external-sast — only the exact allowlisted CWEs route', () => {
+  const { findings } = ingestBandit(readJSON(BANDIT))
+  const kept = findings.filter((f) => f.ruleId !== 'B608')
+  assert.equal(kept.length, 3)
+  for (const f of kept) assert.equal(f.dimension, 'external-sast', `${f.ruleId} must NOT route to injection-xss`)
+})
+
+check('INJ-non-supersession (the standing lock, the RD posture ported): a routed deterministic injection-xss finding does NOT supersede a co-located llm-inferred injection-xss finding of a DIFFERENT injection shape', () => {
+  const det = ingestSemgrep(readJSON(SEMGREP_ERR)).findings[0] // CWE-78 → injection-xss @ server/index.js:28
+  assert.equal(det.provenance, 'deterministic')
+  assert.equal(det.dimension, 'injection-xss')
+  // an llm-inferred injection-xss finding of a DIFFERENT SHAPE (a missing-output-encoding / XSS
+  // shape — a shape no OS-command CWE describes), same file, overlapping lines
+  const llm = {
+    id: '5'.repeat(16),
+    dimension: 'injection-xss',
+    title: 'Response interpolates request input without output encoding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:20-40', // overlaps det's :28
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the response-templating path',
+  }
+  // PRECONDITIONS that WOULD fire supersession if the adapter owned a class: same dimension +
+  // same locus. Asserting them keeps the guard sharp — the ONLY missing ingredient is the owned
+  // class (classify()→null). MUTATION: adding a CLASS_DEFS['injection-xss'] entry + classify()
+  // →'injection-xss' turns THIS red at `superseded === 0` (the supersession visibly FIRES),
+  // proving the protection is the null classify, not an accident.
+  assert.equal(det.dimension, llm.dimension, 'same dimension (the sameOwnedClass fallback signal)')
+  assert.equal(sameLocation(det, llm), true, 'overlapping locus (the other supersession signal)')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the LLM output-encoding finding is NOT superseded — the routed SAST row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed') // status unchanged
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // the guard itself, asserted LAST so a class-owning mutation fails first at "superseded === 0"
+  assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
 })
 
 // ───────────────────────────────────── njsscan (Phase 2 · 2a #4 — Node SAST, tool→band)

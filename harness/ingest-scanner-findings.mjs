@@ -853,6 +853,57 @@ export const checkovAdapter = {
 }
 
 // ----------------------------------------------------------------------------
+// CWE→dimension ROUTING for the external-SAST adapters (B5 · E0.1b, 0.8.58).
+// `injection-xss` is a REAL methodology dimension (methodology/dimensions/injection-xss.md),
+// so an external-SAST finding the scanner has ALREADY labelled with an injection-class CWE
+// belongs under that heading, not the catch-all 'external-sast' grouping label. The routing
+// key is an EXACT integer-CWE membership check — never a substring / rule-name / message
+// match, which would misroute the co-resident non-injection findings (CWE-939 custom-URL-
+// scheme authorization, CWE-22 path traversal, CWE-798 hardcoded credential, CWE-693
+// protection-mechanism failure all live in the SAME captured fixtures and MUST stay
+// 'external-sast'). The allowlist holds ONLY the CWE ids a captured fixture proves
+// end-to-end; the other injection-class anchors (79 XSS, 94 code injection, 643 XPath
+// injection, 917 expression-language injection) are pre-registered as a comment and activate
+// in a follow-up slice when a fixture lands — the repo routes only what a fixture proves.
+// ROUTING ONLY — nothing else moves: the band/severity, the id hash, the reasoning, and the
+// scan-external-sast gate are untouched, and BOTH consuming adapters keep classify()→null.
+// injection-xss is a MULTI-SHAPE dimension (SQL/SOQL, OS-command, XSS, template, URL-scheme
+// shapes), so an owned class here would let a routed finding supersede a co-located LLM
+// finding of a DIFFERENT injection shape via sameOwnedClass's dimension fallback — the exact
+// over-supersede the regexploit adapter's design (the RD-non-supersession lock) already
+// rejects. A class-less finding creates no owner and supersedes nothing (reconcile-provenance
+// filters owners on classOf(f)).
+export const INJECTION_XSS_CWES = new Set([
+  89, // SQL/SOQL injection (bandit issue_cwe.id integer; semgrep metadata.cwe 'CWE-89')
+  78, // OS command injection (semgrep metadata.cwe 'CWE-78: Improper Neutralization …')
+  // future fixture-gated anchors (comment only — NOT active): 79, 94, 643, 917
+])
+// Normalize a scanner-emitted CWE field to a set of integer CWE ids. Accepts the REAL
+// captured shapes: bandit `issue_cwe.id` (an integer) and semgrep `extra.metadata.cwe`
+// (a 'CWE-###[: title]' string OR an array of them). The string pattern is anchored, so
+// 'CWE-789' reads as 789 (not 78) and a mid-sentence mention contributes nothing.
+// Malformed/absent input contributes nothing — never a throw.
+export function cweIdsOf(value) {
+  const ids = new Set()
+  const add = (v) => {
+    if (Number.isInteger(v) && v > 0) ids.add(v)
+    else if (typeof v === 'string') {
+      const m = /^\s*CWE-(\d+)\b/i.exec(v)
+      if (m) ids.add(Number(m[1]))
+    }
+  }
+  if (Array.isArray(value)) for (const v of value) add(v)
+  else add(value)
+  return ids
+}
+// The routing decision: any allowlisted CWE id → 'injection-xss'; anything else — including
+// a malformed or absent CWE — keeps the current 'external-sast' default.
+export function dimensionForCwes(value) {
+  for (const id of cweIdsOf(value)) if (INJECTION_XSS_CWES.has(id)) return 'injection-xss'
+  return 'external-sast'
+}
+
+// ----------------------------------------------------------------------------
 // ADAPTER #4 — semgrep (file-parser, Phase 2 · 2a #2): parses captured Semgrep JSON.
 // Semgrep is the toolkit's multi-language SAST keystone (run-scans Family 7 over each
 // non-package source root, with the security rulesets p/security-audit / p/secrets / p/<lang>).
@@ -867,12 +918,16 @@ export const checkovAdapter = {
 // in an OWNED class) — so de-duplicating a co-located LLM injection finding against a Semgrep
 // finding is cross-engine dedup = roadmap §10 extension #3 (Phase-2b), NOT this slice; the SAFE
 // under-merge (a duplicate may survive in the band), never a dropped scanner finding.
-// dimension 'external-sast' is a DETERMINISTIC-ONLY grouping label (like checkov's
-// 'infrastructure-iac'): Semgrep spans many vuln classes, so an honest "external SAST" grouping
-// beats false-precision dimensioning into injection-xss — the schema declares `dimension` a free
-// kebab-case string, so no methodology/dimensions/ file is needed. Like checkov/metadata it is
-// SECURITY-BY-CONSTRUCTION (the security rulesets), so NO `securityRelevant` — the ingest core
-// keeps every emitted hit. Only `results[]` become findings.
+// dimension: 'external-sast' stays the DETERMINISTIC-ONLY grouping label (like checkov's
+// 'infrastructure-iac') for the general case — Semgrep spans many vuln classes, and an honest
+// "external SAST" grouping beats false-precision dimensioning where the class is uncertain.
+// The ONE fixture-proven exception (B5 · E0.1b, 0.8.58): a result whose `extra.metadata.cwe`
+// carries an allowlisted injection CWE routes PER HIT to the REAL `injection-xss` dimension
+// via dimensionForCwes (exact integer-CWE membership — see the routing block above). ROUTING
+// ONLY: classify() stays null, so a routed finding owns no class and supersedes nothing; the
+// gate, band, and id are untouched. The schema declares `dimension` a free kebab-case string.
+// Like checkov/metadata it is SECURITY-BY-CONSTRUCTION (the security rulesets), so NO
+// `securityRelevant` — the ingest core keeps every emitted hit. Only `results[]` become findings.
 //
 // ---- reachability-path normalization (B5 · E0.1, 0.8.57) ----
 // A Semgrep taint-mode result can carry `extra.dataflow_trace` — the ordered source→sink
@@ -955,7 +1010,9 @@ export const semgrepAdapter = {
         resources: refs,
         bandFromTool: SEMGREP_SEVERITY_TO_FINDING[sev] || 'info', // unknown/INVENTORY → info, never dropped
         toolSevLabel: String(sev || 'unknown'),
-        dimensionHint: 'external-sast',
+        // per-hit CWE routing (B5 · E0.1b): an allowlisted injection CWE → 'injection-xss';
+        // everything else (including a malformed/absent CWE) keeps 'external-sast'
+        dimensionHint: dimensionForCwes(metadata.cwe),
         tags: [],
       }
       // B5 · E0.1: capture the taint-mode source→sink dataflow path when the result carries
@@ -992,8 +1049,10 @@ export const semgrepAdapter = {
 //   - it must NOT map to a `fail-*` blocker class (that would over-escalate every SAST hit), and
 //   - its severity source is the tool band, not a class (gated by scan-external-sast = major).
 // Owning no class, a Bandit finding SUPERSEDES nothing (cross-engine dedup is roadmap §10 ext #3,
-// Phase-2b — the SAFE under-merge). dimension 'external-sast' is the same deterministic-only
-// grouping label as Semgrep (Python SAST belongs to the same external-endpoint SAST grouping). Like
+// Phase-2b — the SAFE under-merge). dimension: the same per-hit CWE routing as Semgrep (B5 ·
+// E0.1b, 0.8.58) — an allowlisted `issue_cwe.id` (an integer in the real captured shape) routes
+// the hit to `injection-xss` via dimensionForCwes; every other hit keeps the deterministic-only
+// 'external-sast' grouping label (Python SAST belongs to the same external-endpoint SAST grouping). Like
 // semgrep/checkov/metadata it is SECURITY-BY-CONSTRUCTION (Bandit is a security scanner), so NO
 // `securityRelevant` — the ingest core keeps every emitted hit. Only `results[]` become findings.
 // `issue_confidence` is recorded by Bandit but deliberately NOT band-weighting here (Phase-2b note).
@@ -1040,7 +1099,9 @@ export const banditAdapter = {
         resources,
         bandFromTool: BANDIT_SEVERITY_TO_FINDING[sev] || 'info', // unknown/missing → info, never dropped
         toolSevLabel: String(sev || 'unknown'),
-        dimensionHint: 'external-sast',
+        // per-hit CWE routing (B5 · E0.1b): an allowlisted issue_cwe.id → 'injection-xss';
+        // everything else (including a malformed/absent CWE) keeps 'external-sast'
+        dimensionHint: dimensionForCwes(cwe && cwe.id),
         tags: [],
       })
     }

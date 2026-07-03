@@ -51,6 +51,45 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.58] — 2026-07-03
+
+**External-SAST SQL-injection and command-injection findings now file under the
+`injection-xss` dimension.** The `semgrep` and `bandit` adapters previously filed every
+finding under the catch-all `external-sast` grouping label — a SQL-injection finding and a
+path-traversal finding landed under the same heading, so the review never surfaced the
+injection findings under `injection-xss`, the methodology dimension that owns the injection
+class. Each hit's scanner-emitted CWE now routes the finding: an exact integer-CWE
+allowlist (`INJECTION_XSS_CWES` — CWE-89 SQL injection and CWE-78 OS command injection, the
+two ids a captured fixture proves end-to-end) sends the hit to `injection-xss`; everything
+else keeps `external-sast`. The CWE is read from each tool's real captured shape —
+Semgrep's `extra.metadata.cwe` (a `CWE-###[: title]` string or an array of them, anchored
+so `CWE-789` can never read as 78) and Bandit's `issue_cwe.id` (an integer); a malformed or
+absent CWE keeps the current default and never throws.
+
+**Routing only — nothing else moves.** The finding's band/severity, id hash, reasoning, and
+`scan-external-sast` gate are untouched; only the `dimension` (the review heading) changes.
+Both adapters keep `classify() → null`, so a routed finding owns no class and supersedes
+nothing — `injection-xss` is a multi-shape dimension (SQL, OS-command, XSS, template, and
+URL-scheme shapes), and an owned class would let a routed finding supersede a co-located
+LLM finding of a *different* injection shape via the dimension fallback (the same
+over-supersede the ReDoS adapter's design already rejects). The exact-membership check is
+what keeps the co-resident findings put: CWE-939 (custom-URL-scheme authorization), CWE-22
+(path traversal), CWE-798 (hardcoded credential), and CWE-693 (protection-mechanism
+failure) all stay `external-sast`, locked by negative routing tests. The `njsscan` and
+`code-analyzer` adapters are untouched (no captured injection finding to prove a reroute);
+the XSS/template legs of `injection-xss` (CWE-79/94/643/917) and the
+untrusted-deserialization / session-token-egress routings are deferred until a fixture
+proves each.
+
+Suite **62 files / 889 checks** (was 885), all green — the routed anchors (Semgrep CWE-78 →
+`injection-xss` at ERROR→high; Bandit B608/CWE-89 → `injection-xss`; the taint-mode CWE-89
+anchor), the exact-membership allowlist unit (`CWE-789` never reads as 78), the
+negative-routing guards (CWE-939 / CWE-22 / CWE-605 stay `external-sast`), and the
+non-supersession standing lock (a routed deterministic `injection-xss` finding beside an
+llm-inferred finding of a different injection shape at the same locus — zero superseded; an
+owned class turns it red). Mutation-proven: emptying the allowlist turns the routed anchors
+red, and adding an owned `injection-xss` class fires the supersession lock.
+
 ## [0.8.57] — 2026-07-03
 
 **The Semgrep ingest now captures the scanner's source→sink dataflow path as a
