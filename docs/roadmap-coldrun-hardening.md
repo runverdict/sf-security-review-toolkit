@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.63**, suite **62 files / 915 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.64**, suite **62 files / 919 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -444,7 +444,7 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
       captured as genuine fixtures; **643 + 90 promoted** into `CWE_TO_DIMENSION` (`INJECTION_XSS_CWES`
       now {78,79,89,90,94,95,96,643,943}); co-resident md5/CWE-328 stays external-sast (negative). Graded
       off disk. NEXT: E0.1e-B.
-    - **E0.1e-B (custom taint rules — the real engine authoring):** no OSS rule for Python XPath+LDAP,
+    - ~~**E0.1e-B (custom taint rules — the real engine authoring)**~~ **DONE (0.8.64):** no OSS rule for Python XPath+LDAP,
       JS/Go LDAP, Go XPath (CodeQL covers them but is license-barred on proprietary code). Ship a curated
       `rules/injection/*.yaml` dir (mode:taint, framework-request sources → enumerated sinks: lxml/ldap3/
       ldapjs/go-ldap/xmlquery, `escape_filter_chars`/variable-binding sanitizers, `focus-metavariable`),
