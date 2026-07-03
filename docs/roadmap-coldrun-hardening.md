@@ -333,33 +333,168 @@ A code-grounding pass ran all three bullets to ground; every one closed without 
 - **(c) checkmarx-prediction + `CX_APIKEY` cx-scan** — already shipped (0.4.4, commit 47efea0);
   deleted from this doc 2026-07-02.
 
-### B5 — Residual-shrinking track  *(the differentiator; see roadmap-deterministic-findings §4)*
-Build deterministic engines that move each residual class's reachability/exposure/pattern substrate from
-LLM-inferred to deterministic, leaving only the semantic judgment labelled `llm-inferred`. **This is FOUR
-separate slices, not one — a review (2026-07-02) confirmed only ReDoS is ready to implement directly;
-the other three need a DESIGN DECISION resolved first (below).** Sequence: ReDoS → then the design calls.
-- ~~**ReDoS (buildable first)**~~ **DONE (0.8.56)** — `regexploit` adapter (format-C text parse; degree→band
-  exponential→high / polynomial→medium, never critical). The design point resolved BESIDE, not supersede:
-  `classify()→null` (RCA is a multi-shape dimension; an owned class would wrongly supersede a co-located
-  rate-limit/DoW sibling via reconcile's dimension-fallback). Graded off disk — safety is defense-in-depth
-  (classify-null AND buildFinding won't attach an unregistered class; both must fail for the hazard).
-- **Prompt-injection reachability** *(DESIGN FIRST)* — Semgrep taint off `p/ai-best-practices` (untrusted
-  source → LLM-prompt sink); the LLM judges exploitability. **Open design Q:** the existing semgrep
-  adapter is tool→band (→ `scan-external-sast`); a prompt-injection-reachability finding is a DIFFERENT
-  class — decide the owned-class + adapter mapping before building.
-- **Denial-of-wallet** *(DESIGN FIRST)* — metered-sink-in-unbounded-loop + missing-rate-limit-on-public-
-  route; "split the `resource-consumption-abuse` dimension into a deterministic detector + a labelled
-  judgment." **Open design Qs:** (1) no stock rule pack detects this — it needs CUSTOM Semgrep rules
-  (authoring effort); (2) "CodeQL-style" is aspirational — CodeQL is NOT a toolkit scanner (absent from
-  `tool-detect`/`install-scanners`); don't imply wiring it; (3) DoW and ReDoS both live in
-  `resource-consumption-abuse`, so the two splits interact — design them together.
-- **IDOR / BOLA** *(DESIGN FIRST)* — a 2-user differential oracle (Schemathesis/Akto) for the API/MCP
-  surface; SFGE/PMD already cover the Apex missing-control side. **Open design Q:** this is a live
-  2-user differential (needs a running target + two identities) — decide how it rides the throwaway-DAST
-  consent + mirror, vs. staying owner-run.
-- **Honest floor (do NOT relitigate):** business-logic + multi-step authz are IRREDUCIBLE (Rice's
-  theorem; the platform reviewer pen-tests them by hand). The North Star is **"deterministic substrate
-  maximized + a labelled semantic residual,"** NOT "100% deterministic."
+### B5 — Residual-shrinking track  *(THE differentiator — RE-SCOPED 2026-07-03; see roadmap-deterministic-findings §4)*
+> Re-scoped from a 4-class list into a **tiered engine buildout** after a review (2026-07-03) of the
+> current deterministic coverage against the OSS-tool landscape across ~10 vulnerability classes and a
+> class-completeness audit vs the OWASP Web/API/LLM Top-10s, CWE Top-25, and the Salesforce review
+> categories. **Standing architectural rule for every B5 adapter — supersession-safety: if the target
+> dimension is MULTI-SHAPE, `classify()` MUST return `null`** (a class may be owned only in a single-shape
+> (sub-)dimension the adapter fully owns). This is the ReDoS lesson, and it is defense-in-depth
+> (classify-null AND `buildFinding` won't attach a class absent from `CLASS_DEFS`). Each slice ships one
+> class at a time, test-backed, with a captured real-tool fixture and a mutation proof.
+
+**The honest floor, redrawn precisely.** The old "llm-only/partial" labels conflated two different
+things: judgments that are IRREDUCIBLE (Rice-theorem business-logic + multi-step authz — the platform
+reviewer pen-tests these by hand, they stay `llm-inferred`), and judgments left to the LLM ONLY because
+the toolkit never ingested a substrate its own scanners already compute. One-line floor: **the toolkit
+can deterministically decide "an unsafe path / an ungated grant / an unguarded sink / an unsafe regex
+exists here, and here is the path" — it cannot decide "and that path is reachable with hostile input, the
+sink is metered, the grant is on sensitive data, and nothing upstream saves it."** The reachability PATH
+is substrate; the trust-model GROUNDING of the path's source is residual. North Star unchanged:
+deterministic substrate maximized + a labelled semantic residual, NOT literal 100%.
+
+#### Tier 0 — cross-cutting enablers (build FIRST; each unlocks several classes; zero/low new tooling, near-zero FP)
+- **E0.1 — reachability-path ingest (THE next slice).** *WIRE — ingest upgrade, no new tool.* Verified
+  off disk: `semgrepAdapter` reads only `extra.severity/message` + `r.path/start.line` and **discards
+  `extra.dataflow_trace` entirely** — the source→sink path is already in captured output today and thrown
+  away. Parse it into a first-class `reachabilityPath` finding attribute (Semgrep `extra.dataflow_trace`
+  = `{taint_source, intermediate_vars[], taint_sink}`; SARIF `codeFlows[].threadFlows[].locations[]`;
+  SFGE entry-point→DML vertices — normalize all into one shape). Moves `reachable` from an LLM residual
+  to a deterministic ATTRIBUTE across injection-xss, prompt-injection, DoW, deserialization,
+  sessionid-egress, SSRF. Residual: trust grounding of the source + sanitizer adequacy. `classify()`
+  unchanged (still `null` — this adds an attribute, not a class). Near-zero FP (it's the engine's own
+  computed path). Standing test: a fixture with a known source→sink path asserts the path is captured
+  and no existing `external-sast` row regresses.
+- **E0.1b — ingest-ROUTING fix (cheap, high-value; pairs with E0.1).** *WIRE — reclassify already-
+  captured findings.* Scanner output for SOQLi/XSS (Code Analyzer), pickle/yaml/XXE (bandit B301/B506,
+  semgrep, njsscan) and `getSessionId` retrieval (Code Analyzer) ALREADY fires but is tagged class-less
+  or under the wrong label (`external-sast`/`apex-exposed-surface`), so it never routes to
+  injection-xss / untrusted-deserialization / sessionid-egress and never informs those dimensions. This
+  is an ingest-routing gap, not a detection gap. Route each to its dimension via `dimensionHint`.
+  **Supersession-safety:** injection-xss + untrusted-deserialization are MULTI-SHAPE → keep
+  `classify()=null` (route the dimension, do NOT own a class), so a SOQLi row never silences a co-located
+  XSS judgment. Standing test: a captured SOQLi/XXE fixture lands in the right dimension, class-less, and
+  does not supersede a co-located LLM sibling.
+- **E0.2 — Opengrep swap for the external/JS-LWC taint tier.** *WIRE — adapter drop-in (byte-compatible
+  CLI+JSON).* Opengrep (LGPL-2.1, the OSS Semgrep fork) deepens intra-file → interprocedural (intra-file)
+  taint for JS/TS/Py/Go/Java — deeper `reachabilityPath` for the same E0.1 classes, reusing the adapter
+  verbatim. **Critic note:** Opengrep is ~2025-new — keep **Semgrep CE as the baseline** and Opengrep as
+  the deepening swap so an Opengrep instability can't break the taint substrate. Cross-*file* bridging is
+  neither engine's job (that stays LLM/human; CodeQL only where license permits — see below). Same Apex
+  blind spot as Semgrep (SFGE owns Apex).
+- **E0.3 — Salesforce Guest/Metadata Exposure Mapper (the single most novel + timely BUILD).** *BUILD a
+  novel `source-scanner` (clone the `metadata-viewall` kind — glob XML → parse → class-severity finding,
+  zero harness-core change).* Computes, from metadata XML with **no live org**: (a) guest/site profile →
+  object/field/class/page grant join × entry-point (`@AuraEnabled`/`@RestResource`) × class
+  `with/without/inherited sharing`; (b) NamedCredential + RemoteSiteSetting + cspTrustedSite + Apex
+  `callout:` host inventory (flag plain-HTTP, wildcard hosts, remote sites with no matching Named
+  Credential); (c) permset/profile CRUD+FLS grant matrix + **release-to-release diff** (flag any grant
+  that widened). Moves guest-exposure + egress-trust + part of admin-surface/tenant-isolation from
+  llm-only → deterministic. No OSS tool builds this join; the commercial SF tools (Clayton/DigitSec) are
+  portal-only SaaS. Directly models the 2026 guest-`/sfsites/aura` data-theft campaign. **FP guardrail:**
+  source-only cannot see OWD/sharing rules → cap severity at **"statically-exposed grant," never
+  "confirmed leak."** **Scope-gate:** must NOT fire for a headless MCP-only package with no Experience
+  Cloud site (PENDING noise). Single-shape sub-classes it fully owns → may own a class, but must not
+  bleed into the multi-shape tenant-isolation dimension.
+
+#### Tier 1 — the four class slices, sharpened (build on the Tier-0 enablers)
+- **T1.0 — ReDoS oracle durability (OPTIONAL hardening; NOT urgent).** ReDoS **shipped + graded PASS
+  (0.8.56)** with `regexploit` (format-C; the adapter parses stdout, so regexploit's "exit 0 even when
+  vulnerable" is a non-issue for us, and twice-run byte-identity is proven). The research prefers
+  `recheck` (actively maintained, structured JS API via a small Node harness, automaton-mode) over
+  regexploit (no release since ~2021, text-scraping brittleness) for **long-term durability** ("stay
+  present"). **Critic call: do NOT churn a graded-PASS slice** — keep regexploit now; schedule a recheck
+  migration as optional hardening, not a blocker. `classify()=null` either way.
+- **T1.1 — prompt-injection reachability.** *WIRE Semgrep AI packs (pin the FREE-engine subset — some
+  `p/ai-best-practices` rules are Pro-gated and silently drop on a cold install; the pack is deprecated,
+  migrated into semgrep-rules) + a custom sink overlay.* Substrate = the taint EDGE (E0.1): untrusted
+  request/tool data → LLM-prompt sink, and LLM-output → dangerous sink. The load-bearing custom piece off-
+  the-shelf packs miss (they target LangChain/CrewAI): a rule for the partner's hand-rolled surface —
+  `google-genai .generate_content`, copilot tool-dispatch, MCP tool handlers as sinks, and
+  **`LLM-output → Salesforce write-back | SF callout | JSX render without human-in-loop`** (LLM05+LLM06;
+  matches CLAUDE.md rule-8 `str()` surface — covered by nothing OSS). `classify()=null` (injection-xss +
+  agentforce are multi-shape). Residual: injectability/exploitability.
+- **T1.2 — denial-of-wallet.** *WIRE a first-party Semgrep pack (+ recheck for the regex arm).*
+  Deterministic substrate = pure AST-presence guard checks with **no external compensating control**:
+  query-without-`.limit()`, LLM-call-missing-`max_tokens`, unbounded decompression (`io.Copy` vs
+  `io.CopyN`, `extractall` with no threshold), and **unbounded `.delay()`/`.apply_async()` in a loop**
+  (a real fan-out vector no OSS pack models). **THE track's #1 honesty guardrail (hard rule):
+  "missing rate-limit" MUST NOT be emitted `deterministic`** — compensating controls at Cloudflare/nginx
+  are invisible to any source scanner, so a naive rule over-reports every handler. Route missing-rate-
+  limit through LLM/owner adjudication (or ingest gateway config first). `classify()=null` (RCA multi-
+  shape). Standing test asserts missing-rate-limit is tagged adjudicated/`llm-inferred`, NEVER
+  `deterministic` — that assertion is the slice's point.
+- **T1.3 — IDOR/BOLA.** *Split by surface: WIRE SFGE for Apex; BUILD a 2-identity loopback differential
+  for the external app.* **Apex:** pin SFGE `ApexFlsViolation` as the CRUD/FLS substrate + PMD
+  `ApexCRUDViolation` as the coarse fallback; upgrade SFGE ingest to capture entry-point→DML vertices
+  (E0.1 sibling). **MUST-VERIFY before building:** the research claims Graph Engine CRUD/FLS is
+  **v4-only, not re-hosted in v5** — following Code Analyzer to v5 without an explicit SFGE pin would
+  silently drop the toolkit's PRIMARY substrate (Apex object/field authz). Verify the installed CA/SFGE
+  version off disk first. **External:** BUILD a small differential — throwaway app on loopback →
+  provision org A + org B + unauth client → harvest A-owned object IDs from A's OWN list endpoints
+  (never guess UUIDs) → replay each object-referencing route under {A, B, no-auth} → **status-first
+  differential** (near-zero FP; body-diff is where FP creeps). **The RLS row-count oracle is the
+  differentiator BUT is architecture-CONDITIONAL** — it applies only to a backend that enforces tenant
+  isolation via Postgres RLS + per-request GUC (seed a row under org A, bind the session as org B, assert
+  zero rows → effectively CONFIRMED). Gate it on DETECTING that architecture; for other stacks it does
+  not apply. Needs a running target → gate behind the existing scan-org consent (the one Tier-1 slice
+  that is not cold-install-only). `classify()`: the RLS-oracle finding may own a class (single-shape:
+  cross-tenant read = auto-fail); the static prefilter emits PLAUSIBLE class-less and only feeds the
+  dynamic oracle. FP note: loopback-mirror fidelity (RLS/GUC, Celery, rate-limits) must be faithful or
+  the differential runs against a non-representative app.
+
+#### Tier 2 — backlog adapters (net-new classes; mostly cold-install drop-ins, cheapest-first)
+- **@salesforce/eslint-plugin-lwc** — LWC DOM-XSS (Top-20 class with ZERO deterministic engine today);
+  near-zero FP; adapter-drop-in. *Highest-ROI net-new wire.*
+- **Lightning Flow Scanner + flip Code Analyzer v5 `flow` engine** — Flow unsafe-running-context /
+  secrets-in-Flow (PMD/SFGE structurally ignore Flow XML); adapter-drop-in + config flip.
+- **A small Salesforce-idiom custom PMD/Semgrep ruleset** — sensitive-info-in-debug-log, Lightning
+  Message Channel `isExposed`, JS-not-in-static-resource, username/email enumeration, CSV/formula
+  injection on export, Apex `JSON.deserialize`→sObject mass-assignment (the one deserialization variant
+  no scanner covers). The one place a custom ruleset out-earns off-the-shelf.
+- **syft** (SBOM CycloneDX/SPDX — reviewers want the deliverable), **GuardDog** (malicious/typosquat
+  deps; osv/npm-audit are blind to un-CVE'd malicious packages), **ScanCode** (license facts; noisy →
+  detection deterministic, compatibility=LLM), **CA v5 `regex`/`eslint` engines** (already provisioned,
+  unused — config flip). All cold-install adapter-drop-ins.
+- **Network-gated / opt-in (breaks local-only posture — flag hard, gate like live-probe consent):**
+  `trufflehog --results=verified` (secret liveness; AGPL, invoke-only), **mcp-scan** (MCP tool-
+  description poisoning/shadowing — the AgentExchange surface vetted only by the LLM today), OSSF
+  Scorecard (supply-chain hygiene). **oauth-identity sliver:** a small deterministic slice (JWT
+  `alg=none` / hardcoded JWT secret via semgrep) + the E0.3 egress map; OAuth flow correctness stays
+  irreducible LLM.
+- **Cross-engine dedup (Extension #3) becomes the gating debt** once Tier-2 lands — every add that
+  overlaps a shipped engine (Flow Scanner↔CA `flow`, trufflehog↔gitleaks↔detect-secrets, trivy↔checkov)
+  emits visible duplicate rows until dedup lands (under-merge is the safe failure; schedule it before the
+  ledger gets noisy).
+
+#### Explicitly DROP / do not add (hygiene)
+tfsec (deprecated — *is* trivy-config now), terrascan (archived Nov 2025), grype/pip-audit/cargo-audit/
+KICS (redundant with osv-scanner V2 SCALIBR + checkov + trivy — marginal substrate, multiplies dedup
+burden), **CodeQL as a default** (free-for-OSS-ONLY; the CLI/engine license forbids scanning a closed
+partner package outside GitHub Advanced Security — our users' exact case; Apex isn't supported anyway,
+SFGE covers it; offer at most an OPT-IN, license-gated SARIF adapter for partners who open-source or hold
+GHAS), Snyk Code (commercial + ML-nondeterministic — violates the determinism contract), promptmap
+(GPL-3.0 — never vendor).
+
+#### Recommended sequence (ReDoS DONE; each slice one-at-a-time, test-backed, Fable-5-safe scaffold prepended)
+1. **E0.1 reachability-path ingest** (+ **E0.1b routing fix** — pair them; cheapest, zero new tools,
+   near-zero FP; unlocks the rest).
+2. **T1.1 prompt-injection reachability** (custom google-genai/MCP/SF-write-back overlay on the E0.1 edge).
+3. **T1.2 denial-of-wallet** (AST-presence guards; the missing-rate-limit honesty assertion is the point).
+4. **E0.3 guest-exposure mapper** (novel cold-install source-scanner; highest novel value, no running
+   target — could be pulled earlier if the guest surface is the priority).
+5. **T1.3 IDOR/BOLA** (last in Tier 1 — needs a running target + the E0.1 prefilter; verify SFGE v4/v5
+   first; RLS oracle gated on the architecture).
+6. **Tier-2 drop-ins**, cheapest-first (@salesforce/eslint-plugin-lwc → Flow Scanner → syft → GuardDog →
+   ScanCode → network-gated trufflehog-verified / mcp-scan / Scorecard), then **cross-engine dedup**.
+
+**Over-optimistic claims flagged (do not budget on these):** "~80-90% of the class surface goes
+deterministic" is a whole-program-WITH-live-endpoint figure — the cold-install static pass is far lower;
+"missing rate-limit is a deterministic hit" is DANGEROUS (compensating controls invisible to source);
+agent-audit / trufflehog / semgrep-AI vendor benchmarks are self-reported on framework-native code —
+Verdict's hand-rolled MCP/google-genai will under-fire without the custom overlay; the RLS oracle is
+"CONFIRMED" only if the loopback mirror faithfully reproduces RLS/GUC + Celery + rate-limits; SFGE
+Graph-Engine CRUD/FLS currency (v4 vs v5) must be pinned or coverage silently lapses.
 
 ### B6 — "human" → conversational prose sweep  *(SURGICAL, not blanket — a review flagged the old framing as DANGEROUS)*
 The raw count is accurate (87 whole-word `human`/`Human` across 31 tracked files), but a review
