@@ -9,7 +9,8 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.64**, suite **62 files / 919 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.65**, suite **62 files / 924 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  E0.1d shipped (sessionid-egress rule-name routing — see the Tier-0 entry).
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -467,8 +468,24 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   → sObject mass-assignment is LLM-residual** (no scanner CWE, never reaches the router — stated, not
   faked). `classify()=null`, no CLASS_DEFS entry, non-supersession locked. Verified (genuine
   fixtures + 10/10 battery + 2 mutations). The unified map is now the routing foundation E0.1e builds on.
-- **E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture** (`getSessionId` retrieval).
-  **GROUNDED (2026-07-03, authoritative Salesforce/PMD docs + off-disk fixture inspection):**
+- ~~**E0.1d — sessionid-egress / Apex routing + Code-Analyzer fixture**~~ **DONE (0.8.65)** —
+  a new **`RULE_DIMENSION`** map (`RULE_CLASS`'s class-less sibling; CA carries no CWE so routing is by
+  rule NAME) routes Code Analyzer's built-in `pmd-appexchange` session-id retrieval rules —
+  **`AvoidUnauthorizedGetSessionIdInApex`** + **`AvoidUnauthorizedApiSessionIdInVisualforce`** — to the
+  `sessionid-egress` dimension, both fixture-proven on a GENUINE `sf code-analyzer run --rule-selector
+  AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a minimal seeded Apex +
+  Visualforce sample (`acceptance/fixtures/code-analyzer-sessionid-seeded.json`). Harness diff 33-insert /
+  0-delete (CWE map + all 5 CWE-routing adapters byte-untouched); `classify()` null, no
+  `CLASS_DEFS['sessionid-egress']`, maps disjoint — a routed retrieval-site finding owns no class and
+  supersedes nothing (SESS-non-supersession + 2 mutations). Retrieval SITE deterministic; egress VERDICT +
+  the external-service token-passthrough side stay residual (no generic log/info-exposure CWE over-routed).
+  Verified off disk (fixture genuineness confirmed against the installed CA rule catalog; independent
+  empirical battery + both mutations reproduced). **Follow-up (when a seed emits them):** the CA
+  AppExchange catalog holds more session-id rules the minimal seed didn't trigger
+  (`AvoidUnauthorizedApiSessionIdInApex`, `AvoidUnauthorizedGetSessionIdInVisualforce`, `AvoidApiSessionId`,
+  the `GETSESSIONID()` formula sibling) — all correctly left `// fixture-pending`; promote each once a
+  genuine capture emits it (same fixture-proven floor).
+  **Grounding retained (the substrate rationale):**
   - **CA output carries NO CWE for any engine** (violation = `{rule, engine, severity, tags[],
     primaryLocationIndex, locations[], message, resources[]}` — confirmed against both committed CA fixtures
     AND the CA v5 output-schema docs). So `CWE_TO_DIMENSION`/`dimensionForCwes` (the E0.1b/c mechanism)
@@ -614,9 +631,10 @@ contract), promptmap (GPL-3.0 — never vendor).
    narrow (CWE-89/78)**~~ **DONE (0.8.58)** ·
    ~~**E0.1b-EXPAND (full injection taxonomy + generated fixtures)**~~ **DONE (0.8.59)** — 7 CWEs active/
    fixture-proven across semgrep+bandit+njsscan; XPath/LDAP/XML-injection are the honest uncovered
-   residual (need custom rules — see the E0.1b entry). Next: **E0.1c** (deserialization) → **E0.1d**
-   (sessionid/Apex) — each comprehensive + generated-fixture, `classify()=null` on the multi-shape
-   dimensions. (E0.2a above is parallel-safe / independent.)
+   residual (need custom rules — see the E0.1b entry). ~~**E0.1c** (deserialization)~~ DONE (0.8.62) →
+   ~~**E0.1d** (sessionid/Apex)~~ DONE (0.8.65, rule-name routing — CA has no CWE) — each fixture-proven,
+   `classify()=null` on the multi-shape dimensions. Next Tier-0 BUILD: **E0.3** (guest/metadata exposure
+   mapper). (E0.2a above is parallel-safe / independent.)
 2. **E0.3 guest-exposure mapper** — PULLED FORWARD (was after T1.1/T1.2; the review flagged the
    Tier-0-"build-first"-but-sequenced-late contradiction). Most novel + most timely (models the live 2026
    guest/`/sfsites/aura` data-theft campaign), cold-install, no running target, clean severity cap. Ahead
