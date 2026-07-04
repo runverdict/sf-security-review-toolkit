@@ -9,7 +9,8 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.71**, suite **62 files / 963 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.72**, suite **62 files / 964 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: item 1 (E0.1f) + item 2 (`endpoint-https-only` applies_to seam, 0.8.72) SHIPPED.
   E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3b-2 (`disableProtocolSecurity` downgrade);
   E0.3c-1 (View/Modify-All-Data advisory) + E0.3c-2 (admin-privilege advisory); **E0.1f (0.8.71) — CIRCULATION
   TRACK item 1 SHIPPED**: the taint `reachabilityPath` now renders into the verifier prompt + the finder digest
@@ -302,11 +303,13 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    the co-location JOIN — surface a co-located DETERMINISTIC finding's path onto a DIFFERENT (LLM-inferred)
    finding's verifier (needs the structured-ledger co-location lookup). Same substrate-render treatment for
    the grant-matrix/egress dimensions is a later fold-in.
-2. **`endpoint-https-only` `applies_to` seam** — add `managed-package`. `plain-http-egress` +
-   `protocol-security-disabled` scan RemoteSite/CspTrustedSite/NamedCredential (package metadata) and ground
-   HIGH findings in `endpoint-https-only`, but that requirement's `applies_to` is
-   `[external-endpoint,mcp-server,canvas]` — so on a package-only scope the finding cites a requirement not in
-   its applicable set. Add the element + update the applicable-set fixtures/tests.
+2. ~~**`endpoint-https-only` `applies_to` seam**~~ **DONE (0.8.72)** — added `managed-package` to
+   `endpoint-https-only.applies_to` (it now = `[external-endpoint,mcp-server,canvas,managed-package]`), so the
+   `plain-http-egress`/`protocol-security-disabled` findings cite a requirement that IS in the applicable set
+   on a package-only scope. B5-GUARD test: applicable for managed-package + no regression + still `major`
+   (blocker floor unchanged). One legit fixture edit: the GAP-Y2 canonical-vocabulary pin moved from
+   `endpoint-https-only` (which legitimately entered the raw managed-package set) to `endpoint-ssl-labs-a-grade`
+   (external-endpoint-gated only). Verified off disk (applicable battery + mutation).
 3. **Full-band determinism proof** — generalize regexploit's twice-run byte-identity: run the `--all`
    deterministic band twice over the fixture corpus, assert byte-identical ledgers. Catches nondeterminism
    creep (map ordering, timestamps) forever.
