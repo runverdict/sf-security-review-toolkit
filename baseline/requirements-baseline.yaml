@@ -1117,8 +1117,12 @@
     load. Hardcoded http:// URLs in callout code, Remote Site Settings, or
     OAuth callbacks are findings. Codified as the named Secure Communication
     violation (HTTPS/SFTP only; HTTP and FTP disallowed) and ranked #17
-    (Insecure endpoint) in the official Top-20 failure causes.
-  applies_to: [external-endpoint, mcp-server, canvas]
+    (Insecure endpoint) in the official Top-20 failure causes. A managed
+    package's own Remote Site Settings, CSP Trusted Sites, Named Credentials,
+    and Apex callout endpoints are package metadata and in scope — the
+    plain-http-egress and protocol-security-disabled scanner classes flag
+    them and ground in this requirement.
+  applies_to: [external-endpoint, mcp-server, canvas, managed-package]
   automation: fully
   automation_notes: Grep/AST scan for http:// in callouts and config, plus live tests for HTTP fallback and redirect behavior.
   severity_if_missing: major

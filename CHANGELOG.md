@@ -51,6 +51,26 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.72] — 2026-07-04
+
+**The Secure-Communication requirement `endpoint-https-only` now applies to `managed-package`
+scopes.** The `plain-http-egress` (0.8.66) and `protocol-security-disabled` (0.8.69) scanner
+classes flag Remote Site Settings, CSP Trusted Sites, and Named Credentials — managed-package
+metadata — and ground their findings in `endpoint-https-only`, but that requirement's
+`applies_to` was `[external-endpoint, mcp-server, canvas]`, so on a package-only architecture
+those findings cited a requirement that never entered the computed applicable set
+(`applicable-requirements.mjs`) — a grounding seam. Added `managed-package` to the entry's
+`applies_to` (its `details` now state that a package's own Remote Site Settings / CSP Trusted
+Sites / Named Credentials / Apex callout endpoints are in scope); the requirement stays in the
+external-endpoint / mcp-server / canvas sets, and its severity is unchanged (`major` — the fix
+does not add a blocker requirement to the package-only floor). Scanners, adapters, and
+`compute-sci` untouched: the fix is purely the requirement's applicability. New standing check
+in `test-applicable-requirements` pins the managed-package membership, the no-regression on the
+prior element types, and the not-a-blocker floor; the GAP-Y2 canonical-vocabulary pin moved to
+`endpoint-ssl-labs-a-grade` (an id that stays external-endpoint-gated only). Suite **62 files /
+964 checks** (was 963), all green. Mutation-proven: reverting the `applies_to` to omit
+`managed-package` turns the new membership check RED.
+
 ## [0.8.71] — 2026-07-04
 
 **The machine-verified taint reachability path now flows INTO the LLM prompts.** The

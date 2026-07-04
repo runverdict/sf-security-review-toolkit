@@ -95,6 +95,24 @@ check('B1 GUARD: SSRF control applies to a plain external endpoint (NO mcp-serve
   assert.ok(appl.has('mcpthreat-ssrf-mitigation'), 'SSRF coverage lost for a plain external endpoint')
 })
 
+check('B5 GUARD: endpoint-https-only applies on a managed-package-only scope (still major, not blocker)', () => {
+  // plain-http-egress + protocol-security-disabled flag RemoteSiteSetting /
+  // CspTrustedSite / NamedCredential PACKAGE metadata and ground their findings
+  // in endpoint-https-only — so the requirement must be IN the applicable set
+  // on a package-only architecture, not only when an external-endpoint /
+  // mcp-server / canvas element is in scope.
+  assert.ok(new Set(computeApplicable(entries, ['managed-package'])).has('endpoint-https-only'),
+    'endpoint-https-only must be applicable on a package-only scope')
+  // no regression: every prior element type still pulls it in on its own
+  for (const el of ['external-endpoint', 'mcp-server', 'canvas']) {
+    assert.ok(new Set(computeApplicable(entries, [el])).has('endpoint-https-only'), `${el} lost endpoint-https-only`)
+  }
+  // the seam fix must NOT raise the blocker floor: severity stays major
+  const chunk = baseline.split(/^(?=- id:)/m).find((c) => c.startsWith('- id: endpoint-https-only'))
+  assert.equal((chunk.match(/severity_if_missing:\s*(\S+)/) || [])[1], 'major',
+    'endpoint-https-only stays major — the managed-package membership must not add a blocker requirement')
+})
+
 check('`all`-gated requirements always apply (sanity)', () => {
   const allGated = entries.filter((e) => e.applies_to.includes('all')).map((e) => e.id)
   const appl = new Set(computeApplicable(entries, PLAIN_PACKAGE))
@@ -138,7 +156,10 @@ check('GAP-Y2: the baseline stays canonical-vocabulary-only (aliasing lives in t
   const rawSyn = rawApplicable(['managed-package', 'external-web-app'])
   const canon = computeApplicable(entries, ['managed-package', 'external-endpoint'])
   assert.ok(rawSyn.length < canon.length, 'applies_to must not duplicate the synonym vocabulary')
-  assert.ok(!rawSyn.includes('endpoint-https-only'), 'endpoint-* stays gated on the canonical token only')
+  // endpoint-https-only legitimately entered the raw managed-package set (B5:
+  // it applies to package metadata), so the canonical-vocabulary pin uses an
+  // id that stays external-endpoint-gated only.
+  assert.ok(!rawSyn.includes('endpoint-ssl-labs-a-grade'), 'endpoint-* stays gated on the canonical token only')
 })
 
 check('GAP-Y2: EVERY synonym in ELEMENT_TYPE_SYNONYMS computes its canonical type\'s exact set', () => {
