@@ -9,8 +9,10 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.73**, suite **63 files / 969 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1 (E0.1f), 2 (`endpoint-https-only` seam), 3 (full-band determinism proof, 0.8.73)
+- **`main` @ 0.8.74**, suite **63 files / 973 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1 (E0.1f), 2 (`endpoint-https-only` seam), 3 (full-band determinism proof),
+  4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
+  must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
   same-id convergence mutated the caller's band, fabricating a hybrid finding + breaking determinism; fixed
   by storing a copy — ledger bytes unchanged).
@@ -322,9 +324,13 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    finding + making run-1's returned band differ from run-2's; the ledger stayed byte-stable, which hid it).
    Root-fixed by storing a copy on insert — ledger bytes verified unchanged. Both mutations (Math.random
    inject + fix-revert) reproduced RED off disk.
-4. **Single-shape registry** (the hardening candidate already named below at "Hardening candidate: an explicit
-   single-shape registry") — a `SINGLE_SHAPE` set + one standing test: every class-owning dimension is either
-   registered single-shape OR `classify()=null`. Shape-correctness stops being the one silent manual invariant.
+4. ~~**Single-shape registry**~~ **DONE (0.8.74)** — `export const SINGLE_SHAPE` (the 9 owned classes) +
+   4 mechanical `SS-*` standing checks that exercise EVERY adapter's `classify()` over the RULE_CLASS +
+   RULE_DIMENSION key sets: every non-null result MUST be registered (owning a class forces declaring it
+   single-shape), registry ⊆ CLASS_DEFS, registry `deepEqual` the actual owned set, null-classify adapters
+   stay class-less. No `classify()`/`CLASS_DEFS` change; the pre-lock crud-fls/sharing risk is documented
+   honestly. Verified off disk (own owned-set derivation + 2 mutations). Shape-correctness is no longer a
+   silent manual invariant.
 5. **Supply-chain README paragraph** — surface the zero-runtime-dependency posture (NO `package.json`,
    hand-rolled parsers, sha256-pinned tool installs — "our supply chain is the Node standard library"); a real
    trust differentiator for a security tool. Eventual self-SBOM.
