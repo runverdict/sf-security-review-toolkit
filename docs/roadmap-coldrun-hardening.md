@@ -1,6 +1,6 @@
 # Roadmap — cold-run hardening backlog
 
-> Status: **ACTIVE backlog** (2026-06-30). Captures the toolkit-hardening work surfaced by a full
+> Status: **ACTIVE backlog** (updated 2026-07-04). Captures the toolkit-hardening work surfaced by a full
 > end-to-end **cold run** against a real partner-shaped target (a nested-2GP SFDX repo with an external web app/API, an MCP server, Canvas, and Agentforce — `sf`/scanners deliberately
 > absent to exercise the cold-install path). Companion to
 > [`roadmap-deterministic-findings.md`](roadmap-deterministic-findings.md) (the deterministic-band arc)
@@ -29,7 +29,8 @@
   vuln taxonomy and GENERATE genuine per-class fixtures to test each — do NOT limit routing to the vuln
   classes a captured-from-dogfood fixture happens to contain (that calibrates the tool to one codebase's
   profile, not the general partner). The CWE→dimension map is a scanner-agnostic knowledge artifact.**
-  The Tier-0 sequence continues at E0.1b-EXPAND (the full injection taxonomy).
+  (The Tier-0 sequence and the whole B5 arc are far along — see the **Baseline at time of writing** block
+  above for the authoritative current version + shipped list; do NOT read a "next item" out of the prose below.)
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
@@ -269,7 +270,8 @@
 
 Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → ~~B3 (verdict-reflection)~~ DONE
 (B3a/B3b/B3b-2/B3b-3/B3c all shipped) → ~~B4 (PENDING labeling)~~ RESOLVED by re-grounding (no code
-change — see below) → B5 (residual-shrinking — **ReDoS is THE NEXT ITEM**) → B6 (prose) →
+change — see below) → B5 (residual-shrinking — **far along; see the Baseline block for the current tip, not
+this historical order line**) → B6 (prose) →
 B7 (gate-consolidation)**. One item at a time, each test-backed. Tag stays HELD until a clean cold run on
 the post-hardening build justifies it.
 
@@ -401,8 +403,8 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   stability DOWN even as the residual count drops. Track residual recurrence stability before/after each
   slice (via the recurrence-confidence contract), not only count.
 - **Routing-integer accuracy (the router keys on exact ints):** the `dynamic-urllib` negative-test finding
-  is CWE-**939** (Improper Authorization in a Custom-URL-Scheme handler), NOT SSRF — our test/prose
-  MISLABELS it "SSRF". Real **SSRF is CWE-918** (→ data-export, not injection-xss); it has no fixture yet
+  is CWE-**939** (Improper Authorization in a Custom-URL-Scheme handler), NOT SSRF — the old test/prose
+  mislabel was **CORRECTED (0.8.59)**. Real **SSRF is CWE-918** (→ data-export, not injection-xss); it has no fixture yet
   and is untested. No routing bug (neither 939 nor 918 is in the `{89,78}` allowlist), but correct the
   record (the test comment is code → correct it in the next injection slice; add a real-918 negative if a
   fixture exists). **XXE (611)→deser vs XML-injection (91)→injection-xss** is a deliberate split — record
@@ -487,8 +489,10 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   empirical battery + both mutations reproduced). **Follow-up (when a seed emits them):** the CA
   AppExchange catalog holds more session-id rules the minimal seed didn't trigger
   (`AvoidUnauthorizedApiSessionIdInApex`, `AvoidUnauthorizedGetSessionIdInVisualforce`, `AvoidApiSessionId`,
-  the `GETSESSIONID()` formula sibling) — all correctly left `// fixture-pending`; promote each once a
-  genuine capture emits it (same fixture-proven floor).
+  the `GETSESSIONID()` formula sibling) — these names are read off the installed CA catalog (doc-sourced),
+  and only the `GETSESSIONID()` formula sibling carries a `// fixture-pending` comment in code today; NONE
+  is activated. Promote each once a genuine capture emits it (same fixture-proven floor). *(These exact
+  spellings are catalog-sourced, not yet re-verified against a fresh capture — verify before activating.)*
   **Grounding retained (the substrate rationale):**
   - **CA output carries NO CWE for any engine** (violation = `{rule, engine, severity, tags[],
     primaryLocationIndex, locations[], message, resources[]}` — confirmed against both committed CA fixtures
