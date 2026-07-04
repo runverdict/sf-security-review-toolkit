@@ -68,6 +68,26 @@
  *       HONEST FLOOR: a statically-declared protocol-security opt-out, LOW FP (defaults
  *       false, explicitly warned against); the rare internal/on-premises HTTP case is
  *       dispositionable via the FP dossier, never suppressed.
+ *   AP — the admin-privilege-grant source-scanner (B5 · E0.3c-2, 0.8.70): flags the
+ *       high-risk ADMIN/PRIVILEGE system permissions — ManageUsers / AuthorApex /
+ *       CustomizeApplication / ModifyMetadata — granted via <userPermissions> with
+ *       <enabled>true</enabled> in permission sets AND profiles — a least-privilege
+ *       ADVISORY, class admin-privilege-grant → least-privilege-permission-grants
+ *       (informational → info, OFF the blocker floor), dimension admin-surface: the SAME
+ *       grounding as its sibling view-modify-all-data (that class covers the org-wide
+ *       DATA-access pair {ViewAllData, ModifyAllData}; this one covers the admin/privilege
+ *       quartet — disjoint Sets, no double-report; AP-no-overlap locks it in both
+ *       directions, on a shared fixture dir). Every Set name is a CONFIRMED
+ *       Profile/PermissionSet <userPermissions> API name. PRECISION: exact-name (the
+ *       adjacent delegated-administration ManageInternalUsers never matches) +
+ *       enabled-required (an explicit enabled=false row never flags) + element-scoped (a
+ *       <description> mention never flags). SINGLE-SHAPE at its locus (the <name> grant
+ *       line), so supersession never reaches a different-shape admin-surface finding at a
+ *       different locus (AP-non-supersession; a SAME-locus supersession would be correct).
+ *       HONEST FLOOR: a statically-declared grant is an advisory signal, never a confirmed
+ *       subscriber grant (user permissions are excluded from managed-package
+ *       permsets/profiles at install — verify the effective grant), and retrieved profile
+ *       metadata may be PARTIAL — absence is not least-privilege proof.
  *   U — an unmapped rule is still ingested as deterministic (never dropped) with the
  *       documented Code-Analyzer-severity fallback + a note.
  *   M — merge is additive + idempotent (re-ingest → no duplicates; LLM findings survive).
@@ -75,8 +95,8 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 17 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data/remote-site-protocol-security).
+ *   AD — the pluggable adapter registry: 18 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data/remote-site-protocol-security/admin-privilege-grant).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -141,6 +161,7 @@ import {
   egressPlainHttpAdapter,
   viewModifyAllDataAdapter,
   remoteSiteProtocolSecurityAdapter,
+  adminPrivilegeGrantAdapter,
   checkovAdapter,
   semgrepAdapter,
   opengrepAdapter,
@@ -810,6 +831,176 @@ check('DP-non-supersession: an owned-class protocol-security-disabled finding do
   // supersession visibly fires), proving the protection is locus-specificity, not an accident.
 })
 
+// ────────────────── admin/privilege permission-grant advisory (source-scanner, B5 · E0.3c-2)
+// The SIXTH source-scanner (view-modify-all-data's clone): scans permission sets AND
+// profiles for the high-risk ADMIN/PRIVILEGE system permissions — ManageUsers / AuthorApex /
+// CustomizeApplication / ModifyMetadata — granted via <userPermissions> with enabled=true,
+// class admin-privilege-grant → least-privilege-permission-grants (informational → info,
+// OFF the blocker floor), dimension admin-surface. The SIBLING of view-modify-all-data:
+// that class covers the org-wide DATA-access pair {ViewAllData, ModifyAllData}; this one
+// covers the admin/privilege quartet — the two permission Sets are DISJOINT (AP-no-overlap
+// locks it in both directions, on a shared fixture dir). Every name in the Set is a
+// CONFIRMED Profile/PermissionSet <userPermissions> API name. HONEST FLOOR: a
+// statically-declared grant is an advisory signal, never a confirmed subscriber grant
+// (user permissions are excluded from managed-package permsets/profiles at install), and
+// retrieved profile metadata may be PARTIAL — absence is not least-privilege proof.
+const APGFIX = join(FIX, 'admin-privilege')
+const ingestApg = () => {
+  const raw = adminPrivilegeGrantAdapter.collect({ target: APGFIX })
+  return ingest(raw, adminPrivilegeGrantAdapter, { repoRoot: APGFIX, pass: 1 })
+}
+// the fixture line that carries the grant's <name> element — computed from the fixture
+// itself so the exact-locus assertions never go stale
+const apgLineOf = (file, needle) => readText(join(APGFIX, file)).split('\n').findIndex((l) => l.includes(needle)) + 1
+
+check('AP1 admin-privilege-grant (source-scanner): the permission set granting ManageUsers + AuthorApex → 2 findings, metadata/admin-privilege-grant/info/admin-surface, each at its <name> grant line, deterministic + schema-valid', () => {
+  const { findings } = ingestApg()
+  const ps = findings.filter((x) => /AdminOverreach\.permissionset-meta\.xml/.test(x.file))
+  assert.equal(ps.length, 2, 'both admin/privilege grants flag — one finding per grant')
+  for (const [perm, f] of [['ManageUsers', ps.find((x) => x.title.includes('ManageUsers'))], ['AuthorApex', ps.find((x) => x.title.includes('AuthorApex'))]]) {
+    assert.ok(f, `the ${perm} grant is flagged`)
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'metadata')
+    assert.equal(f.ruleId, 'admin-privilege-grant')
+    assert.equal(f.class, 'admin-privilege-grant')
+    assert.equal(f.adjusted_severity, 'info')
+    assert.equal(f.dimension, 'admin-surface')
+    // the locus is the grant's <name> line itself, not the file or the root element
+    assert.equal(f.file, `AdminOverreach.permissionset-meta.xml:${apgLineOf('AdminOverreach.permissionset-meta.xml', `<name>${perm}</name>`)}`)
+    assert.match(f.verdict_reasoning, /severity fixed from the admin-privilege-grant class \(baseline requirement least-privilege-permission-grants = informational\)/)
+    assert.deepEqual(validateFinding(f), [])
+  }
+})
+
+check('AP2 profile coverage + precision: the .profile CustomizeApplication + ModifyMetadata grants flag (the remaining two Set names); in LeastPriv the enabled=false ManageUsers, the <description> mention, ViewSetup, and the adjacent-name ManageInternalUsers do NOT flag', () => {
+  const { findings } = ingestApg()
+  const prof = findings.filter((x) => /AdminOverreach_Profile\.profile-meta\.xml/.test(x.file))
+  assert.equal(prof.length, 2, 'both profile admin/privilege grants flag')
+  for (const perm of ['CustomizeApplication', 'ModifyMetadata']) {
+    const f = prof.find((x) => x.title.includes(perm))
+    assert.ok(f, `the profile ${perm} grant is flagged`)
+    assert.match(f.title, new RegExp(`Profile grants the high-risk ${perm}`))
+    assert.equal(f.class, 'admin-privilege-grant')
+    assert.equal(f.adjusted_severity, 'info')
+    assert.equal(f.dimension, 'admin-surface')
+    assert.equal(f.file, `AdminOverreach_Profile.profile-meta.xml:${apgLineOf('AdminOverreach_Profile.profile-meta.xml', `<name>${perm}</name>`)}`)
+  }
+  // precision: exactly the four enabled admin/privilege grants across the fixture dir —
+  // LeastPriv stays silent (enabled=false ManageUsers · a prose <description> mention ·
+  // benign ViewSetup · the adjacent delegated-administration name ManageInternalUsers,
+  // which a sloppy non-exact matcher could confuse · a ViewAllData grant that belongs to
+  // the SIBLING view-modify-all-data class, not this one)
+  assert.equal(findings.length, 4, 'exactly the four enabled admin/privilege grants across the fixture dir — nothing more')
+  assert.ok(!findings.some((f) => /LeastPriv/.test(f.file)), 'the least-privilege permission set is clean for this adapter')
+  assert.ok(!findings.some((f) => f.title.includes('ManageInternalUsers')), 'exact-name: the adjacent ManageInternalUsers never matches')
+  assert.ok(!findings.some((f) => f.title.includes('ViewAllData')), 'the DATA-access grant belongs to view-modify-all-data, never this class')
+})
+
+check('AP-classSeverity: admin-privilege-grant grounds in the SAME baseline as view-modify-all-data — least-privilege-permission-grants (informational) → info, dimension admin-surface (one requirement, two disjoint permission Sets, two sibling classes)', () => {
+  assert.equal(baselineSeverityFor('least-privilege-permission-grants'), 'informational')
+  const cs = classSeverity('admin-privilege-grant')
+  assert.equal(cs.severity, 'info')
+  assert.equal(cs.baselineId, 'least-privilege-permission-grants')
+  assert.equal(cs.fromBaseline, true)
+  assert.equal(CLASS_DEFS['admin-privilege-grant'].dimension, 'admin-surface')
+  // the sibling grounds identically — same baseline, same dimension, same info severity
+  assert.equal(CLASS_DEFS['view-modify-all-data'].baselineId, CLASS_DEFS['admin-privilege-grant'].baselineId)
+  assert.equal(CLASS_DEFS['view-modify-all-data'].dimension, CLASS_DEFS['admin-privilege-grant'].dimension)
+})
+
+check('AP-advisory: the finding is an honest least-privilege ADVISORY — the message carries the managed-package user-permission-exclusion caveat + verify-effective-grant guidance, and the severity is info (OFF the blocker floor, never critical)', () => {
+  const { findings } = ingestApg()
+  const f = findings.find((x) => /AdminOverreach\.permissionset-meta\.xml/.test(x.file) && x.title.includes('ManageUsers'))
+  assert.ok(f, 'the ManageUsers grant is flagged')
+  // the advisory framing leads the message and survives the title truncation
+  assert.match(f.title, /advisory \(least privilege\)/)
+  // the caveat text is present on the raw hit message (pre-truncation) …
+  const raw = adminPrivilegeGrantAdapter.collect({ target: APGFIX })
+  const hit = adminPrivilegeGrantAdapter.parse(raw).find((h) => /AdminOverreach\.permissionset/.test(h.file) && h.message.includes('ManageUsers'))
+  assert.ok(hit, 'the raw parse hit exists')
+  assert.match(hit.message, /user permissions are excluded from managed-package permission sets\/profiles at install/)
+  assert.match(hit.message, /may not reach subscribers via the package/)
+  assert.match(hit.message, /verify the effective grant/)
+  assert.match(hit.message, /business justification/)
+  // … and the full advisory + caveat is carried untruncated on the recommendation
+  assert.match(f.recommendation, /Least-privilege advisory/)
+  assert.match(f.recommendation, /excluded from managed-package permission sets\/profiles at install/)
+  assert.match(f.recommendation, /EFFECTIVE grant/)
+  assert.match(f.recommendation, /business justification/)
+  // OFF the blocker floor: compute-sci blocks only on severity 'critical' —
+  // an info advisory is flagged for review, never a submission gate
+  assert.equal(f.adjusted_severity, 'info')
+  assert.equal(f.severity, 'info')
+  assert.notEqual(f.adjusted_severity, 'critical')
+})
+
+check('AP-adapter: admin-privilege-grant is a registered source-scanner ({name,kind,collect,parse,classify}, NO securityRelevant, NO detect) and ingest is byte-deterministic', () => {
+  assert.equal(ADAPTERS['admin-privilege-grant'], adminPrivilegeGrantAdapter)
+  assert.equal(adminPrivilegeGrantAdapter.name, 'admin-privilege-grant')
+  assert.equal(adminPrivilegeGrantAdapter.kind, 'source-scanner')
+  for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof adminPrivilegeGrantAdapter[m], 'function')
+  // security-by-construction: every emission is a declared admin/privilege grant → no filter
+  assert.equal(adminPrivilegeGrantAdapter.securityRelevant, undefined)
+  // a source-scanner has no evidence file → invisible to the content-shape recognizer
+  assert.equal(adminPrivilegeGrantAdapter.detect, undefined)
+  assert.equal(adminPrivilegeGrantAdapter.classify('anything'), 'admin-privilege-grant')
+  const a = ingestApg().findings
+  const b = ingestApg().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('AP-no-overlap: over the SAME admin-privilege fixture dir, view-modify-all-data emits ONLY its own class on the ViewAllData row (never the admin perms); and admin-privilege-grant emits 0 over the dangerous-permissions fixtures — the two permission Sets are disjoint, no double-report', () => {
+  // view-modify-all-data over THIS adapter's fixtures: exactly the one ViewAllData grant
+  // in LeastPriv (its own class), none of the four admin/privilege grants
+  const vm = ingest(viewModifyAllDataAdapter.collect({ target: APGFIX }), viewModifyAllDataAdapter, { repoRoot: APGFIX, pass: 1 })
+  assert.equal(vm.findings.length, 1, 'view-modify-all-data sees only the ViewAllData row')
+  assert.equal(vm.findings[0].class, 'view-modify-all-data')
+  assert.ok(/LeastPriv\.permissionset-meta\.xml/.test(vm.findings[0].file))
+  assert.ok(vm.findings[0].title.includes('ViewAllData'))
+  assert.ok(!vm.findings.some((f) => /ManageUsers|AuthorApex|CustomizeApplication|ModifyMetadata/.test(f.title)), 'the admin perms never match the DATA-access Set')
+  // and the REVERSE: this adapter over view-modify-all-data's own fixture dir
+  // (ViewAllData/ModifyAllData + its negatives — no admin/privilege perm) emits 0
+  const rev = ingest(adminPrivilegeGrantAdapter.collect({ target: join(FIX, 'dangerous-permissions') }), adminPrivilegeGrantAdapter, { repoRoot: FIX, pass: 1 })
+  assert.equal(rev.findings.length, 0, 'admin-privilege-grant emits nothing on the DATA-access fixtures')
+})
+
+check('AP-non-supersession: an owned-class admin-privilege-grant finding does NOT supersede a co-located llm-inferred admin-surface finding of a DIFFERENT shape at a DIFFERENT locus — locus-specificity is the protection', () => {
+  const det = ingestApg().findings.find((x) => /AdminOverreach\.permissionset-meta\.xml/.test(x.file) && x.title.includes('ManageUsers'))
+  assert.equal(det.class, 'admin-privilege-grant')
+  assert.equal(det.dimension, 'admin-surface')
+  // an llm-inferred admin-surface finding of a DIFFERENT shape (the grant-inventory /
+  // least-privilege-justification reasoning the dimension charter also owns), SAME file,
+  // NON-overlapping lines — class-less, so sameOwnedClass falls back to the dimension
+  // match, which DOES hold here:
+  const llm = {
+    id: 'a'.repeat(16),
+    dimension: 'admin-surface',
+    title: 'Packaged admin-persona permission set lacks a documented least-privilege justification',
+    severity: 'medium',
+    adjusted_severity: 'medium',
+    file: 'AdminOverreach.permissionset-meta.xml:1-9', // the file header block, NOT the grant line
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the packaged grant inventory',
+  }
+  // the dimension fallback WOULD match (det owns a class, llm is class-less, same dimension);
+  // the ONLY missing supersession ingredient is the locus — assert that explicitly:
+  assert.equal(sameLocation(det, llm), false, 'different line span → not the same locus')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the different-locus LLM finding is NOT superseded — the deterministic row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed')
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // NOTE: at the SAME locus (an LLM finding on the same <userPermissions> grant line)
+  // supersession WOULD fire and WOULD be correct — the deterministic finding is
+  // authoritative for that grant. The guard is that ownership never reaches a
+  // different-shape admin-surface finding elsewhere in the file.
+  // MUTATION: pointing llm.file at det's exact line turns `superseded === 0` red (the
+  // supersession visibly fires), proving the protection is locus-specificity, not an accident.
+})
+
 // ──────────────────────────────────────────────── Security/AppExchange tag filter
 check('U1 tag filter: a non-security rule (ApexDoc, tags Documentation/BestPractices) → 0 findings; the Performance-tagged MissingNullCheckOnSoqlVariable is filtered out of the real fixture', () => {
   // inline a synthetic non-security best-practices violation (NOT in the real captured
@@ -990,13 +1181,14 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 17 adapters (remote-site-protocol-security added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'remote-site-protocol-security', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
+check('AD1 registry has 18 adapters (admin-privilege-grant added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['admin-privilege-grant', 'bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'remote-site-protocol-security', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['egress-plain-http'].kind, 'source-scanner')
   assert.equal(ADAPTERS['view-modify-all-data'].kind, 'source-scanner')
   assert.equal(ADAPTERS['remote-site-protocol-security'].kind, 'source-scanner')
+  assert.equal(ADAPTERS['admin-privilege-grant'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
@@ -3798,8 +3990,9 @@ check('TRV-reuses-class: trivyAdapter.classify() is the constant iac-misconfig �
   // NO new CLASS_DEFS entry for trivy — the class map is the original 5 + plain-http-egress
   // (the egress source-scanner's own class, 0.8.66) + view-modify-all-data (the org-wide
   // grant source-scanner's own class, 0.8.67) + protocol-security-disabled (the Remote Site
-  // Setting protocol-security source-scanner's own class, 0.8.69) — none is trivy's
-  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'protocol-security-disabled', 'sharing', 'view-modify-all-data', 'viewall-overgrant'])
+  // Setting protocol-security source-scanner's own class, 0.8.69) + admin-privilege-grant
+  // (the admin/privilege grant source-scanner's own class, 0.8.70) — none is trivy's
+  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['admin-privilege-grant', 'crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'protocol-security-disabled', 'sharing', 'view-modify-all-data', 'viewall-overgrant'])
   assert.equal(CLASS_DEFS['trivy'], undefined)
 })
 
@@ -4373,6 +4566,33 @@ check('PV-all (--all journey wiring): view-modify-all-data ALWAYS runs — a gra
   // objectPermissions) reports the scanner honestly clean — no crash, no double-report
   const out2 = runAll(setupAllTarget())
   assert.ok(out2.scanners.some((s) => s.scanner === 'view-modify-all-data' && s.findings === 0 && s.status === 'clean'))
+})
+
+check('AP-all (--all journey wiring): admin-privilege-grant ALWAYS runs — a granted-ManageUsers permission set under the target lands in the band + ledger with a scanner row; a target with no admin/privilege grant reports it clean', () => {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-apg-all-'))
+  dirs.push(T)
+  // copy the fixture under the target so the source-scanner finds it (no evidence/ needed)
+  mkdirSync(join(T, 'force-app', 'main', 'default', 'permissionsets'), { recursive: true })
+  writeFileSync(
+    join(T, 'force-app', 'main', 'default', 'permissionsets', 'AdminOverreach.permissionset-meta.xml'),
+    readFileSync(join(APGFIX, 'AdminOverreach.permissionset-meta.xml'), 'utf8')
+  )
+  const out = runAll(T)
+  assert.ok(
+    out.scanners.some((s) => s.scanner === 'admin-privilege-grant' && s.kind === 'source-scanner' && s.findings === 2 && s.status === 'ran'),
+    `admin-privilege-grant scanner row present (got ${JSON.stringify(out.scanners)})`
+  )
+  const f = out.findings.find((x) => x.ruleId === 'admin-privilege-grant')
+  assert.ok(f, 'the declared admin/privilege grant is in the --all band')
+  assert.equal(f.class, 'admin-privilege-grant')
+  assert.equal(f.dimension, 'admin-surface')
+  assert.equal(f.adjusted_severity, 'info')
+  const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
+  assert.ok(ledger.findings.some((x) => x.ruleId === 'admin-privilege-grant'), 'merged into the ledger')
+  // and a target with NO admin/privilege grant (setupAllTarget's permission set carries
+  // only objectPermissions) reports the scanner honestly clean — no crash, no double-report
+  const out2 = runAll(setupAllTarget())
+  assert.ok(out2.scanners.some((s) => s.scanner === 'admin-privilege-grant' && s.findings === 0 && s.status === 'clean'))
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup

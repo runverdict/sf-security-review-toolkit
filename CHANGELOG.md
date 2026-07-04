@@ -51,6 +51,52 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.70] — 2026-07-04
+
+**A new metadata source-scanner flags the high-risk admin/privilege system permissions —
+Manage Users, Author Apex, Customize Application, Modify Metadata — granted in permission
+sets and profiles, as an honest least-privilege ADVISORY, deterministically from source.**
+The `admin-privilege-grant` adapter (the eighteenth in the registry, the sixth
+source-scanner — a `view-modify-all-data` clone with zero harness-core change) walks the
+repo for `*.permissionset-meta.xml` + `*.profile-meta.xml` and emits an
+`admin-privilege-grant` finding for every `<userPermissions>` block whose `<name>` is one of
+`ManageUsers` / `AuthorApex` / `CustomizeApplication` / `ModifyMetadata` with
+`<enabled>true</enabled>` — filed under `admin-surface` at `info`, grounded in the existing
+`least-privilege-permission-grants` baseline requirement (informational → info, **off the
+blocker floor** — flagged for review, never a submission gate). The SIBLING of the
+View/Modify-All-Data advisory: that class covers the org-wide **data-access** pair
+(`ViewAllData`/`ModifyAllData`); this one covers the **admin/privilege** quartet — the two
+permission Sets are disjoint, so the same grant line is never double-reported (the standing
+`AP-no-overlap` check locks it in both directions, and `view-modify-all-data` itself is
+byte-untouched). Runs in the `--all` journey mode alongside the other source-scanners (no
+evidence file, no `sf`, no network), so the audit's deterministic pass and the run-scans tail
+pick it up with no invocation change.
+
+Same honest framing as the sibling — an advisory, never an auto-fail: there is no named
+AppExchange requirement that auto-fails a permission grant (reviewers apply least privilege
+case-by-case, and legitimate justifications exist — identity management → Manage Users,
+DevOps tooling → Author Apex / Modify Metadata), and **user permissions are excluded from
+managed-package permission sets/profiles at install**, so a packaged grant may not reach
+subscribers via the package — the finding advises verifying the EFFECTIVE grant (the
+integration/running user, the Guest User, or an unmanaged/org-deployed context) and
+documenting a business justification. Retrieved profile metadata may be partial, so the
+absence of a grant is never least-privilege proof. PRECISION: exact-name (the adjacent
+delegated-administration `ManageInternalUsers` never matches) + enabled-required (an explicit
+`enabled=false` row never flags) + element-scoped (a `<description>` mention never flags).
+Every name in the Set is a confirmed Profile/PermissionSet `<userPermissions>` API name; any
+permission whose API name could not be confirmed was left out (a wrong name would be a dead
+row that never matches real metadata).
+
+Fixtures: `acceptance/fixtures/admin-privilege/` — authored schema-faithful permission-set +
+profile XML: four positives across two files (`AdminOverreach` permission set: ManageUsers +
+AuthorApex; `AdminOverreach_Profile`: CustomizeApplication + ModifyMetadata — all four Set
+names exercised, permission-set AND profile surfaces) + one negative (`LeastPriv`: enabled=false ManageUsers · a prose `<description>`
+mention · benign ViewSetup · adjacent-name ManageInternalUsers · a ViewAllData grant that
+belongs to the sibling class, the disjointness proof). Suite **62 files / 955 checks** (was
+947), all green. Mutation-proven: dropping the enabled-true requirement (flagging a disabled
+grant) turns `AP2` red; pointing the non-supersession pair at the same locus turns
+`AP-non-supersession` red.
+
 ## [0.8.69] — 2026-07-04
 
 **A new metadata source-scanner flags Remote Site Settings that set

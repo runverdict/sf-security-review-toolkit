@@ -179,6 +179,24 @@
  *                       egress-plain-http (a DIFFERENT flag on the same file
  *                       type: that adapter reads <url> schemes, this one reads
  *                       the protocol-security element — no double-report).
+ *                     Adapter #18 (B5 · E0.3c-2, 0.8.70):
+ *                       `admin-privilege-grant` (engine:'metadata') — scans
+ *                       *.permissionset-meta.xml AND *.profile-meta.xml for the
+ *                       high-risk ADMIN/PRIVILEGE system permissions —
+ *                       ManageUsers / AuthorApex / CustomizeApplication /
+ *                       ModifyMetadata — granted via <userPermissions> with
+ *                       <enabled>true</enabled> — a least-privilege ADVISORY
+ *                       (class `admin-privilege-grant` →
+ *                       least-privilege-permission-grants, informational →
+ *                       info, dimension admin-surface; OFF the blocker floor):
+ *                       user permissions are excluded from managed-package
+ *                       permsets/profiles at install, so a packaged grant may
+ *                       not reach subscribers — verify the effective grant.
+ *                       Exact-name + enabled-required + element-scoped;
+ *                       view-modify-all-data's sibling (that class covers the
+ *                       org-wide DATA-access perms ViewAllData/ModifyAllData;
+ *                       this one covers the admin/privilege perms — the two
+ *                       Sets are disjoint, no double-report).
  *
  * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
  * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
@@ -206,6 +224,7 @@
  *   node ingest-scanner-findings.mjs --scanner egress-plain-http                         --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner view-modify-all-data                      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner remote-site-protocol-security             --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner admin-privilege-grant                     --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
@@ -222,7 +241,7 @@
  *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
  *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs the source-scanners
  *     (metadata-viewall + egress-plain-http + view-modify-all-data +
- *     remote-site-protocol-security, 0.8.69) +
+ *     remote-site-protocol-security + admin-privilege-grant, 0.8.70) +
  *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
  *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
  *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
@@ -465,6 +484,26 @@ export const CLASS_DEFS = {
   // the deterministic row is authoritative there), never a different-shape
   // package-metadata finding elsewhere in the file (sameLocation is line-span-scoped).
   'protocol-security-disabled': { baselineId: 'endpoint-https-only', dimension: 'package-metadata', fallback: 'high' },
+  // B5 · E0.3c-2 (0.8.70): a high-risk ADMIN/PRIVILEGE system permission — ManageUsers /
+  // AuthorApex / CustomizeApplication / ModifyMetadata — granted (<userPermissions> with
+  // enabled=true) in a packaged permission set OR profile. view-modify-all-data's SIBLING
+  // (that class covers the org-wide DATA-access perms ViewAllData/ModifyAllData; this one
+  // covers the admin/privilege perms — disjoint Sets, no double-report) with the SAME
+  // grounding: a least-privilege ADVISORY, never an auto-fail — user permissions are
+  // EXCLUDED from managed-package permission sets/profiles at install (Salesforce 2GP),
+  // so a packaged grant may not reach subscribers via the package, and no named
+  // AppExchange requirement auto-fails a permission grant — reviewers apply least
+  // privilege case-by-case (legitimate justifications exist: identity management →
+  // ManageUsers, DevOps tooling → AuthorApex/ModifyMetadata). Grounding:
+  // least-privilege-permission-grants is informational → info (OFF the blocker floor —
+  // flagged for review, never a submission gate); admin-surface owns the permission-grant
+  // plane. The finding advises verifying the EFFECTIVE grant (integration/running user,
+  // Guest User, unmanaged/org-deployed context) and documenting a business justification.
+  // SINGLE-SHAPE at its locus: the finding sits on the specific <userPermissions> grant
+  // line, so the owned class supersedes only a co-located LLM finding at that same grant
+  // (correct — the deterministic row is authoritative there), never a different-shape
+  // admin-surface finding elsewhere in the file (sameLocation is line-span-scoped).
+  'admin-privilege-grant': { baselineId: 'least-privilege-permission-grants', dimension: 'admin-surface', fallback: 'info' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -589,6 +628,8 @@ function recommendationFor(classKey) {
       return 'Least-privilege advisory: review the org-wide View All Data / Modify All Data grant. User permissions are excluded from managed-package permission sets/profiles at install, so a packaged grant may not reach subscribers via the package — verify the EFFECTIVE grant on the integration/running user, the Guest User, or an unmanaged/org-deployed context; remove the grant where it is not needed, and document a business justification for any high-risk grant that stays (least-privilege-permission-grants).'
     case 'protocol-security-disabled':
       return 'Remove <disableProtocolSecurity>true</disableProtocolSecurity> from the Remote Site Setting (the platform default is false) — the flag permits data transfer between an HTTPS session and an HTTP session, the transport downgrade the codified Secure Communication requirement forbids (endpoint-https-only); if an internal/on-premises HTTP endpoint genuinely requires it, document a justified false positive in the dossier.'
+    case 'admin-privilege-grant':
+      return 'Least-privilege advisory: review the high-risk admin/privilege permission grant (Manage Users / Author Apex / Customize Application / Modify Metadata). User permissions are excluded from managed-package permission sets/profiles at install, so a packaged grant may not reach subscribers via the package — verify the EFFECTIVE grant on the integration/running user, the Guest User, or an unmanaged/org-deployed context; remove the grant where it is not needed, and document a business justification for any high-risk grant that stays (least-privilege-permission-grants).'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -1320,6 +1361,148 @@ export const remoteSiteProtocolSecurityAdapter = {
   },
   classify() {
     return 'protocol-security-disabled'
+  },
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #18 — admin-privilege-grant (source-scanner, B5 · E0.3c-2): scans the
+// repo's permission sets AND profiles and flags the high-risk ADMIN/PRIVILEGE
+// system permissions — ManageUsers (Manage Users), AuthorApex (Author Apex),
+// CustomizeApplication (Customize Application), ModifyMetadata (Modify Metadata
+// Through Metadata API Functions) — granted via a <userPermissions> block with
+// <enabled>true</enabled>. These permissions confer broad administrative
+// capability (user administration, code authorship, org configuration, metadata
+// mutation), so a declared grant is genuine least-privilege signal — but the
+// finding is an ADVISORY (least-privilege-permission-grants, informational →
+// info, dimension admin-surface), never an auto-fail: user permissions are
+// excluded from managed-package permission sets/profiles at install (Salesforce
+// 2GP), so a packaged grant may not reach subscribers via the package, no named
+// AppExchange requirement auto-fails a permission grant, and legitimate
+// justifications exist (identity management → ManageUsers, DevOps tooling →
+// AuthorApex/ModifyMetadata). The clone of view-modify-all-data: same
+// permission-set + profile walk, a pure per-file extractor, CONSTANT classify(),
+// NO securityRelevant (security-by-construction — every emission is a
+// statically-declared admin/privilege grant), NO detect (a source-scanner has no
+// evidence file). view-modify-all-data's SIBLING, not its extension: that
+// adapter's Set is the org-wide DATA-access pair {ViewAllData, ModifyAllData};
+// this adapter's Set is the admin/privilege quartet — the two Sets are DISJOINT,
+// so the same grant line is never double-reported (the standing AP-no-overlap
+// check locks the disjointness in both directions).
+// PRECISION: the <name> match is EXACT against the quartet (an adjacent
+// delegated-administration permission like ManageInternalUsers never matches),
+// <enabled>true</enabled> is REQUIRED within the SAME <userPermissions> block
+// (since API v29.0+ only enabled permissions are serialized, but a rare explicit
+// enabled=false row must stay clean), and the read is element-scoped — a mention
+// inside a <description> or a comment never flags.
+// HONEST FLOOR: the finding is a statically-declared grant in committed metadata
+// — an advisory signal, NEVER a confirmed subscriber grant (managed-package
+// permission sets/profiles drop user permissions at install; the EFFECTIVE grant
+// — on the integration/running user, the Guest User, or an unmanaged/
+// org-deployed context — is the real signal; verifying it is the
+// deployed-package audit plus human review). Retrieved profile metadata is often
+// PARTIAL (only in-scope components), so the ABSENCE of a grant is not
+// least-privilege proof — the adapter flags what is present + enabled, nothing
+// more. Every name in the Set is a CONFIRMED Profile/PermissionSet
+// <userPermissions> API name (an unconfirmed name would be a dead row that never
+// matches real metadata). ManageSharing and the wider admin-permission tail, the
+// permission-set-group + muting effective-permission composition, and the
+// release-to-release grant-widening diff are named follow-on slices — NOT this
+// adapter.
+// ----------------------------------------------------------------------------
+const ADMIN_PRIV_PERMS = new Set(['ManageUsers', 'AuthorApex', 'CustomizeApplication', 'ModifyMetadata'])
+const ADMIN_PRIV_FILE_KINDS = [
+  { suffix: '.permissionset-meta.xml', type: 'Permission set' },
+  { suffix: '.profile-meta.xml', type: 'Profile' },
+]
+const ADMIN_PRIV_DOC = 'https://security.salesforce.com/security-best-practices'
+function findAdminPrivilegeFiles(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue
+        walk(join(dir, e.name))
+      } else if (e.isFile() && ADMIN_PRIV_FILE_KINDS.some((t) => e.name.endsWith(t.suffix))) {
+        out.push(join(dir, e.name))
+      }
+    }
+  }
+  walk(root)
+  out.sort()
+  return out
+}
+// PURE: extract each ENABLED admin/privilege permission grant from one file's XML.
+// Element-scoped: only a <userPermissions> block's own <name> + <enabled> are read; the
+// line points at the grant's <name> element itself.
+function extractAdminPrivilegeGrants(text) {
+  const out = []
+  const re = /<userPermissions>([\s\S]*?)<\/userPermissions>/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const block = m[1]
+    const nameM = /<name>\s*([^<\s][^<]*?)\s*<\/name>/.exec(block)
+    if (!nameM) continue
+    const name = nameM[1].trim()
+    // EXACT name only — ManageInternalUsers / any adjacent admin permission never matches
+    if (!ADMIN_PRIV_PERMS.has(name)) continue
+    // the grant must be ENABLED within the SAME block — an explicit enabled=false row is clean
+    if (!/<enabled>\s*true\s*<\/enabled>/i.test(block)) continue
+    const nameAbsIdx = m.index + m[0].indexOf(nameM[0])
+    out.push({ name, line: lineOfIndex(text, nameAbsIdx) })
+  }
+  return out
+}
+export const adminPrivilegeGrantAdapter = {
+  name: 'admin-privilege-grant',
+  kind: 'source-scanner',
+  collect({ target } = {}) {
+    if (!target) return null
+    let files
+    try {
+      files = findAdminPrivilegeFiles(target)
+    } catch {
+      return null
+    }
+    const out = []
+    for (const p of files) {
+      try {
+        out.push({ path: p, text: readFileSync(p, 'utf8') })
+      } catch {
+        /* unreadable file — skip, never crash */
+      }
+    }
+    return { files: out, repoRoot: target }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.files)) return []
+    const hits = []
+    for (const f of raw.files) {
+      if (!f || typeof f.text !== 'string') continue
+      const kind = ADMIN_PRIV_FILE_KINDS.find((t) => String(f.path || '').endsWith(t.suffix))
+      if (!kind) continue
+      for (const g of extractAdminPrivilegeGrants(f.text)) {
+        hits.push({
+          engine: 'metadata',
+          ruleId: 'admin-privilege-grant',
+          severityNum: null,
+          file: f.path,
+          startLine: g.line,
+          message: `${kind.type} grants the high-risk ${g.name} admin/privilege system permission — advisory (least privilege): the grant is declared via <userPermissions> enabled=true, and user permissions are excluded from managed-package permission sets/profiles at install, so this may not reach subscribers via the package; verify the effective grant on the integration/running user or an unmanaged/org-deployed context, and document a business justification for any high-risk grant.`,
+          resources: [ADMIN_PRIV_DOC],
+          tags: ['AppExchange', 'Security', 'Metadata'],
+        })
+      }
+    }
+    return hits
+  },
+  classify() {
+    return 'admin-privilege-grant'
   },
 }
 
@@ -2605,6 +2788,7 @@ export const ADAPTERS = {
   'egress-plain-http': egressPlainHttpAdapter,
   'view-modify-all-data': viewModifyAllDataAdapter,
   'remote-site-protocol-security': remoteSiteProtocolSecurityAdapter,
+  'admin-privilege-grant': adminPrivilegeGrantAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
   'opengrep': opengrepAdapter,
@@ -2624,7 +2808,7 @@ export const ADAPTERS = {
 // Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
 // match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
 // logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
-// carry a `detect` fn (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security, the source-scanners, have none; opengrep has none
+// carry a `detect` fn (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security + admin-privilege-grant, the source-scanners, have none; opengrep has none
 // BY DESIGN — its JSON is content-indistinguishable from semgrep's, see the adapter). Each `detect` is
 // wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
 // crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
@@ -2704,7 +2888,7 @@ export function mergeFindings(ledger, newFindings, pass) {
 // ----------------------------------------------------------------------------
 // ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
 // makes the whole Phase-2 build run in the real journey: it ALWAYS runs the source-scanners
-// (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security), then
+// (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security + admin-privilege-grant), then
 // recognizes + ingests every scanner output present under <target>/.security-review/evidence/
 // by CONTENT SHAPE, and merges the whole deterministic band into the ledger in ONE pass. It
 // reuses the pure ingest() (per scanner) + loadLedger/mergeFindings verbatim; the existing
@@ -2736,7 +2920,9 @@ export function ingestAll({ target, pass, dryRun } = {}) {
   // over-grants; egress-plain-http greps the egress-config metadata for plain-http endpoints;
   // view-modify-all-data greps permission sets + profiles for the org-wide
   // ViewAllData/ModifyAllData system-permission grants; remote-site-protocol-security greps
-  // *.remoteSite-meta.xml for disableProtocolSecurity=true opt-outs).
+  // *.remoteSite-meta.xml for disableProtocolSecurity=true opt-outs; admin-privilege-grant
+  // greps permission sets + profiles for the high-risk admin/privilege system-permission
+  // grants — ManageUsers/AuthorApex/CustomizeApplication/ModifyMetadata).
   let metaRaw = null
   try {
     metaRaw = metadataViewAllAdapter.collect({ target: root })
@@ -2796,6 +2982,21 @@ export function ingestAll({ target, pass, dryRun } = {}) {
     kind: remoteSiteProtocolSecurityAdapter.kind,
     findings: rspRes.findings.length,
     status: rspRes.findings.length ? 'ran' : 'clean',
+  })
+  let apgRaw = null
+  try {
+    apgRaw = adminPrivilegeGrantAdapter.collect({ target: root })
+  } catch {
+    apgRaw = null
+  }
+  const apgRes = ingest(apgRaw, adminPrivilegeGrantAdapter, { repoRoot: root, pass: passId })
+  notes.push(...apgRes.notes)
+  allFindings.push(...apgRes.findings)
+  scanners.push({
+    scanner: 'admin-privilege-grant',
+    kind: adminPrivilegeGrantAdapter.kind,
+    findings: apgRes.findings.length,
+    status: apgRes.findings.length ? 'ran' : 'clean',
   })
 
   // (2) enumerate evidence/*.json + *.sarif — TOP LEVEL only (skip subdirs like dast/), sorted

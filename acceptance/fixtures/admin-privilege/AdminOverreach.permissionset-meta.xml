@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (admin-privilege-grant adapter). Synthetic toolkit test data — NOT a partner artifact.
+  POSITIVE ×2: the permission set grants TWO high-risk admin/privilege system permissions
+  via <userPermissions> with <enabled>true</enabled> -> each grant FLAGGED
+  (least-privilege-permission-grants / admin-surface, advisory).
+-->
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Admin Overreach</label>
+    <description>Grants broad administrative capability for the platform-admin persona.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ManageUsers</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>AuthorApex</name>
+    </userPermissions>
+</PermissionSet>

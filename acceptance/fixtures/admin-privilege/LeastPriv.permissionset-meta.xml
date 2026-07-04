@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (admin-privilege-grant adapter). Synthetic toolkit test data — NOT a partner artifact.
+  NEGATIVE for admin-privilege-grant (must yield 0 findings from THAT adapter) —
+  exercises every precision guard:
+    1. ViewSetup enabled=true           -> NOT flagged (a benign, non-admin permission).
+    2. ManageInternalUsers enabled=true -> NOT flagged (name EXACTNESS — an adjacent
+                                           delegated-administration permission is not
+                                           ManageUsers).
+    3. ManageUsers enabled=false        -> NOT flagged (the grant must be ENABLED; API
+                                           v29.0+ serializes only enabled permissions,
+                                           but a rare explicit false row must stay clean).
+    4. The <description> below names ManageUsers in prose -> NOT flagged (element-scoped:
+       only a <userPermissions> block's <name> is read, never free text).
+    5. ViewAllData enabled=true         -> NOT flagged by admin-privilege-grant (that
+       grant belongs to the view-modify-all-data class — the sibling DATA-access
+       detector; the AP-no-overlap check proves the two permission Sets are disjoint).
+-->
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Least Priv Admin</label>
+    <description>Setup visibility only; ManageUsers is deliberately not granted to this persona.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewSetup</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ManageInternalUsers</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>false</enabled>
+        <name>ManageUsers</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewAllData</name>
+    </userPermissions>
+</PermissionSet>

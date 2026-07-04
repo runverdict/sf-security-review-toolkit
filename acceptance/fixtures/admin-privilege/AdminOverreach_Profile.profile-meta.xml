@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (admin-privilege-grant adapter). Synthetic toolkit test data — NOT a partner artifact.
+  POSITIVE ×2: the PROFILE grants CustomizeApplication AND ModifyMetadata via
+  <userPermissions> enabled=true -> each FLAGGED. This is the profile-surface coverage
+  proof for the admin/privilege class, and it exercises the remaining two names of the
+  adapter's exact-name Set (the permission-set fixture carries ManageUsers + AuthorApex).
+-->
+<Profile xmlns="http://soap.sforce.com/2006/04/metadata">
+    <custom>true</custom>
+    <userLicense>Salesforce</userLicense>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>CustomizeApplication</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ModifyMetadata</name>
+    </userPermissions>
+</Profile>
