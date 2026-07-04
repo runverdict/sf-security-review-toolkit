@@ -9,9 +9,11 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.70**, suite **62 files / 955 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.71**, suite **62 files / 963 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3b-2 (`disableProtocolSecurity` downgrade);
-  E0.3c-1 (View/Modify-All-Data grant advisory) + E0.3c-2 (admin-privilege grant advisory) —
+  E0.3c-1 (View/Modify-All-Data advisory) + E0.3c-2 (admin-privilege advisory); **E0.1f (0.8.71) — CIRCULATION
+  TRACK item 1 SHIPPED**: the taint `reachabilityPath` now renders into the verifier prompt + the finder digest
+  (`renderReachabilityPath`), grounding the LLM's source-trust verdict; co-location join = E0.1f-2 follow-on —
   the last **CORRECTED (0.8.68)** to a least-privilege **advisory** (informational, off the blocker floor:
   user perms are stripped from managed-package permsets/profiles + no named req) grounded in the new sourced
   `least-privilege-permission-grants` requirement. Next greenlit: E0.3b-2 (`disableProtocolSecurity`).
@@ -292,11 +294,14 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
   trust is the product's stated GTM lever).
 
 **Sequenced plan (this is the authoritative order — do NOT re-derive a next-item from older prose):**
-1. **E0.1f — substrate-grounded prompts** [cheapest; fixes Gap 1]. A deterministic path-carrying entry
-   renders its `reachabilityPath` steps into the audit-digest line + the verifier prompt block, framed
-   "the path is machine-verified — your only open question is whether the SOURCE is attacker-controlled."
-   Same treatment for the grant-matrix/egress substrate once those land. **Validate STRUCTURALLY** (the path
-   is present in the rendered prompt); recurrence-confidence before/after is a SOFT signal, not a hard test.
+1. ~~**E0.1f — substrate-grounded prompts**~~ **DONE (0.8.71)** — `renderReachabilityPath` (in
+   `finding-clusters.mjs`, byte-parity-locked verbatim copy in the non-importable `workflow-template.mjs`)
+   renders a path-carrying finding's `source→sink` into the verifier prompt + the finder digest (SKILL step
+   4b), framed "the path is machine-verified — your only open question is whether the SOURCE is
+   attacker-controlled." No-path output byte-identical; path-production untouched. **E0.1f-2 (follow-on):**
+   the co-location JOIN — surface a co-located DETERMINISTIC finding's path onto a DIFFERENT (LLM-inferred)
+   finding's verifier (needs the structured-ledger co-location lookup). Same substrate-render treatment for
+   the grant-matrix/egress dimensions is a later fold-in.
 2. **`endpoint-https-only` `applies_to` seam** — add `managed-package`. `plain-http-egress` +
    `protocol-security-disabled` scan RemoteSite/CspTrustedSite/NamedCredential (package metadata) and ground
    HIGH findings in `endpoint-https-only`, but that requirement's `applies_to` is
