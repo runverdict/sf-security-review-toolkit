@@ -148,14 +148,19 @@
  *                       dimension package-metadata). Scheme-anchored (https://
  *                       never flags) and element-scoped (an http:// inside a
  *                       <description> never flags).
- *                     Adapter #16 (B5 · E0.3c-1, 0.8.67): `view-modify-all-data`
+ *                     Adapter #16 (B5 · E0.3c-1, 0.8.67; reframed 0.8.68):
+ *                       `view-modify-all-data`
  *                       (engine:'metadata') — scans *.permissionset-meta.xml AND
  *                       *.profile-meta.xml for the org-wide ViewAllData /
  *                       ModifyAllData system permission granted via
- *                       <userPermissions> with <enabled>true</enabled> — the
- *                       org-wide sharing-bypass over-grant (class
- *                       `view-modify-all-data` → fail-sharing-model, high,
- *                       dimension admin-surface). Exact-name + enabled-required +
+ *                       <userPermissions> with <enabled>true</enabled> — a
+ *                       least-privilege ADVISORY (class `view-modify-all-data`
+ *                       → least-privilege-permission-grants, informational →
+ *                       info, dimension admin-surface; OFF the blocker floor):
+ *                       user permissions are excluded from managed-package
+ *                       permsets/profiles at install, so a packaged grant may
+ *                       not reach subscribers — verify the effective grant.
+ *                       Exact-name + enabled-required +
  *                       element-scoped; covers the gap metadata-viewall leaves
  *                       (system <userPermissions>, and profiles, which that scan
  *                       never reads) — the two are disjoint, no double-report.
@@ -413,17 +418,23 @@ export const CLASS_DEFS = {
   // the deterministic row is authoritative there), never a different-shape package-metadata
   // finding elsewhere in the file (sameLocation is line-span-scoped).
   'plain-http-egress': { baselineId: 'endpoint-https-only', dimension: 'package-metadata', fallback: 'high' },
-  // B5 · E0.3c-1 (0.8.67): the org-wide ViewAllData / ModifyAllData SYSTEM permission
-  // granted (<userPermissions> with enabled=true) in a packaged permission set OR profile.
-  // These two bypass ALL sharing rules and org-wide defaults on every object (they still
-  // respect field-level security), so a packaged grant is the org-wide analogue of
-  // viewall-overgrant's per-object flags — same grounding: fail-sharing-model is major →
-  // high, and admin-surface owns the permission-grant plane. SINGLE-SHAPE at its locus:
-  // the finding sits on the specific <userPermissions> grant line, so the owned class
-  // supersedes only a co-located LLM finding at that same grant (correct — the
-  // deterministic row is authoritative there), never a different-shape admin-surface
-  // finding elsewhere in the file (sameLocation is line-span-scoped).
-  'view-modify-all-data': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
+  // B5 · E0.3c-1 (0.8.67; regrounded 0.8.68): the org-wide ViewAllData / ModifyAllData
+  // SYSTEM permission granted (<userPermissions> with enabled=true) in a packaged
+  // permission set OR profile. Reframed to a least-privilege ADVISORY (0.8.68): user
+  // permissions are EXCLUDED from managed-package permission sets/profiles at install
+  // (Salesforce 2GP), so a packaged grant may not reach subscribers via the package,
+  // and no named AppExchange requirement auto-fails a permission grant — reviewers
+  // apply least privilege case-by-case. Grounding: least-privilege-permission-grants
+  // is informational → info (OFF the blocker floor — flagged for review, never a
+  // submission gate); admin-surface still owns the permission-grant plane. The finding
+  // advises verifying the EFFECTIVE grant (integration/running user, Guest User,
+  // unmanaged/org-deployed context) and documenting a business justification.
+  // SINGLE-SHAPE at its locus: the finding sits on the specific <userPermissions>
+  // grant line, so the owned class supersedes only a co-located LLM finding at that
+  // same grant (correct — the deterministic row is authoritative there), never a
+  // different-shape admin-surface finding elsewhere in the file (sameLocation is
+  // line-span-scoped).
+  'view-modify-all-data': { baselineId: 'least-privilege-permission-grants', dimension: 'admin-surface', fallback: 'info' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -545,7 +556,7 @@ function recommendationFor(classKey) {
     case 'plain-http-egress':
       return 'Declare the endpoint over https:// — all connections to and from the platform must use TLS (the codified Secure Communication requirement, endpoint-https-only); update the Remote Site Setting / CSP Trusted Site / Named Credential accordingly, or document a justified false positive in the dossier.'
     case 'view-modify-all-data':
-      return 'Remove the org-wide View All Data / Modify All Data grant from the packaged permission set or profile and scope access through object permissions and sharing; if the broad grant is a documented business requirement, justify it in the false-positive dossier.'
+      return 'Least-privilege advisory: review the org-wide View All Data / Modify All Data grant. User permissions are excluded from managed-package permission sets/profiles at install, so a packaged grant may not reach subscribers via the package — verify the EFFECTIVE grant on the integration/running user, the Guest User, or an unmanaged/org-deployed context; remove the grant where it is not needed, and document a business justification for any high-risk grant that stays (least-privilege-permission-grants).'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -1033,13 +1044,17 @@ export const egressPlainHttpAdapter = {
 }
 
 // ----------------------------------------------------------------------------
-// ADAPTER #16 — view-modify-all-data (source-scanner, B5 · E0.3c-1): scans the repo's
-// permission sets AND profiles and flags the two ORG-WIDE sharing-bypass system
+// ADAPTER #16 — view-modify-all-data (source-scanner, B5 · E0.3c-1; reframed 0.8.68):
+// scans the repo's permission sets AND profiles and flags the two ORG-WIDE system
 // permissions — ViewAllData / ModifyAllData — granted via a <userPermissions> block
 // with <enabled>true</enabled>. These permissions ignore ALL sharing rules and
-// org-wide defaults on every object (they still respect field-level security), so
-// granting them in a package is the documented sharing-model over-grant the reviewer
-// scrutinizes (fail-sharing-model, dimension admin-surface). The clone of
+// org-wide defaults on every object (they still respect field-level security), so a
+// declared grant is genuine least-privilege signal — but the finding is an ADVISORY
+// (least-privilege-permission-grants, informational → info, dimension admin-surface),
+// never an auto-fail: user permissions are excluded from managed-package permission
+// sets/profiles at install (Salesforce 2GP), so a packaged grant may not reach
+// subscribers via the package, and no named AppExchange requirement auto-fails a
+// permission grant. The clone of
 // metadata-viewall / egress-plain-http: same walk, a pure per-file extractor,
 // CONSTANT classify(), NO securityRelevant (security-by-construction — every emission
 // is a statically-declared org-wide grant), NO detect (a source-scanner has no
@@ -1054,9 +1069,13 @@ export const egressPlainHttpAdapter = {
 // and the read is element-scoped — a mention inside a <description> or a comment
 // never flags.
 // HONEST FLOOR: the finding is a statically-declared org-wide grant in committed
-// metadata — a sharing-bypass over-grant, NEVER a confirmed data leak (the grant still
+// metadata — an advisory signal, NEVER a confirmed subscriber grant (managed-package
+// permission sets/profiles drop user permissions at install; the grant still
 // respects FLS and needs real data + a running user to expose anything, and source
-// metadata cannot see whether it is exercised). And retrieved profile metadata is
+// metadata cannot see whether it is exercised). The EFFECTIVE grant — on the
+// integration/running user, the Guest User, or an unmanaged/org-deployed context —
+// is the real signal; verifying it is the deployed-package audit plus human review.
+// And retrieved profile metadata is
 // often PARTIAL (only in-scope components), so the ABSENCE of a grant is not
 // least-privilege proof — the adapter flags what is present + enabled, nothing more.
 // ManageUsers/AuthorApex, per-object viewAllRecords/modifyAllRecords in PROFILES, the
@@ -1146,7 +1165,7 @@ export const viewModifyAllDataAdapter = {
           severityNum: null,
           file: f.path,
           startLine: g.line,
-          message: `${kind.type} grants the org-wide ${g.name} system permission (<userPermissions> enabled=true) — a sharing-bypass over-grant that ignores all sharing rules and org-wide defaults on every object.`,
+          message: `${kind.type} grants the org-wide ${g.name} system permission (<userPermissions> enabled=true) — advisory (least privilege): user permissions are excluded from managed-package permission sets/profiles at install, so this may not reach subscribers via the package; verify the effective grant on the integration/running user or an unmanaged/org-deployed context, and document a business justification for any high-risk grant.`,
           resources: [VIEWALL_DOC],
           tags: ['AppExchange', 'Security', 'Metadata'],
         })

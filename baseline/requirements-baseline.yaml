@@ -1036,6 +1036,30 @@
   verification: web_research_unverified
   last_verified: null
 
+- id: least-privilege-permission-grants
+  requirement: Packaged permission sets and profiles should follow least privilege — high-risk system permissions (View All Data, Modify All Data) granted without a documented business justification are flagged for review. NOTE — user permissions are excluded from managed-package permission sets and profiles at install (Salesforce 2GP), so a packaged grant may not reach subscribers via the package; the effective grant on the integration/running user, the Guest User, or an unmanaged/org-deployed context is the real signal.
+  details: >
+    Salesforce Security Best Practices ("Evaluate User Privilege") advises removing high-risk
+    permissions from profiles and re-adding them to specific users via permission sets only as
+    necessary. There is no single named AppExchange auto-fail for a permission grant — reviewers
+    apply least privilege case-by-case and can require a business justification, most strictly for
+    the Guest User and the integration/running user. Managed-package permission sets/profiles do
+    NOT carry user permissions to subscribers, so a static grant in packaged metadata is an
+    advisory signal to verify against the effective grant, not a confirmed subscriber grant.
+  applies_to: [managed-package]
+  automation: fully
+  automation_notes: Source-scanner flags high-risk userPermissions grants in permsets/profiles; effective-grant verification (integration/running user, deployed org) is the deployed-package audit plus human review.
+  severity_if_missing: informational
+  sources:
+    - url: https://security.salesforce.com/security-best-practices
+      date: "2026"
+      kind: official
+    - url: https://developer.salesforce.com/docs/atlas.en-us.pkg2_dev.meta/pkg2_dev/distribution_perm_sets_profile_settings.htm
+      date: "Summer '26 (doc v262.0)"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-07-04"
+
 # ----------------------------------------------------------------------------
 # external-endpoint — TLS, web-app security bar, platform-boundary rules
 # ----------------------------------------------------------------------------

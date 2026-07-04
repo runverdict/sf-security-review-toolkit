@@ -202,7 +202,7 @@ last-verified date. Skills warn when the entries they rely on are stale, and
 entries with conflicting sources are surfaced as "confirm with your Partner
 Account Manager" rather than silently chosen.
 
-As of the latest source sweep, **121 of 165 baseline entries are `verified_primary`** (confirmed against official Salesforce docs or partner-gated primary sources), **43 remain `web_research_unverified`** pending primary-source confirmation, and 1 is `conflicting` (resolve it through your Partner Account Manager, not this repo). Verification status is per-entry in the YAML — check the entries you rely on, not the aggregate.
+As of the latest source sweep, **122 of 166 baseline entries are `verified_primary`** (confirmed against official Salesforce docs or partner-gated primary sources), **43 remain `web_research_unverified`** pending primary-source confirmation, and 1 is `conflicting` (resolve it through your Partner Account Manager, not this repo). Verification status is per-entry in the YAML — check the entries you rely on, not the aggregate.
 
 PRs that update the baseline with
 primary-source citations are the most valuable contribution you can make.

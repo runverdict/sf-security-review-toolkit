@@ -30,11 +30,17 @@
  *       deterministic row is authoritative for that endpoint). HONEST FLOOR: a statically-
  *       declared insecure-transport endpoint, never a confirmed leak, and NO secret finding
  *       is emitted from a credential file (secret values are org-encrypted, never in metadata).
- *   PV — the view-modify-all-data source-scanner (B5 · E0.3c-1, 0.8.67): flags the org-wide
- *       ViewAllData / ModifyAllData system permission granted via <userPermissions> with
- *       <enabled>true</enabled> in permission sets AND profiles — the org-wide sharing-bypass
- *       over-grant, class view-modify-all-data → fail-sharing-model (major → high), dimension
- *       admin-surface. Covers exactly the gap metadata-viewall leaves (that scan reads
+ *   PV — the view-modify-all-data source-scanner (B5 · E0.3c-1, 0.8.67; reframed 0.8.68):
+ *       flags the org-wide ViewAllData / ModifyAllData system permission granted via
+ *       <userPermissions> with <enabled>true</enabled> in permission sets AND profiles — a
+ *       least-privilege ADVISORY, class view-modify-all-data →
+ *       least-privilege-permission-grants (informational → info, OFF the blocker floor),
+ *       dimension admin-surface: user permissions are excluded from managed-package
+ *       permsets/profiles at install, so a packaged grant may not reach subscribers via the
+ *       package, and no named AppExchange requirement auto-fails a permission grant — the
+ *       finding advises verifying the effective grant + documenting a justification
+ *       (PV-advisory locks the caveat + the off-blocker-floor severity). Covers exactly the
+ *       gap metadata-viewall leaves (that scan reads
  *       <objectPermissions> in permission sets only — never <userPermissions>, never profiles;
  *       PV-no-overlap locks the disjointness in both directions). PRECISION: exact-name
  *       ({ViewAllData, ModifyAllData} only — ViewAllUsers never matches) + enabled-required
@@ -42,8 +48,9 @@
  *       never flags). SINGLE-SHAPE at its locus (the <name> grant line), so supersession never
  *       reaches a different-shape admin-surface finding at a different locus
  *       (PV-non-supersession; a SAME-locus supersession would be correct). HONEST FLOOR: a
- *       statically-declared sharing-bypass grant (FLS still applies), never a confirmed leak,
- *       and retrieved profile metadata may be PARTIAL — absence is not least-privilege proof.
+ *       statically-declared grant is an advisory signal (FLS still applies), never a
+ *       confirmed subscriber grant or leak, and retrieved profile metadata may be PARTIAL —
+ *       absence is not least-privilege proof.
  *   U — an unmapped rule is still ingested as deterministic (never dropped) with the
  *       documented Code-Analyzer-severity fallback + a note.
  *   M — merge is additive + idempotent (re-ingest → no duplicates; LLM findings survive).
@@ -499,17 +506,21 @@ check('EG-non-supersession: an owned-class plain-http-egress finding does NOT su
 
 // ────────────────────── org-wide View/Modify All Data grants (source-scanner, B5 · E0.3c-1)
 // The FOURTH source-scanner (metadata-viewall's clone): reads the package's permission sets
-// AND profiles and flags the two org-wide sharing-bypass system permissions — ViewAllData /
+// AND profiles and flags the two org-wide system permissions — ViewAllData /
 // ModifyAllData — granted via <userPermissions> with <enabled>true</enabled>. These ignore
 // ALL sharing rules and org-wide defaults on every object (they still respect FLS), so a
-// packaged grant is the org-wide sharing-model over-grant (fail-sharing-model, major → high,
-// dimension admin-surface — the same grounding as the per-object viewall-overgrant). The
+// declared grant is genuine least-privilege signal — but the finding is an ADVISORY
+// (reframed 0.8.68: least-privilege-permission-grants, informational → info, dimension
+// admin-surface, OFF the blocker floor): user permissions are excluded from managed-package
+// permsets/profiles at install, so a packaged grant may not reach subscribers via the
+// package, and no named AppExchange requirement auto-fails a permission grant. The
 // fixtures are AUTHORED schema-faithful metadata XML (the permissionsets/ + egress-metadata/
 // convention): 3 positives (permset ViewAllData + permset ModifyAllData + PROFILE
 // ModifyAllData — the surface metadata-viewall never reads) and 1 negative file exercising
 // every precision guard (enabled=false ViewAllData · a <description> mention · benign
 // ViewSetup · the ViewAll*-prefixed ViewAllUsers). HONEST FLOOR: a statically-declared
-// grant, never a confirmed leak — and retrieved profile metadata may be PARTIAL, so the
+// grant is an advisory signal, never a confirmed subscriber grant or leak — and retrieved
+// profile metadata may be PARTIAL, so the
 // absence of a grant is never least-privilege proof.
 const VMADFIX = join(FIX, 'dangerous-permissions')
 const ingestVmad = () => {
@@ -520,7 +531,7 @@ const ingestVmad = () => {
 // itself so the exact-locus assertions never go stale
 const vmadLineOf = (file, needle) => readText(join(VMADFIX, file)).split('\n').findIndex((l) => l.includes(needle)) + 1
 
-check('PV1 view-modify-all-data (source-scanner): the permission set granting ViewAllData + ModifyAllData → 2 findings, metadata/view-modify-all-data/high/admin-surface, each at its <name> grant line, deterministic + schema-valid', () => {
+check('PV1 view-modify-all-data (source-scanner): the permission set granting ViewAllData + ModifyAllData → 2 findings, metadata/view-modify-all-data/info/admin-surface, each at its <name> grant line, deterministic + schema-valid', () => {
   const { findings } = ingestVmad()
   const ps = findings.filter((x) => /Overreach\.permissionset-meta\.xml/.test(x.file))
   assert.equal(ps.length, 2, 'both org-wide grants flag — one finding per grant')
@@ -530,11 +541,11 @@ check('PV1 view-modify-all-data (source-scanner): the permission set granting Vi
     assert.equal(f.engine, 'metadata')
     assert.equal(f.ruleId, 'view-modify-all-data')
     assert.equal(f.class, 'view-modify-all-data')
-    assert.equal(f.adjusted_severity, 'high')
+    assert.equal(f.adjusted_severity, 'info')
     assert.equal(f.dimension, 'admin-surface')
     // the locus is the grant's <name> line itself, not the file or the root element
     assert.equal(f.file, `Overreach.permissionset-meta.xml:${vmadLineOf('Overreach.permissionset-meta.xml', `<name>${perm}</name>`)}`)
-    assert.match(f.verdict_reasoning, /severity fixed from the view-modify-all-data class \(baseline requirement fail-sharing-model = major\)/)
+    assert.match(f.verdict_reasoning, /severity fixed from the view-modify-all-data class \(baseline requirement least-privilege-permission-grants = informational\)/)
     assert.deepEqual(validateFinding(f), [])
   }
 })
@@ -545,7 +556,7 @@ check('PV2 profile coverage: the .profile-meta.xml ModifyAllData grant flags —
   assert.ok(f, 'the profile grant is flagged')
   assert.match(f.title, /Profile grants the org-wide ModifyAllData/)
   assert.equal(f.class, 'view-modify-all-data')
-  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.adjusted_severity, 'info')
   assert.equal(f.dimension, 'admin-surface')
   assert.equal(f.file, `Overreach_Profile.profile-meta.xml:${vmadLineOf('Overreach_Profile.profile-meta.xml', '<name>ModifyAllData</name>')}`)
   // metadata-viewall would NOT have flagged it: the profile file is invisible to its
@@ -561,13 +572,39 @@ check('PV3 precision: an enabled=false ViewAllData does NOT flag, a <description
   assert.ok(!findings.some((f) => /LeastPriv/.test(f.file)), 'the least-privilege permission set is clean — enabled=false + prose mention + benign/prefixed names all stay silent')
 })
 
-check('PV-classSeverity: view-modify-all-data grounds in the BASELINE fail-sharing-model (major) → high, dimension admin-surface — the same grounding as the per-object viewall-overgrant', () => {
-  assert.equal(baselineSeverityFor('fail-sharing-model'), 'major')
+check('PV-classSeverity: view-modify-all-data grounds in the BASELINE least-privilege-permission-grants (informational) → info, dimension admin-surface — the 0.8.68 advisory regrounding, no longer fail-sharing-model/high', () => {
+  assert.equal(baselineSeverityFor('least-privilege-permission-grants'), 'informational')
   const cs = classSeverity('view-modify-all-data')
-  assert.equal(cs.severity, 'high')
-  assert.equal(cs.baselineId, 'fail-sharing-model')
+  assert.equal(cs.severity, 'info')
+  assert.equal(cs.baselineId, 'least-privilege-permission-grants')
   assert.equal(cs.fromBaseline, true)
   assert.equal(CLASS_DEFS['view-modify-all-data'].dimension, 'admin-surface')
+})
+
+check('PV-advisory: the finding is an honest least-privilege ADVISORY — the message carries the managed-package user-permission-exclusion caveat + verify-effective-grant guidance, and the severity is info (OFF the blocker floor, never critical)', () => {
+  const { findings } = ingestVmad()
+  const f = findings.find((x) => /Overreach\.permissionset-meta\.xml/.test(x.file) && x.title.includes('ViewAllData'))
+  assert.ok(f, 'the ViewAllData grant is flagged')
+  // the advisory framing leads the message and survives the title truncation
+  assert.match(f.title, /advisory \(least privilege\)/)
+  // the caveat text is present on the raw hit message (pre-truncation) …
+  const raw = viewModifyAllDataAdapter.collect({ target: VMADFIX })
+  const hit = viewModifyAllDataAdapter.parse(raw).find((h) => /Overreach\.permissionset/.test(h.file) && h.message.includes('ViewAllData'))
+  assert.ok(hit, 'the raw parse hit exists')
+  assert.match(hit.message, /user permissions are excluded from managed-package permission sets\/profiles at install/)
+  assert.match(hit.message, /may not reach subscribers via the package/)
+  assert.match(hit.message, /verify the effective grant/)
+  assert.match(hit.message, /business justification/)
+  // … and the full advisory + caveat is carried untruncated on the recommendation
+  assert.match(f.recommendation, /Least-privilege advisory/)
+  assert.match(f.recommendation, /excluded from managed-package permission sets\/profiles at install/)
+  assert.match(f.recommendation, /EFFECTIVE grant/)
+  assert.match(f.recommendation, /business justification/)
+  // OFF the blocker floor: compute-sci blocks only on severity 'critical' —
+  // an info advisory is flagged for review, never a submission gate
+  assert.equal(f.adjusted_severity, 'info')
+  assert.equal(f.severity, 'info')
+  assert.notEqual(f.adjusted_severity, 'critical')
 })
 
 check('PV-adapter: view-modify-all-data is a registered source-scanner ({name,kind,collect,parse,classify}, NO securityRelevant, NO detect) and ingest is byte-deterministic', () => {
@@ -4185,7 +4222,7 @@ check('PV-all (--all journey wiring): view-modify-all-data ALWAYS runs — a gra
   assert.ok(f, 'the declared org-wide grant is in the --all band')
   assert.equal(f.class, 'view-modify-all-data')
   assert.equal(f.dimension, 'admin-surface')
-  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.adjusted_severity, 'info')
   const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
   assert.ok(ledger.findings.some((x) => x.ruleId === 'view-modify-all-data'), 'merged into the ledger')
   // and a target with NO org-wide grant (setupAllTarget's permission set carries only

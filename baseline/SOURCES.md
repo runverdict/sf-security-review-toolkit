@@ -37,7 +37,7 @@ Every entry in the baseline sits on one of three rungs:
    primary source: the ISVforce Guide read directly at its current version,
    an official Salesforce blog/page read directly, a login-gated partner
    document or official partner-Slack post, or an empirical test. A fact
-   merely re-found on another blog is NOT a promotion. 121 entries.
+   merely re-found on another blog is NOT a promotion. 122 entries.
 3. `conflicting` — primary-grade sources disagree, or the only source is
    single-tier and uncorroborated; the `conflicts:` field states exactly what
    is open. Skills surface these as "verify with your Partner Account

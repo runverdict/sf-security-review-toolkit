@@ -51,6 +51,35 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.68] — 2026-07-04
+
+**The org-wide View/Modify-All-Data permission-grant detector is reframed to an honest
+least-privilege ADVISORY — informational, off the blocker floor — grounded in a new sourced
+`least-privilege-permission-grants` baseline requirement.** Two corrections drove the reframe,
+both verified against official Salesforce documentation. First, user permissions are excluded
+from managed-package permission sets and profiles at install (the 2GP packaging guide states
+it verbatim), so a `ViewAllData`/`ModifyAllData` grant declared in packaged metadata may never
+reach subscribers via the package — the static grant is an advisory signal to verify against
+the EFFECTIVE grant (the integration/running user, the Guest User, or an unmanaged/org-deployed
+context), not a confirmed subscriber grant. Second, there is no named AppExchange auto-fail for
+a permission grant — reviewers apply least privilege case-by-case and can require a business
+justification — and the previous `fail-sharing-model` grounding was a misattribution (that
+requirement governs Apex sharing declarations, not permission grants). The finding now leads
+with `advisory (least privilege)`, carries the managed-package caveat + verify-effective-grant
+guidance + the business-justification ask in its message and recommendation, and lands at
+severity `info` (never a submission gate). The new baseline requirement is sourced to the
+official Security Best Practices page ("Evaluate User Privilege") and the 2GP packaging guide,
+`applies_to: [managed-package]`, `severity_if_missing: informational` — it joins the
+managed-package applicable set and adds nothing to the blocker floor.
+
+Detection logic is byte-identical: the same `<userPermissions>` block scope, exact-name
+`{ViewAllData, ModifyAllData}` match, `enabled=true` guard, and element-scoping; the adapter
+name and class key are unchanged, and broadening the permission list (`ManageUsers`,
+`AuthorApex`) stays a named follow-on. Suite **62 files / 941 checks** (was 940), all green —
+the new `PV-advisory` check locks the caveat text and the off-blocker-floor severity.
+Mutation-proven: regrounding the class back to `fail-sharing-model` turns `PV-classSeverity`
+and `PV1` red. Baseline counts: 166 entries, 122 `verified_primary`.
+
 ## [0.8.67] — 2026-07-04
 
 **A new metadata source-scanner flags the org-wide View All Data / Modify All Data system
