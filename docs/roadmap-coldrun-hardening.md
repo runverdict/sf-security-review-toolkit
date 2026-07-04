@@ -9,9 +9,9 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.66**, suite **62 files / 932 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  E0.1d shipped (sessionid-egress rule-name routing); E0.3b-1 shipped (plain-HTTP egress source-scanner) —
-  see the Tier-0 entries.
+- **`main` @ 0.8.67**, suite **62 files / 940 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  E0.1d shipped (sessionid-egress rule-name routing); E0.3b-1 shipped (plain-HTTP egress source-scanner);
+  E0.3c-1 shipped (org-wide View/Modify-All-Data grant source-scanner) — see the Tier-0 entries.
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
@@ -562,11 +562,14 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
     `viewAllRecords`/`modifyAllRecords` on CUSTOM objects in **permsets only** (`viewall-overgrant`); it does
     NOT read `<userPermissions>` and does NOT scan profiles — that is E0.3c's gap. Sub-sliced (sequence FIRST,
     each its own class/locus, non-supersession + mutations):
-    - **E0.3c-1 (STAGED next):** org-wide **`ViewAllData`/`ModifyAllData`** granted (`enabled=true`) in
-      `<userPermissions>` of permsets AND profiles → new class **`view-modify-all-data`** →
-      `fail-sharing-model`/`admin-surface` (high). The org-wide analogue of `viewall-overgrant`; covers the
-      userPermissions+profile gap; PV-no-overlap test proves disjointness. Exact-name + `enabled=true` +
-      element-scoped guards.
+    - ~~**E0.3c-1**~~ **DONE (0.8.67)** — a NEW `view-modify-all-data` source-scanner (adapter #16) flags
+      org-wide **`ViewAllData`/`ModifyAllData`** granted (`enabled=true`) in `<userPermissions>` of permsets
+      AND profiles → class **`view-modify-all-data`** → `fail-sharing-model`/`admin-surface` (high). Covers
+      the userPermissions+profile gap `metadata-viewall` leaves; `PV-no-overlap` proves disjointness both
+      directions; exact-name + `enabled=true` + element-scoped + `ViewAll*`-prefix-excluded guards; `PV-all`
+      regression-locks the `--all` wiring. Verified off disk (independent 9/9 battery + both mutations
+      reproduced). Sharing-bypass grant (FLS still applies), not a confirmed leak; partial-profile FN
+      residual stated.
     - **E0.3c-2/3 (follow-ons):** `ManageUsers`/`AuthorApex` (a distinct privilege class); per-object
       `viewAllRecords`/`modifyAllRecords` in PROFILES; the **PSG+muting effective-permission helper**
       (`effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG,
