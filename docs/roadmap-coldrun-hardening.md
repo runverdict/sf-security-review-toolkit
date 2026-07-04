@@ -13,11 +13,13 @@
   CIRCULATION TRACK: items 1–6 SHIPPED + E0.1d-EXPAND-2 (E0.1f · `endpoint-https-only` seam · determinism proof ·
   single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing 0.8.76 ·
   E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 — both graded PASS off disk).
-  NEXT: E0.1d-EXPAND-3 (GROUNDED + prompt STAGED — the owned-class-dimension catalog clusters: `AvoidSControls` /
+  NEXT: E0.1d-EXPAND-3 (GROUNDED + prompt STAGED, ROUND-2 AUDITED — the owned-class-dimension catalog clusters: `AvoidSControls` /
   `AvoidAuraWithLockerDisabled` / `AvoidLmcIsExposedTrue` → package-metadata; `ProtectSensitiveData` →
   secrets-credentials; names re-confirmed against the live catalog 2026-07-04, no engine drift.
   SUPERSESSION PROFILE CORRECTED 2026-07-04 pre-dispatch — the routed class-less rows supersede nothing AND
-  are never superseded; det-vs-det cross-engine dedup does NOT exist — see the EXPAND-3 bullet below),
+  are never superseded; det-vs-det dedup does not exist in the ingest/merge/reconcile path (the round-2 audit
+  scoped the earlier absolute: merge-ledger's cross-DIMENSION lens collapse is the one det-det combine,
+  outside the slice's same-dimension scope) — see the EXPAND-3 bullet below),
   then item 7 (substrate/version-drift markers), then the ★ MIDPOINT COLD RUN.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
@@ -374,7 +376,7 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      cleared: the egress source-scanner's suffix allowlist is exactly `{.remoteSite/.cspTrustedSite/.namedCredential}-meta.xml`
      — it never reads `.connectedApp-meta.xml`, so the OAuth-callback finding is not double-reported (and
      plain-http-egress's dimension is `package-metadata` ≠ `oauth-identity` anyway). Both mutations reproduced RED.
-   - **E0.1d-EXPAND-3 (GROUNDED + prompt STAGED — next) — the OWNED-CLASS-DIMENSION clusters.** The EXPAND-2
+   - **E0.1d-EXPAND-3 (GROUNDED + prompt STAGED, ROUND-2 AUDITED — next) — the OWNED-CLASS-DIMENSION clusters.** The EXPAND-2
      builder already enumerated the authoritative names in its defer list, re-confirmed against the live catalog
      2026-07-04 (all four exist, CA core 0.48.0 / pmd 0.41.0, no drift): `AvoidSControls` +
      `AvoidAuraWithLockerDisabled` (Aura apiVersion<40) + `AvoidLmcIsExposedTrue` (Lightning Message Channel
@@ -386,9 +388,13 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      previously said "cross-engine-dedup … same-locus gitleaks dedup by design" — that was WRONG.
      `reconcileProvenance` supersedes LLM-INFERRED findings only (`reconcile-provenance.mjs` ~96 skips every
      deterministic candidate; header: "a deterministic finding is never touched") and `mergeFindings` dedups by
-     exact id = sha256(engine + ruleId + locus), so two engines never collide — det-vs-det cross-engine dedup DOES
-     NOT EXIST (consistent with EXP-skip's own rationale above; the 0.8.76 harness comment at ~594-596 overclaims
-     it and the slice corrects that comment). The TRUE profile the slice's tests lock: (1) routed class-less rows
+     exact id = sha256(engine + ruleId + locus), so two engines never collide — det-vs-det dedup DOES NOT EXIST
+     in the ingest/merge/reconcile path (consistent with EXP-skip's own rationale above; the 0.8.76 harness
+     comment at ~594-596 overclaims it and the slice corrects that comment). Scope every tracked restatement:
+     the ONE det-det combine in the codebase is merge-ledger's Track-1b cross-DIMENSION lens collapse
+     (`finding-clusters.mjs collapseCrossDimension`, ≥2 dimensions at one locus required), which never applies
+     to the same-dimension co-locations the slice reasons about — claims stay scoped to the routing/supersession
+     contract, never "anywhere". The TRUE profile the slice's tests lock: (1) routed class-less rows
      supersede nothing — coexist with a co-located LLM finding of the dimension; (2) the dimension's owned class
      keeps sole LLM-supersession authority, proven undisturbed via a three-party reconcile [owner, routed-CA, LLM]
      — a genuinely NEW positive owner-supersedes-LLM lock for `package-metadata` (owned by `plain-http-egress`,
@@ -400,6 +406,23 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      `ProtectSensitiveData` OUT of `RULE_DIMENSION` and goes red the moment they route. Widens `SESS-disjoint`
      value-lock to add `package-metadata` (6-set). Engine files (`reconcile-provenance.mjs`, `mergeFindings`)
      MUST stay byte-unchanged — if a test needs an engine change to pass, the test is wrong.
+     **ROUND-2 PRE-DISPATCH AUDIT (2026-07-04 — 5 lenses + per-finding adversarial verify + completeness
+     critic; 130 prompt claims verified, 0 blockers, 8 amend-level prompt fixes applied):** (a) the det-vs-det
+     absolute scoped as above — it was falsifiable repo-wide via the cross-dimension collapse; (b)
+     partial-capture conditionals — a DROPPED rule stays in `EXP2_DEFER_RULES` AND stays listed as deferred in
+     the harness comment, the CHANGELOG names only the shipped subset, EXP3 tests scope to shipped dimensions
+     (the secrets halves fall back to a 0.8.76 credential row if `ProtectSensitiveData` drops), `SESS-disjoint`
+     widens to 6 only if a package-metadata rule ships; (c) Aura seed locus corrected to the bundle's
+     `.cmp-meta.xml` (package-metadata.md ~57 — the `.cmp` markup carries no apiVersion; the wrong seed would
+     have forced a needless honesty-floor drop); (d) comment-residue scope widened — the harness DEFERRED
+     comment spans ~638-648 and its ~641-642 "cross-engine-dedup grounding" clause goes too; the EXP2 sibling
+     comment blocks (test ~3249-3251, ~3267-3270) carry the same overclaim and sit inside the permitted
+     retarget; (e) CHANGELOG placement pinned — the top `[Unreleased]` section is the roadmap owner's docs
+     entry, stays byte-untouched; `[0.8.78]` inserts below the unreleased-on-main blockquote; (f) the routed
+     rows' source-comment disjointness sentence scoped to the three package-metadata rows (the secrets owner
+     scans all files) and the sensitive-data seed pinned to customMetadata/custom-setting so the capture cannot
+     contradict it; (g) the package-metadata owner-supersedes-LLM lock is NEW among the ingested-adapter locks
+     (GL-/DS-supersedes-LLM); the generic reconcile suite's R1 already locks a crud-fls owner.
    - **DEFERRED-AMBIGUOUS (needs its own grounding):** javascript:-URL-in-buttons + JS-actions-in-metadata
      (package-metadata/injection-xss seam), LWC-event-bubbles-composed (web-client stretch), inline-CSS/JS
      static-resource rules (package-metadata vs web-client CSP), and the Apex-behavior rules
