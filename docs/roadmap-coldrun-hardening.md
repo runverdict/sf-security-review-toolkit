@@ -423,29 +423,48 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      scans all files) and the sensitive-data seed pinned to customMetadata/custom-setting so the capture cannot
      contradict it; (g) the package-metadata owner-supersedes-LLM lock is NEW among the ingested-adapter locks
      (GL-/DS-supersedes-LLM); the generic reconcile suite's R1 already locks a crud-fls owner.
-   - **E0.1d-EXPAND-4 (GROUNDED — the catalog remainder; stage a LIGHT prompt after EXPAND-3 grades, rigor on
-     the CODE hand-back not the prompt).** Grounding done 2026-07-04 against the methodology docs + the catalog:
-     - **SCOPE-SHRINKER — the Apex-behavior rules mostly need NO routing.** `DEFAULT_DIMENSION` is
-       `apex-exposed-surface` (`ingest-scanner-findings.mjs:508`), so a security-tagged Apex CA rule with no
-       `RULE_DIMENSION` row ALREADY lands there. The rules whose correct home IS `apex-exposed-surface` —
-       `SECURITY_ENFORCED-pre-v48` (a silent CRUD/FLS-enforcement gap), `getInstance-with-taint` (Apex taint),
-       `insecure-content-distribution` (missing CRUD on ContentDistribution) — are therefore **already correctly
-       routed by default; a `RULE_DIMENSION` row would be a no-op.** Do NOT add rows for them (verify each is
-       Apex-tagged so it defaults, then leave it). This removes ~3 rules from the backlog outright.
-     - **NON-DEFAULT, worth routing (EXPAND-4 candidates), leans grounded — builder confirms the rule framing +
-       fixture-proves):** `System.setPassword`-operation → `admin-surface` (a privileged credential operation;
-       distinct from the already-routed `AvoidHardcodedCredentialsInSetPassword`→secrets, which is the hardcoded
-       VALUE); `GlobalInstall/UninstallHandlers` → `admin-surface` (elevated install-time privilege plane).
-     - **SEAM — decide off the rule's own message (injection-xss owns XSS construction/DOM sinks; package-metadata
-       owns the static markup declaration):** `javascript:`-URL-in-buttons (an XSS-execution primitive in a
-       weblink → leans `injection-xss`); JS-actions-in-metadata (active JS embedded in declarative metadata →
-       leans `package-metadata` as a prohibited-content declaration). Route only if the message resolves the seam
-       cleanly; otherwise defer, don't guess.
-     - **SKIP candidates (fail the operator's low-FP bar — no clean, low-noise dimension):**
-       `LWC-event-bubbles-composed` (`web-client`'s charter is token/header/CSRF/framing, not component-event
-       hygiene — a stretch, low security signal); the inline-CSS/JS static-resource rules (`web-client`-CSP /
-       `package-metadata` seam AND inline styles are pervasive → high advisory volume). Leave these unrouted (they
-       default to `apex-exposed-surface`/DEFAULT) unless a later pass finds a genuinely low-FP home.
+   - **E0.1d-EXPAND-4 (GROUNDED + Fable-verified 2026-07-04 — the catalog remainder = 14 rules; stage a LIGHT
+     prompt AFTER EXPAND-3 lands, rigor on the CODE hand-back not the prompt).** A read-only Fable research pass
+     enumerated the live catalog (37 pmd rules, all Security-tagged) and dispositioned every remaining rule off
+     the methodology docs' SPECIFIC class sections + the live rule messages. It CORRECTED four of my initial
+     leans — recorded honestly below so they don't recur.
+     - **SCOPE-SHRINKER — no-op rows are BUILD-BREAKING, not merely useless.** `DEFAULT_DIMENSION` is
+       `apex-exposed-surface` (`ingest-scanner-findings.mjs:508`), so an unmapped security-tagged Apex rule ALREADY
+       lands there (the `dimension = dimensionHint || DEFAULT_DIMENSION` fallback; locked by `SESS-negative`). AND
+       `SESS-disjoint` value-locks `RULE_DIMENSION` values to the routed set (which excludes `apex-exposed-surface`),
+       so adding a row for a defaults-there rule would FAIL the build. **NO-OP rules MUST stay OUT of the map.**
+     - **NO-OP — add NO rows (5 rules, all default to `apex-exposed-surface`):** `AvoidGlobalInstallUninstallHandlers`
+       (global-method over-exposure to untrusted callers = apex-exposed-surface class 6, `global`/`@NamespaceAccessible`),
+       `AvoidUnsafePasswordManagementUse` (bare `System.setPassword` existence — an over-exposed privileged op),
+       `AvoidGetInstanceWithTaint` (tainted userId/profileId → per-record IDOR), `AvoidSecurityEnforcedOldApiVersion`
+       (`WITH SECURITY_ENFORCED` < v48 CRUD/FLS gap), `AvoidInvalidCrudContentDistribution` (wrong CRUD-check
+       mechanics). **CORRECTION: `setPassword` and the install-handlers are NOT `admin-surface`** — admin-surface.md
+       has zero password/user-management content to cite; the over-exposed-entry-point framing is apex-exposed-surface's.
+     - **ROUTE → `package-metadata` (core, 4 rules):** `AvoidJavaScriptInUrls` (sev1→critical),
+       `AvoidJavaScriptWebLink`, `AvoidJavaScriptCustomObject`, `AvoidJavaScriptHomePageComponent` (sev2→high).
+       **CORRECTION: `javascript:`-URL is package-metadata, NOT injection-xss** — package-metadata.md class 3
+       (baseline `violation-js-in-salesforce-domain`, Top-20 #12, lines 74-85) names "a `javascript:` URL in the
+       link target" + `onClickJavaScript`/`REQUIRESCRIPT` verbatim, and the doc boundary (lines 25-30) resolves
+       the seam IN-TEXT: "the metadata declaration is this dimension's; the injection sink is `injection-xss`'s."
+       Firing IS the violation ("no in-code fix") so critical/high is honest, not over-claimed.
+     - **ROUTE → `package-metadata` (2nd tier, 4 `Load*` rules, FIXTURE-GATED):** `LoadCSSApexStylesheet`,
+       `LoadCSSLinkHref`, `LoadJavaScriptHtmlScript`, `LoadJavaScriptIncludeScript`. Dimension is clean —
+       package-metadata class 5 owns the hotlink declaration (`<link href="http…">`/`<script src="http…">` instead
+       of `$Resource`, baseline `violation-third-party-js-css-hosting`, Top-20 #9/#11); web-client owns runtime
+       posture NOT resource-loading declarations, so there is NO web-client seam. **Open question is FP BREADTH,
+       not dimension:** the builder must seed one VF page with an inline `<script>` block and one with an external
+       `src` — if inline fires → high-volume → drop to SKIP; if only non-`$Resource` loads fire → route.
+     - **SKIP (1 rule):** `AvoidLwcBubblesComposedTrue` — advisory-hedged, `bubbles+composed=true` is a standard
+       LWC shadow-crossing idiom (high advisory volume), and no dimension owns it (web-client = token/header/CSRF/
+       framing, not component-event composition). Keep as the standing SKIP representative.
+     - **Test mechanics + sequence:** EXPAND-4 follows EXPAND-3 (which already widens the value-lock to include
+       `package-metadata` and lands the owned-class-dimension non-supersession grounding — so EXPAND-4 adds NO new
+       value-lock dimension). `EXP2_DEFER_RULES` (test ~3271): EXPAND-3 removes `AvoidSControls`+`ProtectSensitiveData`;
+       EXPAND-4 removes `AvoidJavaScriptInUrls` and re-seats the lock with a NO-OP rep (e.g. `AvoidUnsafePasswordManagementUse`)
+       + the SKIP rep, plus a `SESS-negative`-style standing check asserting the NO-OP rules ingest at the default.
+     - **Overlap: clean.** package-metadata's owned classes read only `.remoteSite/.cspTrustedSite/.namedCredential-meta.xml`;
+       the JS cluster fires on `.weblink-meta.xml`/webLinks/homePageComponent, the `Load*` cluster on `.page` — zero
+       suffix overlap, no det-det double-report. RetireJS scans static-resource CONTENTS, not hotlink declarations.
 7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
    marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
    honesty rule warns about (today it is operator-prose only, no harness enforcement).
