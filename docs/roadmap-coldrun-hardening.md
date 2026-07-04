@@ -355,11 +355,26 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    by `EXP-routing`/`-fixture`/`-skip`/`-non-supersession`/`-single-shape` + `SESS-disjoint` value-lock (the
    `RULE_DIMENSION` value set is now pinned to exactly `{sessionid-egress, secrets-credentials, admin-surface}` —
    a guessed dimension string fails the build). Graded PASS off disk (both mutations reproduced). **E0.1d-EXPAND-2
-   (named follow-on):** the deferred markup/JS/CSS/LWC + remaining catalog rules (`AvoidJavaScript*`, `Load*`,
-   `AvoidUnescapedHtmlInAura`, `AvoidSControls`, `AvoidAuraWithLockerDisabled`, `AvoidLmc*`/`AvoidLwc*`,
-   `AvoidCreateElementScriptLinkTag`, …) — their dimension (injection-xss vs package-metadata vs web-client)
-   needs a grounded per-rule decision (do the grounding BEFORE writing the builder prompt; skip any rule that
-   doesn't map to a low-FP dimension — no guessing).
+   (follow-on): GROUNDED (2026-07-04) against the catalog + the methodology dimension docs, and SPLIT by
+   supersession-safety profile (the axis that actually matters):
+   - **E0.1d-EXPAND-2 (STAGED) — the CLASS-LESS-SAFE clusters** (`injection-xss` + `oauth-identity`, neither
+     owns a toolkit class → routing there supersedes nothing): unescaped-HTML-in-Aura + dynamic-script/link
+     createElement → `injection-xss` (methodology `injection-xss.md` explicitly owns the `aura:unescapedHtml`
+     DOM-sink half); OAuth-callback-over-HTTP + connected-app-full-scope → `oauth-identity` (iff the live
+     catalog enumeration confirms them — lower-confidence names, honesty-floor drop if absent). Builder
+     enumerates `sf code-analyzer rules` for authoritative names, seeds+captures a sibling fixture, widens the
+     `SESS-disjoint` value-lock. Prompt `~/srt-builder-B5-E0.1d-EXPAND-2-metadata-markup-prompt.md`, →0.8.77.
+   - **E0.1d-EXPAND-3 (future) — the OWNED-CLASS-DIMENSION clusters** (the cross-engine-dedup profile, same as
+     E0.1d-EXPAND's secrets cluster): S-Controls / Aura-apiVersion-Locker / messageChannel-isExposed →
+     `package-metadata` (methodology `package-metadata.md` explicitly names Aura `apiVersion` +
+     `*.messageChannel-meta.xml`); sensitive-data-in-XML-metadata → `secrets-credentials`. These route class-less
+     INTO a dimension that owns a class (`plain-http-egress`/`protocol-security-disabled` for package-metadata,
+     `hardcoded-secrets` for secrets) → same-locus dedup by design, different-locus coexist.
+   - **DEFERRED-AMBIGUOUS (needs its own grounding):** javascript:-URL-in-buttons + JS-actions-in-metadata
+     (package-metadata/injection-xss seam), LWC-event-bubbles-composed (web-client stretch), inline-CSS/JS
+     static-resource rules (package-metadata vs web-client CSP), and the Apex-behavior rules
+     (GlobalInstall/UninstallHandlers, getInstance-with-taint, SECURITY_ENFORCED-pre-v48, insecure
+     content-distribution, System.setPassword). Route only when each maps to a low-FP dimension — no guessing.
 7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
    marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
    honesty rule warns about (today it is operator-prose only, no harness enforcement).
