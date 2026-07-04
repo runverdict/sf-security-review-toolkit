@@ -9,18 +9,17 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.77**, suite **63 files / 986 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1–6 SHIPPED + E0.1d-EXPAND-2 (E0.1f · `endpoint-https-only` seam · determinism proof ·
-  single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing 0.8.76 ·
-  E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 — both graded PASS off disk).
-  NEXT: E0.1d-EXPAND-3 (GROUNDED + prompt STAGED, ROUND-2 AUDITED — the owned-class-dimension catalog clusters: `AvoidSControls` /
-  `AvoidAuraWithLockerDisabled` / `AvoidLmcIsExposedTrue` → package-metadata; `ProtectSensitiveData` →
-  secrets-credentials; names re-confirmed against the live catalog 2026-07-04, no engine drift.
-  SUPERSESSION PROFILE CORRECTED 2026-07-04 pre-dispatch — the routed class-less rows supersede nothing AND
-  are never superseded; det-vs-det dedup does not exist in the ingest/merge/reconcile path (the round-2 audit
-  scoped the earlier absolute: merge-ledger's cross-DIMENSION lens collapse is the one det-det combine,
-  outside the slice's same-dimension scope) — see the EXPAND-3 bullet below),
-  then item 7 (substrate/version-drift markers), then the ★ MIDPOINT COLD RUN.
+- **`main` @ 0.8.78** (code `7a78c04`), suite **63 files / 993 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2 + E0.1d-EXPAND-3 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
+  seam · determinism proof · single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND
+  catalog routing 0.8.76 · E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 · **E0.1d-EXPAND-3
+  owned-class-dimension routing 0.8.78** — `AvoidSControls`/`AvoidAuraWithLockerDisabled`/`AvoidLmcIsExposedTrue`
+  → package-metadata + `ProtectSensitiveData` → secrets-credentials, full 4-rule capture, the three-part
+  supersession invariant proven end-to-end against a byte-frozen engine — all graded PASS off disk).
+  NEXT: E0.1d-EXPAND-4 (GROUNDED + Fable-verified — the catalog's 14-rule remainder; 8 route to package-metadata
+  [4 `AvoidJavaScript*` + 4 fixture-gated `Load*`], 5 Apex-behavior rules stay NO-OP/unrouted, 1 SKIP — full
+  disposition table in the EXPAND-4 bullet below), then item 7 (substrate/version-drift markers), then the
+  ★ MIDPOINT COLD RUN.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
@@ -376,7 +375,21 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      cleared: the egress source-scanner's suffix allowlist is exactly `{.remoteSite/.cspTrustedSite/.namedCredential}-meta.xml`
      — it never reads `.connectedApp-meta.xml`, so the OAuth-callback finding is not double-reported (and
      plain-http-egress's dimension is `package-metadata` ≠ `oauth-identity` anyway). Both mutations reproduced RED.
-   - **E0.1d-EXPAND-3 (GROUNDED + prompt STAGED, ROUND-2 AUDITED — next) — the OWNED-CLASS-DIMENSION clusters.** The EXPAND-2
+   - ~~**E0.1d-EXPAND-3 — the OWNED-CLASS-DIMENSION clusters**~~ **DONE (0.8.78, `7a78c04`), graded PASS off disk
+     2026-07-04.** Full 4-rule capture (no honesty-floor drop): `AvoidSControls`/`AvoidAuraWithLockerDisabled`/
+     `AvoidLmcIsExposedTrue` → package-metadata, `ProtectSensitiveData` → secrets-credentials. The three-part
+     supersession invariant proven end-to-end against a **byte-frozen** engine (`reconcile-provenance.mjs`/
+     `merge-ledger.mjs`/`finding-clusters.mjs` + both prior fixtures = 0 diff lines): routed class-less rows
+     supersede nothing (P1), the owned class supersedes the co-located LLM re-report by the OWNER not the routed
+     row (P2 — a NEW positive owner-supersedes-LLM lock for package-metadata), the routed row is never the
+     superseded party (P3), det+det coexist. The 594-596 overclaim + the 638-648 DEFERRED comment corrected
+     (scoped to the routing/supersession contract); SESS-disjoint widened to the 6-set; `EXP2_DEFER_RULES`
+     retargeted to the ambiguous pair; both mutations reproduced (268/4, 270/2). Built by the advisor session
+     acting as builder under the operator's explicit role override (the earlier stall was the advisor framing
+     redirecting the builder to verify instead of build). Grading nit for EXPAND-4: the DEFERRED comment lists
+     the Apex-behavior rules as "need dimension grounding" — they are actually NO-OP (default to
+     apex-exposed-surface, must stay unrouted); EXPAND-4 restates that.
+   - **(historical staging note for E0.1d-EXPAND-3, retained):** The EXPAND-2
      builder already enumerated the authoritative names in its defer list, re-confirmed against the live catalog
      2026-07-04 (all four exist, CA core 0.48.0 / pmd 0.41.0, no drift): `AvoidSControls` +
      `AvoidAuraWithLockerDisabled` (Aura apiVersion<40) + `AvoidLmcIsExposedTrue` (Lightning Message Channel
