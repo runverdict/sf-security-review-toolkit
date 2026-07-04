@@ -166,7 +166,16 @@ downstream work rather than being findings in isolation:
   in Remote Site Settings, CSP Trusted Sites, and Named Credentials (legacy and
   modern shapes) as an owned-class `plain-http-egress` finding grounded in
   `endpoint-https-only` — the wildcard-host and staleness judgments above stay
-  this dimension's finder/verifier residual.
+  this dimension's finder/verifier residual. As of 0.8.69 the Remote Site
+  Setting `disableProtocolSecurity=true` flag routes here deterministically
+  too: the `remote-site-protocol-security` source-scanner ingests every
+  protocol-security opt-out (the flag that permits data transfer between an
+  HTTPS session and an HTTP session — a transport downgrade) as an owned-class
+  `protocol-security-disabled` finding grounded in the same
+  `endpoint-https-only` requirement; the flag defaults to `false` and is rarely
+  legitimate in a distributed package, so the finding is low-FP — the rare
+  internal/on-premises HTTP case is dispositioned via the FP dossier, never
+  suppressed.
 
 - **Packaged-UI URL sensitive-info** — record Ids or sensitive parameters
   placed into Visualforce page URLs or `NavigationMixin.Navigate` `state`

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (remote-site-protocol-security adapter). Synthetic toolkit test data — NOT a
+  partner artifact.
+  POSITIVE: <disableProtocolSecurity> is true — the Remote Site Setting permits
+  code to pass data between an HTTPS session and an HTTP session (a transport
+  downgrade) -> FLAGGED (Secure Communication / endpoint-https-only). The <url>
+  is https:// on purpose: the egress-plain-http adapter must NOT flag this file
+  (the two adapters are disjoint — DP-no-overlap).
+-->
+<RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
+    <disableProtocolSecurity>true</disableProtocolSecurity>
+    <isActive>true</isActive>
+    <url>https://api.example.com</url>
+</RemoteSiteSetting>

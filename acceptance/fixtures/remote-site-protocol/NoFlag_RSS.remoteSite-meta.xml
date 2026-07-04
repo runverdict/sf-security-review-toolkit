@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (remote-site-protocol-security adapter). Synthetic toolkit test data — NOT a
+  partner artifact.
+  NEGATIVE (the absent + element-scoped guards): no <disableProtocolSecurity>
+  element at all — the platform default (false) applies -> NOT flagged. The
+  <description> mentions disableProtocolSecurity in prose; the extractor is
+  element-scoped (it reads only the element's own value, never a whole-file
+  grep), so the mention must NOT flag either.
+-->
+<RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Reviewed: disableProtocolSecurity stays at its default here.</description>
+    <isActive>true</isActive>
+    <url>https://reports.example.com</url>
+</RemoteSiteSetting>

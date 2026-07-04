@@ -51,6 +51,23 @@
  *       statically-declared grant is an advisory signal (FLS still applies), never a
  *       confirmed subscriber grant or leak, and retrieved profile metadata may be PARTIAL —
  *       absence is not least-privilege proof.
+ *   DP — the remote-site-protocol-security source-scanner (B5 · E0.3b-2, 0.8.69): flags a
+ *       RemoteSiteSetting that sets <disableProtocolSecurity>true</disableProtocolSecurity> —
+ *       the flag that permits data transfer between an HTTPS session and an HTTP session (a
+ *       transport downgrade), the codified Secure Communication violation, class
+ *       protocol-security-disabled → endpoint-https-only (major → high), dimension
+ *       package-metadata (the SAME baseline plain-http-egress grounds in — one requirement,
+ *       two metadata shapes, two distinct classes). PRECISION: true-required (an explicit
+ *       false element, the platform default, never flags; an absent element never flags) +
+ *       element-scoped (a <description> mentioning the flag in prose never flags).
+ *       INDEPENDENT of egress-plain-http — that adapter reads endpoint-URL schemes, this one
+ *       reads only the protocol-security element (DP-no-overlap locks the disjointness in
+ *       both directions). SINGLE-SHAPE at its locus (the <disableProtocolSecurity> element
+ *       line), so supersession never reaches a different-shape package-metadata finding at a
+ *       different locus (DP-non-supersession; a SAME-locus supersession would be correct).
+ *       HONEST FLOOR: a statically-declared protocol-security opt-out, LOW FP (defaults
+ *       false, explicitly warned against); the rare internal/on-premises HTTP case is
+ *       dispositionable via the FP dossier, never suppressed.
  *   U — an unmapped rule is still ingested as deterministic (never dropped) with the
  *       documented Code-Analyzer-severity fallback + a note.
  *   M — merge is additive + idempotent (re-ingest → no duplicates; LLM findings survive).
@@ -58,8 +75,8 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 16 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data).
+ *   AD — the pluggable adapter registry: 17 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data/remote-site-protocol-security).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -123,6 +140,7 @@ import {
   metadataViewAllAdapter,
   egressPlainHttpAdapter,
   viewModifyAllDataAdapter,
+  remoteSiteProtocolSecurityAdapter,
   checkovAdapter,
   semgrepAdapter,
   opengrepAdapter,
@@ -668,6 +686,130 @@ check('PV-non-supersession: an owned-class view-modify-all-data finding does NOT
   // supersession visibly fires), proving the protection is locus-specificity, not an accident.
 })
 
+// ────────────────── Remote Site Setting protocol-security opt-out (source-scanner, B5 · E0.3b-2)
+// The FIFTH source-scanner (egress-plain-http's clone): reads the package's
+// *.remoteSite-meta.xml and flags every RemoteSiteSetting that sets
+// <disableProtocolSecurity>true</disableProtocolSecurity> — the flag that permits code to
+// pass data between an HTTPS session and an HTTP session (a transport downgrade), the
+// codified Secure Communication violation, class protocol-security-disabled →
+// endpoint-https-only (major → high), dimension package-metadata. INDEPENDENT of
+// egress-plain-http (that adapter reads endpoint-URL schemes; this one reads ONLY the
+// protocol-security element — DP-no-overlap locks the disjointness in both directions).
+// The fixtures are AUTHORED schema-faithful metadata XML (the egress-metadata/ convention):
+// 1 positive (Downgrade_RSS: disableProtocolSecurity=true on an https:// url — so
+// egress-plain-http never flags it) + 2 negatives (Secure_RSS: an explicit false element,
+// the platform default; NoFlag_RSS: no element at all + a <description> mentioning the
+// flag in prose — the absent + element-scoped guards). HONEST FLOOR: a statically-declared
+// protocol-security opt-out is a transport-security misconfiguration, LOW FP (the flag
+// defaults to false and Salesforce explicitly warns against it); the rare
+// internal/on-premises HTTP case is dispositionable via the FP dossier, never suppressed.
+const DPFIX = join(FIX, 'remote-site-protocol')
+const ingestRsp = () => {
+  const raw = remoteSiteProtocolSecurityAdapter.collect({ target: DPFIX })
+  return ingest(raw, remoteSiteProtocolSecurityAdapter, { repoRoot: DPFIX, pass: 1 })
+}
+// the fixture line that carries the offending element — computed from the fixture itself so
+// the exact-locus assertions never go stale
+const dpLineOf = (file, needle) => readText(join(DPFIX, file)).split('\n').findIndex((l) => l.includes(needle)) + 1
+
+check('DP1 remote-site-protocol-security (source-scanner): a disableProtocolSecurity=true RemoteSiteSetting → metadata/protocol-security-disabled/high/package-metadata at the <disableProtocolSecurity> line, deterministic + schema-valid', () => {
+  const { findings } = ingestRsp()
+  const f = findings.find((x) => /Downgrade_RSS\.remoteSite-meta\.xml/.test(x.file))
+  assert.ok(f, 'the protocol-security opt-out Remote Site Setting is flagged')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'metadata')
+  assert.equal(f.ruleId, 'protocol-security-disabled')
+  assert.equal(f.class, 'protocol-security-disabled')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.dimension, 'package-metadata')
+  // the locus is the <disableProtocolSecurity> element's own line, not the file or the root element
+  assert.equal(f.file, `Downgrade_RSS.remoteSite-meta.xml:${dpLineOf('Downgrade_RSS.remoteSite-meta.xml', '<disableProtocolSecurity>true')}`)
+  assert.match(f.title, /<disableProtocolSecurity>true<\/disableProtocolSecurity>/)
+  // the downgrade framing survives the title's oneLine truncation only up to the HTTPS
+  // token — the full sentence is asserted on the untruncated reasoning below
+  assert.match(f.title, /permits data transfer between an HTTPS session/)
+  assert.match(f.verdict_reasoning, /an HTTPS session and an HTTP session \(a transport downgrade\)/)
+  assert.match(f.verdict_reasoning, /severity fixed from the protocol-security-disabled class \(baseline requirement endpoint-https-only = major\)/)
+  assert.deepEqual(validateFinding(f), [])
+})
+
+check('DP2 precision: an explicit disableProtocolSecurity=false element is NOT flagged (true-required); a file with NO element whose <description> mentions the flag in prose is NOT flagged (absent + element-scoped) — exactly ONE finding in the fixture dir', () => {
+  const { findings } = ingestRsp()
+  assert.equal(findings.length, 1, 'exactly the one declared protocol-security opt-out in the fixture dir — nothing more')
+  assert.ok(!findings.some((f) => /Secure_RSS/.test(f.file)), 'the explicit-false file is clean — false is the platform default posture')
+  assert.ok(!findings.some((f) => /NoFlag_RSS/.test(f.file)), 'the no-element file is clean — including its <description> mentioning disableProtocolSecurity in prose')
+})
+
+check('DP-classSeverity: protocol-security-disabled grounds in the BASELINE endpoint-https-only (major) → high, dimension package-metadata — the SAME requirement plain-http-egress grounds in (one Secure-Communication baseline, two metadata shapes)', () => {
+  assert.equal(baselineSeverityFor('endpoint-https-only'), 'major')
+  const cs = classSeverity('protocol-security-disabled')
+  assert.equal(cs.severity, 'high')
+  assert.equal(cs.baselineId, 'endpoint-https-only')
+  assert.equal(cs.fromBaseline, true)
+  assert.equal(CLASS_DEFS['protocol-security-disabled'].dimension, 'package-metadata')
+  // the shared grounding is deliberate: both classes are Secure-Communication violations —
+  // but they stay DISTINCT classes (different flag, different locus shape, no cross-supersession)
+  assert.equal(CLASS_DEFS['plain-http-egress'].baselineId, CLASS_DEFS['protocol-security-disabled'].baselineId)
+})
+
+check('DP-adapter: remote-site-protocol-security is a registered source-scanner ({name,kind,collect,parse,classify}, NO securityRelevant, NO detect) and ingest is byte-deterministic', () => {
+  assert.equal(ADAPTERS['remote-site-protocol-security'], remoteSiteProtocolSecurityAdapter)
+  assert.equal(remoteSiteProtocolSecurityAdapter.name, 'remote-site-protocol-security')
+  assert.equal(remoteSiteProtocolSecurityAdapter.kind, 'source-scanner')
+  for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof remoteSiteProtocolSecurityAdapter[m], 'function')
+  // security-by-construction: every emission is a declared protocol-security opt-out → no filter
+  assert.equal(remoteSiteProtocolSecurityAdapter.securityRelevant, undefined)
+  // a source-scanner has no evidence file → invisible to the content-shape recognizer
+  assert.equal(remoteSiteProtocolSecurityAdapter.detect, undefined)
+  assert.equal(remoteSiteProtocolSecurityAdapter.classify('anything'), 'protocol-security-disabled')
+  const a = ingestRsp().findings
+  const b = ingestRsp().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('DP-no-overlap: egress-plain-http over the SAME fixture dir emits 0 findings (the downgrade RSS declares an https:// url — the scheme scan never fires) and remote-site-protocol-security over egress-metadata/ emits 0 (every RSS there carries disableProtocolSecurity=false) — the two egress adapters are disjoint, no double-report', () => {
+  const eg = ingest(egressPlainHttpAdapter.collect({ target: DPFIX }), egressPlainHttpAdapter, { repoRoot: DPFIX, pass: 1 })
+  assert.equal(eg.findings.length, 0, 'egress-plain-http never flags the protocol-security fixture dir')
+  const rsp = ingest(remoteSiteProtocolSecurityAdapter.collect({ target: EGFIX }), remoteSiteProtocolSecurityAdapter, { repoRoot: EGFIX, pass: 1 })
+  assert.equal(rsp.findings.length, 0, 'remote-site-protocol-security never flags the egress-metadata fixture dir (both RSS files there are explicit-false)')
+})
+
+check('DP-non-supersession: an owned-class protocol-security-disabled finding does NOT supersede a co-located llm-inferred package-metadata finding of a DIFFERENT shape at a DIFFERENT locus — locus-specificity is the protection', () => {
+  const det = ingestRsp().findings.find((x) => /Downgrade_RSS/.test(x.file)) // …remoteSite-meta.xml:<disableProtocolSecurity> line
+  assert.equal(det.class, 'protocol-security-disabled')
+  assert.equal(det.dimension, 'package-metadata')
+  // an llm-inferred package-metadata finding of a DIFFERENT shape (the trusted-host-inventory
+  // staleness reasoning the dimension charter also owns), SAME file, NON-overlapping lines —
+  // class-less, so sameOwnedClass falls back to the dimension match, which DOES hold here:
+  const llm = {
+    id: '9'.repeat(16),
+    dimension: 'package-metadata',
+    title: 'Trusted-host inventory entry looks stale — host ownership should be re-verified',
+    severity: 'medium',
+    adjusted_severity: 'medium',
+    file: 'Downgrade_RSS.remoteSite-meta.xml:1-11', // the file header block, NOT the flag line
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the trusted-host inventory',
+  }
+  // the dimension fallback WOULD match (det owns a class, llm is class-less, same dimension);
+  // the ONLY missing supersession ingredient is the locus — assert that explicitly:
+  assert.equal(sameLocation(det, llm), false, 'different line span → not the same locus')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the different-locus LLM finding is NOT superseded — the deterministic row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed')
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // NOTE: at the SAME locus (an LLM finding on the same <disableProtocolSecurity> line)
+  // supersession WOULD fire and WOULD be correct — the deterministic finding is
+  // authoritative for that flag. The guard is that ownership never reaches a
+  // different-shape package-metadata finding elsewhere in the file.
+  // MUTATION: pointing llm.file at det's exact line turns `superseded === 0` red (the
+  // supersession visibly fires), proving the protection is locus-specificity, not an accident.
+})
+
 // ──────────────────────────────────────────────── Security/AppExchange tag filter
 check('U1 tag filter: a non-security rule (ApexDoc, tags Documentation/BestPractices) → 0 findings; the Performance-tagged MissingNullCheckOnSoqlVariable is filtered out of the real fixture', () => {
   // inline a synthetic non-security best-practices violation (NOT in the real captured
@@ -848,12 +990,13 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 16 adapters (view-modify-all-data added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
+check('AD1 registry has 17 adapters (remote-site-protocol-security added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'remote-site-protocol-security', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['egress-plain-http'].kind, 'source-scanner')
   assert.equal(ADAPTERS['view-modify-all-data'].kind, 'source-scanner')
+  assert.equal(ADAPTERS['remote-site-protocol-security'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
@@ -3654,8 +3797,9 @@ check('TRV-reuses-class: trivyAdapter.classify() is the constant iac-misconfig �
   assert.equal(CLASS_DEFS['iac-misconfig'].dimension, 'infrastructure-iac')
   // NO new CLASS_DEFS entry for trivy — the class map is the original 5 + plain-http-egress
   // (the egress source-scanner's own class, 0.8.66) + view-modify-all-data (the org-wide
-  // grant source-scanner's own class, 0.8.67) — neither is trivy's
-  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'sharing', 'view-modify-all-data', 'viewall-overgrant'])
+  // grant source-scanner's own class, 0.8.67) + protocol-security-disabled (the Remote Site
+  // Setting protocol-security source-scanner's own class, 0.8.69) — none is trivy's
+  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'protocol-security-disabled', 'sharing', 'view-modify-all-data', 'viewall-overgrant'])
   assert.equal(CLASS_DEFS['trivy'], undefined)
 })
 

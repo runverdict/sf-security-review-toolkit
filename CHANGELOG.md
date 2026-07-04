@@ -51,6 +51,43 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.69] — 2026-07-04
+
+**A new metadata source-scanner flags Remote Site Settings that set
+`disableProtocolSecurity=true` — the flag that permits data transfer between an HTTPS session
+and an HTTP session (a transport downgrade the Secure Communication requirement forbids) —
+deterministically from source.** The `remote-site-protocol-security` adapter (the seventeenth
+in the registry, the fifth source-scanner — an `egress-plain-http` clone with zero
+harness-core change) walks the repo for `*.remoteSite-meta.xml` and emits a
+`protocol-security-disabled` finding for every `<disableProtocolSecurity>true</disableProtocolSecurity>`
+element, filed under `package-metadata` at `high` — grounded in the existing
+`endpoint-https-only` baseline requirement (major → high), the same codified Secure
+Communication violation `plain-http-egress` grounds in (one requirement, two metadata shapes,
+two distinct classes). Runs in the `--all` journey mode alongside the other source-scanners
+(no evidence file, no `sf`, no network), so the audit's deterministic pass and the run-scans
+tail pick it up with no invocation change.
+
+PRECISION: true-required — the flag defaults to `false`, an explicit `false` element (the
+platform default posture) never flags, an absent element never flags — and element-scoped: a
+`<description>` mentioning the flag in prose never flags. INDEPENDENT of `egress-plain-http`:
+that adapter reads endpoint-URL schemes, this one reads only the protocol-security element —
+the standing `DP-no-overlap` check locks the disjointness in both directions, and
+`egress-plain-http` itself is byte-untouched. LOW FP by construction (Salesforce explicitly
+warns against enabling the flag; it is rarely legitimate in a distributed package); the one
+benign case — an internal/on-premises HTTP endpoint that genuinely requires it — is
+dispositionable via the false-positive dossier, never suppressed. The owned class is
+single-shape at its locus (the `<disableProtocolSecurity>` element line), so supersession
+never reaches a different-shape `package-metadata` finding at a different locus
+(`DP-non-supersession`).
+
+Fixtures: `acceptance/fixtures/remote-site-protocol/` — authored schema-faithful
+RemoteSiteSetting XML: one positive (`Downgrade_RSS`, `disableProtocolSecurity=true` on an
+`https://` URL, so the scheme scan never fires) + two negatives (`Secure_RSS` explicit-false;
+`NoFlag_RSS` no element + a prose `<description>` mention). Suite **62 files / 947 checks**
+(was 941), all green. Mutation-proven: dropping the true-requirement (flagging any
+`<disableProtocolSecurity>` element regardless of value) turns `DP2` red; pointing the
+non-supersession pair at the same locus turns `DP-non-supersession` red.
+
 ## [0.8.68] — 2026-07-04
 
 **The org-wide View/Modify-All-Data permission-grant detector is reframed to an honest

@@ -164,6 +164,21 @@
  *                       element-scoped; covers the gap metadata-viewall leaves
  *                       (system <userPermissions>, and profiles, which that scan
  *                       never reads) — the two are disjoint, no double-report.
+ *                     Adapter #17 (B5 · E0.3b-2, 0.8.69):
+ *                       `remote-site-protocol-security` (engine:'metadata') —
+ *                       scans *.remoteSite-meta.xml for
+ *                       <disableProtocolSecurity>true</disableProtocolSecurity>,
+ *                       the Remote Site Setting flag that permits code to pass
+ *                       data between an HTTPS session and an HTTP session (a
+ *                       transport downgrade) — the codified Secure Communication
+ *                       violation (class `protocol-security-disabled` →
+ *                       endpoint-https-only, high, dimension package-metadata).
+ *                       True-required (an explicit false element, the platform
+ *                       default, never flags) and element-scoped (a
+ *                       <description> mention never flags). Disjoint from
+ *                       egress-plain-http (a DIFFERENT flag on the same file
+ *                       type: that adapter reads <url> schemes, this one reads
+ *                       the protocol-security element — no double-report).
  *
  * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
  * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
@@ -190,6 +205,7 @@
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner egress-plain-http                         --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner view-modify-all-data                      --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner remote-site-protocol-security             --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
@@ -205,7 +221,8 @@
  *
  *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
  *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs the source-scanners
- *     (metadata-viewall + egress-plain-http + view-modify-all-data, 0.8.67) +
+ *     (metadata-viewall + egress-plain-http + view-modify-all-data +
+ *     remote-site-protocol-security, 0.8.69) +
  *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
  *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
  *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
@@ -435,6 +452,19 @@ export const CLASS_DEFS = {
   // different-shape admin-surface finding elsewhere in the file (sameLocation is
   // line-span-scoped).
   'view-modify-all-data': { baselineId: 'least-privilege-permission-grants', dimension: 'admin-surface', fallback: 'info' },
+  // B5 · E0.3b-2 (0.8.69): a RemoteSiteSetting with <disableProtocolSecurity>true</
+  // disableProtocolSecurity> — the flag that permits code to pass data between an
+  // HTTPS session and an HTTP session (a transport downgrade). Exactly the transport
+  // the codified Secure Communication requirement forbids, so it grounds in the SAME
+  // endpoint-https-only baseline as plain-http-egress (major → high); package-metadata
+  // owns the trusted-host XML flags. LOW FP: the flag defaults to false and Salesforce
+  // explicitly warns against enabling it — the rare internal/localhost HTTP case is
+  // dispositionable via the FP dossier, never suppressed. SINGLE-SHAPE at its locus:
+  // the finding sits on the specific <disableProtocolSecurity> element line, so the
+  // owned class supersedes only a co-located LLM finding at that same flag (correct —
+  // the deterministic row is authoritative there), never a different-shape
+  // package-metadata finding elsewhere in the file (sameLocation is line-span-scoped).
+  'protocol-security-disabled': { baselineId: 'endpoint-https-only', dimension: 'package-metadata', fallback: 'high' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -557,6 +587,8 @@ function recommendationFor(classKey) {
       return 'Declare the endpoint over https:// — all connections to and from the platform must use TLS (the codified Secure Communication requirement, endpoint-https-only); update the Remote Site Setting / CSP Trusted Site / Named Credential accordingly, or document a justified false positive in the dossier.'
     case 'view-modify-all-data':
       return 'Least-privilege advisory: review the org-wide View All Data / Modify All Data grant. User permissions are excluded from managed-package permission sets/profiles at install, so a packaged grant may not reach subscribers via the package — verify the EFFECTIVE grant on the integration/running user, the Guest User, or an unmanaged/org-deployed context; remove the grant where it is not needed, and document a business justification for any high-risk grant that stays (least-privilege-permission-grants).'
+    case 'protocol-security-disabled':
+      return 'Remove <disableProtocolSecurity>true</disableProtocolSecurity> from the Remote Site Setting (the platform default is false) — the flag permits data transfer between an HTTPS session and an HTTP session, the transport downgrade the codified Secure Communication requirement forbids (endpoint-https-only); if an internal/on-premises HTTP endpoint genuinely requires it, document a justified false positive in the dossier.'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -1175,6 +1207,119 @@ export const viewModifyAllDataAdapter = {
   },
   classify() {
     return 'view-modify-all-data'
+  },
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #17 — remote-site-protocol-security (source-scanner, B5 · E0.3b-2): scans
+// the repo's *.remoteSite-meta.xml and flags every RemoteSiteSetting that sets
+// <disableProtocolSecurity>true</disableProtocolSecurity> — the flag that permits
+// code to pass data between an HTTPS session and an HTTP session (a transport
+// downgrade), exactly what the codified Secure Communication requirement forbids
+// (endpoint-https-only, the same baseline plain-http-egress grounds in). The clone
+// of egress-plain-http: same walk, a pure per-file extractor, CONSTANT classify(),
+// NO securityRelevant (security-by-construction — every emission is a statically-
+// declared protocol-security opt-out), NO detect (a source-scanner has no evidence
+// file). INDEPENDENT of egress-plain-http: that adapter reads endpoint-URL schemes
+// (<url> et al.), this one reads ONLY the <disableProtocolSecurity> element — a
+// different flag, a different class, no double-report (the standing DP-no-overlap
+// check locks the disjointness).
+// PRECISION: the read is element-scoped — only the <disableProtocolSecurity>
+// element's own value is tested (a <description> mentioning the flag in prose
+// never flags) — and the value must be `true` (case-insensitive, whitespace-
+// tolerant); an explicit false element, the platform default, never flags, and an
+// absent element never flags.
+// HONEST FLOOR: the finding is a statically-declared protocol-security opt-out in
+// committed config — a transport-security misconfiguration; whether data actually
+// crosses an HTTP session at runtime is the DAST/TLS scan families' territory. The
+// flag defaults to false and Salesforce explicitly warns against enabling it, so
+// the finding is LOW-FP; the one rare benign case (an internal/on-premises/
+// localhost HTTP endpoint) is dispositionable via the FP dossier, never
+// suppressed. Wildcard-host egress and Apex http:// literals are research-
+// adjudicated separately — NOT this adapter.
+// ----------------------------------------------------------------------------
+const RSS_PROTOCOL_SUFFIX = '.remoteSite-meta.xml'
+function findRemoteSiteFiles(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue
+        walk(join(dir, e.name))
+      } else if (e.isFile() && e.name.endsWith(RSS_PROTOCOL_SUFFIX)) {
+        out.push(join(dir, e.name))
+      }
+    }
+  }
+  walk(root)
+  out.sort()
+  return out
+}
+// PURE: extract each disableProtocolSecurity=true opt-out from one Remote Site
+// Setting's XML. Element-scoped: only the <disableProtocolSecurity> element's own
+// value is read; the value must be true; the line points at the element itself.
+function extractProtocolSecurityOptOuts(text) {
+  const out = []
+  const re = /<disableProtocolSecurity>\s*([^<]*?)\s*<\/disableProtocolSecurity>/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    // true-required (case-insensitive, whitespace already trimmed by the capture):
+    // an explicit false element — the platform default — never flags
+    if (!/^true$/i.test(m[1])) continue
+    out.push({ line: lineOfIndex(text, m.index) })
+  }
+  return out
+}
+export const remoteSiteProtocolSecurityAdapter = {
+  name: 'remote-site-protocol-security',
+  kind: 'source-scanner',
+  collect({ target } = {}) {
+    if (!target) return null
+    let files
+    try {
+      files = findRemoteSiteFiles(target)
+    } catch {
+      return null
+    }
+    const out = []
+    for (const p of files) {
+      try {
+        out.push({ path: p, text: readFileSync(p, 'utf8') })
+      } catch {
+        /* unreadable file — skip, never crash */
+      }
+    }
+    return { files: out, repoRoot: target }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.files)) return []
+    const hits = []
+    for (const f of raw.files) {
+      if (!f || typeof f.text !== 'string') continue
+      for (const opt of extractProtocolSecurityOptOuts(f.text)) {
+        hits.push({
+          engine: 'metadata',
+          ruleId: 'protocol-security-disabled',
+          severityNum: null,
+          file: f.path,
+          startLine: opt.line,
+          message:
+            'Remote Site Setting sets <disableProtocolSecurity>true</disableProtocolSecurity> — the flag permits data transfer between an HTTPS session and an HTTP session (a transport downgrade); HTTPS is required for every connection to and from the platform (Secure Communication).',
+          resources: [EGRESS_HTTPS_DOC],
+          tags: ['AppExchange', 'Security', 'Metadata'],
+        })
+      }
+    }
+    return hits
+  },
+  classify() {
+    return 'protocol-security-disabled'
   },
 }
 
@@ -2459,6 +2604,7 @@ export const ADAPTERS = {
   'metadata-viewall': metadataViewAllAdapter,
   'egress-plain-http': egressPlainHttpAdapter,
   'view-modify-all-data': viewModifyAllDataAdapter,
+  'remote-site-protocol-security': remoteSiteProtocolSecurityAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
   'opengrep': opengrepAdapter,
@@ -2478,7 +2624,7 @@ export const ADAPTERS = {
 // Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
 // match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
 // logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
-// carry a `detect` fn (metadata-viewall + egress-plain-http + view-modify-all-data, the source-scanners, have none; opengrep has none
+// carry a `detect` fn (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security, the source-scanners, have none; opengrep has none
 // BY DESIGN — its JSON is content-indistinguishable from semgrep's, see the adapter). Each `detect` is
 // wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
 // crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
@@ -2558,7 +2704,7 @@ export function mergeFindings(ledger, newFindings, pass) {
 // ----------------------------------------------------------------------------
 // ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
 // makes the whole Phase-2 build run in the real journey: it ALWAYS runs the source-scanners
-// (metadata-viewall + egress-plain-http + view-modify-all-data), then
+// (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security), then
 // recognizes + ingests every scanner output present under <target>/.security-review/evidence/
 // by CONTENT SHAPE, and merges the whole deterministic band into the ledger in ONE pass. It
 // reuses the pure ingest() (per scanner) + loadLedger/mergeFindings verbatim; the existing
@@ -2589,7 +2735,8 @@ export function ingestAll({ target, pass, dryRun } = {}) {
   // (metadata-viewall greps the repo's *.permissionset-meta.xml for ViewAll/ModifyAll
   // over-grants; egress-plain-http greps the egress-config metadata for plain-http endpoints;
   // view-modify-all-data greps permission sets + profiles for the org-wide
-  // ViewAllData/ModifyAllData system-permission grants).
+  // ViewAllData/ModifyAllData system-permission grants; remote-site-protocol-security greps
+  // *.remoteSite-meta.xml for disableProtocolSecurity=true opt-outs).
   let metaRaw = null
   try {
     metaRaw = metadataViewAllAdapter.collect({ target: root })
@@ -2634,6 +2781,21 @@ export function ingestAll({ target, pass, dryRun } = {}) {
     kind: viewModifyAllDataAdapter.kind,
     findings: vmadRes.findings.length,
     status: vmadRes.findings.length ? 'ran' : 'clean',
+  })
+  let rspRaw = null
+  try {
+    rspRaw = remoteSiteProtocolSecurityAdapter.collect({ target: root })
+  } catch {
+    rspRaw = null
+  }
+  const rspRes = ingest(rspRaw, remoteSiteProtocolSecurityAdapter, { repoRoot: root, pass: passId })
+  notes.push(...rspRes.notes)
+  allFindings.push(...rspRes.findings)
+  scanners.push({
+    scanner: 'remote-site-protocol-security',
+    kind: remoteSiteProtocolSecurityAdapter.kind,
+    findings: rspRes.findings.length,
+    status: rspRes.findings.length ? 'ran' : 'clean',
   })
 
   // (2) enumerate evidence/*.json + *.sarif — TOP LEVEL only (skip subdirs like dast/), sorted
