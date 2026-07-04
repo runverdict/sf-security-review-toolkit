@@ -423,11 +423,29 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      scans all files) and the sensitive-data seed pinned to customMetadata/custom-setting so the capture cannot
      contradict it; (g) the package-metadata owner-supersedes-LLM lock is NEW among the ingested-adapter locks
      (GL-/DS-supersedes-LLM); the generic reconcile suite's R1 already locks a crud-fls owner.
-   - **DEFERRED-AMBIGUOUS (needs its own grounding):** javascript:-URL-in-buttons + JS-actions-in-metadata
-     (package-metadata/injection-xss seam), LWC-event-bubbles-composed (web-client stretch), inline-CSS/JS
-     static-resource rules (package-metadata vs web-client CSP), and the Apex-behavior rules
-     (GlobalInstall/UninstallHandlers, getInstance-with-taint, SECURITY_ENFORCED-pre-v48, insecure
-     content-distribution, System.setPassword). Route only when each maps to a low-FP dimension — no guessing.
+   - **E0.1d-EXPAND-4 (GROUNDED — the catalog remainder; stage a LIGHT prompt after EXPAND-3 grades, rigor on
+     the CODE hand-back not the prompt).** Grounding done 2026-07-04 against the methodology docs + the catalog:
+     - **SCOPE-SHRINKER — the Apex-behavior rules mostly need NO routing.** `DEFAULT_DIMENSION` is
+       `apex-exposed-surface` (`ingest-scanner-findings.mjs:508`), so a security-tagged Apex CA rule with no
+       `RULE_DIMENSION` row ALREADY lands there. The rules whose correct home IS `apex-exposed-surface` —
+       `SECURITY_ENFORCED-pre-v48` (a silent CRUD/FLS-enforcement gap), `getInstance-with-taint` (Apex taint),
+       `insecure-content-distribution` (missing CRUD on ContentDistribution) — are therefore **already correctly
+       routed by default; a `RULE_DIMENSION` row would be a no-op.** Do NOT add rows for them (verify each is
+       Apex-tagged so it defaults, then leave it). This removes ~3 rules from the backlog outright.
+     - **NON-DEFAULT, worth routing (EXPAND-4 candidates), leans grounded — builder confirms the rule framing +
+       fixture-proves):** `System.setPassword`-operation → `admin-surface` (a privileged credential operation;
+       distinct from the already-routed `AvoidHardcodedCredentialsInSetPassword`→secrets, which is the hardcoded
+       VALUE); `GlobalInstall/UninstallHandlers` → `admin-surface` (elevated install-time privilege plane).
+     - **SEAM — decide off the rule's own message (injection-xss owns XSS construction/DOM sinks; package-metadata
+       owns the static markup declaration):** `javascript:`-URL-in-buttons (an XSS-execution primitive in a
+       weblink → leans `injection-xss`); JS-actions-in-metadata (active JS embedded in declarative metadata →
+       leans `package-metadata` as a prohibited-content declaration). Route only if the message resolves the seam
+       cleanly; otherwise defer, don't guess.
+     - **SKIP candidates (fail the operator's low-FP bar — no clean, low-noise dimension):**
+       `LWC-event-bubbles-composed` (`web-client`'s charter is token/header/CSRF/framing, not component-event
+       hygiene — a stretch, low security signal); the inline-CSS/JS static-resource rules (`web-client`-CSP /
+       `package-metadata` seam AND inline styles are pervasive → high advisory volume). Leave these unrouted (they
+       default to `apex-exposed-surface`/DEFAULT) unless a later pass finds a genuinely low-FP home.
 7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
    marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
    honesty rule warns about (today it is operator-prose only, no harness enforcement).
