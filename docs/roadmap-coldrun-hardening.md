@@ -9,8 +9,9 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.68**, suite **62 files / 941 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3c-1 (View/Modify-All-Data grant) —
+- **`main` @ 0.8.69**, suite **62 files / 947 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3b-2 (`disableProtocolSecurity` downgrade);
+  E0.3c-1 (View/Modify-All-Data grant) —
   the last **CORRECTED (0.8.68)** to a least-privilege **advisory** (informational, off the blocker floor:
   user perms are stripped from managed-package permsets/profiles + no named req) grounded in the new sourced
   `least-privilege-permission-grants` requirement. Next greenlit: E0.3b-2 (`disableProtocolSecurity`).
@@ -556,10 +557,13 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
       flags). Verified off disk (fixture schema-faithful; independent battery + both mutations reproduced;
       no secret finding emitted). Known limitation (precedent-consistent with metadata-viewall): a
       commented-out `<url>` would flag — dispositionable, low-risk.
-    - **E0.3b-2 (follow-on, GREENLIT — next clean egress win):** RemoteSiteSetting
-      `<disableProtocolSecurity>true` (permits HTTPS↔HTTP downgrade — the metadata that enables exactly what
-      Secure Communication forbids) → EXISTING baseline `endpoint-https-only` (major→high); LOW FP (defaults
-      false, SF field doc warns against it). Research-validated (2026-07-04).
+    - ~~**E0.3b-2**~~ **DONE (0.8.69)** — a NEW `remote-site-protocol-security` source-scanner (adapter #17)
+      flags RemoteSiteSetting `<disableProtocolSecurity>true` (permits HTTPS↔HTTP downgrade) → class
+      `protocol-security-disabled` → EXISTING baseline `endpoint-https-only` (major→high), dimension
+      package-metadata. `true`-required (case-insensitive) + element-scoped; `DP-no-overlap` proves
+      bidirectional disjointness with `egress-plain-http` (the `true`-guard is load-bearing for it). LOW FP
+      (defaults false); internal/localhost case dispositionable. Verified off disk (8/8 battery + both
+      mutations reproduced). egress-plain-http byte-untouched.
     - **REJECTED as source-only detectors (research 2026-07-04 — honest residuals, NOT slices):** wildcard `*`
       in CspTrustedSite `<endpointUrl>` — SF-DOCUMENTED/ENDORSED feature (`*.example.com` for CDN/multi-region),
       HIGH FP, only a bare all-hosts `*` is defensible; raw-callout / RemoteSite with no matching Named
