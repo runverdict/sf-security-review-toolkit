@@ -51,6 +51,38 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.73] — 2026-07-04
+
+**The whole deterministic-ingest band is now locked byte-deterministic — and the lock caught a
+real merge defect on its first run.** A standing full-band determinism check
+(`acceptance/test-determinism-band.mjs`) builds a hermetic temp target mirroring a real run —
+every source-scanner fixture dir under the target tree, every file-parser fixture
+(`*.json`/`*.sarif`) under `.security-review/evidence/`, both enumerated from
+`acceptance/fixtures/` itself so every future adapter fixture joins the band automatically —
+runs the entire deterministic band (`ingestAll`) over it TWICE, and asserts the two finding
+bands are byte-identical, along with every non-merge result surface (scanners / skipped /
+pending / notes) and the persisted ledger. Non-emptiness and both-kinds span guards make a
+vacuous pass impossible (≥2 source-scanners AND ≥3 file-parsers must each contribute ≥1
+finding, nothing in the corpus skipped), and a negative control proves the comparator flags a
+single drifted field value. This turns "deterministic-by-default" from a per-adapter claim
+(NJ-/TRV-determinism, the regexploit twice-run check) into a whole-band standing guarantee —
+catching the cross-adapter regressions a per-adapter check cannot see: map/object key-ordering
+drift, an accidental `Date`/`Math.random` in a future adapter, findings-sort instability,
+merge ordering.
+
+The check went RED on the live tree immediately: `mergeFindings` inserted the caller's band
+objects into the ledger **by reference**, so when one batch carries two findings with one id —
+the JSON+SARIF routes of the same hit, which converge to one id by design (0.8.61) — the
+second copy `Object.assign`ed onto the band's own first copy, fabricating a hybrid finding no
+adapter produced and making a fresh-ledger run's returned band (the CLI `--json` surface)
+differ from a re-run's. Fixed: the insert path now stores a copy, so the merge never mutates
+its input band. The persisted ledger is byte-identical before and after the fix (md5-verified
+on the full corpus) — only the returned band changes, and it now carries exactly what the
+adapters emitted. Suite **63 files / 969 checks** (was 62/964), all green. Mutation-proven in
+a throwaway checkout: a `Math.random()` value injected into a `buildFinding` field turns
+BAND-determinism RED, and re-aliasing the merge insert (reverting the copy) turns it RED
+again.
+
 ## [0.8.72] — 2026-07-04
 
 **The Secure-Communication requirement `endpoint-https-only` now applies to `managed-package`

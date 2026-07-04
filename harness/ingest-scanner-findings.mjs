@@ -2877,8 +2877,16 @@ export function mergeFindings(ledger, newFindings, pass) {
       Object.assign(prev, nf, { first_seen: firstSeen, last_seen: passId })
       updated++
     } else {
-      ledger.findings.push(nf)
-      byId.set(nf.id, nf)
+      // insert a COPY, never the caller's object: when the incoming batch itself carries
+      // two findings with one id (the JSON+SARIF routes of the same hit converge by design),
+      // aliasing would let the second copy Object.assign ONTO the caller's first band object
+      // — fabricating a hybrid finding no adapter produced, and making the returned band
+      // differ between a fresh-ledger run and a re-run. The ledger row is the merge surface;
+      // the caller's band stays exactly what the adapters emitted (locked by
+      // test-determinism-band).
+      const row = { ...nf }
+      ledger.findings.push(row)
+      byId.set(row.id, row)
       added++
     }
   }
