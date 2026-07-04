@@ -554,24 +554,40 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
       flags). Verified off disk (fixture schema-faithful; independent battery + both mutations reproduced;
       no secret finding emitted). Known limitation (precedent-consistent with metadata-viewall): a
       commented-out `<url>` would flag — dispositionable, low-risk.
-    - **E0.3b-2/3 (follow-ons):** wildcard-host / `disableProtocolSecurity` over-broad egress; the
-      raw-callout host↔NamedCredential join; Apex `setEndpoint('http://…')` literals.
+    - **E0.3b-2 (follow-on, GREENLIT — next clean egress win):** RemoteSiteSetting
+      `<disableProtocolSecurity>true` (permits HTTPS↔HTTP downgrade — the metadata that enables exactly what
+      Secure Communication forbids) → EXISTING baseline `endpoint-https-only` (major→high); LOW FP (defaults
+      false, SF field doc warns against it). Research-validated (2026-07-04).
+    - **REJECTED as source-only detectors (research 2026-07-04 — honest residuals, NOT slices):** wildcard `*`
+      in CspTrustedSite `<endpointUrl>` — SF-DOCUMENTED/ENDORSED feature (`*.example.com` for CDN/multi-region),
+      HIGH FP, only a bare all-hosts `*` is defensible; raw-callout / RemoteSite with no matching Named
+      Credential — NOT a violation absent a hardcoded secret (the named violation is Store-Sensitive-Data-
+      Insecurely), VERY HIGH FP. Apex `setEndpoint('http://…')` literals — a possible future in-code
+      companion to `endpoint-https-only`, but Apex-AST-fragile; defer.
   - **E0.3c — CRUD/FLS grant matrix + release-widening diff [UNGATED].** `.permissionset/.profile-meta.xml`
     `<objectPermissions>`/`<fieldPermissions>`/`<classAccesses>`/`<userPermissions>`{ModifyAllData/ViewAllData/
     AuthorApex/ManageUsers}. **Non-overlap note:** `metadata-viewall` already flags per-object
     `viewAllRecords`/`modifyAllRecords` on CUSTOM objects in **permsets only** (`viewall-overgrant`); it does
     NOT read `<userPermissions>` and does NOT scan profiles — that is E0.3c's gap. Sub-sliced (sequence FIRST,
     each its own class/locus, non-supersession + mutations):
-    - ~~**E0.3c-1**~~ **DONE (0.8.67)** — a NEW `view-modify-all-data` source-scanner (adapter #16) flags
-      org-wide **`ViewAllData`/`ModifyAllData`** granted (`enabled=true`) in `<userPermissions>` of permsets
-      AND profiles → class **`view-modify-all-data`** → `fail-sharing-model`/`admin-surface` (high). Covers
-      the userPermissions+profile gap `metadata-viewall` leaves; `PV-no-overlap` proves disjointness both
-      directions; exact-name + `enabled=true` + element-scoped + `ViewAll*`-prefix-excluded guards; `PV-all`
-      regression-locks the `--all` wiring. Verified off disk (independent 9/9 battery + both mutations
-      reproduced). Sharing-bypass grant (FLS still applies), not a confirmed leak; partial-profile FN
-      residual stated.
-    - **E0.3c-2/3 (follow-ons):** `ManageUsers`/`AuthorApex` (a distinct privilege class); per-object
-      `viewAllRecords`/`modifyAllRecords` in PROFILES; the **PSG+muting effective-permission helper**
+    - ~~**E0.3c-1**~~ **DONE (0.8.67), CORRECTED to advisory (0.8.68).** The `view-modify-all-data`
+      source-scanner (adapter #16) flags org-wide **`ViewAllData`/`ModifyAllData`** granted (`enabled=true`)
+      in `<userPermissions>` of permsets AND profiles. **GROUNDING CORRECTION (2026-07-04, verified off SF
+      2GP docs):** managed-package permsets/profiles do NOT carry user permissions to subscribers (excluded
+      at install — "Do they include user permissions? No."), and there is NO named AppExchange requirement
+      for permission-grant minimality (reviewer-discretion, justification-gated). So the initial
+      `fail-sharing-model`/HIGH grounding over-stated it + was FP-prone for the managed-package case. 0.8.68
+      REFRAMES it to an honest **least-privilege ADVISORY** — informational (→ info, OFF the blocker floor),
+      grounded in a NEW sourced requirement **`least-privilege-permission-grants`** (cites SF "Evaluate User
+      Privilege" best-practice + the 2GP stripping doc), message carries the caveat (verify the effective
+      grant on the integration/running user / unmanaged / org-deployed context; not a confirmed subscriber
+      grant). Detection logic unchanged; `PV-no-overlap`/`PV-all`/non-supersession preserved. Valid signal
+      for non-managed / integration-user / org-deployed (and the general-purpose future).
+    - **E0.3c-2/3 (follow-ons):** **ManageUsers/AuthorApex/Customize-Application/etc. → ADVISORY-only**
+      (same reframe: no named requirement + user-perms-stripped → informational least-privilege advisory
+      reusing `least-privilege-permission-grants`, NEVER a blocker; broaden the detector's perm-name set).
+      Per-object `viewAllRecords`/`modifyAllRecords` in PROFILES (the `viewall-overgrant` gap on profiles);
+      the **PSG+muting effective-permission helper**
       (`effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG,
       global muting = a bug; naive `profile∪permset` OVER-states — the flagship FP); the **release-widening
       diff** (pure git-ref XML diff; v29+ serializes ONLY enabled perms → **absent→present = widening**; no org).
