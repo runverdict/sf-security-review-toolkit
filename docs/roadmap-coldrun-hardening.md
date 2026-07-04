@@ -9,11 +9,13 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.76**, suite **63 files / 981 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1–6 SHIPPED (E0.1f · `endpoint-https-only` seam · determinism proof ·
-  single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing, 0.8.76).
-  NEXT: E0.1d-EXPAND-2 (grounded dimension decision for the deferred markup/JS/CSS/LWC catalog rules — MUST
-  ground each rule's dimension off the catalog before routing; skip any that don't map to a low-FP dimension),
+- **`main` @ 0.8.77**, suite **63 files / 986 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–6 SHIPPED + E0.1d-EXPAND-2 (E0.1f · `endpoint-https-only` seam · determinism proof ·
+  single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing 0.8.76 ·
+  E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 — both graded PASS off disk).
+  NEXT: E0.1d-EXPAND-3 (GROUNDED — the owned-class-dimension catalog clusters: `AvoidSControls` /
+  `AvoidAuraWithLockerDisabled` / `AvoidLmcIsExposedTrue` → package-metadata; `ProtectSensitiveData` →
+  secrets-credentials; the cross-engine-dedup profile, names already enumerated by the EXPAND-2 builder),
   then item 7 (substrate/version-drift markers), then the ★ MIDPOINT COLD RUN.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
@@ -357,19 +359,31 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    a guessed dimension string fails the build). Graded PASS off disk (both mutations reproduced). **E0.1d-EXPAND-2
    (follow-on): GROUNDED (2026-07-04) against the catalog + the methodology dimension docs, and SPLIT by
    supersession-safety profile (the axis that actually matters):
-   - **E0.1d-EXPAND-2 (STAGED) — the CLASS-LESS-SAFE clusters** (`injection-xss` + `oauth-identity`, neither
-     owns a toolkit class → routing there supersedes nothing): unescaped-HTML-in-Aura + dynamic-script/link
-     createElement → `injection-xss` (methodology `injection-xss.md` explicitly owns the `aura:unescapedHtml`
-     DOM-sink half); OAuth-callback-over-HTTP + connected-app-full-scope → `oauth-identity` (iff the live
-     catalog enumeration confirms them — lower-confidence names, honesty-floor drop if absent). Builder
-     enumerates `sf code-analyzer rules` for authoritative names, seeds+captures a sibling fixture, widens the
-     `SESS-disjoint` value-lock. Prompt `~/srt-builder-B5-E0.1d-EXPAND-2-metadata-markup-prompt.md`, →0.8.77.
-   - **E0.1d-EXPAND-3 (future) — the OWNED-CLASS-DIMENSION clusters** (the cross-engine-dedup profile, same as
-     E0.1d-EXPAND's secrets cluster): S-Controls / Aura-apiVersion-Locker / messageChannel-isExposed →
-     `package-metadata` (methodology `package-metadata.md` explicitly names Aura `apiVersion` +
-     `*.messageChannel-meta.xml`); sensitive-data-in-XML-metadata → `secrets-credentials`. These route class-less
-     INTO a dimension that owns a class (`plain-http-egress`/`protocol-security-disabled` for package-metadata,
-     `hardcoded-secrets` for secrets) → same-locus dedup by design, different-locus coexist.
+   - ~~**E0.1d-EXPAND-2 — the CLASS-LESS-SAFE clusters**~~ **DONE (0.8.77), graded PASS off disk 2026-07-04**
+     (6-lens adversarial workflow, 0 defects; the domain-premise critic ran a LIVE `sf code-analyzer rules
+     --rule-selector AppExchange` and confirmed all 4 rule names are genuine catalog rules). Routed:
+     `AvoidUnescapedHtmlInAura` + `AvoidCreateElementScriptLinkTag` → `injection-xss` (methodology
+     `injection-xss.md` §1.4 names `aura:unescapedHtml` + hand-built DOM verbatim); `UseHttpsCallbackUrlConnectedApp`
+     (HTTP OAuth callback) + `LimitConnectedAppScope` (full-scope connected app) → `oauth-identity` — note the
+     non-`Avoid`-prefixed catalog names (the honesty floor caught them: predicted names were wrong, the live
+     enumeration gave the real ones). Sibling fixture `code-analyzer-catalog-markup-seeded.json` (genuine CA
+     0.48.0/pmd 0.41.0, all 4 fired). Both dims class-less (no supersession — verified); `SESS-disjoint` value-lock
+     now `{sessionid-egress, secrets-credentials, admin-surface, injection-xss, oauth-identity}` (5). Overlap
+     cleared: the egress source-scanner's suffix allowlist is exactly `{.remoteSite/.cspTrustedSite/.namedCredential}-meta.xml`
+     — it never reads `.connectedApp-meta.xml`, so the OAuth-callback finding is not double-reported (and
+     plain-http-egress's dimension is `package-metadata` ≠ `oauth-identity` anyway). Both mutations reproduced RED.
+   - **E0.1d-EXPAND-3 (GROUNDED — next) — the OWNED-CLASS-DIMENSION clusters** (the cross-engine-dedup profile, same
+     as E0.1d-EXPAND's secrets cluster). The EXPAND-2 builder already enumerated the authoritative names in its
+     defer list: `AvoidSControls` + `AvoidAuraWithLockerDisabled` (Aura apiVersion<40) + `AvoidLmcIsExposedTrue`
+     (Lightning Message Channel `isExposed=true`) → `package-metadata` (methodology `package-metadata.md` explicitly
+     names Aura `apiVersion` + `*.messageChannel-meta.xml`; S-Controls = a prohibited-markup metadata artifact);
+     `ProtectSensitiveData` (sensitive data in XML metadata, another non-`Avoid` name) → `secrets-credentials`
+     (package-metadata.md's boundary note routes raw secret values in metadata to secrets-credentials). These route
+     class-less INTO a dimension that owns a class (`plain-http-egress`/`protocol-security-disabled` for
+     package-metadata — which fire at DISJOINT loci, RemoteSiteSetting URLs, so no real collision; `hardcoded-secrets`
+     for secrets — same-locus gitleaks dedup by design). The non-supersession test MUST reflect this profile:
+     class-less coexist with a co-located LLM finding; the owned-class-at-same-locus dedup is the intended direction
+     (mirror E0.1d-EXPAND's secrets cluster tests). Widens `SESS-disjoint` value-lock to add `package-metadata`.
    - **DEFERRED-AMBIGUOUS (needs its own grounding):** javascript:-URL-in-buttons + JS-actions-in-metadata
      (package-metadata/injection-xss seam), LWC-event-bubbles-composed (web-client stretch), inline-CSS/JS
      static-resource rules (package-metadata vs web-client CSP), and the Apex-behavior rules
