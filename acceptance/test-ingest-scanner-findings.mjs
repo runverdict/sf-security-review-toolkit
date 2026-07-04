@@ -233,6 +233,7 @@ const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --jso
 const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 filesystem scan: 1 Class:'config' Result, 1 FAIL misconfig (DS-0026 No HEALTHCHECK, Severity LOW, no StartLine — the IaC anchor, class-severity high)
 const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VERBATIM stdout (format C — text, not JSON) over seeded vulnerable py/js: 4 blocks — (a+)+$ exp @server.py:3 + (.*)*x exp @:4 + a*a*a*$ cubic @:5 (Context lines) + (x+)+y(z+)+w exp @validate.js:1 (JS: no Context, TWO Redos records in ONE block), with a mid-file "Processed N regexes" trailer between the two tools' outputs
 const SESSFIX = join(FIX, 'code-analyzer-sessionid-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a minimal seeded sample: AvoidUnauthorizedGetSessionIdInApex @SeedSession.cls:3 + AvoidUnauthorizedApiSessionIdInVisualforce @SeedSessionPage.page:3 — the RULE_DIMENSION sessionid-egress routing anchors
+const CATFIX = join(FIX, 'code-analyzer-catalog-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a seeded multi-rule corpus: 12 violations / 7 files firing all 11 catalog-cluster rules (3 session-id siblings + 7 hardcoded-credential rules + AvoidChangeProtectionUnprotected) — the E0.1d-EXPAND routing anchors
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -3007,7 +3008,12 @@ check('SESS-fixture: the genuine CA AppExchange capture lands both retrieval sit
 check('SESS-disjoint: RULE_DIMENSION and RULE_CLASS share no key — a rule either owns a class or routes a class-less dimension, never both', () => {
   const overlap = Object.keys(RULE_DIMENSION).filter((k) => k in RULE_CLASS)
   assert.deepEqual(overlap, [])
-  for (const v of Object.values(RULE_DIMENSION)) assert.equal(v, 'sessionid-egress')
+  // Every routed value is one of the fixture-proven catalog dimensions. Was `=== 'sessionid-egress'`
+  // when the session-id pair was the whole map; the catalog expansion (0.8.76) added the
+  // secrets-credentials + admin-surface clusters, so the lock is now set-membership — a typo'd or
+  // guessed dimension string still fails here.
+  const routedDims = new Set(['sessionid-egress', 'secrets-credentials', 'admin-surface'])
+  for (const v of Object.values(RULE_DIMENSION)) assert.ok(routedDims.has(v), `unexpected RULE_DIMENSION value ${v}`)
 })
 
 check('SESS-negative: RULE_CLASS routing untouched (ApexCRUDViolation → crud-fls/apex-exposed-surface); a security-tagged rule in NEITHER map still falls to apex-exposed-surface; classify() stays null for the session-id rules (AD2 intact)', () => {
@@ -3056,6 +3062,181 @@ check('SESS-non-supersession (the standing lock — the RD/INJ/DESER posture por
   assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
   // the guard itself, asserted LAST so a class-owning mutation fails first at "superseded === 0"
   assert.equal('class' in det, false, 'no owned class on the routed deterministic finding')
+})
+
+// ───────────────────────────────────── pmd-appexchange catalog routing (B5 · E0.1d-EXPAND, 0.8.76)
+// The installed pmd-appexchange catalog carries 37 Security rules; E0.1d routed the first two
+// session-id rules by name. This slice routes the remaining HIGH-CONFIDENCE clusters — the rules
+// whose methodology dimension is unambiguous — leaving the markup/JS/CSS/LWC + remaining rules for
+// a grounded per-rule decision (E0.1d-EXPAND-2) and deliberately NOT routing the two Remote-Site-
+// Setting rules that the plain-http-egress + protocol-security-disabled metadata source-scanners
+// already own (EXP-skip). Fixture: a GENUINE `sf code-analyzer run --rule-selector AppExchange`
+// capture (Code Analyzer core 0.48.0 / pmd engine 0.41.0 / @salesforce/plugin-code-analyzer 5.13.0)
+// over a seeded multi-rule SFDX corpus — 12 violations across 7 files, firing ALL 11 targeted rules
+// with these exact spellings (engine 'pmd', tags AppExchange/Security/<lang>):
+//   sessionid-egress:    AvoidApiSessionId (XML WebLink, sev 2) + AvoidUnauthorizedApiSessionIdInApex
+//                        (Apex '{!API.Session_ID}' literal, sev 3) + AvoidUnauthorizedGetSessionIdInVisualforce
+//                        (VF GETSESSIONID() merge-function, sev 2)
+//   secrets-credentials: AvoidHardcodedCredentialsInVarDecls / -VarAssign / -FieldDecls / -HttpHeader
+//                        (sev 3) + -SetPassword (sev 1) + AvoidHardCodedCredentialsInAura (HTML, sev 2;
+//                        the capital-C spelling is the catalog's) + AvoidHardcodedSecretsInVFAttrs
+//                        (VF, sev 2 — fires TWICE on one two-attribute tag, same startLine locus)
+//   admin-surface:       AvoidChangeProtectionUnprotected (Apex, sev 1 — fires on
+//                        FeatureManagement.changeProtection(...,'Unprotected') inside an
+//                        externally-invocable @AuraEnabled method)
+// All routed rows stay class-less: classify() reads only RULE_CLASS, so none of these supersedes
+// anything (the SESS posture), and the OWNED hardcoded-secrets class stays with the secret scanners.
+const ingestCat = (raw) => ingest(raw === undefined ? readJSON(CATFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+const EXP_SESSION_RULES = ['AvoidApiSessionId', 'AvoidUnauthorizedApiSessionIdInApex', 'AvoidUnauthorizedGetSessionIdInVisualforce']
+const EXP_SECRET_RULES = [
+  'AvoidHardcodedCredentialsInVarDecls',
+  'AvoidHardcodedCredentialsInVarAssign',
+  'AvoidHardcodedCredentialsInFieldDecls',
+  'AvoidHardcodedCredentialsInHttpHeader',
+  'AvoidHardcodedCredentialsInSetPassword',
+  'AvoidHardCodedCredentialsInAura',
+  'AvoidHardcodedSecretsInVFAttrs',
+]
+const EXP_ADMIN_RULES = ['AvoidChangeProtectionUnprotected']
+const EXP_SKIP_RULES = ['AvoidInsecureHttpRemoteSiteSetting', 'AvoidDisableProtocolSecurityRemoteSiteSetting']
+
+check('EXP-routing: every catalog-cluster rule routes by exact name to its dimension (session-id siblings → sessionid-egress, hardcoded credentials → secrets-credentials, changeProtection → admin-surface); a security-tagged CA hit ingests deterministic / that dimension / class-less; none is in RULE_CLASS', () => {
+  const want = new Map([
+    ...EXP_SESSION_RULES.map((r) => [r, 'sessionid-egress']),
+    ...EXP_SECRET_RULES.map((r) => [r, 'secrets-credentials']),
+    ...EXP_ADMIN_RULES.map((r) => [r, 'admin-surface']),
+  ])
+  for (const [rule, dim] of want) {
+    assert.equal(RULE_DIMENSION[rule], dim, `RULE_DIMENSION[${rule}]`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+    const { findings } = ingestCat(sessHit(rule))
+    assert.equal(findings.length, 1)
+    assert.equal(findings[0].provenance, 'deterministic')
+    assert.equal(findings[0].dimension, dim, `ingested dimension for ${rule}`)
+    assert.equal(findings[0].status, 'confirmed')
+    assert.ok(!('class' in findings[0]), `routed ${rule} finding owns no class`)
+  }
+})
+
+check('EXP-fixture: the genuine multi-rule CA catalog capture (core 0.48.0 / pmd 0.41.0 / plugin 5.13.0) lands all 11 rules in their dimensions, class-less, at the seed loci; CA severity fallback intact; byte-deterministic', () => {
+  const raw = readJSON(CATFIX)
+  assert.equal(raw.versions['code-analyzer'], '0.48.0') // provenance lock on the committed capture
+  assert.equal(raw.versions['pmd'], '0.41.0')
+  const { findings } = ingestCat()
+  // 12 violations → 12 findings: AvoidHardcodedSecretsInVFAttrs fires twice on the one
+  // two-attribute seed tag at the SAME startLine locus (columns differ; the locus id ignores
+  // columns), and ingest() relays hits — it never collapses them (merge-ledger dedups by id later).
+  assert.equal(findings.length, 12)
+  const byRule = new Map()
+  for (const f of findings) {
+    if (!byRule.has(f.ruleId)) byRule.set(f.ruleId, [])
+    byRule.get(f.ruleId).push(f)
+  }
+  assert.equal(byRule.size, 11, 'all 11 catalog-cluster rules fired')
+  for (const r of EXP_SESSION_RULES) assert.equal(byRule.get(r)[0].dimension, 'sessionid-egress', r)
+  for (const r of EXP_SECRET_RULES) assert.equal(byRule.get(r)[0].dimension, 'secrets-credentials', r)
+  for (const r of EXP_ADMIN_RULES) assert.equal(byRule.get(r)[0].dimension, 'admin-surface', r)
+  for (const f of findings) {
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'pmd')
+    assert.ok(!('class' in f), `${f.ruleId} must stay class-less`)
+    assert.match(f.verdict_reasoning, /no toolkit class maps rule/) // the unmapped-CLASS severity fallback branch
+  }
+  // anchor loci + the class-less CA-severity fallback across all three catalog severities
+  const cp = byRule.get('AvoidChangeProtectionUnprotected')[0]
+  assert.equal(cp.file, 'force-app/main/default/classes/SeedFeature.cls:4')
+  assert.equal(cp.adjusted_severity, 'critical') // CA sev 1 → critical
+  const api = byRule.get('AvoidApiSessionId')[0]
+  assert.equal(api.file, 'force-app/main/default/objects/Account/webLinks/SeedLink.webLink-meta.xml:11')
+  assert.equal(api.adjusted_severity, 'high') // CA sev 2 → high
+  const vd = byRule.get('AvoidHardcodedCredentialsInVarDecls')[0]
+  assert.equal(vd.file, 'force-app/main/default/classes/SeedCreds.cls:5')
+  assert.equal(vd.adjusted_severity, 'medium') // CA sev 3 → medium
+  const vf = byRule.get('AvoidHardcodedSecretsInVFAttrs')
+  assert.equal(vf.length, 2)
+  assert.equal(vf[0].file, 'force-app/main/default/pages/SeedVfSecret.page:2')
+  assert.equal(vf[0].id, vf[1].id) // same rule + same startLine locus → same id (columns are not in the locus)
+  assert.equal(JSON.stringify(findings), JSON.stringify(ingestCat().findings))
+})
+
+check('EXP-skip: the two Remote-Site-Setting rules are DELIBERATELY unrouted — the plain-http-egress + protocol-security-disabled metadata source-scanners own those checks, so routing the CA twins would double-report the same locus (cross-engine dedup is not landed for that pair); a hit ingests at the CA default dimension', () => {
+  for (const rule of EXP_SKIP_RULES) {
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (the source-scanners own the check)`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
+    const { findings } = ingestCat(sessHit(rule))
+    assert.equal(findings.length, 1) // still ingested — security-tagged rules are never dropped
+    assert.equal(findings[0].dimension, 'apex-exposed-surface') // DEFAULT_DIMENSION: undifferentiated, not a routed cluster
+    assert.ok(!('class' in findings[0]))
+  }
+})
+
+check('EXP-non-supersession: a routed class-less catalog finding does NOT supersede a co-located llm-inferred finding of a DIFFERENT shape in the same dimension — both the sessionid-egress and the secrets-credentials cluster (where gitleaks/detect-secrets own the hardcoded-secrets class)', () => {
+  const findings = ingestCat().findings
+  const scenarios = [
+    {
+      det: findById(findings, (x) => x.ruleId === 'AvoidUnauthorizedApiSessionIdInApex'),
+      llm: {
+        id: '7'.repeat(16),
+        dimension: 'sessionid-egress',
+        title: 'Session token forwarded to an external service in a callout header',
+        severity: 'critical',
+        adjusted_severity: 'critical',
+        file: 'force-app/main/default/classes/SeedSessionApi.cls:1-8', // overlaps det's :3
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the retrieval-to-callout dataflow',
+      },
+    },
+    {
+      det: findById(findings, (x) => x.ruleId === 'AvoidHardcodedCredentialsInHttpHeader'),
+      llm: {
+        id: '8'.repeat(16),
+        dimension: 'secrets-credentials',
+        title: 'Credential material logged to a debug sink',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/classes/SeedCreds.cls:1-20', // overlaps det's :10
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the credential-to-log dataflow',
+      },
+    },
+  ]
+  for (const { det, llm } of scenarios) {
+    assert.ok(det, 'deterministic catalog finding present')
+    assert.equal(det.provenance, 'deterministic')
+    // PRECONDITIONS that WOULD fire supersession if the routed rule owned a class: same
+    // dimension + overlapping locus. The ONLY missing ingredient is the owned class.
+    assert.equal(det.dimension, llm.dimension, 'same dimension')
+    assert.equal(sameLocation(det, llm), true, 'overlapping locus')
+    const { superseded, supersededIds, findings: out } = reconcileProvenance([det, llm])
+    assert.equal(superseded, 0, `${det.ruleId} must not supersede the co-located LLM ${llm.dimension} finding`)
+    assert.deepEqual(supersededIds, [])
+    assert.equal(out.find((f) => f.id === llm.id).status, 'confirmed')
+    assert.equal('class' in det, false, 'no owned class on the routed catalog finding')
+  }
+})
+
+check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SHAPE is exactly the same 9-set (registry untouched; class-less routing cannot move class ownership)', () => {
+  assert.deepEqual(
+    [...SINGLE_SHAPE].sort(),
+    [
+      'admin-privilege-grant',
+      'crud-fls',
+      'hardcoded-secrets',
+      'iac-misconfig',
+      'plain-http-egress',
+      'protocol-security-disabled',
+      'sharing',
+      'view-modify-all-data',
+      'viewall-overgrant',
+    ]
+  )
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)

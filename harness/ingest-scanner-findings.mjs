@@ -577,6 +577,47 @@ export const RULE_DIMENSION = {
   AvoidUnauthorizedApiSessionIdInVisualforce: 'sessionid-egress', // $Api.Session_ID retrieval site (Visualforce)
   // fixture-pending (NOT active until a genuine capture emits the exact name): the formula /
   // merge-field GETSESSIONID() sibling documented at rules-pmd-appexchange.html
+  //
+  // ── pmd-appexchange catalog routing, high-confidence clusters (0.8.76). Every row below is
+  // fixture-proven by acceptance/fixtures/code-analyzer-catalog-seeded.json — a GENUINE
+  // `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 /
+  // pmd engine 0.41.0 / @salesforce/plugin-code-analyzer 5.13.0) over a seeded multi-rule
+  // corpus; each key is the EXACT rule name that capture emitted. All rows stay class-less
+  // (none is in RULE_CLASS) — same posture as the two session-id rows above.
+  //
+  // session-id retrieval-site siblings (same bare-retrieval honesty floor as the rows above —
+  // the SITE is deterministic, the egress VERDICT stays the labelled LLM/human residual):
+  AvoidApiSessionId: 'sessionid-egress', // $Api.Session_ID in XML metadata (e.g. a WebLink URL)
+  AvoidUnauthorizedApiSessionIdInApex: 'sessionid-egress', // '{!API.Session_ID}' literal in Apex
+  AvoidUnauthorizedGetSessionIdInVisualforce: 'sessionid-egress', // GETSESSIONID() merge-function (Visualforce)
+  //
+  // hardcoded credentials / secrets. Class-less on purpose: the OWNED `hardcoded-secrets` class
+  // stays with the secret scanners (gitleaks/detect-secrets), so a co-located secret finding
+  // dedups the routed CA row cross-engine at the same locus while different loci coexist:
+  AvoidHardcodedCredentialsInVarDecls: 'secrets-credentials', // credential-named local, literal initializer (Apex)
+  AvoidHardcodedCredentialsInVarAssign: 'secrets-credentials', // credential-named local, literal re-assignment (Apex)
+  AvoidHardcodedCredentialsInFieldDecls: 'secrets-credentials', // credential-named field, literal initializer (Apex)
+  AvoidHardcodedCredentialsInHttpHeader: 'secrets-credentials', // literal secret in an HTTP request header (Apex)
+  AvoidHardcodedCredentialsInSetPassword: 'secrets-credentials', // literal password in System.setPassword (Apex)
+  AvoidHardCodedCredentialsInAura: 'secrets-credentials', // credential-named aura:attribute default (the capital-C spelling is the catalog's)
+  AvoidHardcodedSecretsInVFAttrs: 'secrets-credentials', // literal secret in a Visualforce component attribute
+  //
+  // feature-management protection state (FeatureManagement.changeProtection → 'Unprotected' in an
+  // externally-invocable context; the permission-grant plane — grounded by baseline
+  // violation-feature-management-change-protection, the same heading CLASS_DEFS routes to admin-surface):
+  AvoidChangeProtectionUnprotected: 'admin-surface',
+  //
+  // DELIBERATELY NOT ROUTED — AvoidInsecureHttpRemoteSiteSetting + AvoidDisableProtocolSecurityRemoteSiteSetting:
+  // the `plain-http-egress` + `protocol-security-disabled` metadata source-scanners already flag those
+  // exact patterns deterministically (they OWN the checks); routing the CA twins would double-report
+  // the same locus, and cross-engine dedup for that pair is not landed. Staying unrouted (the CA
+  // default dimension) is the deliberate posture, NOT a coverage gap — the EXP-skip standing check
+  // locks it.
+  //
+  // DEFERRED to the named E0.1d-EXPAND-2 follow-on — the markup/JS/CSS/LWC + remaining rules
+  // (AvoidJavaScript*, Load*, AvoidUnescapedHtmlInAura, AvoidSControls, AvoidAuraWithLockerDisabled,
+  // AvoidLmc*/AvoidLwc*, AvoidCreateElementScriptLinkTag, …): their dimension (injection-xss vs
+  // package-metadata vs web-client) needs a grounded per-rule decision, not a guess here.
 }
 
 const VIEWALL_DOC =

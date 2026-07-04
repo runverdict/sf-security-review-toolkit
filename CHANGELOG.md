@@ -51,6 +51,35 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.76] — 2026-07-04
+
+**The pmd-appexchange catalog's high-confidence clusters now route by rule name to their
+methodology dimensions.** The installed catalog carries 37 Security rules — Salesforce's own
+first-party encoding of what the review flags — and until now only 7 routed anywhere specific;
+the rest ingested as undifferentiated unmapped hits. This release routes the three clusters
+whose dimension is unambiguous, all class-less (`RULE_DIMENSION` rows; `classify()` untouched,
+no owned class, supersedes nothing): the **session-id retrieval-site siblings**
+(`AvoidApiSessionId` on XML metadata, `AvoidUnauthorizedApiSessionIdInApex`,
+`AvoidUnauthorizedGetSessionIdInVisualforce` → `sessionid-egress`, extending the two rules
+routed at 0.8.65), the **hardcoded-credential family** (all seven rules, including the
+catalog's capital-C `AvoidHardCodedCredentialsInAura` spelling and the Visualforce
+secret-attribute rule → `secrets-credentials`; the owned `hardcoded-secrets` class stays with
+the secret scanners, so a co-located secret finding dedups cross-engine instead of
+double-owning), and **feature-management protection** (`AvoidChangeProtectionUnprotected` →
+`admin-surface`, grounded by the same baseline heading as the permission-grant scanners).
+Every activated row is fixture-proven: a genuine `sf code-analyzer run --rule-selector
+AppExchange` capture (Code Analyzer core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a
+seeded multi-rule corpus — 12 violations across 7 files, firing all 11 targeted rules with
+these exact spellings (`acceptance/fixtures/code-analyzer-catalog-seeded.json`). Two catalog
+rules are **deliberately not routed**: `AvoidInsecureHttpRemoteSiteSetting` and
+`AvoidDisableProtocolSecurityRemoteSiteSetting` flag the exact patterns the
+`plain-http-egress` + `protocol-security-disabled` metadata source-scanners already detect
+deterministically, so routing the Code Analyzer twins would double-report the same locus —
+the `EXP-skip` standing check locks the no-route (mutation-proven: routing one turns it red).
+The markup/JavaScript/CSS/LWC rules await a grounded per-rule dimension decision
+(E0.1d-EXPAND-2) rather than a guess. Suite: **63 files / 981 checks** (was 976), all green;
+routing-removal and skip-route mutations both proven red in a throwaway checkout.
+
 ## [0.8.75] — 2026-07-04
 
 **The toolkit's own supply chain is now a stated, standing-tested trust property.** For a

@@ -1,0 +1,305 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 12,
+    "sev1": 2,
+    "sev2": 5,
+    "sev3": 5,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "pmd": "0.41.0"
+  },
+  "violations": [
+    {
+      "rule": "AvoidApiSessionId",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/objects/Account/webLinks/SeedLink.webLink-meta.xml",
+          "startLine": 11,
+          "startColumn": 5,
+          "endLine": 11,
+          "endColumn": 61
+        }
+      ],
+      "message": "Session ID use is not approved.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidapisessionid"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInFieldDecls",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedCreds.cls",
+          "startLine": 2,
+          "startColumn": 20,
+          "endLine": 2,
+          "endColumn": 56
+        }
+      ],
+      "message": "Hard coded credentials assigned to variable: apiPassword  matched the token: PASSWORD",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinfielddecls"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInVarDecls",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedCreds.cls",
+          "startLine": 5,
+          "startColumn": 16,
+          "endLine": 5,
+          "endColumn": 49
+        }
+      ],
+      "message": "Hard coded credentials assigned to variable: password  matched the token: PASSWORD",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinvardecls"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInVarAssign",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedCreds.cls",
+          "startLine": 7,
+          "startColumn": 9,
+          "endLine": 7,
+          "endColumn": 14
+        }
+      ],
+      "message": "Hard coded credentials assigned to variable: token  matched the token: TOKEN",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinvarassign"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInHttpHeader",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedCreds.cls",
+          "startLine": 10,
+          "startColumn": 9,
+          "endLine": 10,
+          "endColumn": 77
+        }
+      ],
+      "message": "Potentially hardcoded secret found in HTTP request header",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinhttpheader"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedCredentialsInSetPassword",
+      "engine": "pmd",
+      "severity": 1,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedCreds.cls",
+          "startLine": 17,
+          "startColumn": 9,
+          "endLine": 17,
+          "endColumn": 56
+        }
+      ],
+      "message": "setPassword invoked with hardcoded password",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinsetpassword"
+      ]
+    },
+    {
+      "rule": "AvoidChangeProtectionUnprotected",
+      "engine": "pmd",
+      "severity": 1,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedFeature.cls",
+          "startLine": 4,
+          "startColumn": 9,
+          "endLine": 4,
+          "endColumn": 100
+        }
+      ],
+      "message": "Object/Custom Permission changed to Unprotected inside a controller",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidchangeprotectionunprotected"
+      ]
+    },
+    {
+      "rule": "AvoidUnauthorizedApiSessionIdInApex",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Apex"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/classes/SeedSessionApi.cls",
+          "startLine": 3,
+          "startColumn": 22,
+          "endLine": 3,
+          "endColumn": 41
+        }
+      ],
+      "message": "Use of API.Session_Id might not be authorized",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidunauthorizedapisessionidinapex"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedSecretsInVFAttrs",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedVfSecret.page",
+          "startLine": 2,
+          "startColumn": 15,
+          "endLine": 2,
+          "endColumn": 46
+        }
+      ],
+      "message": "Potential hardcoded secrets detected in component attributes",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedsecretsinvfattrs"
+      ]
+    },
+    {
+      "rule": "AvoidHardcodedSecretsInVFAttrs",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedVfSecret.page",
+          "startLine": 2,
+          "startColumn": 47,
+          "endLine": 2,
+          "endColumn": 79
+        }
+      ],
+      "message": "Potential hardcoded secrets detected in component attributes",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedsecretsinvfattrs"
+      ]
+    },
+    {
+      "rule": "AvoidUnauthorizedGetSessionIdInVisualforce",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedVfSession.page",
+          "startLine": 3,
+          "startColumn": 22,
+          "endLine": 3,
+          "endColumn": 36
+        }
+      ],
+      "message": "Use of session ID with GETSESSIONID is not authorized.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidunauthorizedgetsessionidinvisualforce"
+      ]
+    },
+    {
+      "rule": "AvoidHardCodedCredentialsInAura",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "HTML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/aura/SeedCmp/SeedCmp.cmp",
+          "startLine": 2,
+          "startColumn": 5,
+          "endLine": 2,
+          "endColumn": 82
+        }
+      ],
+      "message": "Detected a potential hard coded secret in aura:attribute \"password\"",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidhardcodedcredentialsinaura"
+      ]
+    }
+  ]
+}
