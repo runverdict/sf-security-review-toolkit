@@ -9,9 +9,11 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.67**, suite **62 files / 940 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  E0.1d shipped (sessionid-egress rule-name routing); E0.3b-1 shipped (plain-HTTP egress source-scanner);
-  E0.3c-1 shipped (org-wide View/Modify-All-Data grant source-scanner) — see the Tier-0 entries.
+- **`main` @ 0.8.68**, suite **62 files / 941 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3c-1 (View/Modify-All-Data grant) —
+  the last **CORRECTED (0.8.68)** to a least-privilege **advisory** (informational, off the blocker floor:
+  user perms are stripped from managed-package permsets/profiles + no named req) grounded in the new sourced
+  `least-privilege-permission-grants` requirement. Next greenlit: E0.3b-2 (`disableProtocolSecurity`).
   **MILESTONE (0.8.61): deterministic reachability now FLOWS LIVE** — the Tier-0 reachability enabler
   chain (E0.1 ingest → E0.1b/EXPAND injection routing → E0.2a `--dataflow-traces` → E0.2b SARIF-codeFlows
   normalizer + Opengrep) is complete: a version-portable SARIF `codeFlows` normalizer (engine-agnostic:
