@@ -236,6 +236,7 @@ const SESSFIX = join(FIX, 'code-analyzer-sessionid-seeded.json') // genuine `sf 
 const CATFIX = join(FIX, 'code-analyzer-catalog-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a seeded multi-rule corpus: 12 violations / 7 files firing all 11 catalog-cluster rules (3 session-id siblings + 7 hardcoded-credential rules + AvoidChangeProtectionUnprotected) — the E0.1d-EXPAND routing anchors
 const MARKFIX = join(FIX, 'code-analyzer-catalog-markup-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 4 violations / 3 files firing all 4 class-less-safe markup/OAuth-cluster rules (AvoidUnescapedHtmlInAura + AvoidCreateElementScriptLinkTag → injection-xss; UseHttpsCallbackUrlConnectedApp + LimitConnectedAppScope → oauth-identity) — the E0.1d-EXPAND-2 routing anchors
 const OWNDIMFIX = join(FIX, 'code-analyzer-catalog-owned-dim-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 4 violations / 4 files firing all 4 owned-class-dimension cluster rules (AvoidSControls + AvoidAuraWithLockerDisabled + AvoidLmcIsExposedTrue → package-metadata; ProtectSensitiveData → secrets-credentials) — the E0.1d-EXPAND-3 routing anchors
+const JSMETAFIX = join(FIX, 'code-analyzer-catalog-jsmeta-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 8 violations / 5 files firing all 8 JS-in-metadata + resource-loader cluster rules (AvoidJavaScriptInUrls + AvoidJavaScriptWebLink + AvoidJavaScriptCustomObject + AvoidJavaScriptHomePageComponent + the 4 Load* hotlink rules → package-metadata), INCLUDING the Load* FP-breadth probe (an inline-script/$Resource page that produced zero violations) — the E0.1d-EXPAND-4 routing anchors
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -3250,7 +3251,9 @@ check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SH
 // aura:unescapedHtml escape hatch + hand-built DOM) and oauth-identity (owns redirect/callback
 // correctness + the connected-app OAuth settings surface). The owned-class-dimension remainder
 // (package-metadata / secrets-credentials profiles) ROUTED in E0.1d-EXPAND-3, 0.8.78 — see the
-// EXP3-* checks; the ambiguous set stays out (EXP2-defer locks it). Fixture: a GENUINE `sf code-analyzer run
+// EXP3-* checks; the JS-in-metadata + resource-loader clusters ROUTED in E0.1d-EXPAND-4, 0.8.79 —
+// see the EXP4-* checks; the SKIP/NO-OP remainder stays out (EXP2-defer locks the representatives,
+// EXP4-noop locks all five Apex-behavior rules). Fixture: a GENUINE `sf code-analyzer run
 // --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd engine 0.41.0) over a seeded
 // SFDX corpus — 4 violations across 3 files, firing ALL 4 targeted rules with these exact spellings
 // (engine 'pmd', tags AppExchange/Security/<lang>):
@@ -3266,13 +3269,16 @@ check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SH
 const ingestMark = (raw) => ingest(raw === undefined ? readJSON(MARKFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
 const EXP2_XSS_RULES = ['AvoidUnescapedHtmlInAura', 'AvoidCreateElementScriptLinkTag']
 const EXP2_OAUTH_RULES = ['UseHttpsCallbackUrlConnectedApp', 'LimitConnectedAppScope']
-// the ambiguous set — the catalog rules whose dimension is undecided (AvoidJavaScriptInUrls js:-URL
-// metadata, AvoidLwcBubblesComposedTrue LWC event composition). The owned-class-dimension profile
+// the unrouted remainder — after E0.1d-EXPAND-4 (0.8.79) routed the js:-URL/web-link metadata +
+// resource-loader clusters (see the EXP4-* checks), what stays out of RULE_DIMENSION is the SKIP
+// (AvoidLwcBubblesComposedTrue — LWC event composition, no owning dimension) and the 5 NO-OP
+// Apex-behavior rules that deliberately ride DEFAULT_DIMENSION (represented here by
+// AvoidUnsafePasswordManagementUse; EXP4-noop locks all five). The owned-class-dimension profile
 // (AvoidSControls / ProtectSensitiveData) ROUTED in E0.1d-EXPAND-3 (0.8.78) with its supersession
 // posture proven by the EXP3-* checks below: routed rows stay class-less — they supersede nothing
 // and, deterministic, are never superseded (no det-vs-det dedup exists in the routing/supersession
 // contract; same-dimension co-located deterministic rows coexist).
-const EXP2_DEFER_RULES = ['AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue']
+const EXP2_DEFER_RULES = ['AvoidLwcBubblesComposedTrue', 'AvoidUnsafePasswordManagementUse']
 
 check('EXP2-routing: every class-less-safe markup/OAuth-cluster rule routes by exact name to its dimension (unescaped-HTML + createElement DOM sinks → injection-xss, connected-app callback/scope → oauth-identity); a security-tagged CA hit ingests deterministic / that dimension / class-less; none is in RULE_CLASS', () => {
   const want = new Map([
@@ -3324,9 +3330,9 @@ check('EXP2-fixture: the genuine markup/OAuth CA catalog capture (core 0.48.0 / 
   assert.equal(JSON.stringify(findings), JSON.stringify(ingestMark().findings))
 })
 
-check('EXP2-defer: the ambiguous catalog set is NOT routed — AvoidJavaScriptInUrls + AvoidLwcBubblesComposedTrue have no decided dimension grounding, so they stay out of RULE_DIMENSION; a hit ingests at the CA default dimension', () => {
+check('EXP2-defer: the unrouted remainder stays OUT of RULE_DIMENSION — the SKIP (AvoidLwcBubblesComposedTrue, no owning dimension) and a NO-OP Apex-behavior rep (AvoidUnsafePasswordManagementUse, deliberately riding the default); a hit ingests at the CA default dimension', () => {
   for (const rule of EXP2_DEFER_RULES) {
-    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (ambiguous set — needs its own grounding)`)
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (SKIP / deliberate-default posture)`)
     assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
     const { findings } = ingestMark(sessHit(rule))
     assert.equal(findings.length, 1) // still ingested — security-tagged rules are never dropped
@@ -3669,12 +3675,190 @@ check('EXP3-single-shape: the owned-class-dimension expansion adds NO owned clas
   assert.equal(CLASS_DEFS['hardcoded-secrets'].dimension, 'secrets-credentials')
 })
 
-check('EXP3-defer: the ambiguous catalog remainder stays OUT of RULE_DIMENSION — representatives of each ambiguous sub-cluster (AvoidJavaScriptInUrls js:-URL metadata, AvoidLwcBubblesComposedTrue LWC event composition, LoadCSSApexStylesheet resource loader, AvoidUnsafePasswordManagementUse Apex behavior) are unrouted, class-less, classify() null', () => {
-  for (const rule of ['AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue', 'LoadCSSApexStylesheet', 'AvoidUnsafePasswordManagementUse']) {
-    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (ambiguous — needs its own grounding)`)
+check('EXP3-defer: the unrouted catalog remainder stays OUT of RULE_DIMENSION — after E0.1d-EXPAND-4 routed the js:-URL/web-link + resource-loader clusters, the representatives left are the SKIP (AvoidLwcBubblesComposedTrue, LWC event composition — no owning dimension) and the NO-OP Apex-behavior rep (AvoidUnsafePasswordManagementUse, deliberately riding DEFAULT_DIMENSION): unrouted, class-less, classify() null', () => {
+  for (const rule of ['AvoidLwcBubblesComposedTrue', 'AvoidUnsafePasswordManagementUse']) {
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (SKIP / deliberate-default posture)`)
     assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
     assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
   }
+})
+
+// ───────────────────────────────────── pmd-appexchange catalog routing, JS-in-metadata + resource-loader clusters (B5 · E0.1d-EXPAND-4, 0.8.79)
+// E0.1d-EXPAND-3 routed the owned-class-dimension metadata clusters; this slice routes the catalog's
+// JavaScript-in-metadata + resource-loader rules, ALL into package-metadata (already in the routed
+// 6-set — NO new dimension, no SESS-disjoint change). Same class-less posture as every routed row:
+// a routed finding supersedes nothing and, deterministic, is never itself superseded; the
+// package-metadata owner-supersedes-LLM authority is already locked by EXP3-authority and is NOT
+// re-proven here. The owned scanners' loci ({.remoteSite,.cspTrustedSite,.namedCredential}-meta.xml)
+// stay disjoint from these rules' loci (weblink / object webLink / home-page-component / VF page).
+// Grounding: package-metadata.md class 3 (JavaScript actions / javascript: URLs DECLARED in package
+// metadata — the in-page XSS SINK stays injection-xss's territory, the seam the dimension doc
+// resolves in-text) + class 5 (resource-loader hotlinks — external-host loads instead of $Resource).
+// Fixture: a GENUINE `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core
+// 0.48.0 / pmd engine 0.41.0) over a seeded SFDX corpus — 8 violations across 5 files, firing ALL 8
+// targeted rules with these exact spellings (engine 'pmd', tags AppExchange/Security/<lang>):
+//   class 3 (JS-in-metadata): AvoidJavaScriptInUrls (a javascript: <url> link target on a custom
+//                             page weblink, sev 1) + AvoidJavaScriptWebLink (CustomPageWebLink
+//                             <openType>onClickJavaScript, sev 2) + AvoidJavaScriptCustomObject
+//                             (object-nested WebLink onClickJavaScript action, sev 2) +
+//                             AvoidJavaScriptHomePageComponent (<script> markup in a
+//                             home-page-component <body>, sev 2)
+//   class 5 (resource loader): LoadJavaScriptHtmlScript + LoadCSSLinkHref +
+//                             LoadJavaScriptIncludeScript + LoadCSSApexStylesheet (one seeded VF
+//                             page hotlinking script/css from a non-$Resource external host, sev 2)
+// THE Load* FP-BREADTH PROBE (the fixture-gate the routing decision hung on): the same capture
+// seeded a SECOND VF page with ONLY inline <script>/<style> blocks plus the safe {!$Resource...}
+// includeScript/stylesheet idiom — it produced ZERO violations. The Load* rules fire ONLY on the
+// non-$Resource external load, so they are hotlink detectors (low-FP), not high-volume inline
+// flags → ROUTED, none dropped.
+const ingestJsMeta = (raw) => ingest(raw === undefined ? readJSON(JSMETAFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+const EXP4_JS_RULES = ['AvoidJavaScriptInUrls', 'AvoidJavaScriptWebLink', 'AvoidJavaScriptCustomObject', 'AvoidJavaScriptHomePageComponent']
+const EXP4_LOADER_RULES = ['LoadCSSApexStylesheet', 'LoadCSSLinkHref', 'LoadJavaScriptHtmlScript', 'LoadJavaScriptIncludeScript']
+// the 5 NO-OP Apex-behavior rules — deliberately UNROUTED (they already default to
+// apex-exposed-surface, the CORRECT dimension: global-method over-exposure, Apex CRUD/FLS behavior,
+// password/setPassword over-exposed entry points). A RULE_DIMENSION row would be a no-op that BREAKS
+// the build: SESS-disjoint's set-membership lock excludes apex-exposed-surface from the routed-value
+// set. EXP4-noop locks each name to the default.
+const EXP4_NOOP_RULES = ['AvoidGlobalInstallUninstallHandlers', 'AvoidUnsafePasswordManagementUse', 'AvoidGetInstanceWithTaint', 'AvoidSecurityEnforcedOldApiVersion', 'AvoidInvalidCrudContentDistribution']
+
+check('EXP4-routing: every JS-in-metadata + resource-loader cluster rule routes by exact name to package-metadata (javascript:-URL/weblink/object-webLink/home-page-component declarations + the 4 non-$Resource hotlink loaders); a security-tagged CA hit ingests deterministic / package-metadata / class-less; none is in RULE_CLASS', () => {
+  for (const rule of [...EXP4_JS_RULES, ...EXP4_LOADER_RULES]) {
+    assert.equal(RULE_DIMENSION[rule], 'package-metadata', `RULE_DIMENSION[${rule}]`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+    const { findings } = ingestJsMeta(sessHit(rule))
+    assert.equal(findings.length, 1)
+    assert.equal(findings[0].provenance, 'deterministic')
+    assert.equal(findings[0].dimension, 'package-metadata', `ingested dimension for ${rule}`)
+    assert.equal(findings[0].status, 'confirmed')
+    assert.ok(!('class' in findings[0]), `routed ${rule} finding owns no class`)
+  }
+})
+
+check('EXP4-fixture: the genuine JS-in-metadata + resource-loader CA catalog capture (core 0.48.0 / pmd 0.41.0) lands all 8 rules in package-metadata, class-less, at the seed loci; the inline/$Resource probe page produced ZERO violations (the Load* fixture-gate); CA severity fallback intact; byte-deterministic', () => {
+  const raw = readJSON(JSMETAFIX)
+  assert.equal(raw.versions['code-analyzer'], '0.48.0') // provenance lock on the committed capture
+  assert.equal(raw.versions['pmd'], '0.41.0')
+  const { findings } = ingestJsMeta()
+  assert.equal(findings.length, 8)
+  const byRule = new Map(findings.map((f) => [f.ruleId, f]))
+  assert.equal(byRule.size, 8, 'all 8 JS-in-metadata + resource-loader cluster rules fired')
+  for (const f of findings) {
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'pmd')
+    assert.equal(f.dimension, 'package-metadata', f.ruleId)
+    assert.ok(!('class' in f), `${f.ruleId} must stay class-less`)
+    assert.match(f.verdict_reasoning, /no toolkit class maps rule/) // the unmapped-CLASS severity fallback branch
+  }
+  // THE PROBE EVIDENCE, asserted: the capture's workspace held a SeedInlineProbe.page (inline
+  // <script>/<style> + {!$Resource...} loads) and NOTHING in the capture fired on it — the Load*
+  // rules flag only the non-$Resource external hotlink page.
+  assert.ok(findings.every((f) => !f.file.includes('SeedInlineProbe')), 'the inline/$Resource probe page must stay violation-free')
+  // anchor loci + the class-less CA-severity fallback across the capture's two catalog severities
+  const ju = byRule.get('AvoidJavaScriptInUrls')
+  assert.equal(ju.file, 'force-app/main/default/weblinks/SeedJsUrl.weblink-meta.xml:11')
+  assert.equal(ju.adjusted_severity, 'critical') // CA sev 1 → critical
+  const jw = byRule.get('AvoidJavaScriptWebLink')
+  assert.equal(jw.file, 'force-app/main/default/weblinks/SeedJsAction.weblink-meta.xml:8')
+  assert.equal(jw.adjusted_severity, 'high') // CA sev 2 → high
+  const jo = byRule.get('AvoidJavaScriptCustomObject')
+  assert.equal(jo.file, 'force-app/main/default/objects/Seed_Widget__c/webLinks/SeedObjJsAction.webLink-meta.xml:9')
+  assert.equal(jo.adjusted_severity, 'high') // CA sev 2 → high
+  const jh = byRule.get('AvoidJavaScriptHomePageComponent')
+  assert.equal(jh.file, 'force-app/main/default/homePageComponents/SeedHomeWidget.homePageComponent-meta.xml:3')
+  assert.equal(jh.adjusted_severity, 'high') // CA sev 2 → high
+  // all four Load* hotlink rules fired on the ONE external-probe page, one locus each
+  const loaderLoci = new Map([
+    ['LoadJavaScriptHtmlScript', 'force-app/main/default/pages/SeedExternalProbe.page:2'],
+    ['LoadCSSLinkHref', 'force-app/main/default/pages/SeedExternalProbe.page:3'],
+    ['LoadJavaScriptIncludeScript', 'force-app/main/default/pages/SeedExternalProbe.page:4'],
+    ['LoadCSSApexStylesheet', 'force-app/main/default/pages/SeedExternalProbe.page:5'],
+  ])
+  for (const [rule, locus] of loaderLoci) {
+    assert.equal(byRule.get(rule).file, locus, rule)
+    assert.equal(byRule.get(rule).adjusted_severity, 'high', rule) // CA sev 2 → high
+  }
+  assert.equal(JSON.stringify(findings), JSON.stringify(ingestJsMeta().findings))
+})
+
+check('EXP4-non-supersession (routed row supersedes nothing): a routed class-less JS-in-metadata / resource-loader finding does NOT supersede a co-located llm-inferred package-metadata finding — the preconditions that WOULD fire supersession (same dimension + overlapping locus) hold, and only the owned class is missing (EXP3-authority already locks the owner direction; not re-proven here)', () => {
+  const findings = ingestJsMeta().findings
+  const scenarios = [
+    {
+      det: findById(findings, (x) => x.ruleId === 'AvoidJavaScriptWebLink'),
+      llm: {
+        id: '1a'.repeat(8),
+        dimension: 'package-metadata',
+        title: 'Custom weblink action declares an executable JavaScript payload',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/weblinks/SeedJsAction.weblink-meta.xml:1-11', // overlaps det's :8
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the weblink action declaration',
+      },
+    },
+    {
+      det: findById(findings, (x) => x.ruleId === 'LoadJavaScriptHtmlScript'),
+      llm: {
+        id: '2b'.repeat(8),
+        dimension: 'package-metadata',
+        title: 'Page pulls executable script from an uncontrolled external host',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/pages/SeedExternalProbe.page:1-6', // overlaps det's :2
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the external script load',
+      },
+    },
+  ]
+  for (const { det, llm } of scenarios) {
+    assert.ok(det, 'deterministic catalog finding present')
+    assert.equal(det.provenance, 'deterministic')
+    // PRECONDITIONS that WOULD fire supersession if the routed rule owned a class: same
+    // dimension + overlapping locus. The ONLY missing ingredient is the owned class.
+    assert.equal(det.dimension, llm.dimension, 'same dimension')
+    assert.equal(sameLocation(det, llm), true, 'overlapping locus')
+    const { superseded, supersededIds, findings: out } = reconcileProvenance([det, llm])
+    assert.equal(superseded, 0, `${det.ruleId} must not supersede the co-located LLM package-metadata finding`)
+    assert.deepEqual(supersededIds, [])
+    assert.equal(out.find((f) => f.id === llm.id).status, 'confirmed')
+    assert.equal('class' in det, false, 'no owned class on the routed catalog finding')
+  }
+})
+
+check('EXP4-noop (the NO-OP lock): each of the 5 Apex-behavior rules is NOT in RULE_DIMENSION and a security-tagged hit ingests at apex-exposed-surface (DEFAULT_DIMENSION) — the CORRECT dimension for global-method over-exposure / Apex CRUD-FLS / password entry points; a RULE_DIMENSION row would be a no-op that fails SESS-disjoint (apex-exposed-surface is outside the routed-value set)', () => {
+  for (const rule of EXP4_NOOP_RULES) {
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must stay UNROUTED (deliberate DEFAULT_DIMENSION posture)`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+    const { findings } = ingestJsMeta(sessHit(rule))
+    assert.equal(findings.length, 1) // still ingested — security-tagged rules are never dropped
+    assert.equal(findings[0].dimension, 'apex-exposed-surface', `${rule} rides DEFAULT_DIMENSION`)
+    assert.ok(!('class' in findings[0]))
+  }
+})
+
+check('EXP4-single-shape: the JS-in-metadata + resource-loader expansion adds NO owned class — SINGLE_SHAPE is exactly the same 9-set', () => {
+  assert.deepEqual(
+    [...SINGLE_SHAPE].sort(),
+    [
+      'admin-privilege-grant',
+      'crud-fls',
+      'hardcoded-secrets',
+      'iac-misconfig',
+      'plain-http-egress',
+      'protocol-security-disabled',
+      'sharing',
+      'view-modify-all-data',
+      'viewall-overgrant',
+    ]
+  )
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)

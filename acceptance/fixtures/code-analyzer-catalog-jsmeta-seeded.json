@@ -1,0 +1,209 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 8,
+    "sev1": 1,
+    "sev2": 7,
+    "sev3": 0,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "pmd": "0.41.0"
+  },
+  "violations": [
+    {
+      "rule": "AvoidJavaScriptHomePageComponent",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/homePageComponents/SeedHomeWidget.homePageComponent-meta.xml",
+          "startLine": 3,
+          "startColumn": 11,
+          "endLine": 3,
+          "endColumn": 63
+        }
+      ],
+      "message": "Avoid JavaScript in a home page component body.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidjavascripthomepagecomponent"
+      ]
+    },
+    {
+      "rule": "AvoidJavaScriptCustomObject",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/objects/Seed_Widget__c/webLinks/SeedObjJsAction.webLink-meta.xml",
+          "startLine": 9,
+          "startColumn": 5,
+          "endLine": 9,
+          "endColumn": 55
+        }
+      ],
+      "message": "Avoid using JavaScript to execute custom button actions.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidjavascriptcustomobject"
+      ]
+    },
+    {
+      "rule": "AvoidJavaScriptWebLink",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/weblinks/SeedJsAction.weblink-meta.xml",
+          "startLine": 8,
+          "startColumn": 5,
+          "endLine": 8,
+          "endColumn": 42
+        }
+      ],
+      "message": "Avoid using JavaScript in web links.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidjavascriptweblink"
+      ]
+    },
+    {
+      "rule": "AvoidJavaScriptInUrls",
+      "engine": "pmd",
+      "severity": 1,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/weblinks/SeedJsUrl.weblink-meta.xml",
+          "startLine": 11,
+          "startColumn": 5,
+          "endLine": 11,
+          "endColumn": 34
+        }
+      ],
+      "message": "Avoid clickable JavaScript-style URLs.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidjavascriptinurls"
+      ]
+    },
+    {
+      "rule": "LoadJavaScriptHtmlScript",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedExternalProbe.page",
+          "startLine": 2,
+          "startColumn": 18,
+          "endLine": 2,
+          "endColumn": 45
+        }
+      ],
+      "message": "Javascript should always be loaded from static resources",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#loadjavascripthtmlscript"
+      ]
+    },
+    {
+      "rule": "LoadCSSLinkHref",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedExternalProbe.page",
+          "startLine": 3,
+          "startColumn": 34,
+          "endLine": 3,
+          "endColumn": 62
+        }
+      ],
+      "message": "CSS Should be loaded from static resources",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#loadcsslinkhref"
+      ]
+    },
+    {
+      "rule": "LoadJavaScriptIncludeScript",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedExternalProbe.page",
+          "startLine": 4,
+          "startColumn": 32,
+          "endLine": 4,
+          "endColumn": 67
+        }
+      ],
+      "message": "Javascript should always be loaded from static resources",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#loadjavascriptincludescript"
+      ]
+    },
+    {
+      "rule": "LoadCSSApexStylesheet",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedExternalProbe.page",
+          "startLine": 5,
+          "startColumn": 29,
+          "endLine": 5,
+          "endColumn": 63
+        }
+      ],
+      "message": "CSS Should be loaded from static resources",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#loadcssapexstylesheet"
+      ]
+    }
+  ]
+}

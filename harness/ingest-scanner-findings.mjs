@@ -652,14 +652,50 @@ export const RULE_DIMENSION = {
   AvoidLmcIsExposedTrue: 'package-metadata', // Lightning Message Channel isExposed=true (package-metadata.md names messageChannel-meta.xml)
   ProtectSensitiveData: 'secrets-credentials', // sensitive data in XML metadata → Protected Custom (package-metadata.md boundary → secrets)
   //
-  // DEFERRED — the ambiguous catalog remainder: the js:-URL / web-link metadata rules
-  // (AvoidJavaScriptCustomObject / AvoidJavaScriptHomePageComponent / AvoidJavaScriptInUrls /
-  // AvoidJavaScriptWebLink), the LoadCSS*/LoadJavaScript* resource loaders,
-  // AvoidLwcBubblesComposedTrue, and the Apex behavior rules
-  // (AvoidGlobalInstallUninstallHandlers / AvoidGetInstanceWithTaint /
-  // AvoidSecurityEnforcedOldApiVersion / AvoidInvalidCrudContentDistribution /
-  // AvoidUnsafePasswordManagementUse) each need their own dimension grounding, not a guess here.
-  // The EXP2-defer standing check locks the ambiguous set out of this map.
+  // ── E0.1d-EXPAND-4 (0.8.79): the catalog's JavaScript-in-metadata + resource-loader clusters —
+  //    ALL → package-metadata (already in the routed-dimension set; this slice adds NO new
+  //    dimension). Every row fixture-proven by
+  //    acceptance/fixtures/code-analyzer-catalog-jsmeta-seeded.json — a GENUINE
+  //    `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd
+  //    engine 0.41.0) over a seeded corpus; each key is the EXACT rule name that capture emitted.
+  //    Rows stay CLASS-LESS (the EXP3 posture): they supersede nothing and, deterministic, are never
+  //    themselves superseded; package-metadata's owned classes (plain-http-egress +
+  //    protocol-security-disabled) fire only on the {.remoteSite,.cspTrustedSite,.namedCredential}-
+  //    meta.xml config suffixes — disjoint from these rules' loci (custom page weblink /
+  //    object-nested webLink / home-page-component / Visualforce page), so co-located deterministic
+  //    rows of the dimension coexist, never hidden.
+  //
+  // JavaScript actions / javascript: URLs DECLARED in package metadata (package-metadata.md class 3 —
+  // the metadata DECLARATION is package-metadata's concern; the eventual in-page XSS SINK stays
+  // injection-xss territory — the seam the dimension doc resolves in-text):
+  AvoidJavaScriptInUrls: 'package-metadata', // javascript: URL in a metadata <url> link target
+  AvoidJavaScriptWebLink: 'package-metadata', // onClickJavaScript custom action (CustomPageWebLink, *.weblink-meta.xml)
+  AvoidJavaScriptCustomObject: 'package-metadata', // onClickJavaScript action in an object-nested webLink
+  AvoidJavaScriptHomePageComponent: 'package-metadata', // <script>/javascript: markup in a home-page-component body
+  //
+  // resource-loader hotlinks (package-metadata.md class 5 — a <script src>/<link href>/apex resource
+  // load from an external host instead of $Resource). FIXTURE-GATED by the probe inside the jsmeta
+  // capture: a Visualforce page with ONLY inline <script>/<style> blocks plus the safe
+  // {!$Resource...} includeScript/stylesheet idiom produced ZERO violations; all four rules fired
+  // ONLY on the non-$Resource external-host loads — hotlink detectors, not high-volume inline flags:
+  LoadCSSApexStylesheet: 'package-metadata', // <apex:stylesheet value="http…"> non-$Resource hotlink
+  LoadCSSLinkHref: 'package-metadata', // <link href="http…"> non-$Resource hotlink
+  LoadJavaScriptHtmlScript: 'package-metadata', // <script src="http…"> non-$Resource hotlink
+  LoadJavaScriptIncludeScript: 'package-metadata', // <apex:includeScript value="http…"> non-$Resource hotlink
+  //
+  // NO-OP — the 5 Apex-behavior rules (AvoidGlobalInstallUninstallHandlers /
+  // AvoidUnsafePasswordManagementUse / AvoidGetInstanceWithTaint / AvoidSecurityEnforcedOldApiVersion /
+  // AvoidInvalidCrudContentDistribution) are DELIBERATELY UNROUTED: they already default to
+  // apex-exposed-surface (DEFAULT_DIMENSION), and that IS the correct dimension — apex-exposed-surface
+  // owns global-method over-exposure, Apex CRUD/FLS behavior, and the password/setPassword
+  // over-exposed entry points. A RULE_DIMENSION row would be a no-op that BREAKS the build: the
+  // SESS-disjoint set-membership lock deliberately excludes apex-exposed-surface from the routed-value
+  // set, and EXP4-noop locks each of the five names to the default. This is a settled posture, not a
+  // "needs grounding" deferral.
+  //
+  // SKIP — AvoidLwcBubblesComposedTrue: an advisory-hedged flag on a standard LWC idiom
+  // (component-event composition); no methodology dimension owns it, so it stays out on FP-breadth
+  // grounds. The EXP2-defer / EXP3-defer standing checks lock it out of this map.
 }
 
 const VIEWALL_DOC =

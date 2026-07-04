@@ -51,6 +51,42 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.79] — 2026-07-04
+
+**The pmd-appexchange catalog's JavaScript-in-metadata and resource-loader rules now route by rule
+name to `package-metadata`.** Completing the catalog's routable remainder after 0.8.78's
+owned-class-dimension clusters — all eight rows land in `package-metadata` (already in the routed
+set; no new dimension). The **JS-in-metadata cluster** — `AvoidJavaScriptInUrls` (a `javascript:`
+URL in a metadata `<url>` link target), `AvoidJavaScriptWebLink` (a `CustomPageWebLink` with
+`<openType>onClickJavaScript`), `AvoidJavaScriptCustomObject` (an `onClickJavaScript` action on an
+object-nested webLink), and `AvoidJavaScriptHomePageComponent` (`<script>` markup in a
+home-page-component body) — is the package-metadata methodology's JavaScript-declaration class:
+the metadata **declaration** is the dimension's concern, while the eventual in-page XSS sink stays
+injection-xss territory (the seam the dimension doc resolves in-text). The **resource-loader
+cluster** — `LoadJavaScriptHtmlScript`, `LoadJavaScriptIncludeScript`, `LoadCSSLinkHref`, and
+`LoadCSSApexStylesheet` — was **fixture-gated on a false-positive-breadth probe** before routing:
+the capture seeded one Visualforce page with only inline `<script>`/`<style>` blocks plus the safe
+`{!$Resource...}` load idiom (zero violations) and one page hotlinking script/CSS from a
+non-`$Resource` external host (all four fired) — the rules are hotlink detectors, not high-volume
+inline flags, so all four route. Every routed row is fixture-proven: a genuine
+`sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd engine
+0.41.0) over a seeded corpus — 8 violations across 5 files, firing all 8 targeted rules with these
+exact spellings (`acceptance/fixtures/code-analyzer-catalog-jsmeta-seeded.json`; all three prior
+catalog captures are untouched). Routed rows stay class-less: they supersede nothing and, being
+deterministic, are never themselves superseded (the owner-authority lock from 0.8.78 is
+unchanged). The **five Apex-behavior rules** (`AvoidGlobalInstallUninstallHandlers`,
+`AvoidUnsafePasswordManagementUse`, `AvoidGetInstanceWithTaint`,
+`AvoidSecurityEnforcedOldApiVersion`, `AvoidInvalidCrudContentDistribution`) are deliberately NOT
+routed: they already default to `apex-exposed-surface`, which is the correct dimension
+(global-method over-exposure, Apex CRUD/FLS behavior, password entry points), and a routing row
+for them would be a build-breaking no-op — the routing value-lock excludes the default dimension,
+and a new standing check pins each of the five to it. `AvoidLwcBubblesComposedTrue` (an
+advisory-hedged flag on a standard LWC component-event idiom) stays out on false-positive-breadth
+grounds; the deferred-set locks retargeted to it plus a no-op representative. The routing
+value-lock is unchanged at the same six fixture-proven dimensions. Suite: **63 files / 998
+checks** (was 993), all green; routing-removal and default-dimension-route mutations both proven
+red in a throwaway checkout.
+
 ## [0.8.78] — 2026-07-04
 
 **The pmd-appexchange catalog's owned-class-dimension metadata clusters now route by rule name to
