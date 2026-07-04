@@ -9,8 +9,9 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.74**, suite **63 files / 973 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1 (E0.1f), 2 (`endpoint-https-only` seam), 3 (full-band determinism proof),
+- **`main` @ 0.8.75**, suite **63 files / 976 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–5 SHIPPED (E0.1f · `endpoint-https-only` seam · determinism proof ·
+  single-shape registry · supply-chain README+`SC-*` posture locks, 0.8.75). NEXT: item 6 (E0.1d-EXPAND).
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
@@ -331,9 +332,12 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    stay class-less. No `classify()`/`CLASS_DEFS` change; the pre-lock crud-fls/sharing risk is documented
    honestly. Verified off disk (own owned-set derivation + 2 mutations). Shape-correctness is no longer a
    silent manual invariant.
-5. **Supply-chain README paragraph** — surface the zero-runtime-dependency posture (NO `package.json`,
-   hand-rolled parsers, sha256-pinned tool installs — "our supply chain is the Node standard library"); a real
-   trust differentiator for a security tool. Eventual self-SBOM.
+5. ~~**Supply-chain README paragraph**~~ **DONE (0.8.75)** — README "## Supply chain": zero runtime npm deps
+   (no `package.json`, node-stdlib-only harness, in-tree parsers), sha256-pinned+fail-closed raw-binary
+   installs (honestly scoped — pip/npm/git ride the manager's integrity layer). Locked by `SC-*` posture
+   guards (no-package-json / harness-stdlib-only / readme-claim, all anti-vacuous) so the claim can't
+   silently regress. Every claim verified off disk; SBOM noted as future. Verified (own claim-verification +
+   2 mutations).
 6. **E0.1d-EXPAND — route the full pmd-appexchange catalog** [Gap 2]. Enumerate the installed catalog, seed one
    minimal trigger per rule, capture GENUINE output, promote `RULE_DIMENSION`/`RULE_CLASS` rows fixture-proven
    (exactly as E0.1d did for the two session rules) — and this retires the E0.1d doc-sourced-spelling residual
