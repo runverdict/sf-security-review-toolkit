@@ -9,9 +9,9 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.69**, suite **62 files / 947 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.70**, suite **62 files / 955 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3b-2 (`disableProtocolSecurity` downgrade);
-  E0.3c-1 (View/Modify-All-Data grant) —
+  E0.3c-1 (View/Modify-All-Data grant advisory) + E0.3c-2 (admin-privilege grant advisory) —
   the last **CORRECTED (0.8.68)** to a least-privilege **advisory** (informational, off the blocker floor:
   user perms are stripped from managed-package permsets/profiles + no named req) grounded in the new sourced
   `least-privilege-permission-grants` requirement. Next greenlit: E0.3b-2 (`disableProtocolSecurity`).
@@ -589,10 +589,16 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
       grant on the integration/running user / unmanaged / org-deployed context; not a confirmed subscriber
       grant). Detection logic unchanged; `PV-no-overlap`/`PV-all`/non-supersession preserved. Valid signal
       for non-managed / integration-user / org-deployed (and the general-purpose future).
-    - **E0.3c-2/3 (follow-ons):** **ManageUsers/AuthorApex/Customize-Application/etc. → ADVISORY-only**
-      (same reframe: no named requirement + user-perms-stripped → informational least-privilege advisory
-      reusing `least-privilege-permission-grants`, NEVER a blocker; broaden the detector's perm-name set).
-      Per-object `viewAllRecords`/`modifyAllRecords` in PROFILES (the `viewall-overgrant` gap on profiles);
+    - ~~**E0.3c-2**~~ **DONE (0.8.70)** — a NEW `admin-privilege-grant` source-scanner (adapter #18, sibling
+      of `view-modify-all-data`, byte-untouched) flags the admin/privilege perms **ManageUsers / AuthorApex /
+      CustomizeApplication / ModifyMetadata** (all API-name-confirmed; `ManageSharing` confirmed-real but
+      deferred) granted `enabled=true` in permsets/profiles → class `admin-privilege-grant` → the SAME
+      `least-privilege-permission-grants` req (informational → info, OFF the blocker floor), admin-surface.
+      Same managed-package caveat; `AP-no-overlap` proves disjointness with `view-modify-all-data` both ways.
+      Verified off disk (8/8 battery + both mutations reproduced).
+    - **E0.3c-3 (follow-ons):** `ManageSharing` + any other confirmed high-risk perm (add to the
+      `admin-privilege-grant` Set); per-object `viewAllRecords`/`modifyAllRecords` in PROFILES (the
+      `viewall-overgrant` gap on profiles);
       the **PSG+muting effective-permission helper**
       (`effective(PSG)=⋃memberPS_enabled \ ⋃mutingPS` — muting subtracts LAST, scoped WITHIN its own PSG,
       global muting = a bug; naive `profile∪permset` OVER-states — the flagship FP); the **release-widening
