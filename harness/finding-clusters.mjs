@@ -90,6 +90,43 @@ export function sameLocation(a, b) {
   return spansOverlap(lineSpan(a.file), lineSpan(b.file))
 }
 
+// ---------------------------------------------------------------------------
+// 0.8.71 — reachability-path rendering for the LLM-facing surfaces.
+// The deterministic taint engines attach a machine-verified `reachabilityPath`
+// to a finding (WHERE the path runs — locations only, never content). Rendering
+// it into the verifier prompt and the finder-facing ledger digest hands the LLM
+// the half the engine already proved, so its judgment lands on the one open
+// question: is the SOURCE attacker-controlled / untrusted before the sink.
+// Home is here with the other locus primitives; workflow-template.mjs carries
+// the verbatim copy (it cannot import — see its header).
+// ---------------------------------------------------------------------------
+// ===== BEGIN PURE REACHABILITY RENDERER =====
+// Render a machine-verified reachability path ({ source, intermediate[], sink } — locations
+// only, the shape ingest-scanner-findings.mjs attaches) to ONE compact line:
+//   source <file>:<line> → <file>:<line> → … → sink <file>:<line>
+// Accepts a finding (reads its `reachabilityPath` attribute) or a bare path object. PURE +
+// TOTAL: locations only (the attribute carries no content strings by design); '' on an
+// absent / malformed / one-ended input — a path is relayed only when BOTH proven ends are
+// present — and it NEVER throws. A malformed middle step is skipped; the proven ends stand.
+// This block is kept byte-identical (minus `export`) between harness/finding-clusters.mjs
+// (the importable home) and harness/workflow-template.mjs (self-contained — it cannot
+// import); acceptance/test-coverage-accounting.mjs enforces the parity.
+export function renderReachabilityPath(input) {
+  const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x)
+  const loc = (s) =>
+    isObj(s) && typeof s.file === 'string' && s.file !== '' && Number.isInteger(s.line) && s.line >= 1
+      ? `${s.file}:${s.line}`
+      : null
+  const p = isObj(input) ? (isObj(input.reachabilityPath) ? input.reachabilityPath : input) : null
+  if (!p) return ''
+  const source = loc(p.source)
+  const sink = loc(p.sink)
+  if (!source || !sink) return '' // BOTH proven ends or nothing — never a one-ended "path"
+  const middle = (Array.isArray(p.intermediate) ? p.intermediate : []).map(loc).filter(Boolean)
+  return ['source ' + source, ...middle, 'sink ' + sink].join(' → ')
+}
+// ===== END PURE REACHABILITY RENDERER =====
+
 const flat1 = (s) => String(s || '').replace(/\s+/g, ' ').trim()
 
 // A finding is one or more lenses: a prior merged entry carries `lenses[]`; a plain

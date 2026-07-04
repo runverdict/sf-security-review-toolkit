@@ -365,17 +365,58 @@ const finderPrompt = (dim) =>
   `If a control is correctly implemented, do NOT report it as a finding (you may note a notably strong control as a single info-level finding). ` +
   `An empty findings array is valid ONLY after you have actually read the targets under ${REPO} and found nothing real — never return empty because you could not locate the repository (it is at ${REPO}, audit it). Do not invent findings. Return your findings.`
 
+// ===== BEGIN PURE REACHABILITY RENDERER =====
+// Render a machine-verified reachability path ({ source, intermediate[], sink } — locations
+// only, the shape ingest-scanner-findings.mjs attaches) to ONE compact line:
+//   source <file>:<line> → <file>:<line> → … → sink <file>:<line>
+// Accepts a finding (reads its `reachabilityPath` attribute) or a bare path object. PURE +
+// TOTAL: locations only (the attribute carries no content strings by design); '' on an
+// absent / malformed / one-ended input — a path is relayed only when BOTH proven ends are
+// present — and it NEVER throws. A malformed middle step is skipped; the proven ends stand.
+// This block is kept byte-identical (minus `export`) between harness/finding-clusters.mjs
+// (the importable home) and harness/workflow-template.mjs (self-contained — it cannot
+// import); acceptance/test-coverage-accounting.mjs enforces the parity.
+function renderReachabilityPath(input) {
+  const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x)
+  const loc = (s) =>
+    isObj(s) && typeof s.file === 'string' && s.file !== '' && Number.isInteger(s.line) && s.line >= 1
+      ? `${s.file}:${s.line}`
+      : null
+  const p = isObj(input) ? (isObj(input.reachabilityPath) ? input.reachabilityPath : input) : null
+  if (!p) return ''
+  const source = loc(p.source)
+  const sink = loc(p.sink)
+  if (!source || !sink) return '' // BOTH proven ends or nothing — never a one-ended "path"
+  const middle = (Array.isArray(p.intermediate) ? p.intermediate : []).map(loc).filter(Boolean)
+  return ['source ' + source, ...middle, 'sink ' + sink].join(' → ')
+}
+// ===== END PURE REACHABILITY RENDERER =====
+
+// 0.8.71: when a finding carries a machine-verified `reachabilityPath`, the FINDING block
+// below relays it — the deterministic taint engine already proved WHERE the path runs, so
+// the verifier's skepticism is pointed at the one question the engine cannot answer (is the
+// SOURCE attacker-controlled / untrusted), instead of re-deriving the path. A finding with
+// no path renders a byte-identical FINDING block (strictly additive).
+// ===== BEGIN PURE VERIFIER PROMPT =====
+// Extracted VERBATIM by acceptance/test-coverage-accounting.mjs (the PURE COVERAGE HELPERS
+// slice pattern above): a pure template of (dim, f) — CONTEXT and REPO are its only
+// module-level reads (the test injects stubs); renderReachabilityPath is the block above.
 const verifierPrompt = (dim, f) =>
   `${CONTEXT}\n\n## Adversarial verification\n\n` +
   `A finder in the '${dim.key}' dimension reported the finding below. Your job is to REFUTE it if you can. ` +
   `Read the actual code at the cited location AND every control that gates the claimed path (auth dependency, tenant-isolation policy, scope check, input validation, constant-time compare, nonce handling — whatever applies to the claim). ` +
   `Default to skepticism: many findings are false positives because a control elsewhere already prevents them, OR because the behavior is intentional and spec-correct — e.g., loopback redirect URIs on a native-client OAuth flow are REQUIRED by RFC 8252; flagging them is itself an error. ` +
   `Confirm only if the issue is genuinely real AS SHIPPED. For a code-exploit finding that means the exploit is reachable in the real code. But for a DECLARATION-level package/metadata violation (a component apiVersion, an isExposed flag, an http:// or wildcard trusted-host entry, position:absolute/fixed in component CSS, an onClickJavaScript weblink, confirmationTokenRequired) it means the offending declaration is actually present in the shipped package — the Salesforce static review flags what the package SHIPS to every subscriber org, so "no live caller / dormant config / not currently reachable / shadow-DOM isolates it" LOWERS the severity, it does NOT make the finding a false positive. Refute a declaration-level violation only when a §6 false-positive pattern below actually matches.\n\n` +
-  `FINDING:\n- title: ${f.title}\n- severity: ${f.severity}\n- file: ${f.file}\n- description: ${f.description}\n- exploit_scenario: ${f.exploit_scenario}\n\n` +
+  `FINDING:\n- title: ${f.title}\n- severity: ${f.severity}\n- file: ${f.file}\n- description: ${f.description}\n- exploit_scenario: ${f.exploit_scenario}` +
+  (renderReachabilityPath(f)
+    ? `\n- reachability_path: ${renderReachabilityPath(f)}  [machine-verified by the deterministic taint engine — the PATH is not in question; your ONLY open question is whether the SOURCE is attacker-controlled / untrusted and no upstream control sanitizes it before the sink]`
+    : '') +
+  `\n\n` +
   (dim.verifierNotes
     ? `Dimension-specific verifier guidance for '${dim.key}' (the dimension author's refute rules — these take PRECEDENCE over the generic skepticism above wherever they conflict; for this dimension's declaration-level violations the §6 false-positive patterns are the ONLY valid grounds to refute):\n${dim.verifierNotes}\n\n`
     : '') +
   `Read ${REPO}/${String(f.file || '').split(':')[0]} and any code that gates the claimed path. Return your verdict with the exact code evidence that decides it.`
+// ===== END PURE VERIFIER PROMPT =====
 
 // ---------------------------------------------------------------------------
 // Find + Verify — pipeline over dimensions: stage 1 is the finder, stage 2

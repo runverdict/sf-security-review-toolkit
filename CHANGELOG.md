@@ -51,6 +51,45 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.71] — 2026-07-04
+
+**The machine-verified taint reachability path now flows INTO the LLM prompts.** The
+deterministic taint engines already attach a `reachabilityPath` (source → intermediate →
+sink, locations only) to a finding, but until now that substrate never reached the LLM-facing
+surfaces — the verifier judged "is the source attacker-controlled?" without ever being handed
+the path the engine had proven. A new pure renderer, `renderReachabilityPath`
+(home: `harness/finding-clusters.mjs`, with the locus primitives; a byte-parity-enforced
+verbatim copy in `harness/workflow-template.mjs`, which cannot import), renders a
+path-carrying finding to one compact line — `source <file>:<line> → … → sink <file>:<line>`
+— and two surfaces consume it:
+
+- **The verifier prompt**: a finding carrying a valid `reachabilityPath` gets a
+  `- reachability_path:` line in its FINDING block, framed so the verifier knows the PATH is
+  machine-verified and its only open question is source trust (is the source
+  attacker-controlled / untrusted, with no upstream control sanitizing it before the sink) —
+  implementing the residual the cold-run hardening roadmap defines as exactly that
+  source-trust judgment. A finding with no path renders a byte-identical FINDING block
+  (strictly additive; locked by a standing check).
+- **The finder-facing ledger digest** (audit-codebase Step 4b): a `provenance:
+  'deterministic'` entry carrying a `reachabilityPath` appends its rendered path to its
+  digest line with the same proven-path / judge-the-source framing, so finders receive the
+  substrate — not just the title. The digest stays mechanical: the helper renders the path
+  text; it is never paraphrased.
+
+Renderer contract: PURE + TOTAL — accepts a finding or a bare path object, locations only
+(the attribute carries no content strings by design), returns `''` on absent / malformed /
+one-ended input (a path is relayed only when BOTH proven ends are present), never throws; a
+malformed middle step is skipped while the proven ends stand. How the path is PRODUCED, the
+finding schema, and the co-location join (surfacing a co-located deterministic finding's path
+onto a DIFFERENT, LLM-inferred finding's verifier) are all untouched — the join is the named
+E0.1f-2 follow-on. HONEST SCOPE: this renders the path wherever a finding or ledger entry
+carries one — the deterministic band (which carries paths) reaches the FINDER via the digest
+today; the verifier wiring is additive and fires once a finding carries a path.
+
+Suite **62 files / 963 checks** (was 955), all green. Mutation-proven: letting the renderer
+emit a one-ended "path" (sink missing) turns `RGP-render` red; removing the verifier-prompt
+path line turns `RGP-verifier` red.
+
 ## [0.8.70] — 2026-07-04
 
 **A new metadata source-scanner flags the high-risk admin/privilege system permissions —

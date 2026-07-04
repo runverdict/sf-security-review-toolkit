@@ -25,6 +25,14 @@
  *     CA3 — an all-clean run (no nulls, no markers) → coverageFailed empty.
  *   WIRE — the LIVE pipeline calls these helpers + emits the marker + the envelope carries
  *          coverage_failed (so the helpers are not dead test-only code).
+ *   RGP / verifier prompt (0.8.71) — same slice pattern on the PURE VERIFIER PROMPT +
+ *     PURE REACHABILITY RENDERER blocks:
+ *     RGP-verifier — a path-carrying finding's FINDING block relays the rendered
+ *           machine-verified path + the source-trust framing; a finding with NO path
+ *           renders a FINDING block byte-identical to the pre-0.8.71 shape (additive).
+ *     RGP-parity — the template's renderer block is byte-identical (minus `export`) to
+ *           the importable home in harness/finding-clusters.mjs, so the two copies of the
+ *           one contract can never drift.
  *
  * Dependency-free: `node acceptance/test-coverage-accounting.mjs`.
  */
@@ -161,6 +169,69 @@ check('WIRE: the LIVE pipeline calls these helpers + emits the marker + the enve
   assert.match(SRC, /isFullTree\(dim\.targets\)/, 'the finder prompt must scope full-tree via isFullTree')
   assert.match(SRC, /coverageFailed: true/, 'stage 2 must emit the coverage-failure marker on a crashed finder')
   assert.match(SRC, /coverage_failed: coverageFailed/, 'the envelope must carry coverage_failed')
+})
+
+// ---- 0.8.71 — RGP: the verifier prompt relays the machine-verified reachability path ----
+// Same slice-and-evaluate pattern as loadHelpers(): the PURE VERIFIER PROMPT block and the
+// PURE REACHABILITY RENDERER block are cut VERBATIM from the template source, so the live
+// prompt and these checks share ONE code path. CONTEXT/REPO are the prompt's only
+// module-level reads — injected here as stubs.
+const RGP_RB = '// ===== BEGIN PURE REACHABILITY RENDERER ====='
+const RGP_RE = '// ===== END PURE REACHABILITY RENDERER ====='
+const RGP_VB = '// ===== BEGIN PURE VERIFIER PROMPT ====='
+const RGP_VE = '// ===== END PURE VERIFIER PROMPT ====='
+const sliceBlock = (src, s, e, what) => {
+  const a = src.indexOf(s), b = src.indexOf(e)
+  if (a < 0 || b < 0 || b < a) throw new Error(`${what} markers not found`)
+  return src.slice(a + s.length, b)
+}
+function loadVerifierPrompt() {
+  const block = sliceBlock(SRC, RGP_RB, RGP_RE, 'PURE REACHABILITY RENDERER (template)') +
+    '\n' + sliceBlock(SRC, RGP_VB, RGP_VE, 'PURE VERIFIER PROMPT')
+  // eslint-disable-next-line no-new-func
+  const factory = new Function('CONTEXT', 'REPO', block + '\nreturn verifierPrompt')
+  return factory('CTX', '/repo')
+}
+const RGP_F_BASE = { title: 'T', severity: 'high', file: 'a.js:3', description: 'D', exploit_scenario: 'E' }
+
+check('RGP-verifier: a path-carrying finding relays the rendered path + the source-trust framing', () => {
+  const vp = loadVerifierPrompt()
+  const f = {
+    ...RGP_F_BASE,
+    reachabilityPath: {
+      source: { file: 'in.js', line: 3 },
+      intermediate: [{ file: 'mid.js', line: 7 }],
+      sink: { file: 'out.js', line: 9 },
+    },
+  }
+  const prompt = vp({ key: 'injection-xss' }, f)
+  assert.ok(
+    prompt.includes('- reachability_path: source in.js:3 → mid.js:7 → sink out.js:9'),
+    'the FINDING block must carry the rendered machine-verified path'
+  )
+  assert.match(prompt, /machine-verified by the deterministic taint engine/, 'the framing must state the path is engine-proven')
+  assert.match(prompt, /SOURCE is attacker-controlled/, 'the framing must point the open question at source trust')
+})
+
+check('RGP-verifier: a finding with NO path renders the FINDING block byte-identical to the pre-0.8.71 shape', () => {
+  const vp = loadVerifierPrompt()
+  const prompt = vp({ key: 'injection-xss' }, { ...RGP_F_BASE })
+  assert.ok(
+    prompt.includes('FINDING:\n- title: T\n- severity: high\n- file: a.js:3\n- description: D\n- exploit_scenario: E\n\n'),
+    'the no-path FINDING block must be byte-identical to the pre-change output'
+  )
+  assert.ok(!prompt.includes('reachability_path'), 'no path line may appear when the finding carries no path')
+})
+
+check('RGP-parity: the template renderer block is byte-identical (minus `export`) to the finding-clusters home', () => {
+  const FC_SRC = readFileSync(join(PLUGIN, 'harness', 'finding-clusters.mjs'), 'utf8')
+  const home = sliceBlock(FC_SRC, RGP_RB, RGP_RE, 'PURE REACHABILITY RENDERER (finding-clusters)')
+  const copy = sliceBlock(SRC, RGP_RB, RGP_RE, 'PURE REACHABILITY RENDERER (template)')
+  assert.equal(
+    copy,
+    home.replace('export function renderReachabilityPath', 'function renderReachabilityPath'),
+    'the two renderer copies must not drift (one contract, byte-enforced)'
+  )
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

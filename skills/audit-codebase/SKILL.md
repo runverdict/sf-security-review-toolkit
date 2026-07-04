@@ -206,7 +206,18 @@ regardless of anything this engine produces.
    `[state] title — file (one-line resolution or refute reason)` (§5.3).
    First run: empty digest is fine. Include `refuted` entries (they stop
    finders re-raising the same non-issue) and `fixed` entries (re-report only
-   if regressed). The digest is compiled AFTER Step 4 on purpose: that is what
+   if regressed). A `provenance: 'deterministic'` entry that carries a
+   `reachabilityPath` attribute appends its machine-verified path to its digest
+   line, rendered by `renderReachabilityPath` from
+   `${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs` (a node one-liner over
+   the ledger JSON is enough) — the line becomes
+   `[state] title — file (…) [path: source <file>:<line> → … → sink <file>:<line>
+   — machine-verified; the path is proven, the open judgment is whether the
+   source is attacker-controlled]`. That hands the finders the engine's
+   substrate, not just the title, so their attention lands on source-trust
+   instead of re-deriving the path. This stays mechanical digest compilation:
+   the helper renders the path text — never paraphrase or re-word it. The
+   digest is compiled AFTER Step 4 on purpose: that is what
    puts the freshly-seeded `provenance:'deterministic'` band INTO the digest the
    fan-out reads, so the finders defer to the engine findings on the FIRST pass
    instead of re-reporting them and leaving Step 6's reconcile to clean up after
