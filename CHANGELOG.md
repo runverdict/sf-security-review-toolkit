@@ -51,6 +51,34 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.74] — 2026-07-04
+
+**Class ownership is now an explicit, enforced declaration — the supersession-safety invariant
+stops being a silent manual convention.** An adapter may OWN a toolkit class (its `classify()`
+returns a non-null `CLASS_DEFS` key) only when that class is a distinct SINGLE-SHAPE finding at
+its locus; otherwise a deterministic finding would supersede a co-located LLM finding of a
+DIFFERENT shape through `reconcile-provenance`'s class-less dimension fallback. Until now that
+shape-decision lived only in adapter comments and per-adapter discipline — nothing mechanically
+forced a future class-owning adapter to make the call. Added `SINGLE_SHAPE`
+(`harness/ingest-scanner-findings.mjs`), the explicit registry of the nine classes an adapter
+is permitted to own (`crud-fls` · `sharing` · `viewall-overgrant` · `iac-misconfig` ·
+`hardcoded-secrets` · `plain-http-egress` · `view-modify-all-data` ·
+`protocol-security-disabled` · `admin-privilege-grant`), with the ownership rule and the
+`*-non-supersession` standing-lock pattern documented at the definition. Four new `SS-*`
+standing checks enforce it from every direction: every adapter's `classify()` is exercised over
+the full `RULE_CLASS` + `RULE_DIMENSION` key sets plus unknown ruleIds, and every non-null
+result must be registered (the forcing function — a new `classify()` returning an unregistered
+class fails the build); every registry entry must be a real `CLASS_DEFS` key (no phantom rows);
+the registry must `deepEqual` the actual owned set (no stale declarations); and the
+CWE-routing / dependency / ReDoS adapters must stay `classify()→null` (the multi-shape posture
+cannot quietly claim a routing dimension). No `classify()` or `CLASS_DEFS` changed — the
+registry + checks are additive; the owned set is exactly what shipped. Suite **63 files / 973
+checks** (was 969), all green. Mutation-proven in a throwaway checkout, three ways: a
+source-scanner `classify()` returning a new unregistered class, a new `RULE_CLASS` row mapping
+to an unregistered class (the probe list reads the maps dynamically, so the new row is probed
+automatically), and a registry entry removed — each turns SS-owned-⊆-registry +
+SS-registry-==-owned RED.
+
 ## [0.8.73] — 2026-07-04
 
 **The whole deterministic-ingest band is now locked byte-deterministic — and the lock caught a

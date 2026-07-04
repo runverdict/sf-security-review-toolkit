@@ -507,6 +507,38 @@ export const CLASS_DEFS = {
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
+// The single-shape (class-owning) registry — the supersession-safety invariant made
+// EXPLICIT. An adapter may OWN a class (its classify() returns a non-null CLASS_DEFS
+// key) ONLY when that class is a distinct SINGLE-SHAPE finding: the deterministic row
+// sits on one specific locus (the CRUD call, the http:// URL line, the <userPermissions>
+// grant line), so when reconcile-provenance's class-less dimension-fallback supersedes a
+// co-located LLM finding, it can only be the SAME finding at the SAME locus (sameLocation
+// is line-span-scoped) — the deterministic row is authoritative there. A MULTI-SHAPE
+// dimension (injection-xss, sessionid-egress, resource-consumption-abuse, external-sast,
+// dependency-cve) must keep classify()→null, or a routed finding would silence a
+// co-located LLM finding of a DIFFERENT shape via that same dimension-fallback. Each
+// registered class carries a `*-non-supersession` standing lock in
+// acceptance/test-ingest-scanner-findings.mjs (EG-/PV-/DP-/AP-non-supersession lock the
+// locus-scoped owners; RD-/INJ-/SESS-non-supersession lock the null posture on the
+// multi-shape dimensions; the pre-lock classes crud-fls/sharing ride the same
+// locus-scoped protection with the bounded dimension-fallback risk documented above
+// CLASS_DEFS). Until now this shape-decision was a silent manual invariant; the SS-*
+// standing checks enforce it: every non-null classify() result MUST be registered here,
+// every entry MUST be a real CLASS_DEFS key, and the registry MUST equal the actual
+// owned set. Adding a class-owning adapter therefore REQUIRES adding its class here —
+// a deliberate, reviewable declaration that the new class is single-shape at its locus.
+export const SINGLE_SHAPE = new Set([
+  'crud-fls',
+  'sharing',
+  'viewall-overgrant',
+  'iac-misconfig',
+  'hardcoded-secrets',
+  'plain-http-egress',
+  'view-modify-all-data',
+  'protocol-security-disabled',
+  'admin-privilege-grant',
+])
+
 // Scanner rule name -> toolkit class. Extend in Phase 2 (hardcoded secrets, SOQLi,
 // XSS, deps). The prompt named `ApexFlsViolationRule`; the real fixtures emit
 // `ApexFlsViolation` — both alias to crud-fls so neither spelling is ever dropped.

@@ -97,6 +97,19 @@
  *        finding missing engine FAILS (the conditional bites).
  *   AD — the pluggable adapter registry: 18 adapters across both kinds (file-parser:
  *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data/remote-site-protocol-security/admin-privilege-grant).
+ *   SS — the single-shape (class-owning) registry (B5, 0.8.74): the
+ *        supersession-safety invariant mechanically ENFORCED. An adapter may own a class
+ *        (classify() → a non-null CLASS_DEFS key) ONLY when that class is registered in
+ *        SINGLE_SHAPE — the explicit declaration that it is a distinct single-shape finding,
+ *        safe to supersede only the co-located LLM finding at its own locus. Every adapter's
+ *        classify() is exercised over the full RULE_CLASS + RULE_DIMENSION key sets plus
+ *        arbitrary/unknown ruleIds to enumerate the ACTUAL owned set, then the registry is
+ *        pinned from both directions: owned ⊆ registry (the forcing function — a new
+ *        classify() returning an unregistered class fails the build), registry ⊆ CLASS_DEFS
+ *        (no phantom/stale rows), registry == owned (deepEqual — no stale declaration), and
+ *        the CWE-routing / dependency / ReDoS adapters stay classify()→null (the multi-shape
+ *        posture can never quietly start owning). Before this registry the shape-decision
+ *        was a silent manual invariant.
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -198,6 +211,7 @@ import {
   CLASS_DEFS,
   RULE_CLASS,
   RULE_DIMENSION,
+  SINGLE_SHAPE,
 } from '../harness/ingest-scanner-findings.mjs'
 import { reconcileProvenance } from '../harness/reconcile-provenance.mjs'
 import { sameLocation } from '../harness/finding-clusters.mjs'
@@ -1227,6 +1241,61 @@ check('AD3 buildFinding is pure over its inputs (no Date/random): two builds byt
     pass: 1,
   }
   assert.equal(JSON.stringify(buildFinding(args)), JSON.stringify(buildFinding(args)))
+})
+
+// ────────────────────────────── SS: the single-shape (class-owning) registry
+// Enumerate the ACTUAL owned set by exercising EVERY adapter's classify() over the full
+// RULE_CLASS map (the only keyed classifier), the RULE_DIMENSION keys (routing rules —
+// they own no class), and arbitrary/unknown ruleIds (constant classifiers return their
+// constant for any probe; keyed ones return null). The probe list reads RULE_CLASS /
+// RULE_DIMENSION dynamically, so a future row added to either map is probed automatically.
+const CLASSIFY_PROBES = [
+  ...Object.keys(RULE_CLASS),
+  ...Object.keys(RULE_DIMENSION),
+  'CKV_DOCKER_2',
+  'generic-api-key',
+  'B608',
+  'a-rule-no-adapter-maps',
+  undefined,
+]
+const ownedClasses = () => {
+  const owned = new Set()
+  for (const a of Object.values(ADAPTERS)) {
+    for (const probe of CLASSIFY_PROBES) {
+      const c = a.classify(probe)
+      if (c != null) owned.add(c)
+    }
+  }
+  return owned
+}
+
+check('SS-owned-⊆-registry: every non-null classify() result across ALL adapters is registered in SINGLE_SHAPE — a new class-owning adapter MUST declare its class single-shape', () => {
+  for (const a of Object.values(ADAPTERS)) {
+    for (const probe of CLASSIFY_PROBES) {
+      const c = a.classify(probe)
+      if (c != null)
+        assert.ok(
+          SINGLE_SHAPE.has(c),
+          `${a.name}.classify(${JSON.stringify(probe)}) owns '${c}' but SINGLE_SHAPE does not register it — declare the shape or return null`
+        )
+    }
+  }
+})
+
+check('SS-registry-⊆-CLASS_DEFS: every SINGLE_SHAPE entry is a real CLASS_DEFS key (no phantom/stale registry rows)', () => {
+  for (const c of SINGLE_SHAPE) assert.ok(c in CLASS_DEFS, `SINGLE_SHAPE registers '${c}' but CLASS_DEFS has no such class`)
+})
+
+check('SS-registry-==-owned: SINGLE_SHAPE equals the ACTUAL currently-owned set — no owned-but-unregistered class, no registered-but-not-owned stale declaration', () => {
+  assert.deepEqual([...SINGLE_SHAPE].sort(), [...ownedClasses()].sort())
+})
+
+check('SS-null-adapters: the CWE-routing / dependency / ReDoS adapters own NO class — classify() → null on every probe (the multi-shape posture cannot quietly claim a routing dimension)', () => {
+  for (const name of ['semgrep', 'opengrep', 'bandit', 'njsscan', 'sarif', 'osv', 'npm-audit', 'regexploit']) {
+    for (const probe of CLASSIFY_PROBES) {
+      assert.equal(ADAPTERS[name].classify(probe), null, `${name}.classify(${JSON.stringify(probe)}) must stay null`)
+    }
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────── CLI
