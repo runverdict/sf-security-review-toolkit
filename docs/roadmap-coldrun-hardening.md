@@ -9,8 +9,11 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.72**, suite **62 files / 964 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: item 1 (E0.1f) + item 2 (`endpoint-https-only` applies_to seam, 0.8.72) SHIPPED.
+- **`main` @ 0.8.73**, suite **63 files / 969 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1 (E0.1f), 2 (`endpoint-https-only` seam), 3 (full-band determinism proof, 0.8.73)
+  SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
+  same-id convergence mutated the caller's band, fabricating a hybrid finding + breaking determinism; fixed
+  by storing a copy — ledger bytes unchanged).
   E0.1d (sessionid-egress routing); E0.3b-1 (plain-HTTP egress); E0.3b-2 (`disableProtocolSecurity` downgrade);
   E0.3c-1 (View/Modify-All-Data advisory) + E0.3c-2 (admin-privilege advisory); **E0.1f (0.8.71) — CIRCULATION
   TRACK item 1 SHIPPED**: the taint `reachabilityPath` now renders into the verifier prompt + the finder digest
@@ -310,9 +313,15 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    (blocker floor unchanged). One legit fixture edit: the GAP-Y2 canonical-vocabulary pin moved from
    `endpoint-https-only` (which legitimately entered the raw managed-package set) to `endpoint-ssl-labs-a-grade`
    (external-endpoint-gated only). Verified off disk (applicable battery + mutation).
-3. **Full-band determinism proof** — generalize regexploit's twice-run byte-identity: run the `--all`
-   deterministic band twice over the fixture corpus, assert byte-identical ledgers. Catches nondeterminism
-   creep (map ordering, timestamps) forever.
+3. ~~**Full-band determinism proof**~~ **DONE (0.8.73)** — `test-determinism-band.mjs` runs `ingestAll`
+   twice over a hermetic corpus target (5 source-scanner dirs + 26 file-parser fixtures, 118 findings) and
+   asserts a byte-identical finding band + on-disk ledger, with a non-emptiness guard + a negative control
+   (proves the comparator has teeth). **It drew blood on day 1:** caught a real `mergeFindings` defect (the
+   insert path pushed the caller's band object BY REFERENCE, so a within-batch same-id finding — the by-design
+   JSON+SARIF convergence, 0.8.61 — `Object.assign`'d onto the caller's own first copy, fabricating a hybrid
+   finding + making run-1's returned band differ from run-2's; the ledger stayed byte-stable, which hid it).
+   Root-fixed by storing a copy on insert — ledger bytes verified unchanged. Both mutations (Math.random
+   inject + fix-revert) reproduced RED off disk.
 4. **Single-shape registry** (the hardening candidate already named below at "Hardening candidate: an explicit
    single-shape registry") — a `SINGLE_SHAPE` set + one standing test: every class-owning dimension is either
    registered single-shape OR `classify()=null`. Shape-correctness stops being the one silent manual invariant.
