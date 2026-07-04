@@ -13,9 +13,11 @@
   CIRCULATION TRACK: items 1–6 SHIPPED + E0.1d-EXPAND-2 (E0.1f · `endpoint-https-only` seam · determinism proof ·
   single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing 0.8.76 ·
   E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 — both graded PASS off disk).
-  NEXT: E0.1d-EXPAND-3 (GROUNDED — the owned-class-dimension catalog clusters: `AvoidSControls` /
+  NEXT: E0.1d-EXPAND-3 (GROUNDED + prompt STAGED — the owned-class-dimension catalog clusters: `AvoidSControls` /
   `AvoidAuraWithLockerDisabled` / `AvoidLmcIsExposedTrue` → package-metadata; `ProtectSensitiveData` →
-  secrets-credentials; the cross-engine-dedup profile, names already enumerated by the EXPAND-2 builder),
+  secrets-credentials; names re-confirmed against the live catalog 2026-07-04, no engine drift.
+  SUPERSESSION PROFILE CORRECTED 2026-07-04 pre-dispatch — the routed class-less rows supersede nothing AND
+  are never superseded; det-vs-det cross-engine dedup does NOT exist — see the EXPAND-3 bullet below),
   then item 7 (substrate/version-drift markers), then the ★ MIDPOINT COLD RUN.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
@@ -372,18 +374,32 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      cleared: the egress source-scanner's suffix allowlist is exactly `{.remoteSite/.cspTrustedSite/.namedCredential}-meta.xml`
      — it never reads `.connectedApp-meta.xml`, so the OAuth-callback finding is not double-reported (and
      plain-http-egress's dimension is `package-metadata` ≠ `oauth-identity` anyway). Both mutations reproduced RED.
-   - **E0.1d-EXPAND-3 (GROUNDED — next) — the OWNED-CLASS-DIMENSION clusters** (the cross-engine-dedup profile, same
-     as E0.1d-EXPAND's secrets cluster). The EXPAND-2 builder already enumerated the authoritative names in its
-     defer list: `AvoidSControls` + `AvoidAuraWithLockerDisabled` (Aura apiVersion<40) + `AvoidLmcIsExposedTrue`
-     (Lightning Message Channel `isExposed=true`) → `package-metadata` (methodology `package-metadata.md` explicitly
-     names Aura `apiVersion` + `*.messageChannel-meta.xml`; S-Controls = a prohibited-markup metadata artifact);
-     `ProtectSensitiveData` (sensitive data in XML metadata, another non-`Avoid` name) → `secrets-credentials`
-     (package-metadata.md's boundary note routes raw secret values in metadata to secrets-credentials). These route
-     class-less INTO a dimension that owns a class (`plain-http-egress`/`protocol-security-disabled` for
-     package-metadata — which fire at DISJOINT loci, RemoteSiteSetting URLs, so no real collision; `hardcoded-secrets`
-     for secrets — same-locus gitleaks dedup by design). The non-supersession test MUST reflect this profile:
-     class-less coexist with a co-located LLM finding; the owned-class-at-same-locus dedup is the intended direction
-     (mirror E0.1d-EXPAND's secrets cluster tests). Widens `SESS-disjoint` value-lock to add `package-metadata`.
+   - **E0.1d-EXPAND-3 (GROUNDED + prompt STAGED — next) — the OWNED-CLASS-DIMENSION clusters.** The EXPAND-2
+     builder already enumerated the authoritative names in its defer list, re-confirmed against the live catalog
+     2026-07-04 (all four exist, CA core 0.48.0 / pmd 0.41.0, no drift): `AvoidSControls` +
+     `AvoidAuraWithLockerDisabled` (Aura apiVersion<40) + `AvoidLmcIsExposedTrue` (Lightning Message Channel
+     `isExposed=true`) → `package-metadata` (methodology `package-metadata.md` explicitly names Aura `apiVersion` +
+     `*.messageChannel-meta.xml`; S-Controls = a prohibited-markup metadata artifact); `ProtectSensitiveData`
+     (sensitive data in XML metadata, another non-`Avoid` name) → `secrets-credentials` (package-metadata.md's
+     boundary note routes raw secret values in metadata to secrets-credentials).
+     **SUPERSESSION PROFILE CORRECTED (2026-07-04 pre-dispatch audit; 5-lens adversarial verify):** this bullet
+     previously said "cross-engine-dedup … same-locus gitleaks dedup by design" — that was WRONG.
+     `reconcileProvenance` supersedes LLM-INFERRED findings only (`reconcile-provenance.mjs` ~96 skips every
+     deterministic candidate; header: "a deterministic finding is never touched") and `mergeFindings` dedups by
+     exact id = sha256(engine + ruleId + locus), so two engines never collide — det-vs-det cross-engine dedup DOES
+     NOT EXIST (consistent with EXP-skip's own rationale above; the 0.8.76 harness comment at ~594-596 overclaims
+     it and the slice corrects that comment). The TRUE profile the slice's tests lock: (1) routed class-less rows
+     supersede nothing — coexist with a co-located LLM finding of the dimension; (2) the dimension's owned class
+     keeps sole LLM-supersession authority, proven undisturbed via a three-party reconcile [owner, routed-CA, LLM]
+     — a genuinely NEW positive owner-supersedes-LLM lock for `package-metadata` (owned by `plain-http-egress`,
+     whose allowlist is the 3-suffix egress set {.remoteSite/.cspTrustedSite/.namedCredential}-meta.xml, +
+     `protocol-security-disabled`, .remoteSite only — all disjoint from the routed loci; `hardcoded-secrets` for
+     secrets); (3) the routed deterministic row is NEVER the superseded party — det-det coexist lock. ALSO
+     REQUIRED: retarget `EXP2_DEFER_RULES`/`EXP2-defer` (test ~3271/~3323) to the ambiguous pair
+     (`AvoidJavaScriptInUrls`, `AvoidLwcBubblesComposedTrue`) — it currently pins `AvoidSControls` +
+     `ProtectSensitiveData` OUT of `RULE_DIMENSION` and goes red the moment they route. Widens `SESS-disjoint`
+     value-lock to add `package-metadata` (6-set). Engine files (`reconcile-provenance.mjs`, `mergeFindings`)
+     MUST stay byte-unchanged — if a test needs an engine change to pass, the test is wrong.
    - **DEFERRED-AMBIGUOUS (needs its own grounding):** javascript:-URL-in-buttons + JS-actions-in-metadata
      (package-metadata/injection-xss seam), LWC-event-bubbles-composed (web-client stretch), inline-CSS/JS
      static-resource rules (package-metadata vs web-client CSP), and the Apex-behavior rules
