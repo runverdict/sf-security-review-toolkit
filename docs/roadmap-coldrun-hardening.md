@@ -268,6 +268,75 @@
 
 ## OPEN BACKLOG — prioritized
 
+### ★ B5 · CIRCULATION TRACK — TOP PRIORITY (locked 2026-07-04): "circulate the substrate, don't add engines"
+A deep code-grounding review (verified off disk) confirmed the deterministic doctrine is being executed
+faithfully — fixture-proven promotion, `classify()=null` supersession safety, sourced-severity honesty, the
+labelled residual — and that the real headroom is **CIRCULATION, not more scanners**. Four structural gaps,
+each verified in code, drive a sequenced fix that takes **priority over the flagship E0.3a guest mapper**
+(the narrowest deterministic core + highest FP surface in the whole backlog — it moves to AFTER the midpoint
+cold run). Each item is slice-sized and honors the fixture-proven floor.
+
+**Verified gaps:**
+- **Gap 1 — the substrate never reaches the LLM verdict.** `reachabilityPath` lands in the ledger
+  (E0.1/E0.2b) but appears NOWHERE in the audit digest (audit-codebase SKILL) or the verifier prompt
+  (`workflow-template.mjs`) — the engine computes the taint path and hands the LLM a path-blind one-liner.
+  The one-line floor above defines the residual as EXACTLY the source-trust question; we throw away the half
+  we already computed.
+- **Gap 2 — the platform's own catalog is under-routed.** Only **7 of 38** installed pmd-appexchange rules
+  are routed (5 `RULE_CLASS` + 2 `RULE_DIMENSION`); the rest fall to the `external-sast` catch-all.
+  E0.1b-EXPAND routed the SAST CWE taxonomy; the CA rule-name taxonomy hasn't had the same sweep.
+- **Gap 3 — the B2 throwaway-mirror infra is unmined** (only T1.3 consumes it; a standing mirror makes
+  several deterministic dynamic checks nearly free).
+- **Gap 4 — residual stability is measurable but unmeasured** (`recurrence-confidence.mjs` exists; no encoded
+  ritual turns "deterministic-by-default" into a published time series — the strongest reliance signal, and
+  trust is the product's stated GTM lever).
+
+**Sequenced plan (this is the authoritative order — do NOT re-derive a next-item from older prose):**
+1. **E0.1f — substrate-grounded prompts** [cheapest; fixes Gap 1]. A deterministic path-carrying entry
+   renders its `reachabilityPath` steps into the audit-digest line + the verifier prompt block, framed
+   "the path is machine-verified — your only open question is whether the SOURCE is attacker-controlled."
+   Same treatment for the grant-matrix/egress substrate once those land. **Validate STRUCTURALLY** (the path
+   is present in the rendered prompt); recurrence-confidence before/after is a SOFT signal, not a hard test.
+2. **`endpoint-https-only` `applies_to` seam** — add `managed-package`. `plain-http-egress` +
+   `protocol-security-disabled` scan RemoteSite/CspTrustedSite/NamedCredential (package metadata) and ground
+   HIGH findings in `endpoint-https-only`, but that requirement's `applies_to` is
+   `[external-endpoint,mcp-server,canvas]` — so on a package-only scope the finding cites a requirement not in
+   its applicable set. Add the element + update the applicable-set fixtures/tests.
+3. **Full-band determinism proof** — generalize regexploit's twice-run byte-identity: run the `--all`
+   deterministic band twice over the fixture corpus, assert byte-identical ledgers. Catches nondeterminism
+   creep (map ordering, timestamps) forever.
+4. **Single-shape registry** (the hardening candidate already named below at "Hardening candidate: an explicit
+   single-shape registry") — a `SINGLE_SHAPE` set + one standing test: every class-owning dimension is either
+   registered single-shape OR `classify()=null`. Shape-correctness stops being the one silent manual invariant.
+5. **Supply-chain README paragraph** — surface the zero-runtime-dependency posture (NO `package.json`,
+   hand-rolled parsers, sha256-pinned tool installs — "our supply chain is the Node standard library"); a real
+   trust differentiator for a security tool. Eventual self-SBOM.
+6. **E0.1d-EXPAND — route the full pmd-appexchange catalog** [Gap 2]. Enumerate the installed catalog, seed one
+   minimal trigger per rule, capture GENUINE output, promote `RULE_DIMENSION`/`RULE_CLASS` rows fixture-proven
+   (exactly as E0.1d did for the two session rules) — and this retires the E0.1d doc-sourced-spelling residual
+   by verifying every name against the real catalog.
+7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
+   marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
+   honesty rule warns about (today it is operator-prose only, no harness enforcement).
+8. **★ MIDPOINT COLD RUN** — validate the ~15 accumulated test-backed-but-HERMETIC slices + real integration
+   the hermetic tests can't reach; assess whether it justifies moving the held tag. The single most valuable
+   open item; do NOT keep deferring it to "after the whole E0.3 arc."
+9. **THEN reassess the flagship** with cold-run evidence: E0.3a guest mapper, the **PSG+muting grant-algebra
+   helper as its OWN property-tested slice** (it is the "flagship FP" dependency E0.3a's credibility rests on
+   — un-bundle it from E0.3c-3), the **release-widening diff** (pure git-ref XML diff, absent→present =
+   widening — zero-FP-by-construction + novel temporal detector + double-serves stay-listed's re-review watch),
+   Tier-B mirror probes (unauth-reachability replay / header+cookie grading / CORS — deterministic dynamics
+   riding the existing throwaway-dast consent), the MCP `tools/list` lexical screen (advisory), and the
+   Tier-C **residual-stability ritual** (N≥3 audit passes per cold run → archived recurrence report → a
+   published validation-ledger — the strongest "rely on it" move, but N≥3 LLM passes are not free).
+
+**Do NOT add** (discipline is part of the state of the art): more Tier-2 scanner adapters ahead of
+cross-engine dedup; anything network-on-by-default; and keep the standing FP rejections — CWE-91 XML-injection,
+wildcard-CSP, missing-rate-limit-as-deterministic are correct calls. Not shipping FP-prone detectors is a
+feature.
+
+---
+
 Suggested order: **~~B2 (throwaway tiers + OpenAPI)~~ DONE → ~~B3 (verdict-reflection)~~ DONE
 (B3a/B3b/B3b-2/B3b-3/B3c all shipped) → ~~B4 (PENDING labeling)~~ RESOLVED by re-grounding (no code
 change — see below) → B5 (residual-shrinking — **far along; see the Baseline block for the current tip, not
