@@ -592,8 +592,9 @@ export const RULE_DIMENSION = {
   AvoidUnauthorizedGetSessionIdInVisualforce: 'sessionid-egress', // GETSESSIONID() merge-function (Visualforce)
   //
   // hardcoded credentials / secrets. Class-less on purpose: the OWNED `hardcoded-secrets` class
-  // stays with the secret scanners (gitleaks/detect-secrets), so a co-located secret finding
-  // dedups the routed CA row cross-engine at the same locus while different loci coexist:
+  // stays with the secret scanners (gitleaks/detect-secrets), so the routed rows never double-OWN
+  // the class — a co-located LLM re-report is superseded by the OWNED secret finding (never by a
+  // routed row), and co-located deterministic rows of the same dimension coexist, never hidden:
   AvoidHardcodedCredentialsInVarDecls: 'secrets-credentials', // credential-named local, literal initializer (Apex)
   AvoidHardcodedCredentialsInVarAssign: 'secrets-credentials', // credential-named local, literal re-assignment (Apex)
   AvoidHardcodedCredentialsInFieldDecls: 'secrets-credentials', // credential-named field, literal initializer (Apex)
@@ -635,17 +636,30 @@ export const RULE_DIMENSION = {
   // default dimension) is the deliberate posture, NOT a coverage gap — the EXP-skip standing check
   // locks it.
   //
-  // DEFERRED to the named E0.1d-EXPAND-3 follow-on — the remaining catalog rules: the
-  // OWNED-CLASS-DIMENSION clusters (AvoidSControls / AvoidAuraWithLockerDisabled /
-  // AvoidLmcIsExposedTrue → package-metadata; ProtectSensitiveData → secrets-credentials) route
-  // into dimensions that DO own toolkit classes, so each row needs the per-rule
-  // supersession/cross-engine-dedup grounding the credential cluster got — and the ambiguous set
+  // ── E0.1d-EXPAND-3 (0.8.78): the catalog's OWNED-CLASS-DIMENSION metadata clusters — same
+  //    class-less posture as the 7 hardcoded-credential rows above. Every row fixture-proven by
+  //    acceptance/fixtures/code-analyzer-catalog-owned-dim-seeded.json — a GENUINE
+  //    `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd
+  //    engine 0.41.0) over a seeded corpus; each key is the EXACT rule name that capture emitted.
+  //    Rows stay CLASS-LESS: they supersede nothing and, being deterministic, are never themselves
+  //    superseded; the dimension's owned class keeps sole supersession authority over co-located
+  //    LLM re-reports. The egress/protocol scanners' loci (RemoteSiteSetting / CspTrustedSite /
+  //    NamedCredential config) are disjoint from the package-metadata rows' loci (S-Control /
+  //    Aura bundle / messageChannel); the secrets row's owner (the secret scanners) scans all
+  //    files — co-located deterministic rows of the same dimension coexist, never hidden.
+  AvoidSControls: 'package-metadata', // S-Control present — prohibited managed-pkg markup (package-metadata.md charter; named in baseline/SOURCES.md "S-Controls Not Allowed Through Security Review" + requirements-baseline.yaml)
+  AvoidAuraWithLockerDisabled: 'package-metadata', // Aura apiVersion<40 → Locker off (package-metadata.md names Aura apiVersion)
+  AvoidLmcIsExposedTrue: 'package-metadata', // Lightning Message Channel isExposed=true (package-metadata.md names messageChannel-meta.xml)
+  ProtectSensitiveData: 'secrets-credentials', // sensitive data in XML metadata → Protected Custom (package-metadata.md boundary → secrets)
+  //
+  // DEFERRED — the ambiguous catalog remainder: the js:-URL / web-link metadata rules
   // (AvoidJavaScriptCustomObject / AvoidJavaScriptHomePageComponent / AvoidJavaScriptInUrls /
-  // AvoidJavaScriptWebLink, the LoadCSS*/LoadJavaScript* loaders, AvoidLwcBubblesComposedTrue,
-  // and the Apex behavior rules AvoidGlobalInstallUninstallHandlers / AvoidGetInstanceWithTaint /
+  // AvoidJavaScriptWebLink), the LoadCSS*/LoadJavaScript* resource loaders,
+  // AvoidLwcBubblesComposedTrue, and the Apex behavior rules
+  // (AvoidGlobalInstallUninstallHandlers / AvoidGetInstanceWithTaint /
   // AvoidSecurityEnforcedOldApiVersion / AvoidInvalidCrudContentDistribution /
-  // AvoidUnsafePasswordManagementUse) needs its own dimension grounding, not a guess here.
-  // The EXP2-defer standing check locks representatives of both profiles out of this map.
+  // AvoidUnsafePasswordManagementUse) each need their own dimension grounding, not a guess here.
+  // The EXP2-defer standing check locks the ambiguous set out of this map.
 }
 
 const VIEWALL_DOC =

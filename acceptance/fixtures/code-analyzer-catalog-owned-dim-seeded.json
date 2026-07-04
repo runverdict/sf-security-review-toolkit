@@ -1,0 +1,113 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 4,
+    "sev1": 2,
+    "sev2": 1,
+    "sev3": 1,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "pmd": "0.41.0"
+  },
+  "violations": [
+    {
+      "rule": "AvoidAuraWithLockerDisabled",
+      "engine": "pmd",
+      "severity": 1,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/aura/SeedLocker/SeedLocker.cmp-meta.xml",
+          "startLine": 3,
+          "startColumn": 17,
+          "endLine": 3,
+          "endColumn": 20
+        }
+      ],
+      "message": "To enable Lightning Locker, update the apiVersion to version 40 or greater.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidaurawithlockerdisabled"
+      ]
+    },
+    {
+      "rule": "AvoidLmcIsExposedTrue",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/messageChannels/SeedChannel.messageChannel-meta.xml",
+          "startLine": 4,
+          "startColumn": 16,
+          "endLine": 4,
+          "endColumn": 19
+        }
+      ],
+      "message": "Detected Lightning Message Channel with isExposed set to true.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidlmcisexposedtrue"
+      ]
+    },
+    {
+      "rule": "ProtectSensitiveData",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml",
+          "startLine": 1,
+          "startColumn": 1,
+          "endLine": 10,
+          "endColumn": 14
+        }
+      ],
+      "message": "API_Key__c is a potential auth token in the object: Seed_Config__c with public visibility",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#protectsensitivedata"
+      ]
+    },
+    {
+      "rule": "AvoidSControls",
+      "engine": "pmd",
+      "severity": 1,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/scontrols/SeedLegacyControl.scf-meta.xml",
+          "startLine": 2,
+          "startColumn": 1,
+          "endLine": 9,
+          "endColumn": 11
+        }
+      ],
+      "message": "Detected S-Controls.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidscontrols"
+      ]
+    }
+  ]
+}

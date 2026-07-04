@@ -235,6 +235,7 @@ const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VER
 const SESSFIX = join(FIX, 'code-analyzer-sessionid-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a minimal seeded sample: AvoidUnauthorizedGetSessionIdInApex @SeedSession.cls:3 + AvoidUnauthorizedApiSessionIdInVisualforce @SeedSessionPage.page:3 — the RULE_DIMENSION sessionid-egress routing anchors
 const CATFIX = join(FIX, 'code-analyzer-catalog-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a seeded multi-rule corpus: 12 violations / 7 files firing all 11 catalog-cluster rules (3 session-id siblings + 7 hardcoded-credential rules + AvoidChangeProtectionUnprotected) — the E0.1d-EXPAND routing anchors
 const MARKFIX = join(FIX, 'code-analyzer-catalog-markup-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 4 violations / 3 files firing all 4 class-less-safe markup/OAuth-cluster rules (AvoidUnescapedHtmlInAura + AvoidCreateElementScriptLinkTag → injection-xss; UseHttpsCallbackUrlConnectedApp + LimitConnectedAppScope → oauth-identity) — the E0.1d-EXPAND-2 routing anchors
+const OWNDIMFIX = join(FIX, 'code-analyzer-catalog-owned-dim-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 4 violations / 4 files firing all 4 owned-class-dimension cluster rules (AvoidSControls + AvoidAuraWithLockerDisabled + AvoidLmcIsExposedTrue → package-metadata; ProtectSensitiveData → secrets-credentials) — the E0.1d-EXPAND-3 routing anchors
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -3011,10 +3012,11 @@ check('SESS-disjoint: RULE_DIMENSION and RULE_CLASS share no key — a rule eith
   assert.deepEqual(overlap, [])
   // Every routed value is one of the fixture-proven catalog dimensions. Was `=== 'sessionid-egress'`
   // when the session-id pair was the whole map; the catalog expansion (0.8.76) added the
-  // secrets-credentials + admin-surface clusters, and E0.1d-EXPAND-2 (0.8.77) added the class-less-safe
-  // markup/OAuth clusters (injection-xss + oauth-identity), so the lock is set-membership — a typo'd
-  // or guessed dimension string still fails here.
-  const routedDims = new Set(['sessionid-egress', 'secrets-credentials', 'admin-surface', 'injection-xss', 'oauth-identity'])
+  // secrets-credentials + admin-surface clusters, E0.1d-EXPAND-2 (0.8.77) added the class-less-safe
+  // markup/OAuth clusters (injection-xss + oauth-identity), and E0.1d-EXPAND-3 (0.8.78) added the
+  // owned-class-dimension metadata clusters (package-metadata; secrets-credentials was already in
+  // the set), so the lock is set-membership — a typo'd or guessed dimension string still fails here.
+  const routedDims = new Set(['sessionid-egress', 'secrets-credentials', 'admin-surface', 'injection-xss', 'oauth-identity', 'package-metadata'])
   for (const v of Object.values(RULE_DIMENSION)) assert.ok(routedDims.has(v), `unexpected RULE_DIMENSION value ${v}`)
 })
 
@@ -3247,8 +3249,8 @@ check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SH
 // with zero supersession risk: injection-xss (owns "the construction and the escaping"; names the
 // aura:unescapedHtml escape hatch + hand-built DOM) and oauth-identity (owns redirect/callback
 // correctness + the connected-app OAuth settings surface). The owned-class-dimension remainder
-// (package-metadata / secrets-credentials profiles) and the ambiguous set stay DEFERRED to
-// E0.1d-EXPAND-3 (EXP2-defer locks representatives out). Fixture: a GENUINE `sf code-analyzer run
+// (package-metadata / secrets-credentials profiles) ROUTED in E0.1d-EXPAND-3, 0.8.78 — see the
+// EXP3-* checks; the ambiguous set stays out (EXP2-defer locks it). Fixture: a GENUINE `sf code-analyzer run
 // --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd engine 0.41.0) over a seeded
 // SFDX corpus — 4 violations across 3 files, firing ALL 4 targeted rules with these exact spellings
 // (engine 'pmd', tags AppExchange/Security/<lang>):
@@ -3264,11 +3266,13 @@ check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SH
 const ingestMark = (raw) => ingest(raw === undefined ? readJSON(MARKFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
 const EXP2_XSS_RULES = ['AvoidUnescapedHtmlInAura', 'AvoidCreateElementScriptLinkTag']
 const EXP2_OAUTH_RULES = ['UseHttpsCallbackUrlConnectedApp', 'LimitConnectedAppScope']
-// representatives of BOTH deferred profiles: owned-class-dimension (AvoidSControls / ProtectSensitiveData
-// route into package-metadata / secrets-credentials, which own toolkit classes — the cross-engine-dedup
-// grounding is E0.1d-EXPAND-3's) + ambiguous (AvoidJavaScriptInUrls js:-URL metadata,
-// AvoidLwcBubblesComposedTrue LWC event composition — dimension undecided)
-const EXP2_DEFER_RULES = ['AvoidSControls', 'ProtectSensitiveData', 'AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue']
+// the ambiguous set — the catalog rules whose dimension is undecided (AvoidJavaScriptInUrls js:-URL
+// metadata, AvoidLwcBubblesComposedTrue LWC event composition). The owned-class-dimension profile
+// (AvoidSControls / ProtectSensitiveData) ROUTED in E0.1d-EXPAND-3 (0.8.78) with its supersession
+// posture proven by the EXP3-* checks below: routed rows stay class-less — they supersede nothing
+// and, deterministic, are never superseded (no det-vs-det dedup exists in the routing/supersession
+// contract; same-dimension co-located deterministic rows coexist).
+const EXP2_DEFER_RULES = ['AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue']
 
 check('EXP2-routing: every class-less-safe markup/OAuth-cluster rule routes by exact name to its dimension (unescaped-HTML + createElement DOM sinks → injection-xss, connected-app callback/scope → oauth-identity); a security-tagged CA hit ingests deterministic / that dimension / class-less; none is in RULE_CLASS', () => {
   const want = new Map([
@@ -3320,9 +3324,9 @@ check('EXP2-fixture: the genuine markup/OAuth CA catalog capture (core 0.48.0 / 
   assert.equal(JSON.stringify(findings), JSON.stringify(ingestMark().findings))
 })
 
-check('EXP2-defer: the E0.1d-EXPAND-3 remainder is NOT routed — the owned-class-dimension profile (AvoidSControls → package-metadata, ProtectSensitiveData → secrets-credentials: both target dimensions own toolkit classes, so each row needs the per-rule supersession grounding) and the ambiguous set (AvoidJavaScriptInUrls, AvoidLwcBubblesComposedTrue) stay out of RULE_DIMENSION; a hit ingests at the CA default dimension', () => {
+check('EXP2-defer: the ambiguous catalog set is NOT routed — AvoidJavaScriptInUrls + AvoidLwcBubblesComposedTrue have no decided dimension grounding, so they stay out of RULE_DIMENSION; a hit ingests at the CA default dimension', () => {
   for (const rule of EXP2_DEFER_RULES) {
-    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (E0.1d-EXPAND-3 scope — needs its own grounding)`)
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (ambiguous set — needs its own grounding)`)
     assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
     const { findings } = ingestMark(sessHit(rule))
     assert.equal(findings.length, 1) // still ingested — security-tagged rules are never dropped
@@ -3400,6 +3404,277 @@ check('EXP2-single-shape: the markup/OAuth expansion adds NO owned class — SIN
   const ownedDims = new Set(Object.values(CLASS_DEFS).map((d) => d.dimension))
   assert.ok(!ownedDims.has('injection-xss'), 'injection-xss must own no toolkit class')
   assert.ok(!ownedDims.has('oauth-identity'), 'oauth-identity must own no toolkit class')
+})
+
+// ───────────────────────────────────── pmd-appexchange catalog routing, owned-class-dimension metadata clusters (B5 · E0.1d-EXPAND-3, 0.8.78)
+// E0.1d-EXPAND-2 routed the class-less-safe clusters (dimensions owning NO toolkit class); this slice
+// routes the OWNED-CLASS-DIMENSION remainder — the rules whose target dimension DOES own a toolkit
+// class: package-metadata (owned by plain-http-egress + protocol-security-disabled) and
+// secrets-credentials (owned by hardcoded-secrets, the secret scanners). Same class-less posture as
+// the 0.8.76 credential cluster. The supersession contract the EXP3-* checks lock (verified against
+// reconcile-provenance.mjs, which supersedes llm-inferred candidates ONLY — a deterministic finding
+// is never touched):
+//   (1) a routed class-less row supersedes NOTHING (EXP3-non-supersession);
+//   (2) the dimension's owned class keeps SOLE supersession authority over a co-located LLM
+//       re-report, undisturbed by the routed row's presence (EXP3-authority — for package-metadata
+//       a NEW positive owner-supersedes-LLM lock among the ingested-adapter locks, alongside the
+//       secrets dimension's GL-/DS-supersedes-LLM; the generic reconcile suite's R1 exercises a
+//       crud-fls owner);
+//   (3) the routed deterministic row is NEVER the superseded party — co-located deterministic rows
+//       of the same dimension COEXIST as separate ledger entries, never hidden (EXP3-authority +
+//       EXP3-det-coexist). No det-vs-det dedup exists in the routing/supersession contract.
+// The owned scanners' REAL loci are disjoint from the routed rules' loci (the egress/protocol
+// config suffixes {.remoteSite,.cspTrustedSite,.namedCredential}-meta.xml vs S-Control / Aura
+// bundle / messageChannel files), so the co-locations below are SYNTHETIC — safety-property locks,
+// not observed collisions.
+// Fixture: a GENUINE `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core
+// 0.48.0 / pmd engine 0.41.0) over a seeded SFDX corpus — 4 violations across 4 files, firing ALL 4
+// targeted rules with these exact spellings (engine 'pmd', tags AppExchange/Security/XML):
+//   package-metadata:    AvoidSControls (a Scontrol metadata root element present — prohibited
+//                        managed-package markup, sev 1) + AvoidAuraWithLockerDisabled (Aura bundle
+//                        .cmp-meta.xml <apiVersion>39.0 — below the Locker floor, sev 1) +
+//                        AvoidLmcIsExposedTrue (messageChannel-meta.xml <isExposed>true, sev 2)
+//   secrets-credentials: ProtectSensitiveData (a credential-shaped custom-setting field on a
+//                        public List custom setting — belongs in Protected Custom
+//                        Metadata/Settings; the rule reads the field NAME, not a value, sev 3)
+const ingestOwnDim = (raw) => ingest(raw === undefined ? readJSON(OWNDIMFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+const EXP3_PKG_RULES = ['AvoidSControls', 'AvoidAuraWithLockerDisabled', 'AvoidLmcIsExposedTrue']
+const EXP3_SECRET_RULES = ['ProtectSensitiveData']
+// a synthetic plain-http-egress OWNED-class deterministic finding placed at a routed row's locus
+// (SYNTHETIC co-location per the disjointness note above — real egress loci never share these files)
+const exp3EgressOwnerAt = (file) => ({
+  id: 'e'.repeat(16),
+  provenance: 'deterministic',
+  engine: 'egress-plain-http',
+  ruleId: 'egress-plain-http',
+  class: 'plain-http-egress',
+  dimension: 'package-metadata',
+  severity: 'high',
+  adjusted_severity: 'high',
+  file,
+  status: 'confirmed',
+  first_seen: 1,
+  last_seen: 1,
+})
+// an INGESTED gitleaks-shaped owned-class finding (the GL-supersedes-LLM party) at a chosen locus
+const exp3GitleaksOwnerAt = (file, line) =>
+  ingest([{ RuleID: 'generic-api-key', File: file, StartLine: line }], gitleaksAdapter, { repoRoot: '', pass: 1 }).findings[0]
+
+check('EXP3-routing: every owned-class-dimension cluster rule routes by exact name to its dimension (S-Control / Aura-Locker-apiVersion / LMC-isExposed → package-metadata, sensitive-data-in-XML → secrets-credentials); a security-tagged CA hit ingests deterministic / that dimension / class-less; none is in RULE_CLASS', () => {
+  const want = new Map([
+    ...EXP3_PKG_RULES.map((r) => [r, 'package-metadata']),
+    ...EXP3_SECRET_RULES.map((r) => [r, 'secrets-credentials']),
+  ])
+  for (const [rule, dim] of want) {
+    assert.equal(RULE_DIMENSION[rule], dim, `RULE_DIMENSION[${rule}]`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+    const { findings } = ingestOwnDim(sessHit(rule))
+    assert.equal(findings.length, 1)
+    assert.equal(findings[0].provenance, 'deterministic')
+    assert.equal(findings[0].dimension, dim, `ingested dimension for ${rule}`)
+    assert.equal(findings[0].status, 'confirmed')
+    assert.ok(!('class' in findings[0]), `routed ${rule} finding owns no class`)
+  }
+})
+
+check('EXP3-fixture: the genuine owned-class-dimension CA catalog capture (core 0.48.0 / pmd 0.41.0) lands all 4 rules in their dimensions, class-less, at the seed loci; CA severity fallback intact across all three catalog severities; byte-deterministic', () => {
+  const raw = readJSON(OWNDIMFIX)
+  assert.equal(raw.versions['code-analyzer'], '0.48.0') // provenance lock on the committed capture
+  assert.equal(raw.versions['pmd'], '0.41.0')
+  const { findings } = ingestOwnDim()
+  assert.equal(findings.length, 4)
+  const byRule = new Map(findings.map((f) => [f.ruleId, f]))
+  assert.equal(byRule.size, 4, 'all 4 owned-class-dimension cluster rules fired')
+  for (const r of EXP3_PKG_RULES) assert.equal(byRule.get(r).dimension, 'package-metadata', r)
+  for (const r of EXP3_SECRET_RULES) assert.equal(byRule.get(r).dimension, 'secrets-credentials', r)
+  for (const f of findings) {
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'pmd')
+    assert.ok(!('class' in f), `${f.ruleId} must stay class-less`)
+    assert.match(f.verdict_reasoning, /no toolkit class maps rule/) // the unmapped-CLASS severity fallback branch
+  }
+  // anchor loci + the class-less CA-severity fallback across all three catalog severities
+  const sc = byRule.get('AvoidSControls')
+  assert.equal(sc.file, 'force-app/main/default/scontrols/SeedLegacyControl.scf-meta.xml:2')
+  assert.equal(sc.adjusted_severity, 'critical') // CA sev 1 → critical
+  const au = byRule.get('AvoidAuraWithLockerDisabled')
+  assert.equal(au.file, 'force-app/main/default/aura/SeedLocker/SeedLocker.cmp-meta.xml:3')
+  assert.equal(au.adjusted_severity, 'critical') // CA sev 1 → critical
+  const lmc = byRule.get('AvoidLmcIsExposedTrue')
+  assert.equal(lmc.file, 'force-app/main/default/messageChannels/SeedChannel.messageChannel-meta.xml:4')
+  assert.equal(lmc.adjusted_severity, 'high') // CA sev 2 → high
+  const psd = byRule.get('ProtectSensitiveData')
+  assert.equal(psd.file, 'force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml:1')
+  assert.equal(psd.adjusted_severity, 'medium') // CA sev 3 → medium
+  assert.equal(JSON.stringify(findings), JSON.stringify(ingestOwnDim().findings))
+})
+
+check('EXP3-non-supersession (routed row supersedes nothing): a routed class-less owned-dim-cluster finding does NOT supersede a co-located llm-inferred finding of the SAME dimension — both the package-metadata and the secrets-credentials cluster (each dimension\'s owned class stays with its source scanner)', () => {
+  const findings = ingestOwnDim().findings
+  const scenarios = [
+    {
+      det: findById(findings, (x) => x.ruleId === 'AvoidAuraWithLockerDisabled'),
+      llm: {
+        id: 'b'.repeat(16),
+        dimension: 'package-metadata',
+        title: 'Component bundle metadata declares a pre-Locker apiVersion band',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/aura/SeedLocker/SeedLocker.cmp-meta.xml:1-6', // overlaps det's :3
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the bundle metadata declaration',
+      },
+    },
+    {
+      det: findById(findings, (x) => x.ruleId === 'ProtectSensitiveData'),
+      llm: {
+        id: 'c'.repeat(16),
+        dimension: 'secrets-credentials',
+        title: 'Credential-shaped field stored outside Protected Custom Settings',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml:1-5', // overlaps det's :1
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the field storage posture',
+      },
+    },
+  ]
+  for (const { det, llm } of scenarios) {
+    assert.ok(det, 'deterministic catalog finding present')
+    assert.equal(det.provenance, 'deterministic')
+    // PRECONDITIONS that WOULD fire supersession if the routed rule owned a class: same
+    // dimension + overlapping locus. The ONLY missing ingredient is the owned class.
+    assert.equal(det.dimension, llm.dimension, 'same dimension')
+    assert.equal(sameLocation(det, llm), true, 'overlapping locus')
+    const { superseded, supersededIds, findings: out } = reconcileProvenance([det, llm])
+    assert.equal(superseded, 0, `${det.ruleId} must not supersede the co-located LLM ${llm.dimension} finding`)
+    assert.deepEqual(supersededIds, [])
+    assert.equal(out.find((f) => f.id === llm.id).status, 'confirmed')
+    assert.equal('class' in det, false, 'no owned class on the routed catalog finding')
+  }
+})
+
+check('EXP3-authority (owner authority undisturbed + routed row never the superseded party): a three-party reconcile [owned-class det, routed class-less CA det, co-located LLM] supersedes EXACTLY the LLM finding, by the OWNER — package-metadata via a synthetic plain-http-egress owner (a NEW positive owner-supersedes-LLM lock) and secrets-credentials via the ingested gitleaks shape; SYNTHETIC co-location (real loci are disjoint — a safety-property lock, not an observed collision)', () => {
+  const findings = ingestOwnDim().findings
+  const scenarios = [
+    {
+      routed: findById(findings, (x) => x.ruleId === 'AvoidLmcIsExposedTrue'),
+      owned: exp3EgressOwnerAt('force-app/main/default/messageChannels/SeedChannel.messageChannel-meta.xml:1-8'),
+      llm: {
+        id: 'd'.repeat(16),
+        dimension: 'package-metadata',
+        title: 'Package metadata exposes a cross-namespace surface',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/messageChannels/SeedChannel.messageChannel-meta.xml:2-6', // overlaps both dets
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the exposed metadata surface',
+      },
+    },
+    {
+      routed: findById(findings, (x) => x.ruleId === 'ProtectSensitiveData'),
+      owned: exp3GitleaksOwnerAt('force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml', 1),
+      llm: {
+        id: 'f'.repeat(16),
+        dimension: 'secrets-credentials',
+        title: 'Hardcoded credential material in package metadata',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml:1-5', // overlaps both dets
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned the field looks credential-bearing',
+      },
+    },
+  ]
+  for (const { routed, owned, llm } of scenarios) {
+    assert.ok(routed && owned, 'both deterministic parties present')
+    assert.equal(routed.provenance, 'deterministic')
+    assert.equal(owned.provenance, 'deterministic')
+    assert.ok(owned.class, 'the owner carries its toolkit class')
+    // synthetic co-location preconditions: one dimension, every locus overlapping
+    assert.equal(owned.dimension, llm.dimension, 'owner shares the dimension')
+    assert.equal(routed.dimension, llm.dimension, 'routed row shares the dimension')
+    assert.equal(sameLocation(owned, llm), true, 'owner overlaps the LLM locus')
+    assert.equal(sameLocation(routed, llm), true, 'routed row overlaps the LLM locus')
+    const { findings: out, superseded, supersededIds } = reconcileProvenance([owned, routed, llm])
+    assert.equal(superseded, 1, 'exactly the LLM finding is superseded')
+    assert.deepEqual(supersededIds, [llm.id])
+    const outLlm = out.find((f) => f.id === llm.id)
+    assert.equal(outLlm.status, 'superseded')
+    assert.equal(outLlm.superseded_by, owned.id, 'the OWNER supersedes — never the routed row')
+    const outRouted = out.find((f) => f.id === routed.id)
+    assert.equal(outRouted.status, 'confirmed', 'the routed deterministic row is never the superseded party')
+    assert.ok(!('class' in outRouted), 'the routed row stays class-less')
+    const outOwned = out.find((f) => f.id === owned.id)
+    assert.equal(outOwned.status, 'confirmed', 'the owner is untouched')
+  }
+})
+
+check('EXP3-det-coexist: reconcile over [owned-class det, routed class-less CA det] ALONE (no LLM party) supersedes nothing — co-located deterministic rows of the same dimension coexist as separate ledger entries, independent of any LLM path (no det-vs-det dedup in the routing/supersession contract)', () => {
+  const findings = ingestOwnDim().findings
+  const scenarios = [
+    {
+      routed: findById(findings, (x) => x.ruleId === 'AvoidLmcIsExposedTrue'),
+      owned: exp3EgressOwnerAt('force-app/main/default/messageChannels/SeedChannel.messageChannel-meta.xml:1-8'),
+    },
+    {
+      routed: findById(findings, (x) => x.ruleId === 'ProtectSensitiveData'),
+      owned: exp3GitleaksOwnerAt('force-app/main/default/objects/Seed_Config__c/fields/API_Key__c.field-meta.xml', 1),
+    },
+  ]
+  for (const { routed, owned } of scenarios) {
+    // SYNTHETIC co-location (real loci are disjoint in practice — see the section note)
+    assert.equal(owned.dimension, routed.dimension, 'same dimension')
+    assert.equal(sameLocation(owned, routed), true, 'overlapping locus')
+    const { findings: out, superseded, supersededIds } = reconcileProvenance([owned, routed])
+    assert.equal(superseded, 0, 'no deterministic row supersedes another')
+    assert.deepEqual(supersededIds, [])
+    for (const f of out) assert.equal(f.status, 'confirmed')
+  }
+})
+
+check('EXP3-single-shape: the owned-class-dimension expansion adds NO owned class — SINGLE_SHAPE is exactly the same 9-set; the routed dimensions ARE class-owning (package-metadata via plain-http-egress + protocol-security-disabled, secrets-credentials via hardcoded-secrets — the owned-class premise the EXP3 supersession locks rest on)', () => {
+  assert.deepEqual(
+    [...SINGLE_SHAPE].sort(),
+    [
+      'admin-privilege-grant',
+      'crud-fls',
+      'hardcoded-secrets',
+      'iac-misconfig',
+      'plain-http-egress',
+      'protocol-security-disabled',
+      'sharing',
+      'view-modify-all-data',
+      'viewall-overgrant',
+    ]
+  )
+  const ownedDims = new Set(Object.values(CLASS_DEFS).map((d) => d.dimension))
+  assert.ok(ownedDims.has('package-metadata'), 'package-metadata owns toolkit classes (the EXP3 premise)')
+  assert.ok(ownedDims.has('secrets-credentials'), 'secrets-credentials owns a toolkit class (the EXP3 premise)')
+  assert.equal(CLASS_DEFS['plain-http-egress'].dimension, 'package-metadata')
+  assert.equal(CLASS_DEFS['protocol-security-disabled'].dimension, 'package-metadata')
+  assert.equal(CLASS_DEFS['hardcoded-secrets'].dimension, 'secrets-credentials')
+})
+
+check('EXP3-defer: the ambiguous catalog remainder stays OUT of RULE_DIMENSION — representatives of each ambiguous sub-cluster (AvoidJavaScriptInUrls js:-URL metadata, AvoidLwcBubblesComposedTrue LWC event composition, LoadCSSApexStylesheet resource loader, AvoidUnsafePasswordManagementUse Apex behavior) are unrouted, class-less, classify() null', () => {
+  for (const rule of ['AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue', 'LoadCSSApexStylesheet', 'AvoidUnsafePasswordManagementUse']) {
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (ambiguous — needs its own grounding)`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+  }
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)

@@ -51,6 +51,39 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.78] — 2026-07-04
+
+**The pmd-appexchange catalog's owned-class-dimension metadata clusters now route by rule name to
+their methodology dimensions.** Completing the cleanly-mappable catalog remainder after 0.8.77's
+class-less-safe clusters: the rules whose target dimension **does** own a toolkit class now route
+class-less through the same `RULE_DIMENSION` path. The **package-metadata cluster** —
+`AvoidSControls` (an S-Control present in the package, prohibited managed-package markup),
+`AvoidAuraWithLockerDisabled` (an Aura bundle `apiVersion` below 40, Lightning Locker disabled),
+and `AvoidLmcIsExposedTrue` (a Lightning Message Channel with `isExposed=true`) — routes to
+`package-metadata`, whose methodology explicitly names the Aura `apiVersion` and
+`*.messageChannel-meta.xml` reads; the **sensitive-data rule** `ProtectSensitiveData` (sensitive
+data in XML metadata that belongs in Protected Custom Metadata/Settings) routes to
+`secrets-credentials` per the package-metadata methodology's boundary note. Every routed row is
+fixture-proven: a genuine `sf code-analyzer run --rule-selector AppExchange` capture (Code
+Analyzer core 0.48.0 / pmd engine 0.41.0) over a seeded corpus — 4 violations across 4 files,
+firing all 4 targeted rules with these exact spellings
+(`acceptance/fixtures/code-analyzer-catalog-owned-dim-seeded.json`; both prior catalog captures
+are untouched). The routed rows are class-less: they supersede nothing and, being deterministic,
+are never themselves superseded; each dimension's owned class — the secret scanners'
+`hardcoded-secrets`, the egress/protocol metadata scanners' `plain-http-egress` +
+`protocol-security-disabled` — retains sole supersession authority over co-located LLM
+re-reports, and the owned scanners' real loci
+(RemoteSiteSetting/CspTrustedSite/NamedCredential config) are disjoint from the routed rules'
+loci (S-Control / Aura bundle / MessageChannel). Standing checks lock all three supersession
+properties (routed row supersedes nothing; owner authority undisturbed in a three-party
+reconcile — a new positive owner-supersedes-LLM lock for `package-metadata`; co-located
+deterministic rows of the same dimension coexist, never hidden). The routing value-lock widened
+to exactly six fixture-proven dimensions; the 0.8.76 credential-cluster comment's
+cross-engine-dedup phrasing corrected to the real contract (no det-vs-det dedup exists in the
+routing/supersession path); the deferred-set lock retargeted to the ambiguous remainder, which
+stays unrouted pending its own dimension grounding. Suite: **63 files / 993 checks** (was 986),
+all green; routing-removal and defer-route mutations both proven red in a throwaway checkout.
+
 ## [0.8.77] — 2026-07-04
 
 **The pmd-appexchange catalog's class-less-safe metadata/markup clusters now route by rule name
