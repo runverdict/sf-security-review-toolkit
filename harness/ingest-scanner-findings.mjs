@@ -148,6 +148,17 @@
  *                       dimension package-metadata). Scheme-anchored (https://
  *                       never flags) and element-scoped (an http:// inside a
  *                       <description> never flags).
+ *                     Adapter #16 (B5 · E0.3c-1, 0.8.67): `view-modify-all-data`
+ *                       (engine:'metadata') — scans *.permissionset-meta.xml AND
+ *                       *.profile-meta.xml for the org-wide ViewAllData /
+ *                       ModifyAllData system permission granted via
+ *                       <userPermissions> with <enabled>true</enabled> — the
+ *                       org-wide sharing-bypass over-grant (class
+ *                       `view-modify-all-data` → fail-sharing-model, high,
+ *                       dimension admin-surface). Exact-name + enabled-required +
+ *                       element-scoped; covers the gap metadata-viewall leaves
+ *                       (system <userPermissions>, and profiles, which that scan
+ *                       never reads) — the two are disjoint, no double-report.
  *
  * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
  * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
@@ -173,6 +184,7 @@
  *   node ingest-scanner-findings.mjs --scanner code-analyzer  --input CodeAnalyzer.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner metadata-viewall                          --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner egress-plain-http                         --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner view-modify-all-data                      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner checkov         --input checkov.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner semgrep         --input semgrep.json       --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner bandit          --input bandit.json        --target <repo> [--json] [--dry-run] [--pass N]
@@ -188,7 +200,7 @@
  *
  *   node ingest-scanner-findings.mjs --all                                                 --target <repo> [--json] [--dry-run] [--pass N]
  *     JOURNEY-WIRING mode (Phase 2, 0.8.40): ALWAYS runs the source-scanners
- *     (metadata-viewall + egress-plain-http, 0.8.66) +
+ *     (metadata-viewall + egress-plain-http + view-modify-all-data, 0.8.67) +
  *     recognizes every scanner output present under <repo>/.security-review/evidence/*.json
  *     by CONTENT SHAPE (never filename) and ingests each into the deterministic band in one
  *     pass. Mutually exclusive with --scanner (the per-scanner dispatch is untouched). This is
@@ -401,6 +413,17 @@ export const CLASS_DEFS = {
   // the deterministic row is authoritative there), never a different-shape package-metadata
   // finding elsewhere in the file (sameLocation is line-span-scoped).
   'plain-http-egress': { baselineId: 'endpoint-https-only', dimension: 'package-metadata', fallback: 'high' },
+  // B5 · E0.3c-1 (0.8.67): the org-wide ViewAllData / ModifyAllData SYSTEM permission
+  // granted (<userPermissions> with enabled=true) in a packaged permission set OR profile.
+  // These two bypass ALL sharing rules and org-wide defaults on every object (they still
+  // respect field-level security), so a packaged grant is the org-wide analogue of
+  // viewall-overgrant's per-object flags — same grounding: fail-sharing-model is major →
+  // high, and admin-surface owns the permission-grant plane. SINGLE-SHAPE at its locus:
+  // the finding sits on the specific <userPermissions> grant line, so the owned class
+  // supersedes only a co-located LLM finding at that same grant (correct — the
+  // deterministic row is authoritative there), never a different-shape admin-surface
+  // finding elsewhere in the file (sameLocation is line-span-scoped).
+  'view-modify-all-data': { baselineId: 'fail-sharing-model', dimension: 'admin-surface', fallback: 'high' },
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
@@ -521,6 +544,8 @@ function recommendationFor(classKey) {
       return 'Remove the hardcoded credential and move it to an approved store (named credential, protected custom metadata/settings, or an env var/vault); rotate the exposed secret. Do not rely on code obscurity — it is explicitly not a defense.'
     case 'plain-http-egress':
       return 'Declare the endpoint over https:// — all connections to and from the platform must use TLS (the codified Secure Communication requirement, endpoint-https-only); update the Remote Site Setting / CSP Trusted Site / Named Credential accordingly, or document a justified false positive in the dossier.'
+    case 'view-modify-all-data':
+      return 'Remove the org-wide View All Data / Modify All Data grant from the packaged permission set or profile and scope access through object permissions and sharing; if the broad grant is a documented business requirement, justify it in the false-positive dossier.'
     default:
       return 'Fix the flagged code or document a justified false positive in the dossier (baseline scan-no-clean-scan-required).'
   }
@@ -1004,6 +1029,133 @@ export const egressPlainHttpAdapter = {
   },
   classify() {
     return 'plain-http-egress'
+  },
+}
+
+// ----------------------------------------------------------------------------
+// ADAPTER #16 — view-modify-all-data (source-scanner, B5 · E0.3c-1): scans the repo's
+// permission sets AND profiles and flags the two ORG-WIDE sharing-bypass system
+// permissions — ViewAllData / ModifyAllData — granted via a <userPermissions> block
+// with <enabled>true</enabled>. These permissions ignore ALL sharing rules and
+// org-wide defaults on every object (they still respect field-level security), so
+// granting them in a package is the documented sharing-model over-grant the reviewer
+// scrutinizes (fail-sharing-model, dimension admin-surface). The clone of
+// metadata-viewall / egress-plain-http: same walk, a pure per-file extractor,
+// CONSTANT classify(), NO securityRelevant (security-by-construction — every emission
+// is a statically-declared org-wide grant), NO detect (a source-scanner has no
+// evidence file). Covers EXACTLY the gap metadata-viewall leaves: that adapter reads
+// <objectPermissions> blocks in *.permissionset-meta.xml only — it never reads
+// <userPermissions> and never scans *.profile-meta.xml — so the two source-scanners
+// are disjoint (no double-report; the standing test locks it).
+// PRECISION: the <name> match is EXACT against {ViewAllData, ModifyAllData} (a
+// ViewAll*-prefixed permission like ViewAllUsers never matches), <enabled>true</enabled>
+// is REQUIRED within the SAME <userPermissions> block (since API v29.0+ only enabled
+// permissions are serialized, but a rare explicit enabled=false row must stay clean),
+// and the read is element-scoped — a mention inside a <description> or a comment
+// never flags.
+// HONEST FLOOR: the finding is a statically-declared org-wide grant in committed
+// metadata — a sharing-bypass over-grant, NEVER a confirmed data leak (the grant still
+// respects FLS and needs real data + a running user to expose anything, and source
+// metadata cannot see whether it is exercised). And retrieved profile metadata is
+// often PARTIAL (only in-scope components), so the ABSENCE of a grant is not
+// least-privilege proof — the adapter flags what is present + enabled, nothing more.
+// ManageUsers/AuthorApex, per-object viewAllRecords/modifyAllRecords in PROFILES, the
+// permission-set-group + muting effective-permission composition, and the
+// release-to-release grant-widening diff are named follow-on slices — NOT this adapter.
+// ----------------------------------------------------------------------------
+const VMAD_PERMS = new Set(['ViewAllData', 'ModifyAllData'])
+const VMAD_FILE_KINDS = [
+  { suffix: '.permissionset-meta.xml', type: 'Permission set' },
+  { suffix: '.profile-meta.xml', type: 'Profile' },
+]
+function findUserPermissionFiles(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue
+        walk(join(dir, e.name))
+      } else if (e.isFile() && VMAD_FILE_KINDS.some((t) => e.name.endsWith(t.suffix))) {
+        out.push(join(dir, e.name))
+      }
+    }
+  }
+  walk(root)
+  out.sort()
+  return out
+}
+// PURE: extract each ENABLED org-wide View/Modify All Data grant from one file's XML.
+// Element-scoped: only a <userPermissions> block's own <name> + <enabled> are read; the
+// line points at the grant's <name> element itself.
+function extractViewModifyAllGrants(text) {
+  const out = []
+  const re = /<userPermissions>([\s\S]*?)<\/userPermissions>/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const block = m[1]
+    const nameM = /<name>\s*([^<\s][^<]*?)\s*<\/name>/.exec(block)
+    if (!nameM) continue
+    const name = nameM[1].trim()
+    // EXACT name only — ViewAllUsers / any ViewAll*-prefixed permission never matches
+    if (!VMAD_PERMS.has(name)) continue
+    // the grant must be ENABLED within the SAME block — an explicit enabled=false row is clean
+    if (!/<enabled>\s*true\s*<\/enabled>/i.test(block)) continue
+    const nameAbsIdx = m.index + m[0].indexOf(nameM[0])
+    out.push({ name, line: lineOfIndex(text, nameAbsIdx) })
+  }
+  return out
+}
+export const viewModifyAllDataAdapter = {
+  name: 'view-modify-all-data',
+  kind: 'source-scanner',
+  collect({ target } = {}) {
+    if (!target) return null
+    let files
+    try {
+      files = findUserPermissionFiles(target)
+    } catch {
+      return null
+    }
+    const out = []
+    for (const p of files) {
+      try {
+        out.push({ path: p, text: readFileSync(p, 'utf8') })
+      } catch {
+        /* unreadable file — skip, never crash */
+      }
+    }
+    return { files: out, repoRoot: target }
+  },
+  parse(raw) {
+    if (!raw || !Array.isArray(raw.files)) return []
+    const hits = []
+    for (const f of raw.files) {
+      if (!f || typeof f.text !== 'string') continue
+      const kind = VMAD_FILE_KINDS.find((t) => String(f.path || '').endsWith(t.suffix))
+      if (!kind) continue
+      for (const g of extractViewModifyAllGrants(f.text)) {
+        hits.push({
+          engine: 'metadata',
+          ruleId: 'view-modify-all-data',
+          severityNum: null,
+          file: f.path,
+          startLine: g.line,
+          message: `${kind.type} grants the org-wide ${g.name} system permission (<userPermissions> enabled=true) — a sharing-bypass over-grant that ignores all sharing rules and org-wide defaults on every object.`,
+          resources: [VIEWALL_DOC],
+          tags: ['AppExchange', 'Security', 'Metadata'],
+        })
+      }
+    }
+    return hits
+  },
+  classify() {
+    return 'view-modify-all-data'
   },
 }
 
@@ -2287,6 +2439,7 @@ export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
   'egress-plain-http': egressPlainHttpAdapter,
+  'view-modify-all-data': viewModifyAllDataAdapter,
   'checkov': checkovAdapter,
   'semgrep': semgrepAdapter,
   'opengrep': opengrepAdapter,
@@ -2306,7 +2459,7 @@ export const ADAPTERS = {
 // Returns the SINGLE file-parser adapter NAME whose `detect(raw)` matches, `null` if none
 // match, or `{ ambiguous: [names] }` if MORE THAN ONE matches (a recognizer bug — the caller
 // logs it loudly and SKIPS the file, never guessing). Iterates only ADAPTERS entries that
-// carry a `detect` fn (metadata-viewall + egress-plain-http, the source-scanners, have none; opengrep has none
+// carry a `detect` fn (metadata-viewall + egress-plain-http + view-modify-all-data, the source-scanners, have none; opengrep has none
 // BY DESIGN — its JSON is content-indistinguishable from semgrep's, see the adapter). Each `detect` is
 // wrapped in try/catch → treated as false on throw (fail-safe: a malformed shape can never
 // crash recognition). The shapes are provably disjoint (40/40 on real fixtures), so a single
@@ -2386,7 +2539,7 @@ export function mergeFindings(ledger, newFindings, pass) {
 // ----------------------------------------------------------------------------
 // ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
 // makes the whole Phase-2 build run in the real journey: it ALWAYS runs the source-scanners
-// (metadata-viewall + egress-plain-http), then
+// (metadata-viewall + egress-plain-http + view-modify-all-data), then
 // recognizes + ingests every scanner output present under <target>/.security-review/evidence/
 // by CONTENT SHAPE, and merges the whole deterministic band into the ledger in ONE pass. It
 // reuses the pure ingest() (per scanner) + loadLedger/mergeFindings verbatim; the existing
@@ -2415,7 +2568,9 @@ export function ingestAll({ target, pass, dryRun } = {}) {
 
   // (1) ALWAYS run the metadata source scans — they need no evidence file, no `sf`, no network
   // (metadata-viewall greps the repo's *.permissionset-meta.xml for ViewAll/ModifyAll
-  // over-grants; egress-plain-http greps the egress-config metadata for plain-http endpoints).
+  // over-grants; egress-plain-http greps the egress-config metadata for plain-http endpoints;
+  // view-modify-all-data greps permission sets + profiles for the org-wide
+  // ViewAllData/ModifyAllData system-permission grants).
   let metaRaw = null
   try {
     metaRaw = metadataViewAllAdapter.collect({ target: root })
@@ -2445,6 +2600,21 @@ export function ingestAll({ target, pass, dryRun } = {}) {
     kind: egressPlainHttpAdapter.kind,
     findings: egressRes.findings.length,
     status: egressRes.findings.length ? 'ran' : 'clean',
+  })
+  let vmadRaw = null
+  try {
+    vmadRaw = viewModifyAllDataAdapter.collect({ target: root })
+  } catch {
+    vmadRaw = null
+  }
+  const vmadRes = ingest(vmadRaw, viewModifyAllDataAdapter, { repoRoot: root, pass: passId })
+  notes.push(...vmadRes.notes)
+  allFindings.push(...vmadRes.findings)
+  scanners.push({
+    scanner: 'view-modify-all-data',
+    kind: viewModifyAllDataAdapter.kind,
+    findings: vmadRes.findings.length,
+    status: vmadRes.findings.length ? 'ran' : 'clean',
   })
 
   // (2) enumerate evidence/*.json + *.sarif — TOP LEVEL only (skip subdirs like dast/), sorted

@@ -119,7 +119,11 @@ a separate hostname in config/nginx.
 
 Also locate: the network exposure of the admin surface (nginx/ingress config,
 hostname, any IP allowlist), and the audit-write call sites on role/permission
-changes (their absence is a finding).
+changes (their absence is a finding). The org-wide `ViewAllData`/`ModifyAllData`
+grant in a packaged permission set or profile is flagged deterministically by the
+`view-modify-all-data` source-scanner (0.8.67), so the finder's job on that probe
+is the residual: whether a present grant is business-justified, and the grants
+partial profile metadata cannot show.
 
 ## 4. Finder prompt block
 

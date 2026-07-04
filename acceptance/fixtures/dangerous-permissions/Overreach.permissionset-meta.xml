@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (view-modify-all-data adapter). Synthetic toolkit test data — NOT a partner artifact.
+  POSITIVE ×2: the permission set grants BOTH org-wide sharing-bypass system permissions
+  via <userPermissions> with <enabled>true</enabled> -> each grant FLAGGED
+  (fail-sharing-model / admin-surface).
+-->
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Overreach</label>
+    <description>Grants org-wide data access for the integration persona.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewAllData</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ModifyAllData</name>
+    </userPermissions>
+</PermissionSet>

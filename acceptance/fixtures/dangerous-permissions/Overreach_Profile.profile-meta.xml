@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Authored source-scanner fixture for harness/ingest-scanner-findings.mjs
+  (view-modify-all-data adapter). Synthetic toolkit test data — NOT a partner artifact.
+  POSITIVE: the PROFILE grants ModifyAllData via <userPermissions> enabled=true -> FLAGGED.
+  This is the profile-surface coverage proof — metadata-viewall reads permission sets
+  only (*.permissionset-meta.xml <objectPermissions>), so a profile grant is invisible
+  to it; the view-modify-all-data adapter is the one that covers this file.
+-->
+<Profile xmlns="http://soap.sforce.com/2006/04/metadata">
+    <custom>true</custom>
+    <userLicense>Salesforce</userLicense>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ModifyAllData</name>
+    </userPermissions>
+</Profile>

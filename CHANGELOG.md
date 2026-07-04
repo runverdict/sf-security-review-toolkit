@@ -51,6 +51,57 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.67] — 2026-07-04
+
+**A new metadata source-scanner flags the org-wide View All Data / Modify All Data system
+permission granted in permission sets AND profiles — a documented sharing-bypass over-grant —
+deterministically from source.** The `view-modify-all-data` adapter is the fourth
+source-scanner (metadata-viewall's clone: same repo walk, a pure per-file extractor, constant
+`classify()`, security-by-construction — no tag filter) and needs no external tool, no `sf`,
+no network: it reads `*.permissionset-meta.xml` and `*.profile-meta.xml` and flags every
+`<userPermissions>` block whose `<name>` is exactly `ViewAllData` or `ModifyAllData` with
+`<enabled>true</enabled>`. These two system permissions bypass ALL sharing rules and org-wide
+defaults across every object (field-level security still applies), so granting them in a
+package is the org-wide sharing-model over-grant the reviewer scrutinizes. Each finding lands
+at the grant's `<name>` file:line with the permission and file kind named, filed under
+`admin-surface` via the new owned class `view-modify-all-data`, severity grounded in the
+`fail-sharing-model` baseline requirement (major → high) — the same grounding as the
+per-object `viewall-overgrant`. The `--all` journey mode now always runs all three
+source-scanners, so the finding appears in every cold audit pass with zero configuration.
+
+**Coverage.** This closes exactly the gap the existing permission-set over-grant scan leaves:
+`metadata-viewall` reads `<objectPermissions>` blocks in permission sets only — it never reads
+system `<userPermissions>` and never scans profiles. The two source-scanners are disjoint by
+construction (no double-report), locked by the PV-no-overlap standing check in both directions.
+
+**Precision.** The `<name>` match is exact (`ViewAllUsers` or any `ViewAll*`-prefixed
+permission never matches), `<enabled>true</enabled>` is required within the same
+`<userPermissions>` block (a rare explicit `enabled=false` row never flags), and the read is
+element-scoped — a mention inside a `<description>` never flags. The class is single-shape at
+its locus: the deterministic finding sits on the specific grant line, so it supersedes only a
+co-located model-inferred finding at that same grant (where it is authoritative), never a
+different-shape `admin-surface` finding elsewhere in the file — locked by the
+PV-non-supersession standing check.
+
+**Honest floor.** The finding is a **statically-declared org-wide sharing-bypass grant in
+committed metadata** — not a confirmed data leak: the grant still respects field-level
+security, needs real data and a running user to expose anything, and source metadata cannot
+see whether it is exercised. And retrieved profile metadata is often **partial** (only
+in-scope components), so the absence of a grant is never least-privilege proof — the scanner
+flags what is present and enabled, nothing more. `ManageUsers`/`AuthorApex` (a distinct
+privilege class), per-object `viewAllRecords`/`modifyAllRecords` in profiles, the
+permission-set-group + muting effective-permission composition, and the release-to-release
+grant-widening diff are named follow-on slices.
+
+Fixtures: `acceptance/fixtures/dangerous-permissions/` — authored, schema-faithful, benign
+metadata XML (3 positives across a permission set and a profile + 1 negative file exercising
+every precision guard).
+
+Suite **62 files / 940 checks** (was 932), all green. Mutation-proven: dropping the
+enabled-required guard (flagging any `ViewAllData`/`ModifyAllData` name) turns the PV3
+precision check red; pointing the non-supersession pair at the same locus turns
+PV-non-supersession red (the supersession visibly fires).
+
 ## [0.8.66] — 2026-07-03
 
 **A new metadata source-scanner flags plain-HTTP (`http://`) endpoints declared in Remote Site

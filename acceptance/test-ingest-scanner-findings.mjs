@@ -30,6 +30,20 @@
  *       deterministic row is authoritative for that endpoint). HONEST FLOOR: a statically-
  *       declared insecure-transport endpoint, never a confirmed leak, and NO secret finding
  *       is emitted from a credential file (secret values are org-encrypted, never in metadata).
+ *   PV — the view-modify-all-data source-scanner (B5 · E0.3c-1, 0.8.67): flags the org-wide
+ *       ViewAllData / ModifyAllData system permission granted via <userPermissions> with
+ *       <enabled>true</enabled> in permission sets AND profiles — the org-wide sharing-bypass
+ *       over-grant, class view-modify-all-data → fail-sharing-model (major → high), dimension
+ *       admin-surface. Covers exactly the gap metadata-viewall leaves (that scan reads
+ *       <objectPermissions> in permission sets only — never <userPermissions>, never profiles;
+ *       PV-no-overlap locks the disjointness in both directions). PRECISION: exact-name
+ *       ({ViewAllData, ModifyAllData} only — ViewAllUsers never matches) + enabled-required
+ *       (an explicit enabled=false row never flags) + element-scoped (a <description> mention
+ *       never flags). SINGLE-SHAPE at its locus (the <name> grant line), so supersession never
+ *       reaches a different-shape admin-surface finding at a different locus
+ *       (PV-non-supersession; a SAME-locus supersession would be correct). HONEST FLOOR: a
+ *       statically-declared sharing-bypass grant (FLS still applies), never a confirmed leak,
+ *       and retrieved profile metadata may be PARTIAL — absence is not least-privilege proof.
  *   U — an unmapped rule is still ingested as deterministic (never dropped) with the
  *       documented Code-Analyzer-severity fallback + a note.
  *   M — merge is additive + idempotent (re-ingest → no duplicates; LLM findings survive).
@@ -37,8 +51,8 @@
  *   SC — a deterministic finding validates against the extended audit-ledger.schema.json;
  *        an existing llm-inferred finding (no provenance) still validates; a deterministic
  *        finding missing engine FAILS (the conditional bites).
- *   AD — the pluggable adapter registry: 15 adapters across both kinds (file-parser:
- *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http).
+ *   AD — the pluggable adapter registry: 16 adapters across both kinds (file-parser:
+ *        code-analyzer/checkov/semgrep/opengrep/bandit/njsscan/gitleaks/detect-secrets/osv/npm-audit/trivy/regexploit/sarif + source-scanner: metadata-viewall/egress-plain-http/view-modify-all-data).
  *   CLI — the CLI runs every adapter, --json + merge, idempotent on the ledger.
  *   CK/SG/BN/NJ/GL/DS/OSV/NPM/TRV — the Phase-2 per-scanner adapters (checkov IaC · semgrep/bandit/njsscan tool→band ·
  *        gitleaks/detect-secrets class-severity hardcoded-secrets · osv dependency-CVE Extension A CVSS→enum ·
@@ -101,6 +115,7 @@ import {
   codeAnalyzerAdapter,
   metadataViewAllAdapter,
   egressPlainHttpAdapter,
+  viewModifyAllDataAdapter,
   checkovAdapter,
   semgrepAdapter,
   opengrepAdapter,
@@ -482,6 +497,140 @@ check('EG-non-supersession: an owned-class plain-http-egress finding does NOT su
   // supersession visibly fires), proving the protection is locus-specificity, not an accident.
 })
 
+// ────────────────────── org-wide View/Modify All Data grants (source-scanner, B5 · E0.3c-1)
+// The FOURTH source-scanner (metadata-viewall's clone): reads the package's permission sets
+// AND profiles and flags the two org-wide sharing-bypass system permissions — ViewAllData /
+// ModifyAllData — granted via <userPermissions> with <enabled>true</enabled>. These ignore
+// ALL sharing rules and org-wide defaults on every object (they still respect FLS), so a
+// packaged grant is the org-wide sharing-model over-grant (fail-sharing-model, major → high,
+// dimension admin-surface — the same grounding as the per-object viewall-overgrant). The
+// fixtures are AUTHORED schema-faithful metadata XML (the permissionsets/ + egress-metadata/
+// convention): 3 positives (permset ViewAllData + permset ModifyAllData + PROFILE
+// ModifyAllData — the surface metadata-viewall never reads) and 1 negative file exercising
+// every precision guard (enabled=false ViewAllData · a <description> mention · benign
+// ViewSetup · the ViewAll*-prefixed ViewAllUsers). HONEST FLOOR: a statically-declared
+// grant, never a confirmed leak — and retrieved profile metadata may be PARTIAL, so the
+// absence of a grant is never least-privilege proof.
+const VMADFIX = join(FIX, 'dangerous-permissions')
+const ingestVmad = () => {
+  const raw = viewModifyAllDataAdapter.collect({ target: VMADFIX })
+  return ingest(raw, viewModifyAllDataAdapter, { repoRoot: VMADFIX, pass: 1 })
+}
+// the fixture line that carries the grant's <name> element — computed from the fixture
+// itself so the exact-locus assertions never go stale
+const vmadLineOf = (file, needle) => readText(join(VMADFIX, file)).split('\n').findIndex((l) => l.includes(needle)) + 1
+
+check('PV1 view-modify-all-data (source-scanner): the permission set granting ViewAllData + ModifyAllData → 2 findings, metadata/view-modify-all-data/high/admin-surface, each at its <name> grant line, deterministic + schema-valid', () => {
+  const { findings } = ingestVmad()
+  const ps = findings.filter((x) => /Overreach\.permissionset-meta\.xml/.test(x.file))
+  assert.equal(ps.length, 2, 'both org-wide grants flag — one finding per grant')
+  for (const [perm, f] of [['ViewAllData', ps.find((x) => x.title.includes('ViewAllData'))], ['ModifyAllData', ps.find((x) => x.title.includes('ModifyAllData'))]]) {
+    assert.ok(f, `the ${perm} grant is flagged`)
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'metadata')
+    assert.equal(f.ruleId, 'view-modify-all-data')
+    assert.equal(f.class, 'view-modify-all-data')
+    assert.equal(f.adjusted_severity, 'high')
+    assert.equal(f.dimension, 'admin-surface')
+    // the locus is the grant's <name> line itself, not the file or the root element
+    assert.equal(f.file, `Overreach.permissionset-meta.xml:${vmadLineOf('Overreach.permissionset-meta.xml', `<name>${perm}</name>`)}`)
+    assert.match(f.verdict_reasoning, /severity fixed from the view-modify-all-data class \(baseline requirement fail-sharing-model = major\)/)
+    assert.deepEqual(validateFinding(f), [])
+  }
+})
+
+check('PV2 profile coverage: the .profile-meta.xml ModifyAllData grant flags — the surface metadata-viewall never reads (its collect() walks *.permissionset-meta.xml only), so THIS adapter is the one covering it', () => {
+  const { findings } = ingestVmad()
+  const f = findings.find((x) => /Overreach_Profile\.profile-meta\.xml/.test(x.file))
+  assert.ok(f, 'the profile grant is flagged')
+  assert.match(f.title, /Profile grants the org-wide ModifyAllData/)
+  assert.equal(f.class, 'view-modify-all-data')
+  assert.equal(f.adjusted_severity, 'high')
+  assert.equal(f.dimension, 'admin-surface')
+  assert.equal(f.file, `Overreach_Profile.profile-meta.xml:${vmadLineOf('Overreach_Profile.profile-meta.xml', '<name>ModifyAllData</name>')}`)
+  // metadata-viewall would NOT have flagged it: the profile file is invisible to its
+  // collect() (permission sets only), and its parse() reads <objectPermissions> only —
+  // this adapter is the one that covers the profile surface (the E0.3c-1 gap).
+  const mvRaw = metadataViewAllAdapter.collect({ target: VMADFIX })
+  assert.ok(!mvRaw.files.some((x) => /profile-meta\.xml/.test(x.path)), 'metadata-viewall never collects profiles')
+})
+
+check('PV3 precision: an enabled=false ViewAllData does NOT flag, a <description> mention does NOT flag, ViewSetup does NOT flag, and the ViewAll*-prefixed ViewAllUsers does NOT flag (exact-name + enabled-required + element-scoped)', () => {
+  const { findings } = ingestVmad()
+  assert.equal(findings.length, 3, 'exactly the three enabled org-wide grants across the fixture dir — nothing more')
+  assert.ok(!findings.some((f) => /LeastPriv/.test(f.file)), 'the least-privilege permission set is clean — enabled=false + prose mention + benign/prefixed names all stay silent')
+})
+
+check('PV-classSeverity: view-modify-all-data grounds in the BASELINE fail-sharing-model (major) → high, dimension admin-surface — the same grounding as the per-object viewall-overgrant', () => {
+  assert.equal(baselineSeverityFor('fail-sharing-model'), 'major')
+  const cs = classSeverity('view-modify-all-data')
+  assert.equal(cs.severity, 'high')
+  assert.equal(cs.baselineId, 'fail-sharing-model')
+  assert.equal(cs.fromBaseline, true)
+  assert.equal(CLASS_DEFS['view-modify-all-data'].dimension, 'admin-surface')
+})
+
+check('PV-adapter: view-modify-all-data is a registered source-scanner ({name,kind,collect,parse,classify}, NO securityRelevant, NO detect) and ingest is byte-deterministic', () => {
+  assert.equal(ADAPTERS['view-modify-all-data'], viewModifyAllDataAdapter)
+  assert.equal(viewModifyAllDataAdapter.name, 'view-modify-all-data')
+  assert.equal(viewModifyAllDataAdapter.kind, 'source-scanner')
+  for (const m of ['collect', 'parse', 'classify']) assert.equal(typeof viewModifyAllDataAdapter[m], 'function')
+  // security-by-construction: every emission is a declared org-wide grant → no filter
+  assert.equal(viewModifyAllDataAdapter.securityRelevant, undefined)
+  // a source-scanner has no evidence file → invisible to the content-shape recognizer
+  assert.equal(viewModifyAllDataAdapter.detect, undefined)
+  assert.equal(viewModifyAllDataAdapter.classify('anything'), 'view-modify-all-data')
+  const a = ingestVmad().findings
+  const b = ingestVmad().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('PV-no-overlap: metadata-viewall over the SAME fixture dir emits 0 findings (it reads <objectPermissions> on custom objects, never <userPermissions>) — the two source-scanners are disjoint, no double-report', () => {
+  const mv = ingest(metadataViewAllAdapter.collect({ target: VMADFIX }), metadataViewAllAdapter, { repoRoot: VMADFIX, pass: 1 })
+  assert.equal(mv.findings.length, 0, 'metadata-viewall emits nothing on the userPermissions fixtures')
+  // and the REVERSE: this adapter over metadata-viewall's own fixture dir (objectPermissions
+  // over-grants, no <userPermissions>) emits 0 — disjoint in BOTH directions
+  const rev = ingest(viewModifyAllDataAdapter.collect({ target: join(FIX, 'permissionsets') }), viewModifyAllDataAdapter, { repoRoot: FIX, pass: 1 })
+  assert.equal(rev.findings.length, 0, 'view-modify-all-data emits nothing on the objectPermissions fixture')
+})
+
+check('PV-non-supersession: an owned-class view-modify-all-data finding does NOT supersede a co-located llm-inferred admin-surface finding of a DIFFERENT shape at a DIFFERENT locus — locus-specificity is the protection', () => {
+  const det = ingestVmad().findings.find((x) => /Overreach\.permissionset-meta\.xml/.test(x.file) && x.title.includes('ViewAllData'))
+  assert.equal(det.class, 'view-modify-all-data')
+  assert.equal(det.dimension, 'admin-surface')
+  // an llm-inferred admin-surface finding of a DIFFERENT shape (the grant-inventory /
+  // least-privilege-justification reasoning the dimension charter also owns), SAME file,
+  // NON-overlapping lines — class-less, so sameOwnedClass falls back to the dimension
+  // match, which DOES hold here:
+  const llm = {
+    id: '8'.repeat(16),
+    dimension: 'admin-surface',
+    title: 'Packaged admin-persona permission set lacks a documented least-privilege justification',
+    severity: 'medium',
+    adjusted_severity: 'medium',
+    file: 'Overreach.permissionset-meta.xml:1-8', // the file header block, NOT the grant line
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the packaged grant inventory',
+  }
+  // the dimension fallback WOULD match (det owns a class, llm is class-less, same dimension);
+  // the ONLY missing supersession ingredient is the locus — assert that explicitly:
+  assert.equal(sameLocation(det, llm), false, 'different line span → not the same locus')
+  const { findings, superseded, supersededIds } = reconcileProvenance([det, llm])
+  assert.equal(superseded, 0, 'the different-locus LLM finding is NOT superseded — the deterministic row sits beside it')
+  assert.deepEqual(supersededIds, [])
+  assert.equal(findings.find((f) => f.id === llm.id).status, 'confirmed')
+  assert.equal(findings.find((f) => f.id === det.id).status, 'confirmed')
+  // NOTE: at the SAME locus (an LLM finding on the same <userPermissions> grant line)
+  // supersession WOULD fire and WOULD be correct — the deterministic finding is
+  // authoritative for that grant. The guard is that ownership never reaches a
+  // different-shape admin-surface finding elsewhere in the file.
+  // MUTATION: pointing llm.file at det's exact line turns `superseded === 0` red (the
+  // supersession visibly fires), proving the protection is locus-specificity, not an accident.
+})
+
 // ──────────────────────────────────────────────── Security/AppExchange tag filter
 check('U1 tag filter: a non-security rule (ApexDoc, tags Documentation/BestPractices) → 0 findings; the Performance-tagged MissingNullCheckOnSoqlVariable is filtered out of the real fixture', () => {
   // inline a synthetic non-security best-practices violation (NOT in the real captured
@@ -662,11 +811,12 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 15 adapters (egress-plain-http added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy'])
+check('AD1 registry has 16 adapters (view-modify-all-data added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['egress-plain-http'].kind, 'source-scanner')
+  assert.equal(ADAPTERS['view-modify-all-data'].kind, 'source-scanner')
   assert.equal(ADAPTERS['checkov'].kind, 'file-parser')
   assert.equal(ADAPTERS['semgrep'].kind, 'file-parser')
   assert.equal(ADAPTERS['bandit'].kind, 'file-parser')
@@ -3466,8 +3616,9 @@ check('TRV-reuses-class: trivyAdapter.classify() is the constant iac-misconfig �
   assert.equal(CLASS_DEFS['iac-misconfig'].baselineId, 'scan-iac-misconfig')
   assert.equal(CLASS_DEFS['iac-misconfig'].dimension, 'infrastructure-iac')
   // NO new CLASS_DEFS entry for trivy — the class map is the original 5 + plain-http-egress
-  // (the egress source-scanner's own class, 0.8.66 — not trivy's)
-  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'sharing', 'viewall-overgrant'])
+  // (the egress source-scanner's own class, 0.8.66) + view-modify-all-data (the org-wide
+  // grant source-scanner's own class, 0.8.67) — neither is trivy's
+  assert.deepEqual(Object.keys(CLASS_DEFS).sort(), ['crud-fls', 'hardcoded-secrets', 'iac-misconfig', 'plain-http-egress', 'sharing', 'view-modify-all-data', 'viewall-overgrant'])
   assert.equal(CLASS_DEFS['trivy'], undefined)
 })
 
@@ -4014,6 +4165,33 @@ check('EG-all (--all journey wiring): egress-plain-http ALWAYS runs — a plain-
   // and a target with NO egress-config metadata reports the scanner honestly clean — no crash
   const out2 = runAll(setupAllTarget())
   assert.ok(out2.scanners.some((s) => s.scanner === 'egress-plain-http' && s.findings === 0 && s.status === 'clean'))
+})
+
+check('PV-all (--all journey wiring): view-modify-all-data ALWAYS runs — a granted-ViewAllData permission set under the target lands in the band + ledger with a scanner row; a target with no org-wide grant reports it clean', () => {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-vmad-all-'))
+  dirs.push(T)
+  // copy the fixture under the target so the source-scanner finds it (no evidence/ needed)
+  mkdirSync(join(T, 'force-app', 'main', 'default', 'permissionsets'), { recursive: true })
+  writeFileSync(
+    join(T, 'force-app', 'main', 'default', 'permissionsets', 'Overreach.permissionset-meta.xml'),
+    readFileSync(join(VMADFIX, 'Overreach.permissionset-meta.xml'), 'utf8')
+  )
+  const out = runAll(T)
+  assert.ok(
+    out.scanners.some((s) => s.scanner === 'view-modify-all-data' && s.kind === 'source-scanner' && s.findings === 2 && s.status === 'ran'),
+    `view-modify-all-data scanner row present (got ${JSON.stringify(out.scanners)})`
+  )
+  const f = out.findings.find((x) => x.ruleId === 'view-modify-all-data')
+  assert.ok(f, 'the declared org-wide grant is in the --all band')
+  assert.equal(f.class, 'view-modify-all-data')
+  assert.equal(f.dimension, 'admin-surface')
+  assert.equal(f.adjusted_severity, 'high')
+  const ledger = readJSON(join(T, '.security-review', 'audit-ledger.json'))
+  assert.ok(ledger.findings.some((x) => x.ruleId === 'view-modify-all-data'), 'merged into the ledger')
+  // and a target with NO org-wide grant (setupAllTarget's permission set carries only
+  // objectPermissions) reports the scanner honestly clean — no crash, no double-report
+  const out2 = runAll(setupAllTarget())
+  assert.ok(out2.scanners.some((s) => s.scanner === 'view-modify-all-data' && s.findings === 0 && s.status === 'clean'))
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup
