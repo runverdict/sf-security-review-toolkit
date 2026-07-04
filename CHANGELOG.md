@@ -51,6 +51,31 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.75] — 2026-07-04
+
+**The toolkit's own supply chain is now a stated, standing-tested trust property.** For a
+security tool, "vet it in minutes" is only credible if its own attack surface stays at the
+floor — and the posture was true but unstated: the repository ships **no `package.json`** (zero
+runtime npm dependencies — no lockfile, no `npm install`, no transitive tree), every `harness/`
+engine and both `hooks/` enforcement hooks import only the Node standard library and in-repo
+files (scanner-output parsing — SARIF/JSON, Salesforce metadata XML, plain text — is
+implemented in-tree), and the one network-touching engine (`install-scanners.mjs`)
+version-pins + sha256-verifies raw binary downloads before anything is made executable or
+extracted, failing closed on mismatch or missing pin (package-manager installs carry no
+per-file pin and ride the manager's own integrity layer — stated as such). The README now
+carries a **"Supply chain"** section saying exactly that — each claim verified against the tree
+before it was written — and three `SC-*` posture locks in `acceptance/test-ci-hygiene.mjs`
+keep it true: **SC-no-package-json** (no tracked `package.json`/`package-lock.json` anywhere;
+git-listing with a filesystem-walk fallback for extracted archives, anti-vacuous floor on the
+listing size), **SC-harness-stdlib-only** (every `harness/` + `hooks/` import specifier —
+static, multi-line, bare, dynamic, or `require` — is a `node:`/builtin or a relative path;
+comment-line prose excluded; anti-vacuous floors on the file and specifier counts), and
+**SC-readme-claim** (the README section and its load-bearing phrases stay present, so the doc
+and the guard cannot drift apart). A machine-readable self-SBOM is noted as a candidate future
+item, not shipped. Suite **63 files / 976 checks** (was 973), all green. Mutation-proven in a
+throwaway checkout: a tracked root `package.json` turns SC-no-package-json RED; a third-party
+import injected into a harness engine turns SC-harness-stdlib-only RED.
+
 ## [0.8.74] — 2026-07-04
 
 **Class ownership is now an explicit, enforced declaration — the supersession-safety invariant
