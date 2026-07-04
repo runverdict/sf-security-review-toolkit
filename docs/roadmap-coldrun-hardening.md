@@ -9,9 +9,12 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.75**, suite **63 files / 976 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1–5 SHIPPED (E0.1f · `endpoint-https-only` seam · determinism proof ·
-  single-shape registry · supply-chain README+`SC-*` posture locks, 0.8.75). NEXT: item 6 (E0.1d-EXPAND).
+- **`main` @ 0.8.76**, suite **63 files / 981 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–6 SHIPPED (E0.1f · `endpoint-https-only` seam · determinism proof ·
+  single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND catalog routing, 0.8.76).
+  NEXT: E0.1d-EXPAND-2 (grounded dimension decision for the deferred markup/JS/CSS/LWC catalog rules — MUST
+  ground each rule's dimension off the catalog before routing; skip any that don't map to a low-FP dimension),
+  then item 7 (substrate/version-drift markers), then the ★ MIDPOINT COLD RUN.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
@@ -338,10 +341,25 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    guards (no-package-json / harness-stdlib-only / readme-claim, all anti-vacuous) so the claim can't
    silently regress. Every claim verified off disk; SBOM noted as future. Verified (own claim-verification +
    2 mutations).
-6. **E0.1d-EXPAND — route the full pmd-appexchange catalog** [Gap 2]. Enumerate the installed catalog, seed one
-   minimal trigger per rule, capture GENUINE output, promote `RULE_DIMENSION`/`RULE_CLASS` rows fixture-proven
-   (exactly as E0.1d did for the two session rules) — and this retires the E0.1d doc-sourced-spelling residual
-   by verifying every name against the real catalog.
+6. ~~**E0.1d-EXPAND — route the pmd-appexchange catalog's high-confidence clusters**~~ **DONE (0.8.76)** —
+   3 clusters routed by exact rule name via `RULE_DIMENSION` (class-less, the E0.1d mechanism): the session-id
+   siblings `AvoidApiSessionId`/`AvoidUnauthorizedApiSessionIdInApex`/`AvoidUnauthorizedGetSessionIdInVisualforce`
+   → `sessionid-egress`; all 7 hardcoded-credential rules → `secrets-credentials`; `AvoidChangeProtectionUnprotected`
+   → `admin-surface`. Fixture `code-analyzer-catalog-seeded.json` = a GENUINE `sf code-analyzer run
+   --rule-selector AppExchange` capture (CA 0.48.0 / pmd 0.41.0) — all 11 targeted rules fired (12 violations /
+   7 files; VFAttrs double-fires same-locus/same-id). All rows class-less (`classify()=null`, not in `RULE_CLASS`);
+   `SINGLE_SHAPE` untouched; non-supersession proven for both clusters via `reconcileProvenance`. The 2
+   RemoteSiteSetting CA twins (`AvoidInsecureHttpRemoteSiteSetting`/`AvoidDisableProtocolSecurityRemoteSiteSetting`)
+   are DELIBERATELY unrouted — the `plain-http-egress`/`protocol-security-disabled` source-scanners own those
+   checks; routing them would double-report the same locus (cross-engine dedup not landed for that pair). Locked
+   by `EXP-routing`/`-fixture`/`-skip`/`-non-supersession`/`-single-shape` + `SESS-disjoint` value-lock (the
+   `RULE_DIMENSION` value set is now pinned to exactly `{sessionid-egress, secrets-credentials, admin-surface}` —
+   a guessed dimension string fails the build). Graded PASS off disk (both mutations reproduced). **E0.1d-EXPAND-2
+   (named follow-on):** the deferred markup/JS/CSS/LWC + remaining catalog rules (`AvoidJavaScript*`, `Load*`,
+   `AvoidUnescapedHtmlInAura`, `AvoidSControls`, `AvoidAuraWithLockerDisabled`, `AvoidLmc*`/`AvoidLwc*`,
+   `AvoidCreateElementScriptLinkTag`, …) — their dimension (injection-xss vs package-metadata vs web-client)
+   needs a grounded per-rule decision (do the grounding BEFORE writing the builder prompt; skip any rule that
+   doesn't map to a low-FP dimension — no guessing).
 7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
    marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
    honesty rule warns about (today it is operator-prose only, no harness enforcement).
