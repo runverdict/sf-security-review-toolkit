@@ -51,6 +51,34 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.77] — 2026-07-04
+
+**The pmd-appexchange catalog's class-less-safe metadata/markup clusters now route by rule name
+to their methodology dimensions.** Continuing the 0.8.76 catalog routing: the two clusters whose
+target dimension owns **no toolkit class** — so the routing is pure grouping and can never
+supersede a co-located finding — now route class-less through the same `RULE_DIMENSION` path.
+The **XSS construction sinks** (`AvoidUnescapedHtmlInAura`, the `<aura:unescapedHtml>` escape
+hatch the injection-xss methodology names among its framework opt-outs, and
+`AvoidCreateElementScriptLinkTag`, dynamic `<script>`/`<link>` DOM construction in Visualforce
+JavaScript) route to `injection-xss`; the **connected-app OAuth config rules**
+(`UseHttpsCallbackUrlConnectedApp`, an OAuth callback URL over plain HTTP, and
+`LimitConnectedAppScope`, a connected app requesting the Full OAuth scope) route to
+`oauth-identity`, which owns redirect/callback correctness and the connected-app OAuth settings
+surface — and which the `plain-http-egress` metadata source-scanner does not touch (it reads only
+the RemoteSiteSetting/CspTrustedSite/NamedCredential suffixes), so no double-report. Every routed
+row is fixture-proven: a genuine `sf code-analyzer run --rule-selector AppExchange` capture
+(Code Analyzer core 0.48.0 / pmd engine 0.41.0) over a seeded corpus — 4 violations across 3
+files, firing all 4 targeted rules with these exact spellings
+(`acceptance/fixtures/code-analyzer-catalog-markup-seeded.json`; the 0.8.76 capture is untouched).
+The routing value-lock widened accordingly: every `RULE_DIMENSION` value must now be one of
+exactly five fixture-proven dimensions, so a guessed or typo'd dimension string still fails the
+build. The catalog remainder stays deliberately unrouted and lock-guarded (`EXP2-defer`): the
+owned-class-dimension clusters (S-Controls/Locker/LMC metadata → `package-metadata`,
+sensitive-data-in-XML → `secrets-credentials`) need the per-rule supersession grounding the
+credential cluster got (E0.1d-EXPAND-3), and the js:-URL / resource-loader / LWC-event /
+Apex-behavior rules need their own dimension grounding. Suite: **63 files / 986 checks** (was 981), all green;
+routing-removal and defer-route mutations both proven red in a throwaway checkout.
+
 ## [0.8.76] — 2026-07-04
 
 **The pmd-appexchange catalog's high-confidence clusters now route by rule name to their

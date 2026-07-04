@@ -1,0 +1,113 @@
+{
+  "runDir": "./",
+  "violationCounts": {
+    "total": 4,
+    "sev1": 0,
+    "sev2": 2,
+    "sev3": 2,
+    "sev4": 0,
+    "sev5": 0
+  },
+  "versions": {
+    "code-analyzer": "0.48.0",
+    "pmd": "0.41.0"
+  },
+  "violations": [
+    {
+      "rule": "UseHttpsCallbackUrlConnectedApp",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/connectedApps/SeedConnected.connectedApp-meta.xml",
+          "startLine": 6,
+          "startColumn": 22,
+          "endLine": 6,
+          "endColumn": 54
+        }
+      ],
+      "message": "Update to secure Oauth callback URL over HTTPS.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#usehttpscallbackurlconnectedapp"
+      ]
+    },
+    {
+      "rule": "LimitConnectedAppScope",
+      "engine": "pmd",
+      "severity": 3,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "XML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/connectedApps/SeedConnected.connectedApp-meta.xml",
+          "startLine": 7,
+          "startColumn": 17,
+          "endLine": 7,
+          "endColumn": 20
+        }
+      ],
+      "message": "Detected connected app using full scope.",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#limitconnectedappscope"
+      ]
+    },
+    {
+      "rule": "AvoidCreateElementScriptLinkTag",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "Visualforce"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/pages/SeedDomSink.page",
+          "startLine": 2,
+          "startColumn": 5,
+          "endLine": 11,
+          "endColumn": 14
+        }
+      ],
+      "message": "Detected dynamic script or dynamic CSS creation using document.createElement",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidcreateelementscriptlinktag"
+      ]
+    },
+    {
+      "rule": "AvoidUnescapedHtmlInAura",
+      "engine": "pmd",
+      "severity": 2,
+      "tags": [
+        "AppExchange",
+        "Security",
+        "HTML"
+      ],
+      "primaryLocationIndex": 0,
+      "locations": [
+        {
+          "file": "force-app/main/default/aura/SeedUnescaped/SeedUnescaped.cmp",
+          "startLine": 3,
+          "startColumn": 5,
+          "endLine": 3,
+          "endColumn": 45
+        }
+      ],
+      "message": "Detected use of aura:unescapedHtml",
+      "resources": [
+        "https://developer.salesforce.com/docs/platform/salesforce-code-analyzer/guide/rules-pmd-appexchange.html#avoidunescapedhtmlinaura"
+      ]
+    }
+  ]
+}

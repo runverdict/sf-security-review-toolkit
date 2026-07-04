@@ -607,6 +607,27 @@ export const RULE_DIMENSION = {
   // violation-feature-management-change-protection, the same heading CLASS_DEFS routes to admin-surface):
   AvoidChangeProtectionUnprotected: 'admin-surface',
   //
+  // ── E0.1d-EXPAND-2 (0.8.77): the catalog's CLASS-LESS-SAFE metadata/markup clusters. Every row
+  //    fixture-proven by acceptance/fixtures/code-analyzer-catalog-markup-seeded.json — a GENUINE
+  //    `sf code-analyzer run --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd
+  //    engine 0.41.0) over a seeded corpus; each key is the EXACT rule name that capture emitted.
+  //    injection-xss + oauth-identity own NO toolkit class (neither appears in any CLASS_DEFS
+  //    dimension), so routing here is PURE GROUPING: a routed row supersedes nothing — both are
+  //    multi-shape dimensions and every row stays class-less (the SESS posture).
+  //
+  // XSS construction/escaping sinks — injection-xss.md owns "the construction and the escaping"
+  // and names the aura:unescapedHtml escape hatch + hand-built DOM among its framework opt-outs:
+  AvoidUnescapedHtmlInAura: 'injection-xss', // <aura:unescapedHtml> escape hatch (Aura markup)
+  AvoidCreateElementScriptLinkTag: 'injection-xss', // dynamic <script>/<link> DOM construction (Visualforce JS)
+  //
+  // connected-app OAuth config — oauth-identity.md owns redirect/callback correctness and the
+  // connected-app OAuth settings surface. NOT the plain-http-egress source-scanner's territory
+  // (that scanner reads only the RemoteSiteSetting/CspTrustedSite/NamedCredential suffixes), so
+  // no EXP-skip-style double-report; the routed row is a grouping, and the RFC 8252 loopback
+  // allowance stays a disposition concern for the dimension's FP table:
+  UseHttpsCallbackUrlConnectedApp: 'oauth-identity', // OAuth callback URL over plain HTTP (connected app)
+  LimitConnectedAppScope: 'oauth-identity', // connected app requesting the Full OAuth scope
+  //
   // DELIBERATELY NOT ROUTED — AvoidInsecureHttpRemoteSiteSetting + AvoidDisableProtocolSecurityRemoteSiteSetting:
   // the `plain-http-egress` + `protocol-security-disabled` metadata source-scanners already flag those
   // exact patterns deterministically (they OWN the checks); routing the CA twins would double-report
@@ -614,10 +635,17 @@ export const RULE_DIMENSION = {
   // default dimension) is the deliberate posture, NOT a coverage gap — the EXP-skip standing check
   // locks it.
   //
-  // DEFERRED to the named E0.1d-EXPAND-2 follow-on — the markup/JS/CSS/LWC + remaining rules
-  // (AvoidJavaScript*, Load*, AvoidUnescapedHtmlInAura, AvoidSControls, AvoidAuraWithLockerDisabled,
-  // AvoidLmc*/AvoidLwc*, AvoidCreateElementScriptLinkTag, …): their dimension (injection-xss vs
-  // package-metadata vs web-client) needs a grounded per-rule decision, not a guess here.
+  // DEFERRED to the named E0.1d-EXPAND-3 follow-on — the remaining catalog rules: the
+  // OWNED-CLASS-DIMENSION clusters (AvoidSControls / AvoidAuraWithLockerDisabled /
+  // AvoidLmcIsExposedTrue → package-metadata; ProtectSensitiveData → secrets-credentials) route
+  // into dimensions that DO own toolkit classes, so each row needs the per-rule
+  // supersession/cross-engine-dedup grounding the credential cluster got — and the ambiguous set
+  // (AvoidJavaScriptCustomObject / AvoidJavaScriptHomePageComponent / AvoidJavaScriptInUrls /
+  // AvoidJavaScriptWebLink, the LoadCSS*/LoadJavaScript* loaders, AvoidLwcBubblesComposedTrue,
+  // and the Apex behavior rules AvoidGlobalInstallUninstallHandlers / AvoidGetInstanceWithTaint /
+  // AvoidSecurityEnforcedOldApiVersion / AvoidInvalidCrudContentDistribution /
+  // AvoidUnsafePasswordManagementUse) needs its own dimension grounding, not a guess here.
+  // The EXP2-defer standing check locks representatives of both profiles out of this map.
 }
 
 const VIEWALL_DOC =

@@ -234,6 +234,7 @@ const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 
 const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VERBATIM stdout (format C — text, not JSON) over seeded vulnerable py/js: 4 blocks — (a+)+$ exp @server.py:3 + (.*)*x exp @:4 + a*a*a*$ cubic @:5 (Context lines) + (x+)+y(z+)+w exp @validate.js:1 (JS: no Context, TWO Redos records in ONE block), with a mid-file "Processed N regexes" trailer between the two tools' outputs
 const SESSFIX = join(FIX, 'code-analyzer-sessionid-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a minimal seeded sample: AvoidUnauthorizedGetSessionIdInApex @SeedSession.cls:3 + AvoidUnauthorizedApiSessionIdInVisualforce @SeedSessionPage.page:3 — the RULE_DIMENSION sessionid-egress routing anchors
 const CATFIX = join(FIX, 'code-analyzer-catalog-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0 / plugin 5.13.0) over a seeded multi-rule corpus: 12 violations / 7 files firing all 11 catalog-cluster rules (3 session-id siblings + 7 hardcoded-credential rules + AvoidChangeProtectionUnprotected) — the E0.1d-EXPAND routing anchors
+const MARKFIX = join(FIX, 'code-analyzer-catalog-markup-seeded.json') // genuine `sf code-analyzer run --rule-selector AppExchange` capture (CA core 0.48.0 / pmd engine 0.41.0) over a seeded corpus: 4 violations / 3 files firing all 4 class-less-safe markup/OAuth-cluster rules (AvoidUnescapedHtmlInAura + AvoidCreateElementScriptLinkTag → injection-xss; UseHttpsCallbackUrlConnectedApp + LimitConnectedAppScope → oauth-identity) — the E0.1d-EXPAND-2 routing anchors
 const SCHEMA_PATH = join(PLUGIN, 'templates', 'audit-ledger.schema.json')
 
 const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
@@ -3010,9 +3011,10 @@ check('SESS-disjoint: RULE_DIMENSION and RULE_CLASS share no key — a rule eith
   assert.deepEqual(overlap, [])
   // Every routed value is one of the fixture-proven catalog dimensions. Was `=== 'sessionid-egress'`
   // when the session-id pair was the whole map; the catalog expansion (0.8.76) added the
-  // secrets-credentials + admin-surface clusters, so the lock is now set-membership — a typo'd or
-  // guessed dimension string still fails here.
-  const routedDims = new Set(['sessionid-egress', 'secrets-credentials', 'admin-surface'])
+  // secrets-credentials + admin-surface clusters, and E0.1d-EXPAND-2 (0.8.77) added the class-less-safe
+  // markup/OAuth clusters (injection-xss + oauth-identity), so the lock is set-membership — a typo'd
+  // or guessed dimension string still fails here.
+  const routedDims = new Set(['sessionid-egress', 'secrets-credentials', 'admin-surface', 'injection-xss', 'oauth-identity'])
   for (const v of Object.values(RULE_DIMENSION)) assert.ok(routedDims.has(v), `unexpected RULE_DIMENSION value ${v}`)
 })
 
@@ -3237,6 +3239,167 @@ check('EXP-single-shape: the catalog expansion adds NO owned class — SINGLE_SH
       'viewall-overgrant',
     ]
   )
+})
+
+// ───────────────────────────────────── pmd-appexchange catalog routing, class-less-safe markup/OAuth clusters (B5 · E0.1d-EXPAND-2, 0.8.77)
+// E0.1d-EXPAND routed the catalog's high-confidence clusters; this slice routes the CLASS-LESS-SAFE
+// remainder — the rules whose methodology dimension owns NO toolkit class, so routing is pure grouping
+// with zero supersession risk: injection-xss (owns "the construction and the escaping"; names the
+// aura:unescapedHtml escape hatch + hand-built DOM) and oauth-identity (owns redirect/callback
+// correctness + the connected-app OAuth settings surface). The owned-class-dimension remainder
+// (package-metadata / secrets-credentials profiles) and the ambiguous set stay DEFERRED to
+// E0.1d-EXPAND-3 (EXP2-defer locks representatives out). Fixture: a GENUINE `sf code-analyzer run
+// --rule-selector AppExchange` capture (Code Analyzer core 0.48.0 / pmd engine 0.41.0) over a seeded
+// SFDX corpus — 4 violations across 3 files, firing ALL 4 targeted rules with these exact spellings
+// (engine 'pmd', tags AppExchange/Security/<lang>):
+//   injection-xss:   AvoidUnescapedHtmlInAura (Aura .cmp <aura:unescapedHtml value="{!v.markup}"/>,
+//                    HTML, sev 2) + AvoidCreateElementScriptLinkTag (VF page document.createElement
+//                    script+link in one <script> block — fires ONCE at the block's locus, sev 2)
+//   oauth-identity:  UseHttpsCallbackUrlConnectedApp (connectedApp-meta.xml http:// <callbackUrl> on a
+//                    NON-loopback host — the RFC 8252 loopback allowance is a disposition concern, not
+//                    a routing one, sev 3) + LimitConnectedAppScope (<scopes>Full</scopes>, sev 3 —
+//                    both fire on the ONE seeded connected app at different loci)
+// All routed rows stay class-less: classify() reads only RULE_CLASS, so none of these supersedes
+// anything (the SESS posture), and neither dimension appears in any CLASS_DEFS entry.
+const ingestMark = (raw) => ingest(raw === undefined ? readJSON(MARKFIX) : raw, codeAnalyzerAdapter, { repoRoot: '', pass: 1 })
+const EXP2_XSS_RULES = ['AvoidUnescapedHtmlInAura', 'AvoidCreateElementScriptLinkTag']
+const EXP2_OAUTH_RULES = ['UseHttpsCallbackUrlConnectedApp', 'LimitConnectedAppScope']
+// representatives of BOTH deferred profiles: owned-class-dimension (AvoidSControls / ProtectSensitiveData
+// route into package-metadata / secrets-credentials, which own toolkit classes — the cross-engine-dedup
+// grounding is E0.1d-EXPAND-3's) + ambiguous (AvoidJavaScriptInUrls js:-URL metadata,
+// AvoidLwcBubblesComposedTrue LWC event composition — dimension undecided)
+const EXP2_DEFER_RULES = ['AvoidSControls', 'ProtectSensitiveData', 'AvoidJavaScriptInUrls', 'AvoidLwcBubblesComposedTrue']
+
+check('EXP2-routing: every class-less-safe markup/OAuth-cluster rule routes by exact name to its dimension (unescaped-HTML + createElement DOM sinks → injection-xss, connected-app callback/scope → oauth-identity); a security-tagged CA hit ingests deterministic / that dimension / class-less; none is in RULE_CLASS', () => {
+  const want = new Map([
+    ...EXP2_XSS_RULES.map((r) => [r, 'injection-xss']),
+    ...EXP2_OAUTH_RULES.map((r) => [r, 'oauth-identity']),
+  ])
+  for (const [rule, dim] of want) {
+    assert.equal(RULE_DIMENSION[rule], dim, `RULE_DIMENSION[${rule}]`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class`)
+    assert.equal(codeAnalyzerAdapter.classify(rule), null, `classify(${rule}) must stay null`)
+    const { findings } = ingestMark(sessHit(rule))
+    assert.equal(findings.length, 1)
+    assert.equal(findings[0].provenance, 'deterministic')
+    assert.equal(findings[0].dimension, dim, `ingested dimension for ${rule}`)
+    assert.equal(findings[0].status, 'confirmed')
+    assert.ok(!('class' in findings[0]), `routed ${rule} finding owns no class`)
+  }
+})
+
+check('EXP2-fixture: the genuine markup/OAuth CA catalog capture (core 0.48.0 / pmd 0.41.0) lands all 4 rules in their dimensions, class-less, at the seed loci; CA severity fallback intact; byte-deterministic', () => {
+  const raw = readJSON(MARKFIX)
+  assert.equal(raw.versions['code-analyzer'], '0.48.0') // provenance lock on the committed capture
+  assert.equal(raw.versions['pmd'], '0.41.0')
+  const { findings } = ingestMark()
+  assert.equal(findings.length, 4)
+  const byRule = new Map(findings.map((f) => [f.ruleId, f]))
+  assert.equal(byRule.size, 4, 'all 4 markup/OAuth-cluster rules fired')
+  for (const r of EXP2_XSS_RULES) assert.equal(byRule.get(r).dimension, 'injection-xss', r)
+  for (const r of EXP2_OAUTH_RULES) assert.equal(byRule.get(r).dimension, 'oauth-identity', r)
+  for (const f of findings) {
+    assert.equal(f.provenance, 'deterministic')
+    assert.equal(f.engine, 'pmd')
+    assert.ok(!('class' in f), `${f.ruleId} must stay class-less`)
+    assert.match(f.verdict_reasoning, /no toolkit class maps rule/) // the unmapped-CLASS severity fallback branch
+  }
+  // anchor loci + the class-less CA-severity fallback across the capture's two catalog severities
+  const un = byRule.get('AvoidUnescapedHtmlInAura')
+  assert.equal(un.file, 'force-app/main/default/aura/SeedUnescaped/SeedUnescaped.cmp:3')
+  assert.equal(un.adjusted_severity, 'high') // CA sev 2 → high
+  const ce = byRule.get('AvoidCreateElementScriptLinkTag')
+  assert.equal(ce.file, 'force-app/main/default/pages/SeedDomSink.page:2')
+  assert.equal(ce.adjusted_severity, 'high') // CA sev 2 → high
+  const cb = byRule.get('UseHttpsCallbackUrlConnectedApp')
+  assert.equal(cb.file, 'force-app/main/default/connectedApps/SeedConnected.connectedApp-meta.xml:6')
+  assert.equal(cb.adjusted_severity, 'medium') // CA sev 3 → medium
+  const sc = byRule.get('LimitConnectedAppScope')
+  assert.equal(sc.file, 'force-app/main/default/connectedApps/SeedConnected.connectedApp-meta.xml:7')
+  assert.equal(sc.adjusted_severity, 'medium') // CA sev 3 → medium
+  assert.equal(JSON.stringify(findings), JSON.stringify(ingestMark().findings))
+})
+
+check('EXP2-defer: the E0.1d-EXPAND-3 remainder is NOT routed — the owned-class-dimension profile (AvoidSControls → package-metadata, ProtectSensitiveData → secrets-credentials: both target dimensions own toolkit classes, so each row needs the per-rule supersession grounding) and the ambiguous set (AvoidJavaScriptInUrls, AvoidLwcBubblesComposedTrue) stay out of RULE_DIMENSION; a hit ingests at the CA default dimension', () => {
+  for (const rule of EXP2_DEFER_RULES) {
+    assert.ok(!(rule in RULE_DIMENSION), `${rule} must NOT be routed (E0.1d-EXPAND-3 scope — needs its own grounding)`)
+    assert.ok(!(rule in RULE_CLASS), `${rule} must not own a class either`)
+    const { findings } = ingestMark(sessHit(rule))
+    assert.equal(findings.length, 1) // still ingested — security-tagged rules are never dropped
+    assert.equal(findings[0].dimension, 'apex-exposed-surface') // DEFAULT_DIMENSION: undifferentiated, not a routed cluster
+    assert.ok(!('class' in findings[0]))
+  }
+})
+
+check('EXP2-non-supersession: a routed class-less markup/OAuth finding does NOT supersede a co-located llm-inferred finding of a DIFFERENT shape in the same dimension — both the injection-xss and the oauth-identity cluster (neither dimension owns any toolkit class)', () => {
+  const findings = ingestMark().findings
+  const scenarios = [
+    {
+      det: findById(findings, (x) => x.ruleId === 'AvoidUnescapedHtmlInAura'),
+      llm: {
+        id: '9'.repeat(16),
+        dimension: 'injection-xss',
+        title: 'Stored XSS via an externally-synced field rendered in the component',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/aura/SeedUnescaped/SeedUnescaped.cmp:1-4', // overlaps det's :3
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the sync-write-then-render dataflow',
+      },
+    },
+    {
+      det: findById(findings, (x) => x.ruleId === 'UseHttpsCallbackUrlConnectedApp'),
+      llm: {
+        id: 'a'.repeat(16),
+        dimension: 'oauth-identity',
+        title: 'Callback host accepts a prefix-matched redirect target',
+        severity: 'high',
+        adjusted_severity: 'high',
+        file: 'force-app/main/default/connectedApps/SeedConnected.connectedApp-meta.xml:1-9', // overlaps det's :6
+        status: 'confirmed',
+        first_seen: 1,
+        last_seen: 1,
+        verdict: 'confirmed_real',
+        verdict_reasoning: 'reasoned over the redirect-target matching behavior',
+      },
+    },
+  ]
+  for (const { det, llm } of scenarios) {
+    assert.ok(det, 'deterministic catalog finding present')
+    assert.equal(det.provenance, 'deterministic')
+    // PRECONDITIONS that WOULD fire supersession if the routed rule owned a class: same
+    // dimension + overlapping locus. The ONLY missing ingredient is the owned class.
+    assert.equal(det.dimension, llm.dimension, 'same dimension')
+    assert.equal(sameLocation(det, llm), true, 'overlapping locus')
+    const { superseded, supersededIds, findings: out } = reconcileProvenance([det, llm])
+    assert.equal(superseded, 0, `${det.ruleId} must not supersede the co-located LLM ${llm.dimension} finding`)
+    assert.deepEqual(supersededIds, [])
+    assert.equal(out.find((f) => f.id === llm.id).status, 'confirmed')
+    assert.equal('class' in det, false, 'no owned class on the routed catalog finding')
+  }
+})
+
+check('EXP2-single-shape: the markup/OAuth expansion adds NO owned class — SINGLE_SHAPE is exactly the same 9-set, and neither injection-xss nor oauth-identity appears in any CLASS_DEFS dimension (the class-less-safe premise, asserted)', () => {
+  assert.deepEqual(
+    [...SINGLE_SHAPE].sort(),
+    [
+      'admin-privilege-grant',
+      'crud-fls',
+      'hardcoded-secrets',
+      'iac-misconfig',
+      'plain-http-egress',
+      'protocol-security-disabled',
+      'sharing',
+      'view-modify-all-data',
+      'viewall-overgrant',
+    ]
+  )
+  const ownedDims = new Set(Object.values(CLASS_DEFS).map((d) => d.dimension))
+  assert.ok(!ownedDims.has('injection-xss'), 'injection-xss must own no toolkit class')
+  assert.ok(!ownedDims.has('oauth-identity'), 'oauth-identity must own no toolkit class')
 })
 
 // ───────────────────────────────────── gitleaks (Phase 2 · 2a #5 — hardcoded secrets, class-severity)
