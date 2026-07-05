@@ -63,10 +63,11 @@ const VALID_DECISIONS = new Set(['affirm', 'deny'])
 // the selector FORCE-INJECTS. Static option arrays are validated at module load
 // (see assertCatalogWellFormed below) so a malformed catalog entry fails fast.
 //
-// For THIS slice only three gates are registered: run-mode, audit-tier,
-// scanner-install. The engine THROWS on any other id (later WIs register the
-// remaining gates — deep-audit, scope, sf-ops, …); no un-migrated skill calls
-// gate-spec yet, so an unregistered id can never reach a live render.
+// The catalog registers every gate the journey renders: the run/tier/scanner
+// election + consent gates, the scope-submission answer + consent gates, and the
+// two live-op consents (throwaway-dast, sf-deep-audit-ops). The engine THROWS on
+// any unregistered id (fail-closed), so a driver that improvises a gate id can
+// never reach a live render.
 const GATE_CATALOG = Object.freeze({
   // run-mode — an ELECTION (ask-tolerance), not a consent. Both options proceed;
   // there is no decline, so NO safe-default is injected. Pinned 2-option set.
@@ -338,6 +339,76 @@ const GATE_CATALOG = Object.freeze({
       }),
     ]),
   }),
+
+  // ── Live-op consents — the "reach outside read-only-local" gates ───────────────
+  // The two highest-stakes CONSENT gates in the toolkit: they authorize actions
+  // that LEAVE the read-only, local-only posture — standing up a throwaway and
+  // active-scanning it (throwaway-dast), and mutating a live org through the
+  // deployed-package deep audit (sf-deep-audit-ops). Both are CONSENT gates: a
+  // single affirm option in `base`, the decline FORCE-INJECTED from safeDefault.
+  // Enforcement already keys off the gate-name STRING (record-consent, verifyConsent,
+  // the sf-ops hook, the --consent verifiers), so pinning here is purely additive to
+  // the render path — it only fixes the operator-facing option text so the gate
+  // renders verbatim run-to-run; recording/verification is unchanged.
+
+  // throwaway-dast — CONSENT to stand up a DISPOSABLE stack and active-scan it. The
+  // affirm authorizes the whole isolated lifecycle (stand up → capture OpenAPI →
+  // active scan → tear down); nothing touches the real deployment. Deny → the DAST
+  // families fall to PENDING-OWNER-RUN for the owner to run — DAST does not silently vanish.
+  'throwaway-dast': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Throwaway DAST',
+    question: 'Stand up an isolated throwaway of the app and active-scan it for this run?',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Stand up a throwaway & scan it',
+        description:
+          'Stand up an ISOLATED throwaway of the app on a loopback port, capture its OpenAPI, run the ' +
+          'active DAST scan against that disposable instance, then tear it down. Nothing touches your real ' +
+          'deployment — the scan only ever hits the throwaway, which is destroyed at cleanup.',
+        decision: 'affirm',
+      }),
+    ]),
+    safeDefault: Object.freeze({
+      label: 'Skip — no throwaway, no active scan',
+      description:
+        'Do not stand anything up and run no active scan. The DAST families fall to PENDING-OWNER-RUN for ' +
+        'you to run yourself against your own environment; nothing is stood up and nothing is scanned.',
+      decision: 'deny',
+    }),
+  }),
+
+  // sf-deep-audit-ops — the UMBRELLA consent for the deployed-package deep audit's
+  // live org-mutating ops. ONE affirm authorizes the whole set (scratch/sandbox
+  // create, package install/deploy/uninstall, org & data delete, package version
+  // create) across ALL FOUR calling skills — the throwaway org is torn down after.
+  // Deny → source audit only; no live org is touched. It is deliberately an umbrella,
+  // not scoped to one op, so a single go-ahead covers the deep-audit lifecycle.
+  'sf-deep-audit-ops': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Deep-audit live ops',
+    question: 'Authorize the live, org-mutating operations of the deployed-package deep audit?',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Authorize the deep-audit live ops',
+        description:
+          'Authorize the live, org-mutating operations the deployed-package deep audit needs — create a ' +
+          'throwaway scratch/sandbox org, install/deploy/uninstall the package, delete org and test data, and ' +
+          'create a package version — all against a DISPOSABLE org that is torn down afterwards. This one ' +
+          'go-ahead is the umbrella for every deep-audit skill; decline and the audit stays source-only.',
+        decision: 'affirm',
+      }),
+    ]),
+    safeDefault: Object.freeze({
+      label: 'Skip — source audit only',
+      description:
+        'Do not run any live org operation. The deep audit is skipped and the review proceeds against the ' +
+        'source only; no org is created, installed into, mutated, or deleted.',
+      decision: 'deny',
+    }),
+  }),
 })
 
 // The SIX partner-program preflight sub-gates (scope-submission step 5 / baseline
@@ -564,6 +635,10 @@ export function gateOptions(gateId, facts = {}) {
     ]
   } else if (gateId === 'listing-type' || gateId === 'tenancy') {
     options = spec.base.map(pickOption)
+  } else if (gateId === 'throwaway-dast' || gateId === 'sf-deep-audit-ops') {
+    // The two live-op consents — a single static affirm in `base`; the decline is
+    // FORCE-INJECTED from safeDefault by the consent-gate block below.
+    options = spec.base.map(pickOption)
   } else {
     // A catalog entry exists but has no selector branch — a build error, fail closed.
     throw new Error(`gate-spec: gate '${gateId}' is registered but has no selector branch`)
@@ -607,6 +682,8 @@ const LOAD_CHECK_FACTS = Object.freeze({
   'clarify-detection': [{ element: 'mcp-server' }],
   'listing-type': [{}],
   'tenancy': [{}],
+  'throwaway-dast': [{}],
+  'sf-deep-audit-ops': [{}],
 })
 
 /** Self-check the FROZEN catalog at module load: every static option well-formed + every gate

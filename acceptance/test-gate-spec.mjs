@@ -110,6 +110,36 @@ check('G2 golden snapshot: scanner-install — verbatim disclosure, only N + sca
   assert.match(desc, /ALSO authorizes RUNNING the scanners, which fetches their rule packs/)
 })
 
+check('G2 golden snapshot: throwaway-dast (live-op consent) — {affirm, force-injected deny}', () => {
+  const p = gateOptions('throwaway-dast', {})
+  assert.equal(p.consent, true, 'throwaway-dast is a consent gate')
+  assert.equal(p.kind, 'consent')
+  assert.deepEqual(labelsDecisions(p), [
+    ['Stand up a throwaway & scan it', 'affirm'],
+    ['Skip — no throwaway, no active scan', 'deny'],
+  ])
+  const byLabel = Object.fromEntries(p.options.map((o) => [o.label, o]))
+  // the isolation promise on the affirm, verbatim — the throwaway never touches prod
+  assert.match(byLabel['Stand up a throwaway & scan it'].description, /Nothing touches your real\s+deployment/)
+  // the decline must say DAST falls to PENDING-OWNER-RUN — it does not silently vanish
+  assert.match(byLabel['Skip — no throwaway, no active scan'].description, /PENDING-OWNER-RUN/)
+})
+
+check('G2 golden snapshot: sf-deep-audit-ops (umbrella live-op consent) — {affirm, force-injected deny}', () => {
+  const p = gateOptions('sf-deep-audit-ops', {})
+  assert.equal(p.consent, true, 'sf-deep-audit-ops is a consent gate')
+  assert.equal(p.kind, 'consent')
+  assert.deepEqual(labelsDecisions(p), [
+    ['Authorize the deep-audit live ops', 'affirm'],
+    ['Skip — source audit only', 'deny'],
+  ])
+  const byLabel = Object.fromEntries(p.options.map((o) => [o.label, o]))
+  // the affirm is the UMBRELLA for every deep-audit skill — pin that clause
+  assert.match(byLabel['Authorize the deep-audit live ops'].description, /umbrella for every deep-audit skill/)
+  // the decline keeps the review source-only — no live org touched
+  assert.match(byLabel['Skip — source audit only'].description, /source only; no org is created, installed into, mutated, or deleted/)
+})
+
 check('G2b scanner-install --scanners convenience == the --facts path (byte-identical)', () => {
   const d = tmp()
   const factsFile = join(d, 'f.json')
@@ -158,6 +188,8 @@ check('G4 force-injection: the decline is present on EVERY consent gate, even wh
     'scanner-install': SCANNERS,
     'mcp-probe': { url: 'https://example.test/mcp' },
     'scope-confirm': {},
+    'throwaway-dast': {},
+    'sf-deep-audit-ops': {},
   }
   for (const [gate, spec] of Object.entries(GATE_CATALOG)) {
     if (!spec.consent) continue
