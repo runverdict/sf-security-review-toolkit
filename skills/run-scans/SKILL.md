@@ -587,11 +587,20 @@ families PENDING until a re-audit.
    normalizes to `reachabilityPath` — but on current Semgrep CE the SARIF
    codeFlows may be ABSENT too (verified 1.168.0: none emitted on a taint
    finding that provably has a trace — Pro-gated), so **Opengrep below is the
-   OSS engine that actually produces the trace on current tooling**. If neither
-   evidence surface carries a trace on a taint finding, report "reachability
-   substrate unavailable on this Semgrep version" in the evidence summary
-   rather than silently shipping trace-less findings — the findings themselves
-   still ingest normally; only `reachabilityPath` is absent.
+   OSS engine that actually produces the trace on current tooling**. The ingest
+   now says this deterministically (0.8.80): when a toolkit taint rule (the
+   `rules/injection/` pack — the one rule set whose taint mode is knowable from
+   the output, via its `rules.injection.` check_id prefix) fires with no
+   dataflow trace, the harness emits one aggregated "reachability substrate
+   unavailable on this engine version / output surface" note per evidence file
+   instead of leaving the report to this prose — relay that note in the
+   evidence summary. Honest scope: the marker covers the toolkit's own taint
+   pack only (registry/third-party rules carry no output-visible taint marker,
+   so their trace-lessness stays unmarked); the findings themselves still
+   ingest normally; only `reachabilityPath` is absent. The ingest also emits a
+   version-drift note when an opengrep evidence file records a version
+   different from the pinned install (opengrep only — the one ingest tool that
+   both records its producing version and is version-pinned).
 
    **The Opengrep reachability leg (rides this family).** Opengrep (the
    LGPL-2.1, consortium-governed Semgrep fork; installed as a pinned release

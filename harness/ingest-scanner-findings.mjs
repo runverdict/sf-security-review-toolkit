@@ -252,6 +252,9 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } fro
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// B5 · item 7: the single-sourced install pin the version-drift honesty marker compares
+// against (derived from BINARY_PINS — never a second version literal; see install-scanners.mjs).
+import { PINNED_TOOL_VERSIONS } from './install-scanners.mjs'
 
 // ----------------------------------------------------------------------------
 // Severity taxonomies. The baseline speaks `blocker/major/minor/informational`
@@ -932,7 +935,34 @@ export function ingest(raw, adapter, opts = {}) {
   if (!Array.isArray(hits)) hits = []
   if (!hits.length) notes.push(`${adapter.name}: 0 violations in input — no findings`)
 
+  // Version-drift honesty marker (B5 · item 7): an OPTIONAL adapter hook, guarded exactly like
+  // `securityRelevant` below — only an adapter that defines `recordedVersion(raw)` participates;
+  // every other adapter is untouched. recorded∩pinned = opengrep ONLY (see the opengrep/sarif
+  // adapters for why every other tool is deliberately OUT), so a non-empty recorded version is
+  // by construction an opengrep version and compares against the single opengrep install pin.
+  // A NOTE, never a finding: the evidence still ingests; the operator learns the scanner that
+  // produced it is not the sha256-pinned install the toolkit validated. Fires independently of
+  // hit count — a clean run from a drifted scanner is exactly the silent case worth flagging.
+  if (typeof adapter.recordedVersion === 'function') {
+    let recorded = null
+    try {
+      recorded = adapter.recordedVersion(raw)
+    } catch {
+      recorded = null
+    }
+    if (typeof recorded === 'string' && recorded && recorded !== PINNED_TOOL_VERSIONS.opengrep) {
+      notes.push(
+        `opengrep: evidence records version ${recorded} but the toolkit pins ${PINNED_TOOL_VERSIONS.opengrep} — ` +
+          `stale/unexpected scanner version; re-run with the pinned install`
+      )
+    }
+  }
+
   const findings = []
+  // B5 · item 7: ingested hits from a TOOLKIT taint rule (adapter.expectsTrace — the one rule
+  // set whose taint mode is knowable from output) that carry NO dataflow trace. Aggregated
+  // below into ONE substrate-unavailable note per ingest, never one-per-hit.
+  let tracelessTaint = 0
   for (const h of hits) {
     if (!h || !h.file || h.ruleId == null || h.engine == null) {
       notes.push(`${adapter.name}: skipped a malformed hit (missing engine/ruleId/file)`)
@@ -955,6 +985,11 @@ export function ingest(raw, adapter, opts = {}) {
       classKey = null
     }
     findings.push(buildFinding({ ...h, classKey, repoRoot, pass }))
+    // Substrate-unavailable accounting (B5 · item 7): an OPTIONAL hook, same guard shape as
+    // `securityRelevant` above. Counts only hits that actually became findings.
+    if (typeof adapter.expectsTrace === 'function' && adapter.expectsTrace(h) && !h.reachabilityPath) {
+      tracelessTaint++
+    }
     if (!classKey) {
       // Honest note on the severity SOURCE of an unmapped hit: a tool→band adapter (Semgrep)
       // carries its own per-finding band, while a class-severity adapter (code-analyzer) with
@@ -965,6 +1000,27 @@ export function ingest(raw, adapter, opts = {}) {
         : 'the Code-Analyzer-severity fallback'
       notes.push(`${adapter.name}: rule ${h.ruleId} is unmapped (owns no toolkit class) — ingested as deterministic with ${how}`)
     }
+  }
+  // Substrate-unavailable honesty marker (B5 · item 7): a toolkit taint rule fired but the
+  // evidence carries no dataflow trace — the reachability substrate this engine version /
+  // output surface can withhold (semgrep CE ≥1.168 omits it from --json and Pro-gates SARIF
+  // codeFlows). Previously operator-prose only (skills/run-scans/SKILL.md); now the harness
+  // says it deterministically. A NOTE, never a finding: the findings themselves ingest
+  // byte-identically, only `reachabilityPath` is absent.
+  if (tracelessTaint > 0) {
+    let recorded = null
+    if (typeof adapter.recordedVersion === 'function') {
+      try {
+        recorded = adapter.recordedVersion(raw)
+      } catch {
+        recorded = null
+      }
+    }
+    notes.push(
+      `${adapter.name}: ${tracelessTaint} toolkit taint rule(s) fired with no dataflow trace ` +
+        `(${adapter.name} v${recorded || 'unknown'}) — reachability substrate unavailable on this engine ` +
+        `version / output surface; findings ingest normally, reachabilityPath absent (use Opengrep or SARIF codeFlows)`
+    )
   }
   // stable order so the output is byte-identical regardless of scanner emission order
   findings.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -2026,6 +2082,16 @@ export const semgrepAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (the security rulesets), like checkov/metadata.
+  // B5 · item 7 — the substrate-unavailable contract: Semgrep/Opengrep JSON carries NO
+  // `mode: taint` marker on results, so "a taint rule fired" is generally UNKNOWABLE from the
+  // output alone. The ONE deterministic exception is the toolkit's OWN rule pack
+  // (rules/injection/*.yaml — every rule `mode: taint`), whose emitted check_ids carry the
+  // `rules.injection.` prefix (the path-derived id semgrep assigns a --config directory).
+  // expectsTrace marks EXACTLY those hits; registry/third-party rules stay OUT — their
+  // taintness is unknowable, and the marker never guesses.
+  expectsTrace(hit) {
+    return typeof hit.ruleId === 'string' && hit.ruleId.startsWith('rules.injection.')
+  },
 }
 
 // ----------------------------------------------------------------------------
@@ -2070,6 +2136,23 @@ export const opengrepAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (the security rulesets), like semgrep.
+  // B5 · item 7: the ingest core reads hooks off THE ADAPTER OBJECT, so the parse-delegation
+  // above does NOT inherit them — and ingestAll routes opengrep-*.json evidence through THIS
+  // adapter, so without its own expectsTrace the substrate marker would silently vanish on
+  // the opengrep surface. Same rule-pack prefix contract as semgrep (the check_ids are
+  // identical either way — the id comes from the --config path, not the engine).
+  expectsTrace: semgrepAdapter.expectsTrace,
+  // B5 · item 7 — the version-drift contract: recorded∩pinned = opengrep ONLY. Opengrep JSON
+  // records the producing version at top-level `version`, and install-scanners.mjs sha256-pins
+  // the opengrep binary — the one ingest-adapter tool where "evidence version ≠ pinned install"
+  // is both knowable and meaningful. Every other adapter is deliberately OUT of the drift
+  // check: the pip tools (semgrep/checkov/detect-secrets/bandit/njsscan/regexploit) install
+  // floating-latest (`version: null` by design — nothing to drift from), gitleaks/osv/trivy
+  // record no version in their output, and code-analyzer's per-engine versions vs the plugin
+  // pin are a namespace mismatch. No hook on those adapters = no check, by design.
+  recordedVersion(raw) {
+    return _isObj(raw) && typeof raw.version === 'string' ? raw.version : null
+  },
 }
 
 // ----------------------------------------------------------------------------
@@ -2931,6 +3014,22 @@ export const sarifAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (the documented security-ruleset invocations).
+  // B5 · item 7: the toolkit rule pack keeps its `rules.injection.` check_id prefix on the
+  // SARIF surface too (the id is path-derived, engine- and format-independent), so the same
+  // substrate-unavailable contract applies — see the semgrep adapter.
+  expectsTrace: semgrepAdapter.expectsTrace,
+  // B5 · item 7 — drift stays opengrep-ONLY on the SARIF surface: return the recorded
+  // `semanticVersion` ONLY when the producing driver declares itself Opengrep. 'Semgrep OSS'
+  // MUST return nothing — semgrep is pip-installed floating-latest (no pin to drift from),
+  // and its SARIF (e.g. the frozen 1.168.0 fixture) would false-fire against the opengrep
+  // pin. Any other driver (CodeQL, Checkmarx, …) has no toolkit pin either — nothing returned.
+  recordedVersion(raw) {
+    if (!_isObj(raw) || !Array.isArray(raw.runs)) return null
+    const run = _isObj(raw.runs[0]) ? raw.runs[0] : null
+    const driver = run && _isObj(run.tool) && _isObj(run.tool.driver) ? run.tool.driver : null
+    if (!driver || typeof driver.name !== 'string' || !/^opengrep\b/i.test(driver.name.trim())) return null
+    return typeof driver.semanticVersion === 'string' ? driver.semanticVersion : null
+  },
 }
 
 export const ADAPTERS = {

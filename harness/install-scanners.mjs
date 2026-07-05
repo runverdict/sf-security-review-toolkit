@@ -70,7 +70,9 @@ export const MANIFEST_SCHEMA = 'sf-srt-scanner-install/1'
 // here and verified before exec. A tool/platform with no pin FAILS CLOSED → it is
 // skipped (PENDING-OWNER-RUN), never installed unverified. Bump = re-pin both the
 // version and every per-platform sha256 from the release's published checksums.
-const BINARY_PINS = {
+// Exported (B5 · item 7) so the acceptance suite can lock PINNED_TOOL_VERSIONS below
+// to the real install pin — never edit a version here without re-pinning the sha256s.
+export const BINARY_PINS = {
   'osv-scanner': {
     version: '2.4.0',
     bin: 'osv-scanner',
@@ -143,6 +145,16 @@ const BINARY_PINS = {
     },
   },
 }
+
+// B5 · item 7 — the single-sourced pinned-version surface the ingest's version-drift honesty
+// marker compares evidence against. DERIVED from BINARY_PINS (never a second version literal),
+// so a pin bump above can never silently diverge from the drift check; the acceptance suite
+// locks the equality. opengrep-only by design: it is the one ingest-adapter tool whose
+// evidence records its producing version AND whose install is pinned (the pip tools float by
+// design — `version: null`, nothing to drift from; gitleaks/osv/trivy record no version in
+// their output; code-analyzer's per-engine versions live in a different namespace than the
+// plugin pin — see the opengrep adapter in ingest-scanner-findings.mjs).
+export const PINNED_TOOL_VERSIONS = { opengrep: BINARY_PINS.opengrep.version }
 
 // pip tools: the install token equals the tool name and the produced bin equals
 // the tool name (semgrep→venv/bin/semgrep, …). Floating-latest is intentional —

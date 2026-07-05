@@ -51,6 +51,46 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.80] — 2026-07-05
+
+**The ingest now emits deterministic honesty notes for two silent-degradation channels that were
+operator-prose only** (`skills/run-scans/SKILL.md` told the operator to "report … in the evidence
+summary"; nothing in the harness said it). Both are `notes` on the `ingest()` return — never
+findings, never ledger rows: findings stay byte-identical, `templates/audit-ledger.schema.json`
+and `buildFinding` are untouched, and both markers are honestly narrow by design.
+- **Substrate-unavailable** — a toolkit taint rule fired but its evidence carries NO dataflow
+  trace: `"<adapter>: N toolkit taint rule(s) fired with no dataflow trace (<adapter>
+  v<recorded|unknown>) — reachability substrate unavailable on this engine version / output
+  surface; findings ingest normally, reachabilityPath absent (use Opengrep or SARIF codeFlows)"`,
+  ONE aggregated note per ingest. Scope: the toolkit's OWN `rules/injection/*.yaml` pack only
+  (its path-derived `rules.injection.` check_id prefix is the one deterministic "this rule is
+  taint-mode" signal in Semgrep/Opengrep output — registry/third-party taintness is unknowable
+  and never guessed). Carried by a new OPTIONAL adapter hook `expectsTrace(hit)` on the
+  `semgrep`, `opengrep` (explicitly — parse-delegation does not inherit hooks, and `ingestAll`
+  routes `opengrep-*.json` through that adapter object), and `sarif` adapters; the `ingest()`
+  core guards `typeof adapter.expectsTrace === 'function'` exactly like `securityRelevant`, so
+  every other adapter is inert.
+- **Version-drift** — an opengrep evidence file records a producing version ≠ the sha256-pinned
+  install: `"opengrep: evidence records version <X> but the toolkit pins <PIN> —
+  stale/unexpected scanner version; re-run with the pinned install"`. Scope: opengrep ONLY
+  (recorded∩pinned — the pip tools install floating-latest with `version: null` by design,
+  gitleaks/osv/trivy record no version, and code-analyzer's per-engine versions vs the plugin
+  pin are a namespace mismatch; all deliberately unchecked). Carried by a new OPTIONAL
+  `recordedVersion(raw)` hook on the `opengrep` (top-level `version`) and `sarif`
+  (`runs[0].tool.driver.semanticVersion`, driver-gated to Opengrep so the frozen Semgrep OSS
+  1.168.0 SARIF can never false-fire against the opengrep pin) adapters. The comparand is
+  single-sourced: `install-scanners.mjs` now exports `BINARY_PINS` and a DERIVED
+  `PINNED_TOOL_VERSIONS = { opengrep: BINARY_PINS.opengrep.version }` (no second version
+  literal), with the equality locked by an acceptance check.
+- `skills/run-scans/SKILL.md` Family 7 prose updated: the substrate-unavailable report is now
+  emitted deterministically by the ingest, not left to the operator's evidence summary.
+- Suite: **63 files / 1006 checks** (+8 in `test-ingest-scanner-findings.mjs`: fires/aggregation/
+  byte-identity, the trace-grafted sharp control, non-taint + with-trace negatives, the opengrep +
+  SARIF surfaces, the SARIF driver gate both ways, the single-source lock, determinism). Both
+  markers mutation-proven in throwaway extracts: `expectsTrace → false` reddens the fires tests;
+  a wrong `PINNED_TOOL_VERSIONS` literal reddens the single-source lock + both clean-version
+  controls.
+
 ## [0.8.79] — 2026-07-04
 
 **The pmd-appexchange catalog's JavaScript-in-metadata and resource-loader rules now route by rule

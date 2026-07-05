@@ -151,6 +151,14 @@
  *        indistinguishable from semgrep's — the honest label comes from --scanner/the documented
  *        opengrep-* evidence name, never a content guess) + the --all *.sarif enumeration + the
  *        CE-SARIF adjudication pin (semgrep 1.168.0 emitted NO codeFlows — PENDING, not fabricated).
+ *   SG-RP-SUB/SG-RP-DRIFT — the substrate-unavailable + version-drift honesty markers (B5 ·
+ *        item 7, 0.8.80): a toolkit taint rule (`rules.injection.` check_id prefix — the one
+ *        rule set whose taint mode is knowable from output; registry taintness is unknowable,
+ *        never guessed) firing with NO dataflow trace → ONE aggregated deterministic note;
+ *        an opengrep evidence version ≠ the pinned install (recorded∩pinned = opengrep ONLY;
+ *        the SARIF hook is driver-gated so Semgrep OSS never false-fires) → a drift note with
+ *        a single-sourced comparand (PINNED_TOOL_VERSIONS derived from BINARY_PINS, locked).
+ *        NOTES only — findings byte-identical, hooks optional per adapter, others inert.
  *   RC — the content-shape recognizer (--all routing, 0.8.40): every committed fixture → its OWN adapter;
  *        a clean (results:[]) scan still recognized; non-adapter shapes (index.json/retire/openapi/the deps-npm
  *        WRAPPER) → null; a 2-match → {ambiguous}, never a guess; failsafe (null/{}/non-object → null, no throw).
@@ -215,6 +223,7 @@ import {
 } from '../harness/ingest-scanner-findings.mjs'
 import { reconcileProvenance } from '../harness/reconcile-provenance.mjs'
 import { sameLocation } from '../harness/finding-clusters.mjs'
+import { BINARY_PINS, PINNED_TOOL_VERSIONS } from '../harness/install-scanners.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'ingest-scanner-findings.mjs')
@@ -2942,6 +2951,128 @@ check('CUSTOM-INJ-wiring-pack: rules/injection/ ships a .yaml + a matching `semg
   for (const name of ['xpath-python', 'ldap-python', 'xpath-js', 'ldap-js', 'xpath-go', 'ldap-go']) {
     assert.ok(bases.has(name), `expected rules/injection/${name}.yaml`)
   }
+})
+
+// ───────────── substrate-unavailable + version-drift honesty markers (B5 · item 7, 0.8.80)
+// Two silent-degradation channels that were operator-prose only (skills/run-scans/SKILL.md)
+// become deterministic ingest NOTES: (1) substrate-unavailable — a TOOLKIT taint rule
+// (rules/injection/*.yaml, the one rule set whose taint mode is knowable from output via the
+// path-derived `rules.injection.` check_id prefix; registry/third-party taintness is
+// unknowable and stays out) fired with NO dataflow trace, i.e. the reachability substrate is
+// withheld on that engine version / output surface; (2) version-drift — an opengrep evidence
+// file records a producing version ≠ the sha256-pinned install (recorded∩pinned = opengrep
+// ONLY: pip tools float by design, gitleaks/osv/trivy record no version, code-analyzer pins
+// live in a different namespace — all deliberately OUT). Both are NOTES, never findings: the
+// findings ingest byte-identically, the ledger and schema are untouched, and only adapters
+// that define the optional expectsTrace/recordedVersion hooks participate (the
+// securityRelevant pattern). The drift comparand is single-sourced: PINNED_TOOL_VERSIONS is
+// DERIVED from install-scanners' BINARY_PINS, locked below.
+const SUBSTRATE_RE = /reachability substrate unavailable/
+const DRIFT_RE = /stale\/unexpected scanner version/
+const ingestOpengrep = (raw) => ingest(raw, opengrepAdapter, { repoRoot: '', pass: 1 })
+
+check('SG-RP-SUB1 substrate-unavailable fires: the trace-less toolkit-pack capture (7 hits, 6 rules.injection.* taint rules, zero dataflow_trace) → ONE aggregated note (never one-per-hit) naming the count + the honest vunknown (semgrep has NO recordedVersion — pip floating-latest); findings byte-identical to a hook-less ingest, no reachabilityPath/reachable added', () => {
+  const { findings, notes } = ingestSemgrep(readJSON(SEMGREP_CUSTOM_INJ))
+  assert.equal(findings.length, 7)
+  assert.ok(notes.some((n) => SUBSTRATE_RE.test(n)))
+  assert.ok(notes.some((n) => n.includes('semgrep: 7 toolkit taint rule(s) fired with no dataflow trace (semgrep vunknown)')))
+  assert.equal(notes.filter((n) => SUBSTRATE_RE.test(n)).length, 1, 'aggregated: ONE note per ingest, not one-per-hit')
+  for (const f of findings) {
+    assert.ok(!('reachabilityPath' in f), `no fabricated trace on ${f.file}`)
+    assert.ok(!('reachable' in f))
+  }
+  // the marker changed ONLY notes: the same adapter WITHOUT the hook (the pre-marker shape —
+  // and the shape of every non-participating adapter) produces byte-identical findings and
+  // no marker. Proves both findings-byte-safety AND other-adapter inertness.
+  const { expectsTrace: _et, ...hookless } = semgrepAdapter
+  const bare = ingest(readJSON(SEMGREP_CUSTOM_INJ), hookless, { repoRoot: '', pass: 1 })
+  assert.equal(JSON.stringify(findings), JSON.stringify(bare.findings))
+  assert.ok(!bare.notes.some((n) => SUBSTRATE_RE.test(n)), 'no hook → no marker')
+})
+
+check('SG-RP-SUB2 substrate silent on with-trace: the taint fixtures (trace PRESENT, non-toolkit rule — doubly negative) → NO note; the SHARP control — the toolkit-pack capture with a genuine dataflow_trace grafted onto every hit → still NO note (the marker keys on trace-ABSENCE, not the rule name)', () => {
+  assert.ok(!ingestSemgrep(readJSON(SEMGREP_TAINT)).notes.some((n) => SUBSTRATE_RE.test(n)))
+  assert.ok(!ingestOpengrep(readJSON(OPENGREP_JSON)).notes.some((n) => SUBSTRATE_RE.test(n)))
+  // graft the genuine 1.85.0 trace (both ends: source + sink) onto every rules.injection.* hit
+  const donor = readJSON(SEMGREP_TAINT).results[0].extra.dataflow_trace
+  const raw = clone(readJSON(SEMGREP_CUSTOM_INJ))
+  for (const r of raw.results) r.extra.dataflow_trace = clone(donor)
+  const res = ingestSemgrep(raw)
+  assert.equal(res.findings.length, 7)
+  assert.ok(res.findings.every((f) => f.reachable === true), 'the grafted trace actually parsed — the control is live, not vacuous')
+  assert.ok(!res.notes.some((n) => SUBSTRATE_RE.test(n)))
+})
+
+check('SG-RP-SUB3 substrate silent on non-taint: ordinary Security hits (non-rules.injection.* search-mode rules, no trace — the coldstart/helios captures) → NO note; the marker never fires on a rule whose taintness is unknowable', () => {
+  for (const fx of [SEMGREP_WARN, SEMGREP_ERR]) {
+    assert.ok(!ingestSemgrep(readJSON(fx)).notes.some((n) => SUBSTRATE_RE.test(n)), `unexpected substrate note on ${fx}`)
+  }
+})
+
+check('SG-RP-SUB4 the opengrep + SARIF surfaces carry the marker: hooks live on EACH adapter object (parse-delegation does NOT inherit them, and ingestAll routes opengrep-*.json through the opengrep adapter — without its own expectsTrace the marker would silently vanish there)', () => {
+  assert.equal(opengrepAdapter.expectsTrace, semgrepAdapter.expectsTrace, 'the opengrep hook is the semgrep contract, explicitly aliased')
+  // opengrep surface: the toolkit-pack capture as opengrep evidence, version neutralized to
+  // the pin so ONLY the substrate marker is under test — and recordedVersion feeds the note
+  const raw = clone(readJSON(SEMGREP_CUSTOM_INJ))
+  raw.version = BINARY_PINS.opengrep.version
+  const og = ingestOpengrep(raw)
+  assert.equal(og.findings.length, 7)
+  assert.ok(og.notes.some((n) => n.includes(`opengrep: 7 toolkit taint rule(s) fired with no dataflow trace (opengrep v${BINARY_PINS.opengrep.version})`)))
+  assert.ok(!og.notes.some((n) => DRIFT_RE.test(n)), 'pin-matched version — no drift note')
+  // SARIF surface: no trace-less toolkit-taint SARIF capture is frozen (the taint fixtures all
+  // carry codeFlows), so mutate in memory — re-id the opengrep SARIF result to a toolkit-pack
+  // rule and strip its codeFlows
+  const sarifRaw = clone(readJSON(OPENGREP_SARIF))
+  const run = sarifRaw.runs[0]
+  run.results[0].ruleId = 'rules.injection.python-ldap-injection-taint'
+  if (Array.isArray(run.tool.driver.rules) && run.tool.driver.rules[0]) run.tool.driver.rules[0].id = 'rules.injection.python-ldap-injection-taint'
+  delete run.results[0].codeFlows
+  const sf = ingestSarif(sarifRaw)
+  assert.equal(sf.findings.length, 1)
+  assert.ok(sf.notes.some((n) => n.includes('sarif: 1 toolkit taint rule(s) fired with no dataflow trace')))
+})
+
+check('SG-RP-DRIFT1 version-drift fires on opengrep JSON: raw.version mutated to 9.9.9 → the note naming BOTH versions; the unmutated fixture (1.25.0 == pin) → NO note; findings byte-identical either way (notes only, never a finding)', () => {
+  const clean = ingestOpengrep(readJSON(OPENGREP_JSON))
+  assert.ok(!clean.notes.some((n) => DRIFT_RE.test(n)))
+  const raw = clone(readJSON(OPENGREP_JSON))
+  raw.version = '9.9.9'
+  const drift = ingestOpengrep(raw)
+  assert.ok(drift.notes.some((n) => DRIFT_RE.test(n)))
+  assert.ok(drift.notes.some((n) => n.includes(`opengrep: evidence records version 9.9.9 but the toolkit pins ${PINNED_TOOL_VERSIONS.opengrep}`)))
+  assert.equal(JSON.stringify(drift.findings), JSON.stringify(clean.findings))
+})
+
+check('SG-RP-DRIFT2 version-drift on the SARIF surface: a mutated semanticVersion on the Opengrep OSS driver → the note; clean (1.25.0 == pin) → none; the DRIVER GATE — the frozen Semgrep OSS 1.168.0 SARIF NEVER drift-fires (pip floating-latest, no pin — it would be a false alarm against the opengrep pin), nor does any other driver', () => {
+  assert.ok(!ingestSarif(readJSON(OPENGREP_SARIF)).notes.some((n) => DRIFT_RE.test(n)))
+  const raw = clone(readJSON(OPENGREP_SARIF))
+  raw.runs[0].tool.driver.semanticVersion = '9.9.9'
+  const drift = ingestSarif(raw)
+  assert.ok(drift.notes.some((n) => n.includes(`opengrep: evidence records version 9.9.9 but the toolkit pins ${PINNED_TOOL_VERSIONS.opengrep}`)))
+  // the gate, both ways: the REAL semgrep SARIF fixture records 1.168.0 ≠ pin → silent;
+  // a non-opengrep driver with a junk version → silent
+  assert.equal(readJSON(SEMGREP_SARIF).runs[0].tool.driver.semanticVersion, '1.168.0')
+  assert.ok(!ingestSarif(readJSON(SEMGREP_SARIF)).notes.some((n) => DRIFT_RE.test(n)), 'Semgrep OSS must never drift-fire')
+  const other = clone(readJSON(OPENGREP_SARIF))
+  other.runs[0].tool.driver.name = 'Checkmarx'
+  other.runs[0].tool.driver.semanticVersion = '9.9.9'
+  assert.ok(!ingestSarif(other).notes.some((n) => DRIFT_RE.test(n)), 'a non-opengrep driver must never drift-fire')
+})
+
+check('SG-RP-DRIFT3 single-source lock: PINNED_TOOL_VERSIONS.opengrep is DERIVED from BINARY_PINS.opengrep.version — the drift comparand can never diverge from the actual sha256-pinned install', () => {
+  assert.equal(PINNED_TOOL_VERSIONS.opengrep, BINARY_PINS.opengrep.version)
+  assert.ok(/^\d+\.\d+\.\d+$/.test(PINNED_TOOL_VERSIONS.opengrep), 'a real semver pin, not a placeholder')
+})
+
+check('SG-RP-SUB5 determinism: twice-ingest of both markers\' fixtures → identical notes AND identical findings (no Date/random anywhere on the path)', () => {
+  const sub = () => ingestSemgrep(readJSON(SEMGREP_CUSTOM_INJ))
+  assert.equal(JSON.stringify(sub()), JSON.stringify(sub()))
+  const drift = () => {
+    const r = clone(readJSON(OPENGREP_JSON))
+    r.version = '9.9.9'
+    return ingestOpengrep(r)
+  }
+  assert.equal(JSON.stringify(drift()), JSON.stringify(drift()))
 })
 
 // ───────────────────────────────────── session-id retrieval routing (B5 · E0.1d, 0.8.65)
