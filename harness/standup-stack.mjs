@@ -187,7 +187,7 @@ export function stackNames(runId) {
  * PURE. From a stack-detect result, compute the throwaway stand-up spec.
  * Deterministic given (stack, runId, tmpRoot, port). Throws on an unrunnable stack.
  */
-export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {}) {
+export function planStandup(stack, { runId, target, tmpRoot, port, envFile, hostPort } = {}) {
   if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`planStandup: invalid run-id '${runId}'`)
   if (!target) throw new Error('planStandup: target repo required')
   if (envFile) checkEnvFileRunId(envFile, runId) // Slice D: refuse an orphaning toolkit-path env-file
@@ -204,6 +204,16 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
   if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
     throw new Error(`planStandup: invalid port '${port || (stack.webTier && stack.webTier.port)}'`)
   }
+  // THREE concepts were conflated into one number; this DECOUPLES the HOST published port
+  // from the CONTAINER listen port + compose web-tier selector (both stay `webPort`). The
+  // impure executor publishes on an EPHEMERAL 127.0.0.1 host port (so a busy host port can
+  // never block stand-up) and threads the assigned port back as `hostPort`. Absent — the
+  // pure-planner default — `hostPort` falls back to `webPort`, so every planner test stays
+  // byte-identical; only `baseUrl` and the manifest's host-facing port follow it.
+  const hostPub = (hostPort == null || hostPort === '') ? webPort : Number(hostPort)
+  if (!Number.isInteger(hostPub) || hostPub < 1 || hostPub > 65535) {
+    throw new Error(`planStandup: invalid host-port '${hostPort}'`)
+  }
   // Per-kind dispatch: node + python are COPY-IN plans (toolkit base image, source
   // copied in); dockerfile is a BUILD plan (the partner's Dockerfile brings both).
   if (recipe.kind === 'python') {
@@ -217,7 +227,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
     return {
       schema: STACK_SCHEMA, runId, kind: 'python',
       container: names.container, image: null, network: null, baseImage: PYTHON_BASE,
-      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      host: '127.0.0.1', port: webPort, hostPort: hostPub, baseUrl: `http://127.0.0.1:${hostPub}`,
       sourceDir, entry, workdir: '/app',
       // recipe.run (Slice E) drives the exact server command; a provideServer hint (an ASGI
       // framework with no ASGI server in deps) adds a best-effort harness install.
@@ -238,7 +248,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       schema: STACK_SCHEMA, runId, kind: 'dockerfile',
       // the built image carries the toolkit run-name → teardown's name gate accepts + rmi's it
       container: names.container, image: names.image, network: null, baseImage: null,
-      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      host: '127.0.0.1', port: webPort, hostPort: hostPub, baseUrl: `http://127.0.0.1:${hostPub}`,
       buildContext, dockerfilePath,
       synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
@@ -261,7 +271,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       // volumes <project>_*) is name-scoped for the project-scoped teardown + sweep
       project: names.container,
       container: names.container, image: null, network: null, baseImage: null,
-      host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+      host: '127.0.0.1', port: webPort, hostPort: hostPub, baseUrl: `http://127.0.0.1:${hostPub}`,
       composeFile, overridePath: join(tmpRoot, 'compose.loopback-override.yml'),
       synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
@@ -284,7 +294,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
   return {
     schema: STACK_SCHEMA, runId, kind: 'node',
     container: names.container, image: null, network: null, baseImage: NODE_BASE,
-    host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
+    host: '127.0.0.1', port: webPort, hostPort: hostPub, baseUrl: `http://127.0.0.1:${hostPub}`,
     sourceDir, entry, workdir: '/app',
     command: `npm install --no-audit --no-fund --loglevel=error && node ${entry}`,
     synthEnvNames: [...synthNames], benignEnv: benign,
@@ -337,8 +347,12 @@ export function planCompose(config, prePlan) {
   else if (publishers.length === 0) return refuse('no compose service publishes a port — cannot identify a web tier to rebind on 127.0.0.1')
   else if (matched.length > 1) return refuse(`ambiguous web service — ${matched.length} services publish the detected web port ${port}; cannot enforce loopback safely`)
   else return refuse(`ambiguous web service — ${publishers.length} services publish ports, none matches the detected web port ${port}; cannot enforce loopback safely`)
-  // rebind the HOST side to 127.0.0.1:<webPort>; keep the service's own container-side
-  // target (a `8080:3000` mapping stays →3000 — the app listens where it listens)
+  // rebind the HOST side to 127.0.0.1:<hostPub>; keep the service's own container-side
+  // target (a `8080:3000` mapping stays →3000 — the app listens where it listens).
+  // `hostPub` is the HOST published port: absent (the pure-planner default) it falls back
+  // to the web-tier port so U-tests stay byte-identical; the executor threads `hostPort: 0`
+  // to publish on an EPHEMERAL 127.0.0.1 port that is read back after `up` (no bind-race).
+  const hostPub = (prePlan.hostPort == null || prePlan.hostPort === '') ? port : Number(prePlan.hostPort)
   const webEntry = portsOf(webService).find(matchesWebPort) || portsOf(webService)[0]
   const targetPort = Number(webEntry && webEntry.target) || port
   const others = svcNames.filter((n) => n !== webService)
@@ -353,15 +367,29 @@ export function planCompose(config, prePlan) {
     'services:',
     `  ${webService}:`,
     '    ports: !override',
-    `      - "127.0.0.1:${port}:${targetPort}"`,
+    `      - "127.0.0.1:${hostPub}:${targetPort}"`,
     ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []']),
   ].join('\n') + '\n'
   const { needsConfigResolution, ...plan } = prePlan
-  return { ...plan, webService, overrideContent }
+  // targetPort is the container-side port the executor reads the assigned host port back on
+  return { ...plan, webService, targetPort, overrideContent }
 }
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
+
+/**
+ * IMPURE. Parse the host port docker assigned to an ephemeral publish. `docker port
+ * <container> <containerPort>` / `docker compose port <service> <containerPort>` prints
+ * `127.0.0.1:<hostPort>`; take the port off the first `IP:port` line. Throws if none is
+ * found (the container didn't come up / expose the port — a failed stand-up).
+ */
+function parseHostPort(out, label) {
+  const line = String(out || '').split('\n').map((s) => s.trim()).find((s) => /:\d+$/.test(s)) || ''
+  const m = line.match(/:(\d+)$/)
+  if (!m) throw new Error(`standup-stack: could not read the published host port for ${label} (docker returned '${String(out || '').trim()}')`)
+  return Number(m[1])
+}
 
 /** IMPURE. Body-free probe → { code, redirect }. `000` = down/refused. NAMES-only: no
  *  body/headers persisted; the redirect target is read in-memory only to detect http→https. */
@@ -424,12 +452,17 @@ function pollHealth(baseUrl, { isRunning, dockerHealth } = {}, deadline) {
 /** Write the manifest + the gitignored project pointer (NAMES only — never secret values). */
 function writeManifest(plan, rec, target) {
   mkdirSync(plan.tmpRoot, { recursive: true, mode: 0o700 })
+  // The host-facing port follows the HOST publish (`hostPort`), not the container/web port —
+  // `scannedPort` MUST equal `new URL(baseUrl).port` or run-dast's dastDegrade false-flags the
+  // run as "wrong tier". `plan.baseUrl` already carries the same host port (planStandup / the
+  // executor keep the two in lockstep). Legacy plans without `hostPort` fall back to port.
+  const hostPort = plan.hostPort != null ? plan.hostPort : plan.port
   const manifest = {
     schema: plan.schema, runId: plan.runId, kind: plan.kind,
     resources: { container: plan.container, image: rec.builtImage || null, network: rec.network || null },
     // compose only: what the project-scoped teardown needs to reconstruct the `down`
     ...(plan.kind === 'compose' ? { project: plan.project, composeFile: plan.composeFile, overridePath: plan.overridePath, webService: plan.webService || null } : {}),
-    host: plan.host, port: plan.port, baseUrl: plan.baseUrl,
+    host: plan.host, port: hostPort, baseUrl: plan.baseUrl,
     synthEnvNames: plan.synthEnvNames, // NAMES only; the random values live only in the container env
     status: rec.status, createdAt: rec.createdAt, log: rec.log || '',
     // health-honesty flags (Slice B1): status is a HEALTH_STATES value; these qualify it so a
@@ -438,7 +471,7 @@ function writeManifest(plan, rec, target) {
     guarded: rec.guarded || false,
     readiness: rec.readiness || 'liveness-only',
     scannedService: plan.webService || plan.scannedService || plan.kind || null,
-    scannedPort: plan.port,
+    scannedPort: hostPort,
     migration: plan.migration || null,
     tmpRoot: plan.tmpRoot, target: target || null,
   }
@@ -451,7 +484,7 @@ function writeManifest(plan, rec, target) {
         manifestPath: plan.manifestPath, status: rec.status, createdAt: rec.createdAt,
         guarded: rec.guarded || false, readiness: rec.readiness || 'liveness-only',
         scannedService: plan.webService || plan.scannedService || plan.kind || null,
-        scannedPort: plan.port, migration: plan.migration || null,
+        scannedPort: hostPort, migration: plan.migration || null,
       }, null, 2) + '\n')
     } catch { /* pointer is best-effort */ }
   }
@@ -484,14 +517,10 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   // fail-closed, docker present, needs-secrets re-check — have already held.
   if (plan.kind === 'compose') return standupCompose(plan, { target, createdAt, timeoutMs })
 
-  // port-collision guard (Slice D): a pre-existing service already answering on the loopback
-  // port would be scanned + its findings misattributed to the partner. Probe FREE before we
-  // publish; refuse on a collision (the pure decision is classifyPortOwnership).
-  if (probeHealth(plan.baseUrl).code !== '000') {
-    const own = classifyPortOwnership({ freeBefore: false, ownedAfter: false })
-    return { status: 'failed', reason: own.reason, log: own.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
-  }
-
+  // No fixed-port collision guard: the throwaway publishes on an EPHEMERAL 127.0.0.1 host
+  // port (`-p 127.0.0.1:0:<containerPort>`), which docker only ever assigns from FREE ports,
+  // so a busy host port can never collide or misattribute findings. The assigned host port is
+  // read back after start (below) and becomes the scan baseUrl.
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
   // A dockerfile stand-up BUILDS a toolkit-named image; record it from the name-stub on
@@ -524,20 +553,28 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     uncaughtException: (e) => { cleanup(); throw e },
   }
   for (const [s, h] of Object.entries(handlers)) process.on(s, h)
+  // `live` carries the plan patched with the ephemeral host port docker assigns (read back
+  // after start); it drives the health probe + the final manifest. Until then it is the plan
+  // as planned (hostPort == webPort), so a create/start crash still writes a coherent stub.
+  let live = plan
   try {
     quiet('docker', ['rm', '-f', plan.container]) // clear any stale same-name container
     if (plan.kind === 'dockerfile') {
       // BUILD-THEN-RUN: the partner's own Dockerfile brings the source + base image.
       run('docker', ['build', '-t', plan.image, '-f', plan.dockerfilePath, plan.buildContext])
-      run('docker', ['run', '-d', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
+      run('docker', ['run', '-d', '--name', plan.container, '-p', `${plan.host}:0:${plan.port}`,
         ...fileArgs, plan.image])
     } else {
       // COPY-IN, not bind-mount: create → cp source → start (working tree stays in the container).
-      run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:${plan.port}:${plan.port}`,
+      run('docker', ['create', '--name', plan.container, '-p', `${plan.host}:0:${plan.port}`,
         ...fileArgs, '-w', plan.workdir, plan.baseImage, 'sh', '-c', plan.command])
       run('docker', ['cp', `${plan.sourceDir}/.`, `${plan.container}:${plan.workdir}`])
       run('docker', ['start', plan.container])
     }
+    // Read back the ephemeral host port docker assigned (`-p 127.0.0.1:0:<containerPort>`) —
+    // done AFTER start so the mapping is live; this avoids the find-a-free-port-then-bind race.
+    const hostPort = parseHostPort(run('docker', ['port', plan.container, String(plan.port)]), `${plan.container}:${plan.port}`)
+    live = { ...plan, hostPort, baseUrl: `http://${plan.host}:${hostPort}` }
     rec.status = 'starting'
     // 3-state liveness (Slice B1): up / unhealthy / redirect-only / failed / unknown, via the
     // pure classifyHealthCode + resolveHealth seams. Prefer the container's own declared
@@ -546,7 +583,7 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     // rec.log carries only the toolkit's health note (NAMES-only contract).
     const isRunning = () => { try { return run('docker', ['inspect', '-f', '{{.State.Running}}', plan.container]).trim() === 'true' } catch { return false } }
     const dockerHealth = () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', plan.container]).trim() } catch { return '' } }
-    const h = pollHealth(plan.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
+    const h = pollHealth(live.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
     rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
   } catch (e) {
     rec.status = 'failed'
@@ -554,7 +591,7 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   } finally {
     for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }
-  return writeManifest(plan, rec, target)
+  return writeManifest(live, rec, target)
 }
 
 /**
@@ -572,12 +609,9 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   if (!quiet('docker', ['compose', 'version'])) {
     return { status: 'no-compose', reason: 'Docker Compose V2 is not available (`docker compose version` failed) — install the compose plugin once, system-wide (Linux: `sudo apt-get install docker-compose-plugin`; Docker Desktop bundles it), then re-run — or this multi-container stack stays owner-run.', resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
   }
-  // port-collision guard (Slice D): refuse if a pre-existing service already answers on the
-  // loopback port — scanning it would misattribute findings to the partner.
-  if (probeHealth(plan.baseUrl).code !== '000') {
-    const own = classifyPortOwnership({ freeBefore: false, ownedAfter: false })
-    return { status: 'failed', reason: own.reason, log: own.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
-  }
+  // No fixed-port collision guard: the loopback override publishes the web tier on an
+  // EPHEMERAL 127.0.0.1 host port (`127.0.0.1:0:<targetPort>`), which docker only assigns
+  // from FREE ports; the assigned port is read back after `up` (below).
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
 
@@ -596,13 +630,19 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   let full
   try {
     const config = JSON.parse(run('docker', ['compose', '-p', plan.project, ...fileArgs, '-f', plan.composeFile, 'config', '--format', 'json']))
-    full = planCompose(config, plan)
+    // hostPort:0 → the loopback override publishes the web tier on an EPHEMERAL 127.0.0.1
+    // host port; the real port is read back after `up`. planCompose's baseUrl is unaffected
+    // (it inherits plan.baseUrl), so only the override host slot carries the `0`.
+    full = planCompose(config, { ...plan, hostPort: 0 })
   } catch {
     rec.status = 'failed'
     rec.log = 'compose stand-up failed: `docker compose config` could not resolve the compose file (run it yourself for the parser error — the toolkit does not capture command output, to avoid persisting secret-bearing interpolations)'
     return writeManifest(plan, rec, target)
   }
   if (full.unsupported) return { status: 'unsupported', reason: full.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
+  // The `0` was only the override's ephemeral marker; the pre-`up` stub records the
+  // container/web port as a placeholder host port (the real one is read back after `up`).
+  full = { ...full, hostPort: plan.port }
   // The loopback override is the compose isolation boundary: the web tier publishes on
   // 127.0.0.1 ONLY, and every other service is stripped of host ports entirely.
   writeFileSync(full.overridePath, full.overrideContent, { mode: 0o600 })
@@ -621,8 +661,16 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
     uncaughtException: (e) => { cleanup(); throw e },
   }
   for (const [s, h] of Object.entries(handlers)) process.on(s, h)
+  // `live` carries `full` patched with the ephemeral host port compose assigned (read back
+  // after `up`); it drives the health probe + the final manifest. Until then it is `full`
+  // (hostPort == web port), so a crashed `up` still writes a coherent stub.
+  let live = full
   try {
     run('docker', [...composeArgs, 'up', '-d', '--build'])
+    // Read the assigned ephemeral host port back off the web tier (127.0.0.1:0:<targetPort>) —
+    // done AFTER `up` so the mapping is live; avoids the find-a-free-port-then-bind race.
+    const hostPort = parseHostPort(run('docker', [...composeArgs, 'port', full.webService, String(full.targetPort)]), `${full.webService}:${full.targetPort}`)
+    live = { ...full, hostPort, baseUrl: `http://${full.host}:${hostPort}` }
     rec.status = 'starting'
     // Same 3-state liveness (Slice B1) as the single-container path — deliberately NO
     // `docker compose logs` capture (boot output can echo operator-filled secrets). The
@@ -631,7 +679,7 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
     const dockerHealth = full.webService
       ? () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', `${full.project}-${full.webService}-1`]).trim() } catch { return '' } }
       : undefined
-    const h = pollHealth(full.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
+    const h = pollHealth(live.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
     rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
   } catch {
     rec.status = 'failed'
@@ -639,7 +687,7 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   } finally {
     for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }
-  return writeManifest(full, rec, target)
+  return writeManifest(live, rec, target)
 }
 
 function main() {

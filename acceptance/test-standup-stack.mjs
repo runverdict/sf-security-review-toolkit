@@ -434,5 +434,56 @@ check('U21 classifyPortOwnership: occupied-before + not-ours → refuse (misattr
   assert.equal(classifyPortOwnership({ freeBefore: true, ownedAfter: false }).ok, false)
 })
 
+// ── Host-port decoupling (wo-c-standup): the HOST published port is separate from the
+//    CONTAINER listen port + compose web-tier selector, so a busy host port can't block a
+//    stand-up. The pure planners stay deterministic; the impure executor publishes on an
+//    ephemeral 127.0.0.1 host port (validated by the operator cold-run, not here). ──
+
+check('U22 host-port decoupling: planStandup threads a hostPort distinct from the web port; default falls back to webPort', () => {
+  const tmp = join(tmpdir(), 'sf-srt-stack', 'u22')
+  // no hostPort → the pure-planner default falls back to webPort (baseUrl/port byte-identical to today)
+  const def = planStandup(runnable, { runId: 'u22', target: TARGET, tmpRoot: tmp, port: 8080 })
+  assert.equal(def.port, 8080)
+  assert.equal(def.hostPort, 8080)
+  assert.equal(def.baseUrl, 'http://127.0.0.1:8080')
+  // a threaded hostPort ≠ webPort: the HOST publish + baseUrl follow hostPort; the CONTAINER
+  // side (port, benignEnv.PORT — the app's in-container listen port + the compose selector) keeps webPort
+  const p = planStandup(runnable, { runId: 'u22', target: TARGET, tmpRoot: tmp, port: 8080, hostPort: 55555 })
+  assert.equal(p.port, 8080, 'container/web/selector port stays webPort')
+  assert.equal(p.benignEnv.PORT, '8080', 'the in-container listen port stays webPort')
+  assert.equal(p.hostPort, 55555, 'the HOST publish port is the threaded hostPort')
+  assert.equal(p.baseUrl, 'http://127.0.0.1:55555', 'baseUrl follows the host port')
+  // pointer contract: the manifest scannedPort (= plan.hostPort) MUST equal new URL(baseUrl).port,
+  // or run-dast's dastDegrade false-flags the run as "wrong tier"
+  assert.equal(String(p.hostPort), new URL(p.baseUrl).port)
+  assert.equal(new URL(p.baseUrl).hostname, '127.0.0.1')   // still loopback
+  // an invalid threaded host-port is rejected exactly like --port
+  assert.throws(() => planStandup(runnable, { runId: 'u22', target: TARGET, tmpRoot: tmp, hostPort: '70000' }), /invalid host-port/)
+})
+
+check('U23 host-port decoupling: planCompose templates the override HOST slot from hostPort; container target keeps webPort', () => {
+  // default (no hostPort) → the override host slot is the web port (byte-identical to U15)
+  const preDef = planStandup(composeRunnable, { runId: 'u23', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u23') })
+  const def = planCompose(composeConfig, preDef)
+  assert.match(def.overrideContent, /"127\.0\.0\.1:8080:8080"/)
+  assert.equal(def.targetPort, 8080)                       // the container-side port the executor reads back on
+  // a threaded hostPort ≠ webPort → the override HOST slot uses hostPort; the container-side
+  // target stays the web tier's own target (8080); baseUrl follows hostPort
+  const pre = planStandup(composeRunnable, { runId: 'u23', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u23'), hostPort: 55555 })
+  const p = planCompose(composeConfig, pre)
+  assert.match(p.overrideContent, /"127\.0\.0\.1:55555:8080"/)
+  assert.ok(!p.overrideContent.includes('0.0.0.0'), 'the override must never publish on 0.0.0.0')
+  assert.equal(p.targetPort, 8080)
+  assert.equal(p.baseUrl, 'http://127.0.0.1:55555')
+  assert.equal(String(p.hostPort), new URL(p.baseUrl).port) // the pointer contract holds for compose too
+  // a host:container mismatch keeps the app's own container-side target (8080 published maps to 3000)
+  const mm = planCompose({ services: { web: { ports: [{ target: 3000, published: '8080' }] } } }, pre)
+  assert.match(mm.overrideContent, /"127\.0\.0\.1:55555:3000"/)
+  assert.equal(mm.targetPort, 3000)
+  // the ephemeral runtime marker: hostPort 0 → 127.0.0.1:0:<target> (docker assigns a free host port)
+  const eph = planCompose(composeConfig, { ...pre, hostPort: 0 })
+  assert.match(eph.overrideContent, /"127\.0\.0\.1:0:8080"/)
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

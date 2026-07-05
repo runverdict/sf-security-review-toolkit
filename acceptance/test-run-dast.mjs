@@ -132,6 +132,24 @@ check('G3 dastDegrade: non-up health OR scored-port mismatch degrades; matching 
   assert.equal(dastDegrade(planDast('http://127.0.0.1:8000', { ...base, scoredPort: 8000 })).degraded, true)
 })
 
+check('G3b host-port decoupling: an ephemeral host port ≠ container port does NOT false-degrade (scoredPort == baseUrl.port)', () => {
+  const base = { target: '/r', runId: 'g3b', tmpRoot: TMP }
+  // wo-c-standup publishes on an EPHEMERAL 127.0.0.1 host port; the manifest records
+  // scannedPort = that host port = new URL(baseUrl).port, even though the container listens on
+  // a DIFFERENT port. scoredPort must track the HOST port, or every real ephemeral run degrades
+  // as "wrong tier".
+  const hostPort = 49712 // an ephemeral host port docker might assign; distinct from the 8000 container port
+  const p = planDast(`http://127.0.0.1:${hostPort}`, { ...base, health: 'up', scoredPort: hostPort })
+  assert.equal(dastDegrade(p).degraded, false, 'a hostPort ≠ containerPort run must NOT false-degrade when scoredPort == baseUrl.port')
+  assert.equal(String(p.scoredPort), new URL(p.baseUrl).port) // the pointer contract the manifest guarantees
+  // the loopback gate still accepts an ephemeral host port on the pointer path
+  const resolved = resolveBaseUrl(null, { schema: 'sf-srt-stack/1', runId: 'g3b', baseUrl: `http://127.0.0.1:${hostPort}`, status: 'up', scannedPort: hostPort })
+  assert.equal(resolved.baseUrl, `http://127.0.0.1:${hostPort}`)
+  // MUTATION the slice prevents: recording scannedPort = the CONTAINER port when the host port
+  // differs WOULD false-degrade — the exact CLAUDE.md-class bug the pointer contract locks out
+  assert.equal(dastDegrade(planDast(`http://127.0.0.1:${hostPort}`, { ...base, health: 'up', scoredPort: 8000 })).degraded, true)
+})
+
 check('G4 absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a clean result', () => {
   const s = absentCorroborationStub({ reason: 'needs-recipe: Rails detected', partnerShape: 'rails' })
   assert.equal(s.schema, DAST_PROVENANCE_SCHEMA)
