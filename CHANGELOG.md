@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.86] — 2026-07-05
+
+**Stand-up health honesty — a 3-state liveness classification that degrades, never over-claims.**
+`listening()` used `curl -sS` with no status capture, so ANY HTTP status (including a schema-less
+500) read "up" and the chain scanned a broken surface with no caveat. On the grounded Verdict
+shape the api 200s on `/` and `/openapi.json` while every DB-backed route 500s (migrations may
+not have run) — today that read "up".
+
+### Fixed
+- `harness/standup-stack.mjs`: three pure, exported, hermetically-tested seams replace the boolean
+  probe — `classifyHealthCode(code,{isRoot})` (2xx / 401 / 403 / 405 → up, 5xx → unhealthy, and the
+  load-bearing `isRoot && 3xx/4xx → up` so a no-root JSON API is not mis-read as failed),
+  `resolveHealth(observations)` (terminal `up` / `unhealthy` / `failed` / `redirect-only` /
+  `unknown`), and `mapDockerHealth(s)` (honors the partner's declared HEALTHCHECK). The poll loops
+  walk an ordered liveness set `[/readyz, /health/ready, /healthz, /health, /]`.
+
+### Hardened
+- DEGRADE-not-abort: only `FATAL_STATUS` aborts (exitCode 1); `unhealthy` / `redirect-only` stand up
+  with a loud degraded label so the corroborating scan still runs. New shared `HEALTH_STATES` enum is
+  written into `stack-standup.json.status`; orthogonal honesty flags (`guarded`, `readiness`,
+  `scannedService`, `scannedPort`, `migration`) are carried in the manifest + pointer for a downstream
+  consumer to read structurally. `standupHealthNote` never claims clean/healthy/prod-equivalent on a
+  non-`up` status; every `up` carries the universal liveness-only caveat. `stack-detect.mjs`'s runnable
+  note + the journey chain-gating (`up` → scan; `unhealthy`/`redirect-only` → scan degraded;
+  `failed`/`unknown` → skip to teardown, ZAP plan to `PENDING-OWNER-RUN.md`) updated in lockstep.
+- Test-backed: `acceptance/test-standup-stack.mjs` H1–H4 (code map incl. the isRoot correction;
+  resolveHealth terminal map incl. transient-5xx-then-2xx → up; label strings two-sided; docker-health
+  mapping). Mutation-proven (the isRoot branch, the transient-up precedence).
+
+Suite: **63 files / 1031 checks** (+4).
+
 ## [0.8.85] — 2026-07-05
 
 **Compose web-tier selection — the throwaway DAST scans the API, not the frontend.** Cold-run

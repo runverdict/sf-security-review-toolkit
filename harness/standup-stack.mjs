@@ -54,6 +54,15 @@ const SERVICE_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const NODE_BASE = 'node:18-alpine'
 export const PYTHON_BASE = 'python:3.12-slim' // pinned minor tag, never :latest (same discipline as NODE_BASE)
 
+// Health vocabulary (Slice B1): the terminal state of a stand-up, written into
+// stack-standup.json.status. run-dast / capture-openapi / the base-url resolver import
+// this — no hard-coded status strings anywhere downstream.
+export const HEALTH_STATES = Object.freeze({ UP: 'up', UNHEALTHY: 'unhealthy', FAILED: 'failed', UNKNOWN: 'unknown', REDIRECT_ONLY: 'redirect-only' })
+// Statuses that ABORT the run (exitCode 1). unhealthy / redirect-only DEGRADE — the scan
+// still runs, with a loud caveat — rather than abort: the honesty floor is a degraded
+// label, not a hard stop.
+export const FATAL_STATUS = new Set(['failed', 'unknown', 'no-docker', 'no-compose', 'unsupported', 'needs-secrets'])
+
 // PYTHON RUN HEURISTIC (deterministic — the command is a pure function of the recipe):
 // install from `requirements.txt` when the recipe root has one, else `pyproject.toml`/
 // `Pipfile` (`pip install .`), else no install — resolved by the shell INSIDE the
@@ -69,6 +78,68 @@ function pythonRunCommand(entry, port) {
   if (entry === 'asgi.py') return `python -m uvicorn asgi:application --host 0.0.0.0 --port ${port}`
   if (entry === 'wsgi.py') return `python -m gunicorn --bind 0.0.0.0:${port} wsgi:application`
   return `python ${entry}`
+}
+
+// ── Health classification (pure seams — the hermetic core of the stand-up honesty) ──
+
+/**
+ * PURE. Classify ONE HTTP status code from a liveness probe → 'up' | 'unhealthy' | 'retry'.
+ * The ONE retunable predicate. `isRoot` is load-bearing: a 3xx/4xx on `/` means the server
+ * is ANSWERING (liveness), so a no-root JSON API (FastAPI/Express under /api that 404s on /)
+ * classifies `up`, NOT failed — a naive "404 → keep trying" aborts the DAST on a healthy app.
+ */
+export function classifyHealthCode(code, { isRoot = false } = {}) {
+  const c = Number(code)
+  if (c >= 200 && c < 300) return 'up'
+  if (c === 401 || c === 403 || c === 405) return 'up'   // answering, auth/method-guarded
+  if (c >= 500 && c < 600) return 'unhealthy'            // alive but server-erroring
+  if (isRoot && c >= 300 && c < 500) return 'up'         // 3xx/4xx on / == the server is answering
+  return 'retry'                                          // 000, or a non-root 3xx/404 (probe path absent)
+}
+
+/**
+ * PURE. Terminal health from the probe observations + whether the container is still
+ * running. `up` wins (covers a transient-5xx-then-2xx window); a dead container is `failed`;
+ * a running-but-5xx surface is `unhealthy`; an http→https-only surface is `redirect-only`;
+ * running-but-never-answered is `unknown` (likely the wrong tier/port — cross-ref --port).
+ */
+export function resolveHealth({ observedUp, observedUnhealthy, observedRedirectOnly, containerRunning } = {}) {
+  if (observedUp) return HEALTH_STATES.UP
+  if (!containerRunning) return HEALTH_STATES.FAILED
+  if (observedUnhealthy) return HEALTH_STATES.UNHEALTHY
+  if (observedRedirectOnly) return HEALTH_STATES.REDIRECT_ONLY
+  return HEALTH_STATES.UNKNOWN
+}
+
+/**
+ * PURE. Map a `docker inspect` container-health string to our vocabulary. Honors the
+ * partner's OWN declared HEALTHCHECK — the most honest readiness signal available. An empty
+ * string (no declared healthcheck) falls through to the HTTP liveness probe.
+ */
+export function mapDockerHealth(s) {
+  const v = String(s || '').trim().toLowerCase()
+  if (v === 'healthy') return 'up'
+  if (v === 'unhealthy') return 'unhealthy'
+  if (v === 'starting') return 'retry'
+  return '' // none declared → let the HTTP probe decide
+}
+
+/**
+ * PURE. The stand-up health note. Never claims clean/healthy/prod-equivalent on a non-`up`
+ * status; every `up` carries the universal liveness-only caveat (readiness NOT asserted).
+ */
+export function standupHealthNote(status, { guarded = false, saw400 = false } = {}) {
+  if (status === HEALTH_STATES.UP) {
+    return (guarded
+      ? 'liveness-verified but the target answered only auth/method-guarded — unauthenticated coverage is a floor, not a bill of health; '
+      : '') + 'liveness-verified only; readiness NOT asserted; DB-backed endpoints unverified (may error); NOT the production-equivalent scan'
+  }
+  if (status === HEALTH_STATES.UNHEALTHY) return 'DEGRADED: the throwaway booted but the web tier returned 5xx — liveness/header-level only; DB-backed endpoints unverified (may error); the corroborating scan continues with a degraded label'
+  if (status === HEALTH_STATES.REDIRECT_ONLY) return 'DEGRADED: the app forces https and the throwaway serves http — only redirects were observed; the baseline reached little surface'
+  if (status === HEALTH_STATES.UNKNOWN) return saw400
+    ? 'the container is running but every liveness path returned 400 — likely a Host-header/ALLOWED_HOSTS rejection; the baseline reached little surface (re-run with the right host or --port)'
+    : 'the container is running but never answered on any liveness path — the detected web tier may be wrong; re-run with --port'
+  return 'stand-up failed: the web tier did not become reachable in time (run docker logs / docker compose logs yourself while the container exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
 }
 
 /** Resource names are derived ONLY from the validated run-id → teardown can name-scope. */
@@ -250,8 +321,63 @@ export function planCompose(config, prePlan) {
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
 
-/** Is something listening on the published URL? (any HTTP status = connected; refused = down) */
-function listening(url) { try { execFileSync('curl', ['-sS', '-o', '/dev/null', '--max-time', '3', url], { stdio: 'ignore' }); return true } catch { return false } }
+/** IMPURE. Body-free probe → { code, redirect }. `000` = down/refused. NAMES-only: no
+ *  body/headers persisted; the redirect target is read in-memory only to detect http→https. */
+function probeHealth(url) {
+  try {
+    const out = execFileSync('curl', ['-sS', '-o', '/dev/null', '-w', '%{http_code} %{redirect_url}', '--max-time', '3', url],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const sp = out.indexOf(' ')
+    return sp < 0 ? { code: out || '000', redirect: '' } : { code: out.slice(0, sp) || '000', redirect: out.slice(sp + 1) }
+  } catch { return { code: '000', redirect: '' } }
+}
+
+// The ordered liveness probe set — readiness-named paths first, `/` last (the only isRoot).
+const HEALTH_PROBE_PATHS = ['/readyz', '/health/ready', '/healthz', '/health', '/']
+const READINESS_PATHS = new Set(['/readyz', '/health/ready', '/healthz', '/health'])
+
+/**
+ * IMPURE. Poll the ordered liveness set until a deadline, classifying via the pure seams.
+ * `dockerHealth()` (optional) returns the container's declared HEALTHCHECK status — when
+ * present it is preferred (the partner's own readiness definition); an empty string falls
+ * through to the HTTP probe. `isRunning()` gates failed-vs-unknown. Returns
+ * { status, guarded, readiness, saw400, log }.
+ */
+function pollHealth(baseUrl, { isRunning, dockerHealth } = {}, deadline) {
+  const base = String(baseUrl).replace(/\/+$/, '')
+  let observedUp = false, observedUnhealthy = false, observedRedirectOnly = false
+  let sawOk = false, sawGuarded = false, sawReadiness = false, saw400 = false, declared = false
+  let containerRunning = true
+  while (Date.now() < deadline) {
+    if (dockerHealth) {
+      const dh = mapDockerHealth(dockerHealth())
+      if (dh) { declared = true; if (dh === 'up') observedUp = true; else if (dh === 'unhealthy') observedUnhealthy = true }
+    }
+    if (!observedUp) {
+      for (const path of HEALTH_PROBE_PATHS) {
+        const isRoot = path === '/'
+        const { code, redirect } = probeHealth(base + path)
+        const c = Number(code)
+        const cls = classifyHealthCode(code, { isRoot })
+        if (cls === 'up') {
+          if (c >= 200 && c < 300) { observedUp = true; sawOk = true; if (READINESS_PATHS.has(path)) sawReadiness = true }
+          else if (c === 401 || c === 403 || c === 405) { observedUp = true; sawGuarded = true }
+          else if (isRoot && c >= 300 && c < 400) { if (/^https:\/\//i.test(redirect)) observedRedirectOnly = true; else observedUp = true }
+          else if (isRoot) observedUp = true // 4xx on / == the server is answering
+        } else if (cls === 'unhealthy') observedUnhealthy = true
+        if (c === 400) saw400 = true
+      }
+    }
+    if (observedUp) break
+    containerRunning = isRunning ? isRunning() : true
+    if (!containerRunning) break
+    execFileSync('sleep', ['1'])
+  }
+  const status = resolveHealth({ observedUp, observedUnhealthy, observedRedirectOnly, containerRunning })
+  const guarded = (sawGuarded && !sawOk) || (saw400 && !sawOk && !observedUnhealthy && status !== HEALTH_STATES.UP)
+  const readiness = (sawReadiness || (declared && status === HEALTH_STATES.UP)) ? 'app-declared' : 'liveness-only'
+  return { status, guarded, readiness, saw400, log: standupHealthNote(status, { guarded, saw400 }) }
+}
 
 /** Write the manifest + the gitignored project pointer (NAMES only — never secret values). */
 function writeManifest(plan, rec, target) {
@@ -264,6 +390,14 @@ function writeManifest(plan, rec, target) {
     host: plan.host, port: plan.port, baseUrl: plan.baseUrl,
     synthEnvNames: plan.synthEnvNames, // NAMES only; the random values live only in the container env
     status: rec.status, createdAt: rec.createdAt, log: rec.log || '',
+    // health-honesty flags (Slice B1): status is a HEALTH_STATES value; these qualify it so a
+    // downstream consumer can degrade a scan label without reading prose. scannedService/Port
+    // name the tier that was actually reached (Slice A's web-tier pick).
+    guarded: rec.guarded || false,
+    readiness: rec.readiness || 'liveness-only',
+    scannedService: plan.webService || plan.scannedService || plan.kind || null,
+    scannedPort: plan.port,
+    migration: plan.migration || null,
     tmpRoot: plan.tmpRoot, target: target || null,
   }
   writeFileSync(plan.manifestPath, JSON.stringify(manifest, null, 2) + '\n')
@@ -273,6 +407,9 @@ function writeManifest(plan, rec, target) {
       writeFileSync(join(dir, 'stack-standup.json'), JSON.stringify({
         schema: plan.schema, runId: plan.runId, container: plan.container, baseUrl: plan.baseUrl,
         manifestPath: plan.manifestPath, status: rec.status, createdAt: rec.createdAt,
+        guarded: rec.guarded || false, readiness: rec.readiness || 'liveness-only',
+        scannedService: plan.webService || plan.scannedService || plan.kind || null,
+        scannedPort: plan.port, migration: plan.migration || null,
       }, null, 2) + '\n')
     } catch { /* pointer is best-effort */ }
   }
@@ -352,19 +489,15 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
       run('docker', ['start', plan.container])
     }
     rec.status = 'starting'
-    const deadline = Date.now() + timeoutMs
-    let up = false
-    while (Date.now() < deadline) {
-      if (listening(plan.baseUrl + '/healthz') || listening(plan.baseUrl + '/')) { up = true; break }
-      const running = (() => { try { return run('docker', ['inspect', '-f', '{{.State.Running}}', plan.container]).trim() === 'true' } catch { return false } })()
-      if (!running) break
-      execFileSync('sleep', ['1'])
-    }
-    rec.status = up ? 'up' : 'failed'
-    // We deliberately do NOT capture `docker logs`: partner app boot output can echo
-    // operator-filled secrets, and persisting it would violate the NAMES-only contract
-    // (audit: container-log leak). rec.log carries only this toolkit message.
-    if (!up) rec.log = 'stand-up failed: the web tier did not become reachable in time (run `docker logs` yourself while the container exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
+    // 3-state liveness (Slice B1): up / unhealthy / redirect-only / failed / unknown, via the
+    // pure classifyHealthCode + resolveHealth seams. Prefer the container's own declared
+    // HEALTHCHECK when present; else the ordered HTTP liveness set. We still deliberately do
+    // NOT capture `docker logs` — partner boot output can echo operator-filled secrets, so
+    // rec.log carries only the toolkit's health note (NAMES-only contract).
+    const isRunning = () => { try { return run('docker', ['inspect', '-f', '{{.State.Running}}', plan.container]).trim() === 'true' } catch { return false } }
+    const dockerHealth = () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', plan.container]).trim() } catch { return '' } }
+    const h = pollHealth(plan.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
+    rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
   } catch (e) {
     rec.status = 'failed'
     rec.log = 'stand-up failed during a docker step (the toolkit does not capture container output, to avoid persisting secrets)'
@@ -435,18 +568,15 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   try {
     run('docker', [...composeArgs, 'up', '-d', '--build'])
     rec.status = 'starting'
-    const deadline = Date.now() + timeoutMs
-    let up = false
-    while (Date.now() < deadline) {
-      if (listening(full.baseUrl + '/healthz') || listening(full.baseUrl + '/')) { up = true; break }
-      const anyRunning = (() => { try { return run('docker', [...composeArgs, 'ps', '--status', 'running', '-q']).trim() !== '' } catch { return false } })()
-      if (!anyRunning) break
-      execFileSync('sleep', ['1'])
-    }
-    rec.status = up ? 'up' : 'failed'
-    // deliberately NO `docker compose logs` capture — the same NAMES-only contract as
-    // the single-container path (boot output can echo operator-filled secrets)
-    if (!up) rec.log = 'stand-up failed: the web tier did not become reachable in time (run `docker compose logs` yourself while the project exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
+    // Same 3-state liveness (Slice B1) as the single-container path — deliberately NO
+    // `docker compose logs` capture (boot output can echo operator-filled secrets). The
+    // declared HEALTHCHECK is read off the web-tier container (`<project>-<service>-1`).
+    const isRunning = () => { try { return run('docker', [...composeArgs, 'ps', '--status', 'running', '-q']).trim() !== '' } catch { return false } }
+    const dockerHealth = full.webService
+      ? () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', `${full.project}-${full.webService}-1`]).trim() } catch { return '' } }
+      : undefined
+    const h = pollHealth(full.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
+    rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
   } catch {
     rec.status = 'failed'
     rec.log = 'stand-up failed during a docker compose step (the toolkit does not capture compose output, to avoid persisting secrets)'
@@ -490,9 +620,12 @@ function main() {
   }
 
   const m = standupStack(plan, { consent, target })
-  if (asJson) { process.stdout.write(JSON.stringify(m, null, 2) + '\n'); if (m.status !== 'up') process.exitCode = 1; return }
-  process.stdout.write(`## standup-stack — ${m.status}\ncontainer: ${m.resources.container}   url: ${m.baseUrl}\nsynth env (names): ${m.synthEnvNames.join(', ') || 'none'}\nteardown: node harness/teardown-stack.mjs --target <repo>\n${m.status !== 'up' ? 'LOG: ' + (m.log || '').split('\n').pop() : ''}\n`)
-  if (m.status !== 'up') process.exitCode = 1
+  // DEGRADE-not-abort (Slice B1): only a FATAL_STATUS aborts. unhealthy / redirect-only stand
+  // up with a loud degraded label (the downstream capture + scan still run, degraded).
+  const degraded = m.status === HEALTH_STATES.UNHEALTHY || m.status === HEALTH_STATES.REDIRECT_ONLY
+  if (asJson) { process.stdout.write(JSON.stringify(m, null, 2) + '\n'); if (FATAL_STATUS.has(m.status)) process.exitCode = 1; return }
+  process.stdout.write(`## standup-stack — ${m.status}${degraded ? ' (DEGRADED — not a clean scan target)' : ''}\ncontainer: ${m.resources.container}   url: ${m.baseUrl}\nsynth env (names): ${(m.synthEnvNames || []).join(', ') || 'none'}\nteardown: node harness/teardown-stack.mjs --target <repo>\n${(FATAL_STATUS.has(m.status) || degraded) ? 'LOG: ' + (m.log || '').split('\n').pop() : ''}\n`)
+  if (FATAL_STATUS.has(m.status)) process.exitCode = 1
 }
 
 function invokedDirectly() {

@@ -411,7 +411,7 @@ export function classifyStack(facts = {}) {
     reason: `standable: ${recipe.kind} recipe${webTierReason(facts.webTier)}` +
       (services.length ? ` (in-compose services: ${services.join(', ')})` : '') +
       `; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` +
-      '; note: stand-up is HTTP-liveness-verified only (a port answers), not app-health-verified — migrations/deep readiness are not asserted' }
+      '; note: stand-up is HTTP-liveness-verified only — classified up / unhealthy / redirect-only / unknown from an unauthenticated liveness probe (readiness is NOT asserted; DB-backed endpoints unverified, may error), not the production-equivalent scan' }
 }
 
 // ── CLI fact-gathering (dependency-free; best-effort regex/file scans) ──────────

@@ -562,6 +562,14 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    `sf-srt-stack-*` container + tmp tree from a prior crashed run (name-scoped; evidence
    untouched). Label the evidence as **local-throwaway**
    (corroborating + a de-risking dry run), NOT the production-equivalent submission scan.
+   **Branch on the stand-up health** (`stack-standup.json.status`, one of
+   `up` / `unhealthy` / `redirect-only` / `failed` / `unknown`): on **`up`**, capture +
+   run-dast as above; on **`unhealthy`** / **`redirect-only`**, STILL run capture-openapi
+   (the framework spec is served at import time, before any DB hit — keep the evidence) AND
+   run-dast, but the scan carries a degraded label (the manifest's `guarded`/`readiness`
+   flags qualify it); on **`failed`** / **`unknown`**, skip capture + DAST and go straight to
+   teardown, emitting the ZAP plan into `PENDING-OWNER-RUN.md` (on `unknown` the detected web
+   tier may be wrong — hint `--port`). Teardown ALWAYS runs, on every branch.
    If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
    ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
    the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):

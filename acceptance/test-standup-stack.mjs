@@ -25,6 +25,10 @@
  *   U18 the compose plan carries env NAMES only + unsafe service names are refused
  *   U19 planCompose REFUSES network_mode host/container:/service: (modes that bypass
  *       compose port publishing) — and never falsely refuses bridge/default/none/absent
+ *   H1  classifyHealthCode: the code map (2xx/401/403/405→up, 5xx→unhealthy, isRoot 404→up)
+ *   H2  resolveHealth: up wins; failed / unhealthy / redirect-only / unknown terminal map
+ *   H3  standupHealthNote: degrade note present; no clean/healthy/prod-equivalent on non-up
+ *   H4  mapDockerHealth: partner's declared HEALTHCHECK honored; empty → HTTP-probe fallthrough
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
  * CI-hermetic — these tests pin the PURE planCompose (loopback override +
@@ -35,7 +39,10 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE } from '../harness/standup-stack.mjs'
+import {
+  planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE,
+  classifyHealthCode, resolveHealth, mapDockerHealth, standupHealthNote, HEALTH_STATES,
+} from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
 let pass = 0, fail = 0
@@ -323,6 +330,69 @@ check('U19 planCompose REFUSES network_mode host/container:/service: — modes t
     assert.match(ok.overrideContent, /"127\.0\.0\.1:8080:8080"/)
     assert.match(ok.overrideContent, /cache:\n    ports: !reset \[\]/)
   }
+})
+
+// ── Stand-up health honesty (Slice B1) — the pure seams. The live poll loop is
+//    operator-cold-validated (it needs a running container); these pin classifyHealthCode /
+//    resolveHealth / mapDockerHealth / standupHealthNote, which are what regress silently. ──
+
+check('H1 classifyHealthCode: the code map (the isRoot correction is load-bearing)', () => {
+  assert.equal(classifyHealthCode(200), 'up')
+  assert.equal(classifyHealthCode(204), 'up')
+  assert.equal(classifyHealthCode(401), 'up')   // auth-guarded == answering
+  assert.equal(classifyHealthCode(403), 'up')
+  assert.equal(classifyHealthCode(405), 'up')
+  assert.equal(classifyHealthCode(500), 'unhealthy')
+  assert.equal(classifyHealthCode(503), 'unhealthy')
+  // MUTATION: dropping the `isRoot && 3xx/4xx → up` branch regresses a no-root JSON API
+  // (FastAPI/Express under /api that 404s on /) to 'retry' → the DAST aborts on a healthy app
+  assert.equal(classifyHealthCode(404, { isRoot: true }), 'up')   // 404 on / == the server answers
+  assert.equal(classifyHealthCode(302, { isRoot: true }), 'up')
+  // two-sided: a NAMED probe path 404 is "try next" (the path is just absent), not up
+  assert.equal(classifyHealthCode(404, { isRoot: false }), 'retry')
+  assert.equal(classifyHealthCode(0, { isRoot: true }), 'retry')   // 000 down/refused
+  assert.equal(classifyHealthCode('000'), 'retry')
+})
+
+check('H2 resolveHealth: up wins; failed vs unhealthy vs redirect-only vs unknown', () => {
+  assert.equal(resolveHealth({ observedUp: true, containerRunning: true }), HEALTH_STATES.UP)
+  // transient 5xx-then-2xx → up (observedUp wins even with observedUnhealthy also set)
+  assert.equal(resolveHealth({ observedUp: true, observedUnhealthy: true, containerRunning: true }), HEALTH_STATES.UP)
+  assert.equal(resolveHealth({ observedUp: false, containerRunning: false }), HEALTH_STATES.FAILED)
+  assert.equal(resolveHealth({ observedUnhealthy: true, containerRunning: true }), HEALTH_STATES.UNHEALTHY)
+  assert.equal(resolveHealth({ observedRedirectOnly: true, containerRunning: true }), HEALTH_STATES.REDIRECT_ONLY)
+  // ran to the deadline, still running, never answered → unknown (likely the wrong tier/port)
+  assert.equal(resolveHealth({ containerRunning: true }), HEALTH_STATES.UNKNOWN)
+  // a dead container outranks unhealthy/redirect — it's gone
+  assert.equal(resolveHealth({ observedUnhealthy: true, containerRunning: false }), HEALTH_STATES.FAILED)
+})
+
+check('H3 standupHealthNote: degrade present; no clean/healthy/prod-equivalent claim on non-up', () => {
+  const up = standupHealthNote(HEALTH_STATES.UP)
+  assert.match(up, /liveness-verified only/)
+  assert.match(up, /readiness NOT asserted/)
+  assert.ok(!/\bhealthy\b/i.test(up) && !/\bclean\b/i.test(up), 'the up note must not claim healthy/clean: ' + up)
+  const guarded = standupHealthNote(HEALTH_STATES.UP, { guarded: true })
+  assert.match(guarded, /auth\/method-guarded/)
+  assert.match(guarded, /floor, not a bill of health/)
+  for (const st of [HEALTH_STATES.UNHEALTHY, HEALTH_STATES.REDIRECT_ONLY]) {
+    const n = standupHealthNote(st)
+    assert.match(n, /DEGRADED/)
+    assert.ok(!/\bhealthy\b/i.test(n) && !/\bclean\b/i.test(n) && !/production-equivalent/i.test(n), `${st} note must not over-claim: ` + n)
+  }
+  assert.match(standupHealthNote(HEALTH_STATES.UNKNOWN), /web tier may be wrong|never answered/)
+  assert.match(standupHealthNote(HEALTH_STATES.UNKNOWN), /--port/)
+  assert.match(standupHealthNote(HEALTH_STATES.UNKNOWN, { saw400: true }), /Host-header|ALLOWED_HOSTS/)
+  assert.match(standupHealthNote(HEALTH_STATES.FAILED), /stand-up failed/)
+})
+
+check('H4 mapDockerHealth: honors the partner declared HEALTHCHECK; empty → falls through', () => {
+  assert.equal(mapDockerHealth('healthy'), 'up')
+  assert.equal(mapDockerHealth('unhealthy'), 'unhealthy')
+  assert.equal(mapDockerHealth('starting'), 'retry')
+  assert.equal(mapDockerHealth(''), '')          // no declared healthcheck → the HTTP probe decides
+  assert.equal(mapDockerHealth(null), '')
+  assert.equal(mapDockerHealth('HEALTHY'), 'up')  // case-insensitive
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)
