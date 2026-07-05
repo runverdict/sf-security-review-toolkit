@@ -26,7 +26,9 @@
   `trivy config -f json <compose-dir>` invocation + the compose→trivy-NOT-checkov routing rule [checkov has no
   `docker_compose` framework — the cold-run driver improvised it into an empty scan]; test-backed by the
   F8-compose-iac prose guard in test-ci-hygiene [bogus-flag literal forbidden + trivy route required]; +1 check,
-  mutation-proven). **ALL 4 COLD-RUN QUICK-WIN SLICES SHIPPED on the branch — pending off-disk grading + merge.**
+  mutation-proven). **ALL 4 COLD-RUN QUICK-WIN SLICES SHIPPED + GRADED PASS off disk (2026-07-05).** Branch commits carry
+  `Co-Authored-By: Claude Fable 5` trailers (SRT identity-discipline violation) — scrub before merge. **The full
+  go-forward plan is the ★ POST-MIDPOINT-COLD-RUN PLAN section below.**
   CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 + item 7 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
   seam · determinism proof · single-shape registry · supply-chain README+`SC-*` · E0.1d-EXPAND
   catalog routing 0.8.76 · EXPAND-2 class-less-safe markup/OAuth 0.8.77 · EXPAND-3 owned-class-dimension 0.8.78 ·
@@ -68,6 +70,57 @@
   profile, not the general partner). The CWE→dimension map is a scanner-agnostic knowledge artifact.**
   (The Tier-0 sequence and the whole B5 arc are far along — see the **Baseline at time of writing** block
   above for the authoritative current version + shipped list; do NOT read a "next item" out of the prose below.)
+
+## ★ POST-MIDPOINT-COLD-RUN PLAN → 0.9.0 (2026-07-05)
+
+The ★ midpoint cold run (item 8) RAN end-to-end on cached 0.8.80 against `srt-verdict-coldrun`
+(9 phases, ~2.2 h audit). **The engine works:** real, correct findings — 2 admin-console token
+bugs, 5 deleted-history secrets, a deployed-artifact uninstall-integrity MEDIUM (source review
+cannot see it), cross-border Gemini/Vertex egress, prod dependency CVEs — an honest **BLOCKED /
+0-critical** verdict, and a clean deployed-org lifecycle (standup → install → permission battery →
+uninstall → teardown, zero residue). Graded off disk: the final band is exactly **0 crit / 29 high**
+(21 dep CVEs + 5 history secrets + 2 admin-token + 1 MD5); the 351 FP dispositions were correct.
+The run also re-confirmed, on the pre-fix baseline, the exact defects the branch slices target
+(bandit noise = slice 3; DAST `needs-secrets` → owner-run = slice 1). But it surfaced
+correctness/quality defects that GATE the tag. **Two work-orders close them; neither belongs in the
+other (disjoint subsystems, disjoint files → parallelizable as two builder sessions).**
+
+### WORK-ORDER A — audit-pipeline honesty (TAG-GATING: the blocker-count correctness). NOT YET GROUNDED/WRITTEN.
+Subsystem: `ingest-scanner-findings.mjs` / `reconcile-provenance.mjs` / the audit-codebase Workflow
+merge / `write-drafted-content.mjs` / `generate-artifacts`.
+- **A1 — LLM findings carry no `provenance` field** (verified off disk: 46 findings = provenance
+  `(none)`). So `reconcile-provenance` returns **0 superseded** and `apply-dispositions` cannot flip
+  them. Stamp `provenance:'llm-inferred'` on the merge. **ROOT FIX.**
+- **A2 — double-count → wrong blocker count** (open-high read **56** until an idempotent live-tail
+  re-ingest deduped it to **29**). Rooted in A1: co-located LLM + deterministic secret hits
+  double-count until dedup; fixing A1 lets reconcile supersede them at merge time. A run without the
+  tail re-ingest would report the inflated count.
+- **A3 — artifact preamble leak**: every drafted artifact began with agent chatter ("I have
+  everything I need…"); the driver hand-stripped 4–14 lines/doc. Strip to the H1 in
+  `write-drafted-content` (or the drafting prompt).
+- **A4 — mcp-server-details regressed on refresh**: a code-AST-verified **67-tool** tiered inventory
+  (49 read + 10 propose + 8 admin, 3 manifest discrepancies) was overwritten with a thinner
+  **49-ESR-op** draft (46 read + 3 propose, admin tier dropped). Drafting-guidance fix so the
+  exposed-tools artifact enumerates the full registry, not just the ESR ops.
+- NOT toolkit (driver/env — do not build): shell-quoting fragility + sleep-polling.
+
+### WORK-ORDER B — throwaway-DAST enablement (partner-general). File `srt-dast-builder-prompt.md` (v2, audit-hardened + Fable-safe). **BUILDING NOW.**
+Slices **A** (compose web-tier selection) · **B1** (3-state health honesty) · **G** (run-dast honesty
+consumption + machine-readable provenance — the keystone) · **C** (spec-path + capture-only
+provenance) · **B2** (migration detection) · **D** (base-url pointer + run-id integrity +
+target-identity guards) · **E** (python ASGI/WSGI run recipe). **Tier-1 {A, B1, G, C} = one atomic
+honesty gate** (any alone still permits a clean-looking wrong-tier / unhealthy result).
+- **Fast-follow slice** (auditor-flagged; my call = include): container containment caps
+  (`--memory` / `--pids-limit` / `--cap-drop` / `--no-new-privileges`) — additive to the run command;
+  does NOT touch the 4 frozen loopback layers (the bridge-network variant is rejected — it would).
+- **DEFERRED post-0.9.0**: Slice F Schemathesis spec-fed depth (the one place best-in-class fights
+  don't-over-claim; C + G close the adjacency); compiled-stack breadth JVM/Ruby/Go/.NET (an honest
+  framework-named `needs-recipe` is the floor).
+
+### SEQUENCE TO 0.9.0
+Build WO-B (now) + WO-A (next/parallel) → scrub the branch trailers → merge slices 1–4 → **bump plugin
++ RE-RUN the cold run** to confirm the honest band + the DAST chain firing → if clean, move `v0.7.0` →
+**`0.9.0`**. The tag stays HELD until that clean re-run.
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
