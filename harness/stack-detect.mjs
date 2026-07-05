@@ -23,6 +23,17 @@
  * (`classifyStack`, `classifyEnvName`); the CLI gathers facts from the repo
  * (dependency-free, regex/file scans — no YAML/JSON parser deps). No network.
  *
+ * COMPOSE-SATISFIABILITY (0.8.81): a SELF-CONTAINED compose (in-compose postgres/
+ * redis, `${VAR:-default}` creds, concrete `KEY: value` assignments) satisfies its
+ * own external-named env — those vars are NOT owner-supplied, so they must not
+ * block the throwaway-DAST gate. `classifyStack` reclassifies an `external` env
+ * name that the compose itself satisfies (`facts.satisfiable`) to `synthesizable`
+ * (secret-named) or `benign`; and when the recipe is a compose with NO `env_file:`
+ * directive, env gathering is scoped to the compose file alone — env referenced
+ * only by source the compose never runs (one-off scripts, alt entrypoints) is not
+ * a stand-up blocker. `${VAR:?required}` / `${VAR:+alt}` / bare `${VAR}` have no
+ * fallback and stay owner-supplied.
+ *
  * USAGE: node stack-detect.mjs --target <repo> [--json]
  */
 import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
@@ -45,6 +56,63 @@ export function classifyEnvName(name) {
   return 'unknown'                                    // unclassified non-secret → default/leave-unset, flagged
 }
 
+// ── Compose-satisfiability helpers (pure, regex-only — no YAML parser) ──────────
+
+/**
+ * Pure: the service names a compose file defines (top-level keys under `services:`).
+ * Captures `name:` lines at the FIRST child indent and BREAKS at the first
+ * zero-indent line, so a sibling top-level block (`volumes:` with
+ * postgres_data/redis_data) is never captured as a service.
+ */
+export function composeServiceNames(text) {
+  const names = []
+  let inServices = false
+  let childIndent = -1
+  for (const line of String(text || '').split('\n')) {
+    if (!inServices) {
+      if (/^services:\s*(?:#.*)?$/.test(line)) inServices = true
+      continue
+    }
+    if (/^\S/.test(line)) break // first zero-indent line → left the services block
+    const m = line.match(/^(\s+)([A-Za-z0-9_.-]+):\s*(?:#.*)?$/)
+    if (!m) continue
+    if (childIndent < 0) childIndent = m[1].length // first child sets the service indent
+    if (m[1].length === childIndent) names.push(m[2])
+  }
+  return names
+}
+
+/**
+ * Pure: env vars the compose interpolates WITH a fallback — `${VAR:-def}` /
+ * `${VAR:=def}`. The `:[-=]` deliberately EXCLUDES `${VAR:?required}` and
+ * `${VAR:+alt}` (no fallback value → the var stays owner-supplied).
+ */
+export function composeDefaultedVars(text) {
+  const out = new Set()
+  const re = /\$\{([A-Z][A-Z0-9_]+):[-=]/g
+  let m
+  while ((m = re.exec(String(text || '')))) out.add(m[1])
+  return out
+}
+
+/**
+ * Pure: env keys the compose assigns a CONCRETE value (`KEY: value` /
+ * `- KEY=value`): strip `${VAR:-..}` / `${VAR:=..}` interpolations from the
+ * value — if no bare `${` remains, the compose supplies the value itself
+ * (subsumes "URL points at an in-compose service" and plain literals).
+ * `KEY:` with no value (host pass-through) is NOT concrete.
+ */
+export function composeConcreteAssigned(text) {
+  const out = new Set()
+  for (const line of String(text || '').split('\n')) {
+    const m = line.match(/^\s*(?:-\s*)?([A-Z][A-Z0-9_]+)\s*[:=]\s*(.+)$/)
+    if (!m || !m[2].trim()) continue // whitespace-only value = pass-through, not concrete
+    const stripped = m[2].replace(/\$\{[A-Z][A-Z0-9_]+:[-=][^}]*\}/g, '')
+    if (!stripped.includes('${')) out.add(m[1])
+  }
+  return out
+}
+
 /** Pure: from gathered facts, classify the throwaway-DAST readiness. */
 export function classifyStack(facts = {}) {
   const roots = Array.isArray(facts.serverRoots) ? facts.serverRoots : []
@@ -52,8 +120,19 @@ export function classifyStack(facts = {}) {
   if (!roots.length && !recipe) {
     return { status: 'n/a', reason: 'no external server source root found — nothing to stand up (package-only)' }
   }
+  // Compose-satisfiability: env the compose itself satisfies (defaulted `${VAR:-..}`
+  // interpolations + concrete `KEY: value` assignments) is not owner-supplied, so an
+  // external-named var the compose covers downgrades to synthesizable (secret-named:
+  // the toolkit may still generate a value) or benign (the compose's own default runs).
+  const satisfiable = facts.satisfiable instanceof Set
+    ? facts.satisfiable
+    : new Set(Array.isArray(facts.satisfiable) ? facts.satisfiable : [])
   const buckets = { external: [], synthesizable: [], benign: [], unknown: [] }
-  for (const n of [...new Set(facts.envNames || [])]) buckets[classifyEnvName(n)].push(n)
+  for (const n of [...new Set(facts.envNames || [])]) {
+    let cls = classifyEnvName(n)
+    if (cls === 'external' && satisfiable.has(n)) cls = SECRET_ENV.test(n) ? 'synthesizable' : 'benign'
+    buckets[cls].push(n)
+  }
   for (const k of Object.keys(buckets)) buckets[k] = [...new Set(buckets[k])].sort()
   const env = { external: buckets.external, synthesizable: buckets.synthesizable, benign: buckets.benign, unknown: buckets.unknown }
 
@@ -65,12 +144,17 @@ export function classifyStack(facts = {}) {
     return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, serverRoots: roots, env,
       reason: `recipe present but needs external-service credentials the toolkit cannot synthesize: ${env.external.join(', ')} — scaffold-and-guide` }
   }
+  const services = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
   return { status: 'runnable', recipe, webTier: facts.webTier || null, serverRoots: roots, env,
-    reason: `standable: ${recipe.kind} recipe${facts.webTier ? `, web tier port ${facts.webTier.port}` : ''}; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` }
+    reason: `standable: ${recipe.kind} recipe${facts.webTier ? `, web tier port ${facts.webTier.port}` : ''}` +
+      (services.length ? ` (in-compose services: ${services.join(', ')})` : '') +
+      `; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` +
+      '; note: stand-up is HTTP-liveness-verified only (a port answers), not app-health-verified — migrations/deep readiness are not asserted' }
 }
 
 // ── CLI fact-gathering (dependency-free; best-effort regex/file scans) ──────────
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'force-app', '.security-review', 'docs', '.claude', 'venv', '.venv', '__pycache__', 'dist', 'build'])
+const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']
 const readOr = (p) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 const isDir = (p) => { try { return statSync(p).isDirectory() } catch { return false } }
 const isFile = (p) => { try { return statSync(p).isFile() } catch { return false } }
@@ -104,16 +188,23 @@ function serverRoots(target) {
 }
 
 /** Collect env-var names referenced across recipe files + source. */
-function gatherEnvNames(target, roots) {
+function gatherEnvNames(target, roots, recipe = null) {
   const names = new Set()
   const add = (re, text, idx = 1) => { let m; const r = new RegExp(re, 'g'); while ((m = r.exec(text))) names.add(m[idx]) }
+  const compose = readOr(firstExisting(target, COMPOSE_FILES) || '')
+  // Compose-scoped gathering: when the run recipe IS the compose and it declares no
+  // `env_file:`, the compose defines the app's entire env surface — env referenced
+  // only by source files the compose never runs (one-off scripts, alt entrypoints,
+  // e.g. a scripts/*.py ADMIN_DATABASE_URL) must not block stand-up. Any `env_file:`
+  // directive falls back to the full union gathering (safe over-flag direction).
+  const composeScoped = Boolean(recipe && recipe.kind === 'compose' && compose && !/^\s*env_file\s*:/m.test(compose))
+  add('\\$\\{?([A-Z][A-Z0-9_]+)', compose)
+  add('^\\s*-?\\s*([A-Z][A-Z0-9_]+)\\s*[:=]', compose)
+  if (composeScoped) return [...names]
   // declared sources: .env.example / compose environment / Dockerfile ENV-ARG
   for (const f of ['.env.example', '.env.sample', '.env.template', '.env.dist']) {
     add('^\\s*([A-Z][A-Z0-9_]+)\\s*=', readOr(join(target, f)))
   }
-  const compose = readOr(firstExisting(target, ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']) || '')
-  add('\\$\\{?([A-Z][A-Z0-9_]+)', compose)
-  add('^\\s*-?\\s*([A-Z][A-Z0-9_]+)\\s*[:=]', compose)
   // source refs in each root
   for (const root of roots) {
     const dir = root === '.' ? target : join(target, root)
@@ -134,7 +225,7 @@ function gatherEnvNames(target, roots) {
 
 /** Resolve a run recipe + web tier (kind, command, port). */
 function gatherRecipe(target, roots) {
-  const compose = firstExisting(target, ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'])
+  const compose = firstExisting(target, COMPOSE_FILES)
   if (compose) {
     const t = readOr(compose)
     const portM = t.match(/(\d{2,5})\s*:\s*(\d{2,5})/) // host:container
@@ -171,8 +262,12 @@ function gatherRecipe(target, roots) {
 function gatherFacts(target) {
   const roots = serverRoots(target)
   const { recipe, webTier } = gatherRecipe(target, roots)
-  const envNames = gatherEnvNames(target, roots)
-  return { serverRoots: roots, recipe, webTier, envNames }
+  const envNames = gatherEnvNames(target, roots, recipe)
+  // Compose-satisfiability facts (empty when no compose file → non-compose stacks unchanged)
+  const composeText = readOr(firstExisting(target, COMPOSE_FILES) || '')
+  const satisfiable = new Set([...composeDefaultedVars(composeText), ...composeConcreteAssigned(composeText)])
+  const composeServices = composeServiceNames(composeText)
+  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices }
 }
 
 function main() {

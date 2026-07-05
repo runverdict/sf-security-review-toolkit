@@ -51,6 +51,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.81] — 2026-07-05
+
+**stack-detect compose-satisfiability — the throwaway-DAST gate now fires on a self-contained
+compose.** Cold-run finding: a compose with in-compose postgres/redis and `${VAR:-default}`
+credentials was classified `needs-secrets` (its external-NAMED env vars were assumed
+owner-supplied), so the consent gate for the shipped stand-up → OpenAPI-capture → ZAP/Schemathesis
+chain never fired. Two-part fix in `harness/stack-detect.mjs` (pure core + regex-only gathering —
+still no YAML/JSON parser dep):
+
+### Added
+- Three exported pure compose helpers: `composeServiceNames(text)` (top-level `services:` keys,
+  first-child-indent captured, BREAKS at the first zero-indent line so a sibling top-level
+  `volumes:` block is never read as a service), `composeDefaultedVars(text)`
+  (`${VAR:-def}` / `${VAR:=def}` — the `:[-=]` deliberately excludes `${VAR:?required}` /
+  `${VAR:+alt}`, which have no fallback and stay owner-supplied), and
+  `composeConcreteAssigned(text)` (`KEY: value` / `- KEY=value` whose value, after stripping
+  defaulted interpolations, carries no bare `${` — subsumes "URL points at an in-compose
+  service" and literals; a valueless `KEY:` pass-through is NOT concrete).
+- `gatherFacts` computes `facts.satisfiable = composeDefaultedVars ∪ composeConcreteAssigned`
+  from the compose text only (empty when no compose file → non-compose stacks byte-unchanged)
+  plus `facts.composeServices` for the runnable reason line.
+
+### Fixed
+- `classifyStack`: an `external`-named env var the compose itself satisfies is reclassified —
+  secret-named → `synthesizable`, else `benign` — so a self-contained compose reaches
+  `runnable` and the DAST consent gate fires. Unsatisfied names (bare `${DATABASE_URL}`
+  pointing at a managed DB) stay `external` → `needs-secrets`, unchanged.
+- Compose-scoped env gathering: when the recipe IS the compose and it declares no `env_file:`,
+  env names are gathered from the compose file alone — a `scripts/*.py ADMIN_DATABASE_URL` the
+  compose never runs no longer blocks stand-up (the cold-run residual that survived
+  reclassification alone). Any `env_file:` directive falls back to the full union gathering
+  (safe over-flag direction).
+
+### Changed
+- Honesty: the `runnable` reason now states stand-up is **HTTP-liveness-verified only** (a port
+  answers), not app-health-verified — migrations/deep readiness are not asserted — and names the
+  in-compose services.
+
+Suite: **63 files / 1011 checks** (+5 in `test-stack-detect.mjs`: S7 pure two-sided
+reclassification [satisfied → runnable / unsatisfied → needs-secrets], S8 pure helper matrix
+[volumes-break, `:-`/`:=` vs `:?`/`:+`/bare, concrete vs pass-through], S9 the self-contained
+compose cold-run regression pin, S10 the bare-`${DATABASE_URL}` discriminator, S11 the cold-run
+shape both-sided via the `env_file:` fallback toggle). Mutation-proven: removing the
+reclassification reddens S7/S9/S11 (verified executed, then restored).
+
 ## [0.8.80] — 2026-07-05
 
 **The ingest now emits deterministic honesty notes for two silent-degradation channels that were
