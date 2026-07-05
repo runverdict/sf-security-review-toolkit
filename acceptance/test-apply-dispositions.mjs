@@ -10,7 +10,9 @@
  *        `confirmed` findings to `refuted` with a `disposition_reason`; provenance/
  *        engine/ruleId/class/severity KEPT; findings of OTHER rules stay confirmed.
  *   D2   THE SAFETY TEST — an `llm-inferred` finding is NEVER flipped by a disposition,
- *        even one carrying the same engine/ruleId fields at the same locus. This is the
+ *        even one carrying the same engine/ruleId fields at the same locus — whether its
+ *        provenance is ABSENT (the pre-0.8.93 absence-default) or EXPLICITLY
+ *        `provenance:'llm-inferred'` (the merge-ledger self-declaration). This is the
  *        "a disposition cannot hide an LLM-confirmed blocker" guarantee: only what a
  *        scanner mechanically relayed can be class-dispositioned; the LLM's own confirmed
  *        findings are untouchable here.
@@ -188,17 +190,22 @@ check('D1 a refuting disposition flips the matching deterministic class to refut
 
 check('D2 THE SAFETY TEST — an llm-inferred finding is NEVER flipped (a disposition cannot hide an LLM-confirmed blocker)', () => {
   // the hostile shape: an llm-inferred finding that even CARRIES the disposition's
-  // engine/ruleId field values (and one that plainly omits provenance). Neither may flip —
-  // the provenance guard, not the field match, is what protects the LLM's own blocker.
+  // engine/ruleId field values — once with provenance ABSENT (the absence-default) and
+  // once EXPLICITLY self-declared `provenance:'llm-inferred'` (the 0.8.93 merge-ledger
+  // stamp) — and one that plainly omits everything. None may flip — the provenance
+  // guard, not the field match, is what protects the LLM's own blocker.
   const impostor = llm({ engine: 'semgrep', ruleId: NOISE_RULE })
+  const labeled = llm({ id: 'ab12cd34ef560787', provenance: 'llm-inferred', engine: 'semgrep', ruleId: NOISE_RULE })
   const plain = llm({ id: 'ab12cd34ef560788' })
   const det = detNoise('app/a.py', 10, 'high')
-  const { findings, applied, appliedIds } = applyDispositions([impostor, plain, det], { dispositions: [refuteNoise()] })
+  const { findings, applied, appliedIds } = applyDispositions([impostor, labeled, plain, det], { dispositions: [refuteNoise()] })
   assert.equal(applied, 1, 'only the deterministic finding flips')
   assert.deepEqual(appliedIds, [det.id])
-  assert.equal(findings.find((f) => f.id === impostor.id).status, 'confirmed', 'llm-inferred (with engine/ruleId fields) untouched')
+  assert.equal(findings.find((f) => f.id === impostor.id).status, 'confirmed', 'llm-inferred (absent provenance, with engine/ruleId fields) untouched')
+  assert.equal(findings.find((f) => f.id === labeled.id).status, 'confirmed', 'llm-inferred (EXPLICIT label, with engine/ruleId fields) untouched — still confirmed, never flipped')
   assert.equal(findings.find((f) => f.id === plain.id).status, 'confirmed', 'llm-inferred (plain) untouched')
   assert.equal(findings.find((f) => f.id === impostor.id).disposition_reason, undefined)
+  assert.equal(findings.find((f) => f.id === labeled.id).disposition_reason, undefined)
 })
 
 check('D3 EXACT engine+ruleId match only — engine mismatch and ruleId prefix/substring never flip', () => {

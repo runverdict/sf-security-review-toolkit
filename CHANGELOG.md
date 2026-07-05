@@ -51,6 +51,36 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.93] — 2026-07-05
+
+**Ledger provenance self-declaration (schema honesty/robustness — NOT a behavior fix).**
+LLM/audit-Workflow findings were written to `audit-ledger.json` without a `provenance` field,
+relying on the schema's absence-default (`llm-inferred`). This is a byte-level no-op for every
+consumer — `reconcile-provenance` already treats an unlabeled finding as llm-inferred
+(`isLlmInferred = !isDeterministic`), `apply-dispositions` only ever touches
+`provenance:'deterministic'` rows, and the headline/SCI counters are provenance-blind — and it is
+explicitly NOT a blocker-count correction: the cold-run count was already honest (grounding
+disproved the double-count premise; the counters never keyed on this field).
+
+### Hardened
+- `harness/merge-ledger.mjs`: the LLM-finding entry literal now self-declares
+  `provenance:'llm-inferred'` at its birth site, plus a GUARDED `if (!f.provenance)` normalization
+  after the cross-dimension collapse — the explode/collapse rebuilds (lens reconstructions, merged
+  parents) carry explicit field lists that drop optional fields, and pre-existing entries predate
+  the field; the guard means a `provenance:'deterministic'` row is never relabeled. The ledger now
+  states what the schema default implied. Untouched by design: `buildFinding`/the ingest path
+  (deterministic stays `'deterministic'`), `dedupId` (provenance is not a key input), the schema's
+  optional-with-default posture (back-compat), and `collapseCrossDimension` itself. Test-backed:
+  `test-merge-ledger.mjs` M17 (after a merge EVERY finding carries `provenance:'llm-inferred'` —
+  a plain entry AND a cross-dimension merged parent; mutation-proven),
+  `test-reconcile-provenance.mjs` R7b (an explicitly-labeled llm finding supersedes IDENTICALLY to
+  the label-less case, locus counted once, label survives), `test-apply-dispositions.mjs` D2
+  extended (an explicit-label `provenance:'llm-inferred'` impostor carrying the disposition's
+  engine/ruleId is still `confirmed`, never flipped). The SC not-required schema assertions stay
+  green.
+
+Suite: **63 files / 1051 checks** (+2).
+
 ## [0.8.92] — 2026-07-05
 
 **Drafted-artifact preamble strip (deterministic quality fix).** Every drafted submission artifact

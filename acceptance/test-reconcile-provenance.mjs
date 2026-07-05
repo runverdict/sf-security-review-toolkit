@@ -19,6 +19,9 @@
  *   R6  a deterministic finding is NEVER superseded (only llm-inferred is).
  *   R7  precise class match when the LLM carries an explicit class; dimension fallback
  *       when it does not (the realistic dimension-tagged LLM finding).
+ *   R7b an EXPLICITLY-labeled finding (provenance:'llm-inferred' — the 0.8.93
+ *       merge-ledger self-declaration) supersedes IDENTICALLY to the label-less
+ *       absence-default case; the locus is counted once and the label survives.
  *   R8  owner/terminal LLM states (fixed / accepted_risk / already-superseded) preserved.
  *   R9  the input array is not mutated (pure — returns shallow copies).
  *   SC  a superseded finding + a `class` field validate against $defs/finding; the schema
@@ -203,6 +206,18 @@ check('R7 precise class match when the LLM carries an explicit class; dimension 
   assert.equal(reconcileProvenance([det, llm({ class: undefined })]).superseded, 1)
   // no class, DIFFERENT dimension → untouched (the fallback needs the dimension to match)
   assert.equal(reconcileProvenance([det, llm({ class: undefined, dimension: 'tenant-isolation' })]).superseded, 0)
+})
+
+check('R7b an EXPLICITLY-labeled llm finding (provenance:llm-inferred) supersedes IDENTICALLY to the label-less case — locus counted once', () => {
+  const det = detCrud(19)
+  const labeled = reconcileProvenance([det, llm({ provenance: 'llm-inferred' })])
+  const unlabeled = reconcileProvenance([det, llm()])
+  assert.equal(labeled.superseded, 1, 'the explicitly-labeled finding is superseded (never double-counted, never skipped)')
+  assert.deepEqual(labeled.supersededIds, unlabeled.supersededIds, 'identical supersession to the absence-default case')
+  const outL = labeled.findings.find((f) => f.id === 'ab12cd34ef560789')
+  assert.equal(outL.status, SUPERSEDED)
+  assert.equal(outL.superseded_by, det.id)
+  assert.equal(outL.provenance, 'llm-inferred', 'the self-declared label survives the supersession untouched')
 })
 
 check('R8 owner/terminal LLM states are preserved (fixed / accepted_risk / already-superseded never re-touched)', () => {

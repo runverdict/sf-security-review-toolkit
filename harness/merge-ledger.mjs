@@ -8,7 +8,10 @@
  * Takes the audit Workflow's result (its `ledger_updates`) and folds it INTO the
  * existing ledger across passes: computes stable dedup ids, maps verdicts to states,
  * flips a re-found `fixed` entry back to confirmed+regression, tracks first/last-seen,
- * redacts credential material, stamps the pass `audited_commit`, and appends run-log.md.
+ * redacts credential material, stamps `provenance:'llm-inferred'` so every finding
+ * self-declares what the schema's absence-default implied (deterministic rows are never
+ * touched — they arrive via ingest-scanner-findings with `provenance:'deterministic'`),
+ * stamps the pass `audited_commit`, and appends run-log.md.
  *
  * Track-1b: it also COLLAPSES cross-dimension duplicates of ONE root cause. The dedup
  * id is file+TITLE, so the same defect found under two dimensions with different titles
@@ -184,6 +187,7 @@ for (const u of R.ledger_updates) {
   }
   const entry = {
     id,
+    provenance: 'llm-inferred', // LLM/audit-Workflow findings self-declare provenance (was: absent → implicit)
     dimension: u.dimension,
     title: u.title,
     severity: u.finder_severity || u.adjusted_severity,
@@ -207,6 +211,15 @@ for (const u of R.ledger_updates) {
 // at the highest verified adjusted_severity (per-lens detail preserved). Done BEFORE
 // the pass stats so one root cause found under N dimensions counts ONCE, not N times.
 ledger.findings = collapseCrossDimension(ledger.findings)
+
+// ---- Ledger self-declaration (schema honesty, NOT a behavior change): a finding still
+// missing `provenance` here is LLM-born — the entry literal above stamps every new entry,
+// but the explode/collapse rebuilds (lens reconstructions, cross-dimension merged parents)
+// carry explicit field lists that drop optional fields, and pre-existing entries predate
+// the field. GUARDED on absence so a `provenance:'deterministic'` row is never relabeled.
+// Every consumer already treats an absent provenance as llm-inferred (the schema default);
+// this only makes the ledger say so itself.
+for (const f of ledger.findings) if (!f.provenance) f.provenance = 'llm-inferred'
 
 // ---- pass stats, computed from the merged findings (dedup-correct) ----
 const touched = ledger.findings.filter((f) => f.last_seen === PASS)

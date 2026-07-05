@@ -26,6 +26,11 @@
  *         "point --result DIRECTLY at the raw task-output file" promise can't silently regress.
  *   M14 — a --result with NO ledger_updates (neither accepted shape) → exit 2 with a CLEAR error naming
  *         BOTH shapes (raw Workflow envelope vs pre-extracted result), never a silent empty merge.
+ *   M17 — provenance self-declaration: after a merge EVERY finding carries
+ *         `provenance:'llm-inferred'` — a plain entry (the entry-literal birth-site stamp)
+ *         AND a cross-dimension merged parent (rebuilt by the collapse, re-stamped by the
+ *         guarded `if (!f.provenance)` normalize; a `deterministic` row is never relabeled).
+ *         Schema honesty, not behavior: consumers already default absent → llm-inferred.
  *
  * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
  */
@@ -318,6 +323,22 @@ check('M16 BUG-A: a result with coverage_failed lands in the pass object, blocks
   assert.match(out, /Coverage INCOMPLETE/, 'the recap stdout surfaces the coverage-incomplete caveat')
   assert.match(out, /resource-consumption-abuse/, 'the crashed dimension is named for re-run')
   assert.ok(!/\*\*Verdict: PROCEED\.\*\*/.test(out), 'NEVER a clean PROCEED over a crashed dimension')
+})
+
+check('M17 provenance self-declaration: after a merge EVERY finding carries provenance:llm-inferred (plain AND cross-dimension-merged)', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'plain.cls:5', title: 'A plain finding', dimension: 'crypto-internals' }),
+    u({ file: 'x.cls:10-14', title: 'Missing FLS in loadThing', dimension: 'apex-exposed-surface', adjusted_severity: 'high', verdict_reasoning: 'apex reason' }),
+    u({ file: 'x.cls:10-12', title: 'Field exposure in loadThing', dimension: 'web-client', adjusted_severity: 'low', verdict_reasoning: 'web reason' }),
+  ], dimensions_run: ['crypto-internals', 'apex-exposed-surface', 'web-client'], total_candidates: 3 })
+  assert.equal(l.findings.length, 2, 'the two co-located lenses merged; the plain finding stands')
+  assert.ok(l.findings.every((f) => f.provenance === 'llm-inferred'), 'every merged-ledger finding self-declares its provenance')
+  const plain = l.findings.find((f) => f.title === 'A plain finding')
+  assert.equal(plain.provenance, 'llm-inferred', 'the entry-literal stamp at the birth site')
+  const merged = l.findings.find((f) => Array.isArray(f.merged_dimensions))
+  assert.ok(merged, 'the fixture produced a cross-dimension merged entry')
+  assert.equal(merged.provenance, 'llm-inferred', 'a merged parent (rebuilt by the collapse) is re-stamped by the guarded normalize')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
