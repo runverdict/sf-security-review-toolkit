@@ -70,6 +70,14 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    npm install -g @salesforce/cli
    ```
 
+   Then disable the CLI's update-availability banner once for this session — it
+   prints to stdout ahead of `--json` payloads and corrupts their parsing in every
+   later skill:
+
+   ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
+   ```
+
    Then verify:
 
    ```bash

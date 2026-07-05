@@ -45,6 +45,14 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
    **Promotion (step 10) is a SEPARATE, distinctly-worded ask** — this consent
    does NOT cover it. A skipped ask means the op is denied, not silently run.
 
+Before the first `sf` call below, disable the CLI's update-availability banner once
+for this session — it prints to stdout ahead of the JSON payload and corrupts
+`--json` parsing:
+
+```bash
+export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
+```
+
 1. **Verify the namespace prerequisites.** A managed 2GP requires a registered namespace LINKED to the Dev Hub. The namespace lives in a plain signup Developer Edition org (the "namespace holder" — don't use the Dev Hub itself, it can't be linked). Verify headlessly:
 
    ```bash

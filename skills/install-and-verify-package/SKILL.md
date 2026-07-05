@@ -41,6 +41,14 @@ This is the **core** of the deployed-org deep audit — the step the whole CLI-g
    a version, that is a SEPARATE `sf-package-promote` permanence ask — see
    `/sf-security-review-toolkit:build-managed-package` step 10.)
 
+Before the first `sf` call below, disable the CLI's update-availability banner once
+for this session — it prints to stdout ahead of the JSON payload and corrupts
+`--json` parsing:
+
+```bash
+export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
+```
+
 1. **Pre-install contamination check — one MCP registration per server per org. Ever.** Installing the package into an org that still has a hand-created registration of the same server (same label, same tool names — every PoC org has one) breaks a previously-working agent instantly with `tool validation failed while setting up the external MCP connection`, and leaves registry state that keeps poisoning runtime enablement even after cleanup. Detect it headlessly — look for any existing row registering the same server:
 
    ```bash

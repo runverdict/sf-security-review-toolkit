@@ -39,6 +39,14 @@ This skill bookends the deployed-org deep audit on **both** sides, and is **opt-
 
 ## Steps
 
+Before the first `sf` call in this skill (including the discovery queries above),
+disable the CLI's update-availability banner once for this session — it prints to
+stdout ahead of the JSON payload and corrupts `--json` parsing:
+
+```bash
+export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
+```
+
 0. **Consent gate (fail-closed) — record before the destructive teardown.** This skill
    removes registry rows and metadata (`sf data delete`, `sf package uninstall`, and
    destructive `sf project deploy` of post-destructive changes) — all irreversible against

@@ -43,6 +43,7 @@ import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { verifyConsent } from './record-consent.mjs'
 import { assertOrgAlias } from './teardown-org.mjs'
+import { sfEnv, parseSfJson } from './sf-env.mjs'
 
 export const ORG_SCHEMA = 'sf-srt-org/1'
 export const ORG_ALIAS_PREFIX = 'sf-srt-org'
@@ -116,7 +117,7 @@ export function planStandupOrg({ runId, defFile, durationDays, tmpRoot } = {}) {
   }
 }
 
-const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: sfEnv() })
 
 /**
  * Is a Dev Hub authed? Detection only — authentication is the owner-interactive
@@ -130,7 +131,7 @@ export function devHubStatus() {
     return { authed: false, hint: '`sf org list` failed — is the Salesforce CLI installed? Install + authenticate a Dev Hub first (owner-interactive; see /sf-security-review-toolkit:bootstrap-cli-auth), then re-run' }
   }
   try {
-    const j = JSON.parse(out)
+    const j = parseSfJson(out)
     const hubs = j && j.result && Array.isArray(j.result.devHubs) ? j.result.devHubs : []
     if (hubs.length) return { authed: true }
   } catch { /* fall through to the honest hint */ }
@@ -206,7 +207,7 @@ export function standupOrg(plan, { consent = false, target, createdAt } = {}) {
   // Best-effort cleanup for THIS process's synchronous window: a SIGINT/SIGTERM/
   // fatal between create and hand-off must not orphan a live org. The delete is
   // scoped to OUR toolkit alias only; teardown-org remains the authoritative removal.
-  const cleanup = () => { try { execFileSync('sf', ['org', 'delete', 'scratch', '--no-prompt', '--target-org', plan.alias], { stdio: 'ignore' }) } catch {} }
+  const cleanup = () => { try { execFileSync('sf', ['org', 'delete', 'scratch', '--no-prompt', '--target-org', plan.alias], { stdio: 'ignore', env: sfEnv() }) } catch {} }
   const handlers = {
     SIGINT: () => { cleanup(); process.exit(130) },
     SIGTERM: () => { cleanup(); process.exit(143) },
@@ -218,7 +219,7 @@ export function standupOrg(plan, { consent = false, target, createdAt } = {}) {
     // the raw JSON result includes `authFields` with an ACCESS TOKEN — extract
     // the two identifiers, discard everything else, never persist the raw output
     try {
-      const j = JSON.parse(out)
+      const j = parseSfJson(out)
       rec.username = (j && j.result && j.result.username) || null
       rec.orgId = (j && j.result && j.result.orgId) || null
     } catch { /* created but unparseable output — ids stay null, alias still tears down */ }

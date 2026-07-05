@@ -47,6 +47,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertSafeTmpRoot } from './install-scanners.mjs'
 import { verifyConsent } from './record-consent.mjs'
+import { sfEnv, parseSfJson } from './sf-env.mjs'
 
 // Fully anchored (^…$, no `m` flag): the match must span the WHOLE string, so a
 // value that merely contains the prefix (`x-sf-srt-org-abc`) or smuggles a second
@@ -84,8 +85,8 @@ export function planTeardownOrg(manifest) {
   return { alias, username: manifest.username || null, orgId: manifest.orgId || null, tmpRoot }
 }
 
-const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
-const runOut = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return '' } }
+const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore', env: sfEnv() }); return true } catch { return false } }
+const runOut = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: sfEnv() }) } catch { return '' } }
 
 /** Is the alias locally known? (CLI absent or alias unknown both read as absent.) */
 const orgExists = (alias) => quiet('sf', ['org', 'display', '--target-org', alias, '--json'])
@@ -198,7 +199,7 @@ export function sweepOrgs({ consent } = {}) {
   const removed = []
   let scratch = []
   try {
-    const j = JSON.parse(runOut('sf', ['org', 'list', '--json']) || '{}')
+    const j = parseSfJson(runOut('sf', ['org', 'list', '--json']) || '{}')
     scratch = j && j.result && Array.isArray(j.result.scratchOrgs) ? j.result.scratchOrgs : []
   } catch { /* CLI absent / unparseable → no orgs to sweep */ }
   for (const o of scratch) {

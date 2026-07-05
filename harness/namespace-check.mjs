@@ -24,6 +24,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { sfEnv, parseSfJson } from './sf-env.mjs'
 
 /** PURE: from the package namespace + the authed-org facts, classify build-feasibility. */
 export function classifyNamespace({ pkgNamespace, authedNamespaces = [], hasDevHub = false } = {}) {
@@ -52,7 +53,7 @@ export function namespaceStatus(target = process.cwd()) {
   let authedNamespaces = []
   let hasDevHub = false
   try {
-    const r = JSON.parse(execFileSync('sf', ['org', 'list', '--json'], { encoding: 'utf8', timeout: 20000 })).result || {}
+    const r = parseSfJson(execFileSync('sf', ['org', 'list', '--json'], { encoding: 'utf8', timeout: 20000, env: sfEnv() })).result || {}
     const orgs = [...(r.nonScratchOrgs || []), ...(r.scratchOrgs || []), ...(r.other || []), ...(r.devHubs || [])]
     authedNamespaces = [...new Set(orgs.map((o) => o && o.namespacePrefix).filter(Boolean))]
     hasDevHub = orgs.some((o) => o && o.isDevHub)

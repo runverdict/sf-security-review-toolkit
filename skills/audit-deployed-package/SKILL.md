@@ -117,6 +117,14 @@ finding (CONVENTIONS §2). Redact any secret value to `***redacted***` before wr
 (CONVENTIONS §6); the queries below are designed to never *return* a secret, but the
 Connect-API discovery in step 4 can echo principal coordinates — strip them.
 
+Before the first `sf` call, disable the CLI's update-availability banner once for
+this session — it prints to stdout ahead of the JSON payload and corrupts `--json`
+parsing:
+
+```bash
+export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
+```
+
 1. **Confirm the org is fresh, the version is released, and the package is not already
    reviewed — before auditing anything.** Three cheap gates, because auditing the wrong
    org wastes the whole pass:
