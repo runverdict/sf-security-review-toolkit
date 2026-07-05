@@ -46,7 +46,11 @@
  * consult the real tree), writes nothing, and is deterministic given
  * (repoRoot, entries, tree state).
  *
- * WRITE SEMANTICS. Byte-exact utf8 — `content` is written verbatim (backticks, quotes,
+ * WRITE SEMANTICS. Byte-exact utf8 from the first ATX H1 (`# `) onward for markdown: a
+ * deterministic leading-preamble strip (`stripPreamble`, applied ONCE in `planWrites`
+ * and gated to .md/.markdown outputs) removes drafting-agent chatter / leftover
+ * authoring-header lines above the H1, keeping an immediately-preceding front-matter
+ * block with it; no-H1 and non-markdown content is written VERBATIM (backticks, quotes,
  * newlines, unicode, `$(cmd)`; no template processing, no trailing-newline "help");
  * parent dirs are mkdir -p'd (inside the allowed roots only, by construction); overwrite
  * is normal (artifacts regenerate per pass); an idempotent re-run produces the same
@@ -166,6 +170,56 @@ export function validateOut(repoRoot, out) {
 }
 
 /**
+ * PURE leading-preamble strip for drafted MARKDOWN content (applied once in `planWrites`,
+ * gated to .md/.markdown outputs). The drafting agents are instructed to return content
+ * that begins at the artifact's H1, but a returned draft can still open with chatter
+ * ("I have everything I need. Drafting the artifact now.") or a leftover authoring
+ * header, and that preamble leaked into the persisted files — the cold-run driver
+ * hand-stripped 4-14 lines per document. This makes the guarantee deterministic: drop
+ * the leading non-content lines so the file starts at the artifact's real start — the
+ * first ATX H1 (`# `) — keeping an immediately-preceding `---…---` front-matter block
+ * together with the H1.
+ *
+ * CONSERVATIVE (fail open — never blank or reshape a genuine draft):
+ *   - no H1 anywhere → returned VERBATIM;
+ *   - already H1-first → returned VERBATIM (idempotent by construction);
+ *   - first non-blank line opens a front-matter block → returned VERBATIM (the draft
+ *     already starts at its artifact start, and an H1-lookalike inside front matter —
+ *     e.g. a `# comment` body line — must never become a cut point);
+ *   - whole-line slice + rejoin with '\n' ONLY: never an edit within a line, never a
+ *     CRLF normalization, never a touched trailing newline — the bytes from the kept
+ *     start onward are identical to the input's.
+ * Content-only by construction: it runs on `content` alone inside `planWrites`, after
+ * the path verdict — it cannot affect `validateOut`, the duplicate-target refusal, the
+ * all-or-nothing decision, or the gate cross-check.
+ */
+export function stripPreamble(content) {
+  if (typeof content !== 'string') return content
+  const lines = content.split('\n')
+  const isBlank = (l) => l.trim() === ''
+  const isFmDelim = (l) => /^---\s*$/.test(l)
+  const firstNonBlank = lines.findIndex((l) => !isBlank(l))
+  if (firstNonBlank === -1) return content // blank/empty → verbatim
+  if (isFmDelim(lines[firstNonBlank])) return content // starts at front matter → verbatim
+  const h1 = lines.findIndex((l) => l.startsWith('# '))
+  if (h1 <= 0) return content // -1: no H1 → verbatim; 0: already starts at the H1
+  let start = h1
+  // Keep an immediately-preceding front-matter block with the H1: walk over blank lines
+  // to its closing `---`, then up to the nearest opening `---`.
+  let close = h1 - 1
+  while (close > 0 && isBlank(lines[close])) close--
+  if (close > 0 && isFmDelim(lines[close])) {
+    for (let open = close - 1; open >= 0; open--) {
+      if (isFmDelim(lines[open])) {
+        start = open
+        break
+      }
+    }
+  }
+  return lines.slice(start).join('\n')
+}
+
+/**
  * PLAN phase — validate every envelope entry; nothing is written here. Read-only on the
  * filesystem; deterministic given (repoRoot, entries, tree state, suppress).
  *
@@ -217,7 +271,11 @@ export function planWrites(repoRoot, entries, opts = {}) {
       })
       return
     }
-    writes.push({ key, out: String(e.out), resolved: v.resolved, content: e.content })
+    // The ONE content-normalization site: markdown drafts get the deterministic
+    // preamble strip HERE (not at the write call) so byte counts, --dry-run, --json,
+    // and the write all see the same bytes. Non-markdown outputs stay verbatim.
+    const isMd = /\.(md|markdown)$/i.test(String(e.out))
+    writes.push({ key, out: String(e.out), resolved: v.resolved, content: isMd ? stripPreamble(e.content) : e.content })
   })
   // Two entries colliding on ONE resolved target is a malformed envelope (the engine
   // drafts each artifact exactly once) — refused, never a silent last-write-wins.

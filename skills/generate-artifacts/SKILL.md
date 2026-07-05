@@ -234,8 +234,11 @@ longer hand-coded into a script.
   `docs/security-review/` or `.security-review/` only, never absolute / traversal /
   `.git/` / through an escaping symlink — and is ALL-OR-NOTHING: one invalid path refuses
   the entire envelope with zero files written (exit 2; re-run the engine, never hand-fix
-  a returned path). Valid entries are written byte-exact (parent dirs created inside the
-  allowed roots; overwrite is normal — artifacts regenerate per pass); an empty/dead-agent
+  a returned path). Valid entries are written byte-exact from the first H1 onward for
+  markdown — the harness's deterministic leading-preamble strip drops chatter/leftover
+  authoring-header lines above the H1, and no-H1 or non-markdown content stays verbatim
+  (parent dirs created inside the allowed roots; overwrite is normal — artifacts
+  regenerate per pass); an empty/dead-agent
   draft is SKIPPED LOUDLY so it never blanks a good prior draft; `--input` cross-checks
   `gate.suppress` so a stale/resumed envelope cannot resurrect a withheld doc (the engine
   in (b) remains the enforcement point). For every artifact the gate suppressed, write the

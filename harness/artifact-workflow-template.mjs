@@ -131,7 +131,9 @@ const draftPrompt = (a) =>
   `belongs (env var, vault) and keep it out. Agent-drafted means STATIC code reading — never describe it as a ` +
   `scan, DAST, or pen test. You are READ-ONLY: do NOT write any file. RETURN the complete drafted markdown ` +
   `content of ${a.out} as your result — the invoking skill writes it to disk (the Workflow runtime has no ` +
-  `filesystem access).`
+  `filesystem access). Your result MUST begin at the artifact's H1 (\`# …\`) — no preamble, no ` +
+  `acknowledgements, no \`\`\` fences, and drop the template's leading \`<!-- … -->\` authoring comment. ` +
+  `The first characters are \`# \`.`
 
 // ---------------------------------------------------------------------------
 // Draft — one read-only agent per artifact, in parallel. A thunk that throws

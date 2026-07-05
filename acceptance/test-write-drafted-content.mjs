@@ -28,6 +28,12 @@
  *          pre-existing draft.
  *   D1-D2  --dry-run writes nothing and names every planned write; --json machine shape.
  *   E1-E2  empty drafted array = clean exit 0; a null entry is skipped loud, siblings written.
+ *   P1-P6  markdown preamble strip — chatter above the first ATX H1 is stripped (the
+ *          persisted file starts at the H1, bytes from the H1 onward identical);
+ *          already-H1-first and no-H1 content byte-identical (never blanked/reshaped);
+ *          an immediately-preceding front-matter block stays with the H1; non-markdown
+ *          outputs verbatim (the .md gate, two-sided); idempotent, and content-only
+ *          (a chatter-prefixed entry with an evil `out` is still refused, zero writes).
  *   W1-W4  wiring — generate-artifacts GRANTS + INVOKES the harness in step (d) (the
  *          hand-scripted extract-and-write is gone; WITHHELD stays driver-side);
  *          audit-codebase is untouched (its synthesis agent writes its own report — there
@@ -50,7 +56,7 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { planWrites, validateOut, ALLOWED_ROOTS } from '../harness/write-drafted-content.mjs'
+import { planWrites, validateOut, stripPreamble, ALLOWED_ROOTS } from '../harness/write-drafted-content.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'write-drafted-content.mjs')
@@ -478,6 +484,66 @@ check('E2 a null/malformed entry is SKIPPED LOUD (named in the summary); sibling
   assert.match(res.stdout, /skipped: entry#0 — malformed entry/)
   assert.match(res.stdout, /skipped: entry#2 — malformed entry/)
   assert.equal(readFileSync(join(repo, 'docs', 'security-review', 'a.md'), 'utf8'), 'ok')
+})
+
+// ─────────────────────────────────────────── markdown preamble strip (P-series)
+// deterministic leading-preamble strip: persisted markdown begins at its first ATX H1
+// (an immediately-preceding front-matter block kept); no-H1 and non-markdown verbatim.
+const CHATTER = 'I have everything I need. Drafting the artifact now.\n\nHere is the drafted artifact:\n'
+const H1DOC = '# AuthN/AuthZ Flow\n\nBody with `backticks`, unicode ✓, and $(cmd).\nno trailing newline ends here'
+
+check('P1 chatter above the H1 is stripped — the persisted file starts at the H1, bytes from the H1 onward identical', () => {
+  assert.equal(stripPreamble(CHATTER + H1DOC), H1DOC, 'unit: everything above the first ATX H1 is dropped')
+  const repo = makeRepo()
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'a', out: 'docs/security-review/a.md', content: CHATTER + H1DOC }])])
+  assert.equal(res.status, 0)
+  assert.ok(readFileSync(join(repo, 'docs', 'security-review', 'a.md')).equals(Buffer.from(H1DOC, 'utf8')), 'the written file begins at the H1 and is byte-identical from there')
+})
+
+check('P2 already-H1-first content is byte-identical (the strip is a no-op)', () => {
+  assert.equal(stripPreamble(H1DOC), H1DOC)
+  const repo = makeRepo()
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'a', out: 'docs/security-review/a.md', content: H1DOC }])])
+  assert.equal(res.status, 0)
+  assert.ok(readFileSync(join(repo, 'docs', 'security-review', 'a.md')).equals(Buffer.from(H1DOC, 'utf8')))
+})
+
+check('P3 no-H1 content is byte-identical — never blanked or reshaped', () => {
+  assert.equal(stripPreamble(TRICKY), TRICKY, 'hostile no-H1 content untouched (CRLF + no-trailing-newline preserved)')
+  const chatterOnly = 'Everything checks out.\n\nNothing else to add.\n'
+  assert.equal(stripPreamble(chatterOnly), chatterOnly, 'a draft with no H1 anywhere is returned verbatim, never emptied')
+  const repo = makeRepo()
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'a', out: 'docs/security-review/a.md', content: TRICKY }])])
+  assert.equal(res.status, 0)
+  assert.ok(readFileSync(join(repo, 'docs', 'security-review', 'a.md')).equals(Buffer.from(TRICKY, 'utf8')), 'the .md write path leaves no-H1 content verbatim')
+})
+
+check('P4 an immediately-preceding front-matter block stays with the H1 (only the chatter above it is stripped)', () => {
+  const fmDoc = '---\nfm\n---\n# H1\nbody'
+  assert.equal(stripPreamble('chatter\n\n' + fmDoc), fmDoc, 'output starts at the front-matter opener; front-matter + H1 kept')
+  const repo = makeRepo()
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'a', out: 'docs/security-review/a.md', content: 'chatter\n\n' + fmDoc }])])
+  assert.equal(res.status, 0)
+  assert.equal(readFileSync(join(repo, 'docs', 'security-review', 'a.md'), 'utf8'), fmDoc)
+})
+
+check('P5 the strip is gated to markdown — a .json output with chatter above an H1-looking line is written VERBATIM', () => {
+  const jsonish = 'preamble line a strip would drop\n# not-a-heading\n{"k":"v"}'
+  const repo = makeRepo()
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'b', out: '.security-review/b.json', content: jsonish }])])
+  assert.equal(res.status, 0)
+  assert.ok(readFileSync(join(repo, '.security-review', 'b.json')).equals(Buffer.from(jsonish, 'utf8')), 'non-markdown is never stripped (the .md gate)')
+})
+
+check('P6 stripPreamble is idempotent AND content-only — a chatter-prefixed entry with an evil `out` is still refused, zero files written', () => {
+  for (const input of [CHATTER + H1DOC, 'chatter\n\n---\nfm\n---\n# H1', TRICKY, H1DOC, '']) {
+    assert.equal(stripPreamble(stripPreamble(input)), stripPreamble(input), 'strip(strip(x)) === strip(x)')
+  }
+  const repo = makeRepo()
+  const before = listFiles(repo).length
+  const res = run([CLI, '--repo', repo, '--result', writeEnvelope(makeEnvDir(), [{ key: 'evil', out: '../../x', content: CHATTER + H1DOC }])])
+  assert.equal(res.status, 2, 'the content transform cannot rescue a poisoned path')
+  assert.equal(listFiles(repo).length, before, 'zero files written anywhere under the repo')
 })
 
 // ─────────────────────────────────────────────────────────────────── wiring

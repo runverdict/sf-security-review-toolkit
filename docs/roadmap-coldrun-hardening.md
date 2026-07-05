@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.91**, suite **63 files / 1043 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.92**, suite **63 files / 1049 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,

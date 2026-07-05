@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.92] — 2026-07-05
+
+**Drafted-artifact preamble strip (deterministic quality fix).** Every drafted submission artifact
+could open with drafting-agent chatter ("I have everything I need. Drafting the artifact now.")
+that leaked into the persisted file — the cold-run driver hand-stripped 4–14 lines per document
+down to the real H1.
+
+### Fixed
+- `harness/write-drafted-content.mjs`: pure exported `stripPreamble(content)` — drop the leading
+  non-content lines so persisted markdown starts at the artifact's first ATX H1 (`# `), keeping an
+  immediately-preceding `---…---` front-matter block with it. CONSERVATIVE: no-H1 → VERBATIM
+  (never blanked/reshaped), already-H1-first → byte-identical, content that opens with front
+  matter → verbatim (an H1-lookalike inside front matter is never a cut point), whole-line slice
+  rejoined with `\n` only (CRLF-safe, no within-line edits, trailing newlines untouched). Applied
+  ONCE in `planWrites` (byte counts / `--dry-run` / `--json` / the write all see the same bytes),
+  gated to `.md`/`.markdown` outputs; content-only by construction — `validateOut`, the
+  duplicate-target refusal, the all-or-nothing path, and the gate cross-check are untouched.
+
+### Hardened
+- `harness/artifact-workflow-template.mjs`: the draft prompt now instructs each drafting agent to
+  begin its result at the artifact's H1 (no preamble/acknowledgements/fences; drop the template's
+  leading authoring comment) — the prompt reduces the chatter; the strip is the deterministic
+  guarantee. Doc-currency: the byte-exact doctrine (write-harness header + generate-artifacts step
+  (d)) now reads "byte-exact from the first H1 onward for markdown; no-H1 and non-markdown are
+  verbatim". Test-backed: `test-write-drafted-content.mjs` P1–P6 (strip / H1-first no-op /
+  no-H1-never-blanked / front-matter kept / the `.md` gate two-sided / idempotence +
+  content-only-refusal), mutation-proven (removing the `planWrites` strip reddens P1); the
+  existing G/R/A/GC/D/E/W fixtures stay green (every prior fixture is H1-less).
+
+Suite: **63 files / 1049 checks** (+6).
+
 ## [0.8.91] — 2026-07-05
 
 **Python run recipe — constructor-grounded ASGI/WSGI (Tier-2, best-effort honest-degrade).** The
