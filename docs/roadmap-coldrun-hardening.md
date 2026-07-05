@@ -85,26 +85,31 @@ The run also re-confirmed, on the pre-fix baseline, the exact defects the branch
 correctness/quality defects that GATE the tag. **Two work-orders close them; neither belongs in the
 other (disjoint subsystems, disjoint files → parallelizable as two builder sessions).**
 
-### WORK-ORDER A — audit-pipeline honesty (TAG-GATING: the blocker-count correctness). NOT YET GROUNDED/WRITTEN.
-Subsystem: `ingest-scanner-findings.mjs` / `reconcile-provenance.mjs` / the audit-codebase Workflow
-merge / `write-drafted-content.mjs` / `generate-artifacts`.
-- **A1 — LLM findings carry no `provenance` field** (verified off disk: 46 findings = provenance
-  `(none)`). So `reconcile-provenance` returns **0 superseded** and `apply-dispositions` cannot flip
-  them. Stamp `provenance:'llm-inferred'` on the merge. **ROOT FIX.**
-- **A2 — double-count → wrong blocker count** (open-high read **56** until an idempotent live-tail
-  re-ingest deduped it to **29**). Rooted in A1: co-located LLM + deterministic secret hits
-  double-count until dedup; fixing A1 lets reconcile supersede them at merge time. A run without the
-  tail re-ingest would report the inflated count.
-- **A3 — artifact preamble leak**: every drafted artifact began with agent chatter ("I have
-  everything I need…"); the driver hand-stripped 4–14 lines/doc. Strip to the H1 in
-  `write-drafted-content` (or the drafting prompt).
-- **A4 — mcp-server-details regressed on refresh**: a code-AST-verified **67-tool** tiered inventory
-  (49 read + 10 propose + 8 admin, 3 manifest discrepancies) was overwritten with a thinner
-  **49-ESR-op** draft (46 read + 3 propose, admin tier dropped). Drafting-guidance fix so the
-  exposed-tools artifact enumerates the full registry, not just the ESR ops.
+### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). GROUNDED + WRITTEN → `srt-wo-a-audit-honesty-prompt.md`; scope **A1 + A3 + A4**.
+Subsystem: `merge-ledger.mjs` / `write-drafted-content.mjs` + `artifact-workflow-template.mjs` / `generate-artifacts` SKILL.
+**Grounding CORRECTED the cold-run premise (verified off disk — reconcile re-run WITH and WITHOUT the label):**
+the blocker count is ALREADY honest (the final **29** is correct; **56** was a transient pre-disposition
+state, never a shipped verdict). `reconcile-provenance` already treats an unlabeled finding as
+`llm-inferred`, 0 LLM findings co-locate with any deterministic one (all 4768×46 pairs), and the counters
+are provenance-blind. So none of A1/A2 is a correctness/tag gate.
+- **A3 — artifact preamble strip** (clean, hermetic): agent chatter ("I have everything I need…") leaked
+  into every drafted artifact. Pure `stripPreamble` at `write-drafted-content.mjs` (gated to `.md`, no-H1 →
+  verbatim) + a drafting-prompt H1-first note + doc-currency. The genuine quality fix the reviewer sees.
+- **A1 — ledger provenance self-declaration** (honesty/robustness ONE-LINER): stamp
+  `provenance:'llm-inferred'` on the LLM-finding merge (`merge-ledger.mjs:186`). Makes the ledger
+  self-describing; a **byte-level no-op** for every current consumer — do NOT frame it as fixing reconcile
+  or the double-count.
+- **A4 — exposed-tools drafting rigor** (careful, PROSE-ONLY / not-test-backed): the refresh drafted the
+  client/ESR operation surface (~49) instead of the full code registry (~67), dropping the admin/propose
+  tiers. Sharpen the SKILL step-3/4 + checklist Row-7 guidance (partner-agnostic — no hardcoded counts):
+  full registry ≠ client surface, reconcile BOTH counts, never shrink/collapse a tier on refresh. NOTE: the
+  tiered inventory belongs to `artifact-exposed-tools-list`, NOT `artifact-mcp-server-details`.
+- **A2 — DROPPED (not a bug):** the 56→29 drop was the deterministic-band id-dedup + FP-disposition
+  machinery (provenance-blind), not a cross-provenance double-count; cross-engine dedup is a deliberately
+  DEFERRED debt (Phase-2b §10 ext #3), not a WO-A slice.
 - NOT toolkit (driver/env — do not build): shell-quoting fragility + sleep-polling.
 
-### WORK-ORDER B — throwaway-DAST enablement (partner-general). File `srt-dast-builder-prompt.md` (v2, audit-hardened + Fable-safe). **BUILDING NOW.**
+### WORK-ORDER B — throwaway-DAST enablement (partner-general). File `srt-dast-builder-prompt.md` (v2, audit-hardened + Fable-safe). **DONE — graded PASS off disk (7 slices, 0.8.85–0.8.91, identity-clean, suite 1043/0; real-target `composeWebTier`→api:8000; keystone G provenance sidecar; 4 loopback layers byte-frozen).**
 Slices **A** (compose web-tier selection) · **B1** (3-state health honesty) · **G** (run-dast honesty
 consumption + machine-readable provenance — the keystone) · **C** (spec-path + capture-only
 provenance) · **B2** (migration detection) · **D** (base-url pointer + run-id integrity +
@@ -118,9 +123,10 @@ honesty gate** (any alone still permits a clean-looking wrong-tier / unhealthy r
   framework-named `needs-recipe` is the floor).
 
 ### SEQUENCE TO 0.9.0
-Build WO-B (now) + WO-A (next/parallel) → scrub the branch trailers → merge slices 1–4 → **bump plugin
-+ RE-RUN the cold run** to confirm the honest band + the DAST chain firing → if clean, move `v0.7.0` →
-**`0.9.0`**. The tag stays HELD until that clean re-run.
+WO-B **DONE** (graded PASS). WO-A (A1+A3+A4 honesty/quality polish) **building** → scrub the branch trailers
+(slices 1–4; 5–11 already clean) → merge → **bump plugin + RE-RUN the cold run** to confirm the honest band +
+the DAST chain firing. **No correctness gate remains** — the tag question is now A+ quality + one clean
+re-run. If clean, move `v0.7.0` → **`0.9.0`**. The tag stays HELD until that clean re-run.
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
