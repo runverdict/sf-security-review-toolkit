@@ -9,13 +9,17 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.81**, suite **63 files / 1011 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.82**, suite **63 files / 1013 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,
   clears the scripts-only `ADMIN_DATABASE_URL` residual] + HTTP-liveness-only honesty in the runnable reason;
-  +5 checks, mutation-proven) · ☐ slice 2 target-map dimension-key validation · ☐ slice 3 bandit test-path LOW
-  hygiene filter · ☐ slice 4 compose-IaC = `trivy config` prose.
+  +5 checks, mutation-proven) · ✅ **slice 2 / 0.8.82 target-map dimension-key validation** (new
+  `harness/dimension-registry.mjs` [dimension-file basenames, no hardcoded list] + engine gate in
+  build-audit-engine [applicable AND N/A keys, exit 2 naming offenders — closes the zero-validation N/A hole] +
+  render-target-map `knownKeys` display belt [⚠ summary line, table still renders, default-null byte-identical];
+  +2 checks E4b/TM5, E4 tightened) · ☐ slice 3 bandit test-path LOW hygiene filter · ☐ slice 4 compose-IaC =
+  `trivy config` prose.
   CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 + item 7 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
   seam · determinism proof · single-shape registry · supply-chain README+`SC-*` · E0.1d-EXPAND
   catalog routing 0.8.76 · EXPAND-2 class-less-safe markup/OAuth 0.8.77 · EXPAND-3 owned-class-dimension 0.8.78 ·

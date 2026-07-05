@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.82] — 2026-07-05
+
+**Target-map dimension-key validation — a bogus key can no longer masquerade as coverage.**
+Cold-run finding: a hand-written `target-map.json` carrying keys outside the canonical set
+(`tenant-isolation-web`, `oauth-identity-legacy`) sailed through — the N/A path had ZERO
+validation (N/A keys never touch the §4/§5 extraction), and the audit-codebase skill grants the
+driver a Write on `target-map.json`, so the display could be driven without the engine. Both
+halves shipped:
+
+### Added
+- `harness/dimension-registry.mjs` — the ONE canonical source of valid dimension keys: the
+  `methodology/dimensions/*.md` basenames (`knownDimensionKeys(pluginRoot)`). NO hardcoded
+  list — a new dimension file is self-registering.
+- Engine gate (`harness/build-audit-engine.mjs`): every scope-input key — applicable AND N/A —
+  is validated against the registry AFTER the always-on injection and BEFORE assembly; any
+  unknown key aborts `exit(2)` naming the offender(s) + printing the sorted canonical set.
+  Closes the N/A hole (an unknown N/A key previously shipped as a "covered" row, silently
+  shrinking coverage).
+- Render belt (`harness/render-target-map.mjs`): `renderTargetMap(data, knownKeys = null)` —
+  with a registry Set, keys outside the canonical set append
+  `⚠ N unknown dimension key(s): … — not in the canonical set` to the closing summary. Belt,
+  not gate: the table STILL renders, nothing throws (TM3 fail-safe intact); default `null`
+  keeps every existing direct caller byte-identical. `main()` derives the plugin root from
+  `import.meta.url` and passes the registry; a failed registry read degrades to null.
+
+Suite: **63 files / 1013 checks** (+2: E4b — bogus `na` key aborts while the same shape with a
+known key builds silently, the two-sided N/A-hole pin; TM5 — bogus key + registry renders the
+⚠ line AND the full table, clean map silent, default-null byte-identity). E4 tightened from
+`/not found|Command failed/` to the registry gate's `/unknown dimension key/` + offender +
+canonical-set assertions.
+
 ## [0.8.81] — 2026-07-05
 
 **stack-detect compose-satisfiability — the throwaway-DAST gate now fires on a self-contained

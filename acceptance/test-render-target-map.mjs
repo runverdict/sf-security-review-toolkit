@@ -12,6 +12,8 @@
  * TM3  fail-safe — null / non-object / no-dimensions → an honest "not resolved yet" line,
  *      never a crash and never a fabricated map.
  * TM4  wiring — audit-codebase Step 3 grants + references the harness + states verbatim.
+ * TM5  unknown-key belt — a bogus dimension key + a registry Set → the ⚠ summary line
+ *      AND the table still renders (belt, not gate; default null = byte-identical).
  *
  * Dependency-free: `node acceptance/test-render-target-map.mjs`.
  */
@@ -88,6 +90,22 @@ check('TM3 fail-safe: null / non-object / no dimensions → honest "not resolved
   // CLI on a missing file → the fail-safe line, never a crash
   const out = execFileSync('node', [CLI, '--input', join(tmp(), 'nope.json')], { encoding: 'utf8' })
   assert.match(out, /Target map not resolved yet/)
+})
+
+check('TM5 unknown-key belt: bogus key + knownKeys → ⚠ line appended, table still renders, never throws', () => {
+  const known = new Set(['apex-exposed-surface', 'crypto-internals', 'mcp-surface'])
+  const withBogus = { ...MAP, dimensions: [...MAP.dimensions, { key: 'tenant-isolation-web', applicable: false, na_reason: 'hand-written map, key not in the canonical set' }] }
+  const block = renderTargetMap(withBogus, known)
+  // belt, not gate: the table STILL renders (fail-safe posture — the operator must see the map)
+  assert.match(block, /\| Dimension \| Applicable \| Targets \| Why \| Confidence \| Unresolved \|/)
+  assert.match(block, /tenant-isolation-web \| — \(N\/A\) \|/, 'the bogus row itself still renders')
+  // MUTATION: dropping the knownKeys check in renderTargetMap turns this red (no ⚠ unknown line)
+  assert.match(block, /⚠ 1 unknown dimension key\(s\): tenant-isolation-web — not in the canonical set/)
+  // clean side: an all-known map is silent
+  assert.ok(!/unknown dimension key/.test(renderTargetMap(MAP, known)), 'no unknown-key line on a clean map')
+  // default null → byte-identical to the pre-belt output (existing direct callers unaffected)
+  assert.equal(renderTargetMap(withBogus), renderTargetMap(withBogus, null))
+  assert.ok(!/unknown dimension key/.test(renderTargetMap(withBogus)), 'no registry → no unknown-key claim')
 })
 
 check('TM4 wiring: audit-codebase Step 3 grants + references the harness + verbatim', () => {

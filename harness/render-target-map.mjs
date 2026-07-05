@@ -31,6 +31,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { knownDimensionKeys } from './dimension-registry.mjs'
 
 // Flatten a cell value to a single safe Markdown-table cell: collapse whitespace/newlines
 // to spaces and escape pipes, so a multi-line `stack_notes` can never break the table or
@@ -40,8 +41,16 @@ function cell(v) {
   return s || '—'
 }
 
-/** Pure: the target-map JSON (or null) → the fixed target-map approval block. */
-export function renderTargetMap(data) {
+/**
+ * Pure: the target-map JSON (or null) → the fixed target-map approval block.
+ * `knownKeys` (optional Set — the dimension-registry basenames): when provided,
+ * dimension keys outside the canonical set are called out in the closing summary —
+ * the display belt for a HAND-WRITTEN target-map.json that bypassed the engine gate
+ * (the audit-codebase skill grants the driver a Write on target-map.json). Belt,
+ * not gate: the table still renders, nothing throws (TM3 fail-safe holds). Default
+ * null → byte-identical output for every existing caller.
+ */
+export function renderTargetMap(data, knownKeys = null) {
   const ok = data && typeof data === 'object' && Array.isArray(data.dimensions)
   if (!ok) {
     return [
@@ -83,13 +92,24 @@ export function renderTargetMap(data) {
 
   // Closing summary — surfaces the one thing to fix before launch: an UNRESOLVED applicable
   // dimension is FALSE coverage (worse than no audit), so it is called out explicitly.
-  const sum =
+  let sum =
     `${applicable.length} applicable, ${na.length} N/A.` +
     (unresolvedCount
       ? ` ⚠ ${unresolvedCount} applicable dimension(s) UNRESOLVED (no targets) — point the audit at the code ` +
         `or confirm N/A BEFORE approving; a skipped dimension is false coverage.`
       : ' All applicable dimensions have resolved targets.') +
     ' This is the one cheap moment to correct the scope before the fan-out audits the whole codebase.'
+  // Unknown-key belt (0.8.82): with a registry Set, flag keys outside the canonical
+  // dimension set — a hand-written map's bogus key is NOT coverage. Never throws.
+  if (knownKeys instanceof Set) {
+    const unknown = [...new Set(dims.filter(Boolean).map((d) => d.key).filter((k) => !knownKeys.has(k)))]
+    if (unknown.length) {
+      sum +=
+        ` ⚠ ${unknown.length} unknown dimension key(s): ` +
+        `${unknown.map((k) => cell(k)).join(', ')} — not in the canonical set ` +
+        '(methodology/dimensions/*.md); an unknown key is NOT audit coverage — fix it before approving.'
+    }
+  }
   L.push(sum)
   return L.join('\n')
 }
@@ -110,10 +130,14 @@ function main() {
       data = null // absent / unreadable / non-JSON → the honest one-liner, never a crash
     }
   }
+  // Registry belt: the plugin root is this file's parent dir (harness/..). A failed
+  // registry read degrades to null (no unknown-key check) — the render NEVER crashes.
+  let knownKeys = null
+  try { knownKeys = knownDimensionKeys(fileURLToPath(new URL('..', import.meta.url))) } catch { knownKeys = null }
   if (process.argv.includes('--json')) {
-    process.stdout.write(JSON.stringify({ block: renderTargetMap(data) }, null, 2) + '\n')
+    process.stdout.write(JSON.stringify({ block: renderTargetMap(data, knownKeys) }, null, 2) + '\n')
   } else {
-    process.stdout.write(renderTargetMap(data) + '\n')
+    process.stdout.write(renderTargetMap(data, knownKeys) + '\n')
   }
 }
 

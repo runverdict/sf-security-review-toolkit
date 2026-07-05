@@ -29,6 +29,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { verifyConsent } from './record-consent.mjs'
+import { knownDimensionKeys } from './dimension-registry.mjs'
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag)
@@ -139,6 +140,28 @@ function extract(key) {
   if (finderPrompt.length < 200) throw new Error(`${key}: finderPrompt suspiciously short (${finderPrompt.length})`)
   if (verifierNotes.length < 200) throw new Error(`${key}: verifierNotes suspiciously short (${verifierNotes.length})`)
   return { finderPrompt, verifierNotes }
+}
+
+// ---- DIMENSION-KEY VALIDATION (cold-run fix, 0.8.82) ----
+// Validate EVERY scope-input key — applicable AND N/A — against the canonical
+// methodology/dimensions/*.md basenames. The N/A path previously had ZERO validation:
+// a hand-written key (`tenant-isolation-web`, `oauth-identity-legacy`) sailed through
+// as a "covered" N/A row, silently shrinking coverage without ever touching a
+// dimension file. Runs AFTER the always-on injection (so a forced key is validated
+// like any other) and BEFORE assembly. No hardcoded list — the registry reads the
+// dimension-file basenames, so a new dimension file is self-registering.
+{
+  const known = knownDimensionKeys(PLUGIN)
+  const unknown = [...APPLICABLE.map((d) => d && d.key), ...NA.map((n) => n && n.key)]
+    .filter((k) => !known.has(k))
+  if (unknown.length) {
+    console.error(
+      `build-audit-engine: unknown dimension key(s): ${unknown.map((k) => String(k)).join(', ')} — ` +
+        `not in the canonical set (methodology/dimensions/*.md basenames):\n  ${[...known].sort().join(', ')}\n` +
+        `Fix the key(s) in scope-input.json (a typo here silently drops audit coverage).`
+    )
+    process.exit(2)
+  }
 }
 
 const dimensions = APPLICABLE.map((d) => {

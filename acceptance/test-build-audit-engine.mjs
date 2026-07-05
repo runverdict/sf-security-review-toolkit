@@ -10,7 +10,10 @@
  *   E2 — the assembled engine PASSES harness/injection-check.mjs (exit 0) — i.e. the
  *        injection that G5 hardened is valid for real, end to end.
  *   E3 — target-map.json records applicable (with targets) + N/A (with reason).
- *   E4 — loud failure: an unknown dimension key aborts non-zero (never a silent empty prompt).
+ *   E4 — loud failure: an unknown APPLICABLE dimension key aborts non-zero via the
+ *        dimension-registry gate (never a silent empty prompt).
+ *   E4b — the N/A path is validated too: a bogus na key aborts (previously ZERO
+ *        validation — a hand-written key silently shrank coverage); known keys silent.
  *   E5 — determinism: same input → byte-identical audit-engine.mjs.
  *
  * Dependency-free: `node acceptance/test-build-audit-engine.mjs`.
@@ -118,10 +121,29 @@ check('E3 target-map records applicable (with targets) + N/A (with reason)', () 
   assert.match(mcp.na_reason, /no MCP/)
 })
 
-check('E4 loud failure: an unknown dimension key aborts non-zero', () => {
+check('E4 loud failure: an unknown APPLICABLE dimension key aborts non-zero, named + against the canonical set', () => {
   const d = makeRepo({ ...goodInput, applicable: [{ key: 'totally-not-a-dimension', targets: 'x', stackNotes: 'y' }] }); dirs.push(d)
-  assert.throws(() => execFileSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { stdio: 'pipe' }),
-    /not found|Command failed/, 'a missing dimension file must abort, not emit an empty prompt')
+  const res = spawnSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { encoding: 'utf8' })
+  assert.notEqual(res.status, 0, 'an unknown dimension key must abort, not emit an empty prompt')
+  assert.match(res.stderr, /unknown dimension key/, 'the registry gate names the failure class')
+  assert.match(res.stderr, /totally-not-a-dimension/, 'the offending key is named')
+  assert.match(res.stderr, /apex-exposed-surface/, 'the sorted canonical set is printed for correction')
+})
+
+check('E4b N/A keys are validated too: a bogus na key aborts; known keys stay silent (the coverage-shrink hole)', () => {
+  // Clean side FIRST: the same shape with a KNOWN na key (mcp-surface) builds fine —
+  // the gate is silent on valid input.
+  const ok = makeRepo(goodInput); dirs.push(ok)
+  build(ok)
+  // Fires side: a hand-written suffixed key on the N/A path — previously ZERO validation
+  // (N/A keys never touch extract()), so `tenant-isolation-web` sailed through as a
+  // "covered" N/A row. MUTATION: removing the registry gate in build-audit-engine.mjs
+  // turns the status assertion red first (the build would exit 0 and write the map).
+  const d = makeRepo({ ...goodInput, na: [{ key: 'tenant-isolation-web', na_reason: 'hand-written bogus key' }] }); dirs.push(d)
+  const res = spawnSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { encoding: 'utf8' })
+  assert.notEqual(res.status, 0, 'a bogus N/A key must abort the assembly')
+  assert.match(res.stderr, /unknown dimension key/)
+  assert.match(res.stderr, /tenant-isolation-web/, 'the offending N/A key is named')
 })
 
 check('E5 determinism: same input → byte-identical audit-engine.mjs', () => {
