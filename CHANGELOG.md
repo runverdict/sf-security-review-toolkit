@@ -51,6 +51,36 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.94] — 2026-07-05
+
+**Exposed-tools drafting rigor (prose-only — NOT-test-backed, CONVENTIONS §7).** The cold-run
+exposed-tools refresh drafted the client/ESR operation surface (the filtered subset) instead of the
+full code registration/dispatch registry (the AST-verified superset), dropping the registry-only
+tiers. Two compounding traps the guidance never named: a numeric collision (the client-exposed
+operation count can equal one privilege tier's count, so the subset silently reads as the whole
+registry) and a tier-vocabulary split between the drafting side (read/write/admin) and the audit
+side (read/propose/admin). The tiered tool inventory belongs to `artifact-exposed-tools-list`, NOT
+`artifact-mcp-server-details`.
+
+### Hardened (prose-only — NOT-test-backed)
+- `skills/generate-artifacts/SKILL.md` steps 3/4 + `templates/submission-checklist.md.tmpl` Row 7
+  guidance, kept mutually consistent and partner-agnostic (no hardcoded counts, no required tier
+  names): (1) **full registry ≠ client/ESR surface** — enumerate the row set from the code
+  registration/dispatch registry (which may be LARGER than the `tools/list`/ESR surface); the live
+  capture is the CROSS-CHECK, never the source of truth, and registry-only tools (admin-gated /
+  conditional / approval-tier) are enumerated regardless; (2) **reconcile BOTH counts** — the
+  reconciliation sentence names the registry count with its tier composition AND the client/ESR
+  operation count, explaining the delta; (3) **tier integrity + no-shrink-on-refresh** — tier by
+  the privilege tiers the dispatch table actually defines, never collapse or drop a tier, and a
+  refresh must never replace a fuller prior inventory with a thinner subset. Drafting-side tier
+  example aligned to the audit side's read/propose/admin (`methodology/dimensions/mcp-surface.md`,
+  baseline `mcpthreat-scope-minimization` — untouched). Step-12 cross-read gains the "registry vs
+  client/ESR-exposed count" row (the standing consistency guard for this class; no new grep-lint
+  by design). The step-3 "conditional/admin-gated tools MUST appear anyway" rule is sharpened in
+  place, not duplicated; baseline `verification`/`last_verified` metadata untouched.
+
+Suite: **63 files / 1051 checks** (+0).
+
 ## [0.8.93] — 2026-07-05
 
 **Ledger provenance self-declaration (schema honesty/robustness — NOT a behavior fix).**

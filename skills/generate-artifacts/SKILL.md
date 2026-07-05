@@ -121,7 +121,15 @@ marked owner-input.
      in the exposed-tools inventory anyway, because an unlisted-but-callable
      tool the reviewer discovers reads as concealment); tools in the capture
      but not in code (you are probing the wrong deployment — stop and
-     re-confirm the URL). While here, check metadata completeness per
+     re-confirm the URL). The registration/dispatch registry is the SOURCE
+     OF TRUTH for the exposed-tools row set (step 4); the capture is the
+     cross-check — never invert that. The client/ESR-exposed operation
+     surface can be a strict subset of the code registry, and when the
+     client-exposed count happens to equal one privilege tier's count, that
+     numeric collision is exactly how a refresh silently drafts the subset
+     as if it were the whole registry — reconcile the two counts explicitly
+     (step 4), never substitute one for the other. While here, check
+     metadata completeness per
      baseline `mcp-tools-list-metadata-completeness`: every tool needs a
      name, an honest description, and schemas — gaps are findings for the
      draft, not silent fixes.
@@ -159,14 +167,26 @@ marked owner-input.
    fabricated capture by the full width of CONVENTIONS §2.
 
 4. **Write the exposed-tools inventory** (baseline
-   `artifact-exposed-tools-list`) from the step-3 reconciliation. One row per
-   tool, tiered by privilege (read / write / admin), including the
-   administrative and conditional tools. Close with the reconciliation
-   statement the checklist's Row 7 guidance demands: "registry defines N, M
-   exposed, the difference is X and Y because…". A count that doesn't
-   reconcile is a generator bug to fix now — every later artifact
-   (access-control matrix, data-sensitivity tool map) reconciles against this
-   number, and fudging it here propagates the lie three documents deep.
+   `artifact-exposed-tools-list` — the tiered tool inventory lives on THIS
+   row, not in the MCP-server-details endpoint doc) from the step-3
+   reconciliation. Enumerate the row set from the full code
+   registration/dispatch registry — the superset the audit AST-verifies,
+   which may be LARGER than the `tools/list`/ESR operation surface the
+   client sees; the live capture is the cross-check, never the source of
+   truth for the row set, and registry-only tools (admin-gated /
+   conditional / approval-tier) are enumerated regardless. One row per
+   registry tool, tiered by the privilege tiers the dispatch table actually
+   defines (e.g. the read / propose / admin tiering the audit side names
+   under `mcpthreat-scope-minimization`); never collapse or drop a tier,
+   and a refresh must never replace a fuller prior inventory with a thinner
+   subset. Close with the reconciliation statement the checklist's Row 7
+   guidance demands, naming BOTH counts: "the registry defines N tools
+   (tiers a/b/c); the client/ESR exposes M operations; the delta is the X
+   admin + Y conditional/approval tools that are registry-resident but not
+   client-listed because…". A count that doesn't reconcile is a generator
+   bug to fix now — every later artifact (access-control matrix,
+   data-sensitivity tool map) reconciles against this number, and fudging it
+   here propagates the lie three documents deep.
 
 5. **Mine the audit for the controls narrative.** From the latest audit
    report, lift the "strong controls observed" entries — they were written
@@ -471,6 +491,7 @@ The content contract each artifact's `focus` carries:
     | Check | Documents that must agree |
     |---|---|
     | Tool count and names | exposed-tools inventory · access-control B.4 · data-sensitivity §5 · OpenAPI paths · live capture |
+    | Registry vs client/ESR-exposed count | exposed-tools reconciliation sentence · live capture · access-control B.4 |
     | Credential storage vs egress | authn-authz §8 storage table · data-flow §5 "stored on your side" column |
     | Session-ID posture | authn-authz §1 · data-flow §1 and §8 — identical sentence, identical evidence |
     | Actor/participant names | authn-authz §2 actors · both Mermaid diagrams · data-flow §2 boundary table |

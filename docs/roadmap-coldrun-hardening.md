@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.93**, suite **63 files / 1051 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.94**, suite **63 files / 1051 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,
@@ -85,25 +85,30 @@ The run also re-confirmed, on the pre-fix baseline, the exact defects the branch
 correctness/quality defects that GATE the tag. **Two work-orders close them; neither belongs in the
 other (disjoint subsystems, disjoint files → parallelizable as two builder sessions).**
 
-### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). GROUNDED + WRITTEN → `srt-wo-a-audit-honesty-prompt.md`; scope **A1 + A3 + A4**.
+### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). **SHIPPED on the branch (A3 0.8.92 → A1 0.8.93 → A4 0.8.94, one slice per commit; off-disk grade pending)** → `srt-wo-a-audit-honesty-prompt.md`; scope **A1 + A3 + A4**.
 Subsystem: `merge-ledger.mjs` / `write-drafted-content.mjs` + `artifact-workflow-template.mjs` / `generate-artifacts` SKILL.
 **Grounding CORRECTED the cold-run premise (verified off disk — reconcile re-run WITH and WITHOUT the label):**
 the blocker count is ALREADY honest (the final **29** is correct; **56** was a transient pre-disposition
 state, never a shipped verdict). `reconcile-provenance` already treats an unlabeled finding as
 `llm-inferred`, 0 LLM findings co-locate with any deterministic one (all 4768×46 pairs), and the counters
 are provenance-blind. So none of A1/A2 is a correctness/tag gate.
-- **A3 — artifact preamble strip** (clean, hermetic): agent chatter ("I have everything I need…") leaked
-  into every drafted artifact. Pure `stripPreamble` at `write-drafted-content.mjs` (gated to `.md`, no-H1 →
-  verbatim) + a drafting-prompt H1-first note + doc-currency. The genuine quality fix the reviewer sees.
-- **A1 — ledger provenance self-declaration** (honesty/robustness ONE-LINER): stamp
-  `provenance:'llm-inferred'` on the LLM-finding merge (`merge-ledger.mjs:186`). Makes the ledger
-  self-describing; a **byte-level no-op** for every current consumer — do NOT frame it as fixing reconcile
-  or the double-count.
-- **A4 — exposed-tools drafting rigor** (careful, PROSE-ONLY / not-test-backed): the refresh drafted the
-  client/ESR operation surface (~49) instead of the full code registry (~67), dropping the admin/propose
-  tiers. Sharpen the SKILL step-3/4 + checklist Row-7 guidance (partner-agnostic — no hardcoded counts):
-  full registry ≠ client surface, reconcile BOTH counts, never shrink/collapse a tier on refresh. NOTE: the
-  tiered inventory belongs to `artifact-exposed-tools-list`, NOT `artifact-mcp-server-details`.
+- ✅ **A3 / 0.8.92 — artifact preamble strip** (clean, hermetic): agent chatter ("I have everything I
+  need…") leaked into every drafted artifact. Pure `stripPreamble` at `write-drafted-content.mjs` (gated to
+  `.md`, no-H1 → verbatim, front-matter kept, applied once in `planWrites`) + a drafting-prompt H1-first
+  note + doc-currency. Test-backed P1–P6, mutation-proven. The genuine quality fix the reviewer sees.
+- ✅ **A1 / 0.8.93 — ledger provenance self-declaration** (honesty/robustness ONE-LINER): stamp
+  `provenance:'llm-inferred'` on the LLM-finding merge (`merge-ledger.mjs` entry literal + a guarded
+  `if (!f.provenance)` normalize after the collapse — merged-parent/lens rebuilds drop optional fields; a
+  deterministic row is never relabeled). Makes the ledger self-describing; a **byte-level no-op** for every
+  current consumer — do NOT frame it as fixing reconcile or the double-count. Test-backed M17 + R7b + D2-
+  extended, mutation-proven.
+- ✅ **A4 / 0.8.94 — exposed-tools drafting rigor** (careful, PROSE-ONLY / NOT-test-backed): the refresh
+  drafted the client/ESR operation surface (~49) instead of the full code registry (~67), dropping the
+  admin/propose tiers. Sharpened the SKILL step-3/4 + checklist Row-7 guidance (partner-agnostic — no
+  hardcoded counts): full registry ≠ client surface, reconcile BOTH counts, never shrink/collapse a tier on
+  refresh; tier example aligned to the audit side's read/propose/admin; step-12 cross-read gains the
+  registry-vs-client/ESR row. NOTE: the tiered inventory belongs to `artifact-exposed-tools-list`, NOT
+  `artifact-mcp-server-details`.
 - **A2 — DROPPED (not a bug):** the 56→29 drop was the deterministic-band id-dedup + FP-disposition
   machinery (provenance-blind), not a cross-provenance double-count; cross-engine dedup is a deliberately
   DEFERRED debt (Phase-2b §10 ext #3), not a WO-A slice.
@@ -123,7 +128,8 @@ honesty gate** (any alone still permits a clean-looking wrong-tier / unhealthy r
   framework-named `needs-recipe` is the floor).
 
 ### SEQUENCE TO 0.9.0
-WO-B **DONE** (graded PASS). WO-A (A1+A3+A4 honesty/quality polish) **building** → scrub the branch trailers
+WO-B **DONE** (graded PASS). WO-A (A1+A3+A4 honesty/quality polish) **SHIPPED (0.8.92–0.8.94; off-disk
+grade pending)** → scrub the branch trailers
 (slices 1–4; 5–11 already clean) → merge → **bump plugin + RE-RUN the cold run** to confirm the honest band +
 the DAST chain firing. **No correctness gate remains** — the tag question is now A+ quality + one clean
 re-run. If clean, move `v0.7.0` → **`0.9.0`**. The tag stays HELD until that clean re-run.

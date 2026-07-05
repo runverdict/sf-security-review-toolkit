@@ -214,15 +214,23 @@ parses the results). -->
 | **Owner** | {{ROW7_OWNER}} |
 | **What we provide** | {{ROW7_RESPONSE}} |
 
-<!-- guidance: What satisfies it: a named inventory of EVERY tool the server
-exposes, tiered by privilege (read / write / admin) with counts that reconcile
-exactly against the live tools/list capture from Row 3. Include the
-administrative tools — omitting a tool the reviewer then sees in tools/list
-reads as concealment. If the registry defines tools that are intentionally NOT
-exposed (internal-only entries, dead entries), say so explicitly with the
-count: "registry defines N, M exposed, the difference is X and Y because…" —
-the generator computes this reconciliation from code, and a count mismatch
-here is a generator bug to fix, not a row to fudge. -->
+<!-- guidance: What satisfies it: a named inventory of EVERY tool in the
+server's code registration/dispatch registry. The registry is the SOURCE OF
+TRUTH for the row set — it can be LARGER than the client/ESR-exposed
+operation surface — and the live tools/list capture from Row 3 is the
+CROSS-CHECK, never the row source. Tier by the privilege tiers the dispatch
+table actually defines (e.g. read / propose / admin); never collapse or drop
+a tier, and a refresh must never replace a fuller prior inventory with a
+thinner subset — watch the numeric collision where the client-exposed
+operation count equals one tier's count and the subset silently reads as the
+whole registry. Include the administrative and conditional/approval-tier
+tools even when the live capture omits them — omitting a tool the reviewer
+then finds reachable reads as concealment. Close by naming BOTH counts: "the
+registry defines N tools (tiers a/b/c); the client/ESR exposes M operations;
+the delta is the X admin + Y conditional/approval tools that are
+registry-resident but not client-listed because…" — the generator computes
+this reconciliation from code, and a count mismatch here is a generator bug
+to fix, not a row to fudge. -->
 
 ## Row 8 — Architecture / data-flow diagram
 <!-- baseline: artifact-architecture-diagram -->
