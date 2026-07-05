@@ -384,6 +384,61 @@ export function detectMigration(signals = {}) {
   return null
 }
 
+/**
+ * PURE. Resolve a compose-less Python entry's run command from its CONSTRUCTOR (never a bare
+ * `app =` match — routing a WSGI Flask callable to uvicorn crashes at boot). Returns
+ * `{server,kind,module,var|factory,bestEffort?,note?}` or `{unsupported,reason}`. Decision
+ * order, most-reliable first: ASGI ctor → uvicorn; WSGI ctor → gunicorn/flask; factory →
+ * uvicorn --factory / gunicorn by deps (refuse to GUESS when deps can't disambiguate);
+ * self-launcher → best-effort `python <entry>`; else unsupported (→ needs-recipe).
+ */
+export function resolvePythonRun(entry, entryText, depsText) {
+  const text = String(entryText || '')
+  const deps = String(depsText || '').toLowerCase()
+  const module = String(entry || '').replace(/\.py$/, '').replace(/[\\/]/g, '.')
+  const asgiServer = /\b(uvicorn|hypercorn|daphne|granian)\b/.test(deps)
+  const asgiFramework = /\b(fastapi|starlette|litestar|quart)\b/.test(deps)
+  const asgiSignal = asgiServer || asgiFramework
+  const flaskSignal = /\bflask\b/.test(deps)
+  const hasGunicorn = /\bgunicorn\b/.test(deps)
+  const asgiNote = 'ASGI server not in the partner deps; uvicorn provided by the harness — the partner container would not boot this way'
+  // 1. ASGI constructor (FastAPI/Starlette/Litestar/Quart, or Django get_asgi_application)
+  let m = text.match(/(\w+)\s*=\s*(?:FastAPI|Starlette|Litestar|Quart)\s*\(/)
+    || text.match(/(\w+)\s*=\s*get_asgi_application\s*\(/)
+  if (m) {
+    const r = { server: 'uvicorn', kind: 'asgi', module, var: m[1] }
+    if (!asgiServer) Object.assign(r, { bestEffort: true, provideServer: 'uvicorn', note: asgiNote })
+    return r
+  }
+  // 2. WSGI constructor (Flask, or Django get_wsgi_application) → gunicorn if present, else the
+  //    flask CLI (which always ships with Flask)
+  m = text.match(/(\w+)\s*=\s*Flask\s*\(/) || text.match(/(\w+)\s*=\s*get_wsgi_application\s*\(/)
+  if (m) return hasGunicorn
+    ? { server: 'gunicorn', kind: 'wsgi', module, var: m[1] }
+    : { server: 'flask', kind: 'wsgi', module, var: m[1] }
+  // 3. Factory — disambiguate by deps; REFUSE to guess uvicorn-vs-gunicorn (the honesty trap)
+  m = text.match(/def\s+(create_app|get_app|make_app)\s*\(/)
+  if (m) {
+    const factory = m[1]
+    if (asgiSignal && !flaskSignal) {
+      const r = { server: 'uvicorn', kind: 'asgi', module, factory }
+      if (!asgiServer) Object.assign(r, { bestEffort: true, provideServer: 'uvicorn', note: asgiNote })
+      return r
+    }
+    if (flaskSignal && !asgiSignal) return hasGunicorn
+      ? { server: 'gunicorn', kind: 'wsgi', module, factory }
+      : { server: 'flask', kind: 'wsgi', module, factory }
+    return { unsupported: true, reason: `factory ${factory}() in ${entry} but deps can't disambiguate ASGI vs WSGI — provide a start command` }
+  }
+  // 4. Self-launcher (__main__ + a .run(/.serve() call) with NO ctor → best-effort python <entry>
+  if (/if\s+__name__\s*==\s*['"]__main__['"]\s*:/.test(text) && /\.(?:run|serve)\s*\(/.test(text)) {
+    return { server: 'self', kind: 'self', module, var: null, bestEffort: true,
+      note: 'self-launcher (__main__) — the app owns its bind and may pin container-127.0.0.1 (unreachable through the host loopback publish); HOST=0.0.0.0 is a mitigation only if honored' }
+  }
+  // 5. Nothing resolvable → unsupported (honest, owner-run)
+  return { unsupported: true, reason: `no ASGI/WSGI app object or __main__ launcher found in ${entry} — provide a start command` }
+}
+
 /** Pure: the classifyStack reason fragment for a resolved web tier (or the no-tier note). */
 function webTierReason(wt) {
   if (!wt) return ''
@@ -399,7 +454,7 @@ export function classifyStack(facts = {}) {
   const roots = Array.isArray(facts.serverRoots) ? facts.serverRoots : []
   const recipe = facts.recipe || null
   if (!roots.length && !recipe) {
-    return { status: 'n/a', reason: 'no external server source root found — nothing to stand up (package-only)' }
+    return { status: 'n/a', migration: facts.migration || null, reason: 'no external server source root found — nothing to stand up (package-only)' }
   }
   // Compose-satisfiability: env the compose itself satisfies (defaulted `${VAR:-..}`
   // interpolations + concrete `KEY: value` assignments) is not owner-supplied, so an
@@ -418,7 +473,7 @@ export function classifyStack(facts = {}) {
   const env = { external: buckets.external, synthesizable: buckets.synthesizable, benign: buckets.benign, unknown: buckets.unknown }
 
   if (!recipe) {
-    return { status: 'needs-recipe', serverRoots: roots, env,
+    return { status: 'needs-recipe', serverRoots: roots, env, migration: facts.migration || null,
       reason: `external source at ${roots.join(', ')} but no runnable recipe (no compose / Dockerfile / start script) — provide a start command` }
   }
   if (env.external.length) {
@@ -533,8 +588,19 @@ function gatherRecipe(target, roots) {
       }
     }
     if (isFile(join(dir, 'requirements.txt')) || isFile(join(dir, 'pyproject.toml'))) {
-      const entry = ['app.py', 'main.py', 'server.py', 'wsgi.py', 'asgi.py', 'manage.py'].find((f) => isFile(join(dir, f)))
-      if (entry) return { recipe: { kind: 'python', root, entry }, webTier: { port: 8000 } }
+      // Content-guided (Slice E): resolve the run command from the entry's constructor. Pick the
+      // FIRST entry whose resolver is non-unsupported (a stub app.py no longer shadows a real
+      // main.py); manage.py stays the conventional Django runserver (no ctor to resolve). All
+      // generic entries unsupported → no python recipe → the honest needs-recipe.
+      const depsText = readOr(join(dir, 'requirements.txt')) + '\n' + readOr(join(dir, 'pyproject.toml')) + '\n' + readOr(join(dir, 'Pipfile'))
+      let chosen = null
+      for (const f of ['app.py', 'main.py', 'server.py', 'wsgi.py', 'asgi.py', 'manage.py']) {
+        if (!isFile(join(dir, f))) continue
+        if (f === 'manage.py') { chosen = { entry: f }; break } // Django management script — conventional
+        const run = resolvePythonRun(f, readOr(join(dir, f)), depsText)
+        if (!run.unsupported) { chosen = { entry: f, run }; break }
+      }
+      if (chosen) return { recipe: { kind: 'python', root, entry: chosen.entry, ...(chosen.run ? { run: chosen.run } : {}) }, webTier: { port: 8000 } }
     }
   }
   const proc = firstExisting(target, ['Procfile'])

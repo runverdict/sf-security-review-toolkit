@@ -184,12 +184,22 @@ check('U10 planStandup: runnable dockerfile stack → build plan (toolkit-named 
   assert.equal(sub.dockerfilePath, join(TARGET, 'svc', 'Dockerfile'))
 })
 
-check('U11 the python run command is a pure function of the recipe entry', () => {
+check('U11 the python run command is a pure function of the recipe (run recipe + legacy fallback)', () => {
+  // run-less fallback (Slice E): the legacy entry-name branches still yield the old strings
   const cmd = (entry) => planStandup({ ...pyRunnable, recipe: { ...pyRunnable.recipe, entry } }, { runId: 'u11', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u11') }).command
   assert.match(cmd('manage.py'), /&& python manage\.py runserver 0\.0\.0\.0:8000$/)
   assert.match(cmd('asgi.py'), /&& python -m uvicorn asgi:application --host 0\.0\.0\.0 --port 8000$/)
   assert.match(cmd('wsgi.py'), /&& python -m gunicorn --bind 0\.0\.0\.0:8000 wsgi:application$/)
   assert.match(cmd('server.py'), /&& python server\.py$/)
+  // recipe.run drives the exact server command
+  const cmdRun = (run) => planStandup({ ...pyRunnable, recipe: { kind: 'python', root: 'api', entry: 'main.py', run } }, { runId: 'u11', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u11') }).command
+  assert.match(cmdRun({ server: 'uvicorn', kind: 'asgi', module: 'main', var: 'app' }), /&& python -m uvicorn main:app --host 0\.0\.0\.0 --port 8000$/)
+  assert.match(cmdRun({ server: 'uvicorn', kind: 'asgi', module: 'main', factory: 'create_app' }), /&& python -m uvicorn main:create_app --factory --host 0\.0\.0\.0 --port 8000$/)
+  assert.match(cmdRun({ server: 'gunicorn', kind: 'wsgi', module: 'app', var: 'app' }), /&& python -m gunicorn --bind 0\.0\.0\.0:8000 app:app$/)
+  assert.match(cmdRun({ server: 'flask', kind: 'wsgi', module: 'app', var: 'app' }), /&& python -m flask --app app:app run --host 0\.0\.0\.0 --port 8000$/)
+  assert.match(cmdRun({ server: 'self' }), /&& python main\.py$/)
+  // a provideServer hint (ASGI framework, no ASGI server in deps) appends a best-effort harness install
+  assert.match(cmdRun({ server: 'uvicorn', kind: 'asgi', module: 'main', var: 'app', provideServer: 'uvicorn' }), /pip install --no-input --quiet uvicorn && python -m uvicorn/)
 })
 
 check('U12 the python + dockerfile plans carry env NAMES only, never secret values', () => {

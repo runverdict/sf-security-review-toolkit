@@ -73,7 +73,17 @@ export const FATAL_STATUS = new Set(['failed', 'unknown', 'no-docker', 'no-compo
 // `python <entry>` with HOST/PORT in the env. Every variant binds 0.0.0.0 INSIDE the
 // container so the 127.0.0.1-only host publish reaches it.
 const PY_INSTALL = 'if [ -f requirements.txt ]; then pip install --no-input --quiet -r requirements.txt; elif [ -f pyproject.toml ] || [ -f Pipfile ]; then pip install --no-input --quiet .; fi'
-function pythonRunCommand(entry, port) {
+function pythonRunCommand(recipe, port) {
+  const run = recipe && recipe.run
+  if (run && run.server) {
+    const m = run.module
+    if (run.server === 'uvicorn') return `python -m uvicorn ${m}:${run.factory || run.var}${run.factory ? ' --factory' : ''} --host 0.0.0.0 --port ${port}`
+    if (run.server === 'gunicorn') return `python -m gunicorn --bind 0.0.0.0:${port} ${run.factory ? `"${m}:${run.factory}()"` : `${m}:${run.var}`}`
+    if (run.server === 'flask') return `python -m flask --app ${m}:${run.factory || run.var} run --host 0.0.0.0 --port ${port}`
+    if (run.server === 'self') return `python ${recipe.entry}`
+  }
+  // fallback (recipe.run absent) — the legacy entry-name branches keep U9/U11 green
+  const entry = recipe && recipe.entry
   if (entry === 'manage.py') return `python manage.py runserver 0.0.0.0:${port}`
   if (entry === 'asgi.py') return `python -m uvicorn asgi:application --host 0.0.0.0 --port ${port}`
   if (entry === 'wsgi.py') return `python -m gunicorn --bind 0.0.0.0:${port} wsgi:application`
@@ -138,7 +148,7 @@ export function standupHealthNote(status, { guarded = false, saw400 = false } = 
   if (status === HEALTH_STATES.REDIRECT_ONLY) return 'DEGRADED: the app forces https and the throwaway serves http — only redirects were observed; the baseline reached little surface'
   if (status === HEALTH_STATES.UNKNOWN) return saw400
     ? 'the container is running but every liveness path returned 400 — likely a Host-header/ALLOWED_HOSTS rejection; the baseline reached little surface (re-run with the right host or --port)'
-    : 'the container is running but never answered on any liveness path — the detected web tier may be wrong; re-run with --port'
+    : 'the container is running but never answered on any liveness path — the detected web tier may be wrong (re-run with --port), or the app bound to container-localhost; set HOST=0.0.0.0 / -b 0.0.0.0 / ASPNETCORE_URLS=http://0.0.0.0:PORT / server.address=0.0.0.0 by stack'
   return 'stand-up failed: the web tier did not become reachable in time (run docker logs / docker compose logs yourself while the container exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
 }
 
@@ -209,7 +219,9 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       container: names.container, image: null, network: null, baseImage: PYTHON_BASE,
       host: '127.0.0.1', port: webPort, baseUrl: `http://127.0.0.1:${webPort}`,
       sourceDir, entry, workdir: '/app',
-      command: `${PY_INSTALL} && ${pythonRunCommand(entry, webPort)}`,
+      // recipe.run (Slice E) drives the exact server command; a provideServer hint (an ASGI
+      // framework with no ASGI server in deps) adds a best-effort harness install.
+      command: `${PY_INSTALL}${recipe.run && recipe.run.provideServer ? ` && pip install --no-input --quiet ${recipe.run.provideServer}` : ''} && ${pythonRunCommand({ entry, run: recipe.run }, webPort)}`,
       synthEnvNames: [...synthNames], benignEnv: benign,
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
       migration: (stack && stack.migration) || null,

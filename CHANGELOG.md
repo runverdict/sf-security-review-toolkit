@@ -51,6 +51,38 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.91] — 2026-07-05
+
+**Python run recipe — constructor-grounded ASGI/WSGI (Tier-2, best-effort honest-degrade).** The
+python copy-in ran a bare `python <entry>` for anything not manage.py/asgi.py/wsgi.py, and hardcoded
+`uvicorn asgi:application` (FastAPI's callable is `app`, not `application`). The canonical FastAPI
+shape (`app = FastAPI()` at module scope, no `__main__`, `CMD uvicorn app.main:app`) runs bare
+`python main.py` → imports, binds `app`, exits 0 → the container dies → `failed`.
+
+### Fixed
+- `harness/stack-detect.mjs`: pure exported `resolvePythonRun(entry, entryText, depsText)` grounds the
+  ASGI/WSGI split in the CONSTRUCTOR (never a bare `app =` match — routing a Flask callable to uvicorn
+  crashes at boot): ASGI ctor (FastAPI/Starlette/Litestar/Quart, Django get_asgi) → uvicorn; WSGI ctor
+  (Flask, Django get_wsgi) → gunicorn/flask CLI; factory → uvicorn `--factory`/gunicorn by deps, or
+  UNSUPPORTED when deps can't disambiguate (refuse to guess — the honesty trap); self-launcher →
+  best-effort `python <entry>`; else unsupported → the honest `needs-recipe`. `gatherRecipe`'s python
+  branch is content-guided (pick the FIRST entry whose resolver is non-unsupported, so a stub `app.py`
+  no longer shadows a real `main.py`); only the derived `{server,module,var}` rides the stack JSON —
+  the entry SOURCE TEXT never enters it (NAMES-only).
+
+### Hardened
+- `standup-stack.mjs`: `pythonRunCommand` consumes `recipe.run` (the exact uvicorn/gunicorn/flask/
+  self command), keeping the legacy entry-name branches as the run-less fallback (U9/U11 green). An
+  ASGI framework with no ASGI server in deps is BEST-EFFORT (a harness `pip install uvicorn` + an
+  honest marker — the partner's own container would not boot this way). The `unknown` health note
+  now carries a universal container-localhost bind hint (`HOST=0.0.0.0` / `-b 0.0.0.0` /
+  `ASPNETCORE_URLS` / `server.address`). `classifyStack` carries `migration` on every status
+  (needs-recipe/n-a included). Test-backed: `test-stack-detect.mjs` E1 (resolver matrix two-sided,
+  refuse-to-guess) / E2 (CLI compose-less FastAPI → recipe.run uvicorn), `test-standup-stack.mjs` U11
+  extended over the run shapes + run-less fallback. Mutation-proven; S9/S10/S11 stay green.
+
+Suite: **63 files / 1043 checks** (+2).
+
 ## [0.8.90] — 2026-07-05
 
 **Base-url pointer resolution + run-id integrity + target-identity guards (Tier-2).** run-dast +

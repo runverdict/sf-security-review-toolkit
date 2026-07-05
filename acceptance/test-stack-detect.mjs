@@ -36,6 +36,8 @@
  *   A11 run-command fingerprint (uvicorn rescues anonymized svc; redis-server stays infra)
  *   B2  detectMigration: alembic / prisma / django / knex / compose-migrate → {tool,command};
  *       none → null; the CLI threads the detected migration onto the classified stack
+ *   E1  resolvePythonRun: constructor-grounded ASGI/WSGI/factory/self-launcher; refuse-to-guess
+ *   E2  CLI compose-less FastAPI (module-scope ctor) → recipe.run uvicorn main:app
  *
  * The pure composeWebTier is tested directly (hermetic); A1 drives the CLI to pin the
  * gatherRecipe → classifyStack threading. Dependency-free: `node acceptance/test-stack-detect.mjs`.
@@ -47,7 +49,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
-  classifyEnvName, classifyStack, composeWebTier, detectMigration,
+  classifyEnvName, classifyStack, composeWebTier, detectMigration, resolvePythonRun,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned,
 } from '../harness/stack-detect.mjs'
 
@@ -434,6 +436,46 @@ check('B2 detectMigration: each mechanism → {tool,command}; none → null; CLI
   w(r, 'api/alembic.ini', '[alembic]\n')
   const out = cli(r)
   assert.ok(out.migration && out.migration.tool === 'alembic', `migration threaded onto the stack: ${JSON.stringify(out.migration)}`)
+})
+
+check('E1 resolvePythonRun: constructor-grounded ASGI/WSGI/factory/self-launcher; refuse to guess', () => {
+  // ASGI ctor → uvicorn <module>:<var> (var 'app', NEVER the conventional ':application')
+  const fa = resolvePythonRun('main.py', 'from fastapi import FastAPI\napp = FastAPI()\n', 'fastapi\nuvicorn\n')
+  assert.deepEqual({ server: fa.server, kind: fa.kind, module: fa.module, var: fa.var }, { server: 'uvicorn', kind: 'asgi', module: 'main', var: 'app' })
+  // two-sided: a Flask ctor must NOT route to uvicorn (that crashes at boot). No gunicorn → flask CLI.
+  // MUTATION: reverting the ASGI ctor regex flips FastAPI to unsupported (red); a bare `app =` match
+  // would route this Flask callable to uvicorn (red on the server assertion).
+  const flaskNoG = resolvePythonRun('app.py', 'from flask import Flask\napp = Flask(__name__)\n', 'flask\n')
+  assert.equal(flaskNoG.server, 'flask'); assert.equal(flaskNoG.kind, 'wsgi'); assert.equal(flaskNoG.var, 'app')
+  assert.equal(resolvePythonRun('app.py', 'app = Flask(__name__)\n', 'flask\ngunicorn\n').server, 'gunicorn')
+  // Django get_asgi → var 'application'; but an asgi.py that is FastAPI-shaped → the REAL var 'app'
+  assert.equal(resolvePythonRun('asgi.py', 'application = get_asgi_application()\n', 'django\nuvicorn\n').var, 'application')
+  assert.equal(resolvePythonRun('asgi.py', 'app = FastAPI()\n', 'fastapi\nuvicorn\n').var, 'app')
+  // factory + ASGI deps → --factory; factory + deps that can't disambiguate → unsupported (refuse to guess)
+  const fac = resolvePythonRun('main.py', 'def create_app():\n    return FastAPI()\n', 'fastapi\nuvicorn\n')
+  assert.equal(fac.factory, 'create_app'); assert.equal(fac.server, 'uvicorn')
+  assert.ok(resolvePythonRun('main.py', 'def create_app():\n    ...\n', 'requests\n').unsupported, 'ambiguous-deps factory is unsupported')
+  // self-launcher → best-effort python <entry>; nothing resolvable → unsupported
+  const self = resolvePythonRun('run.py', "if __name__ == '__main__':\n    app.run(port=5000)\n", 'flask\n')
+  assert.equal(self.server, 'self'); assert.equal(self.bestEffort, true)
+  assert.ok(resolvePythonRun('x.py', 'x = 1\n', '').unsupported)
+  // ASGI framework with NO ASGI server in deps → best-effort (the harness provides uvicorn)
+  const noServer = resolvePythonRun('main.py', 'app = FastAPI()\n', 'fastapi\n')
+  assert.equal(noServer.bestEffort, true); assert.equal(noServer.provideServer, 'uvicorn')
+})
+
+check('E2 CLI: compose-less FastAPI (module-scope ctor, no __main__) → recipe.run uvicorn main:app', () => {
+  const r = mkrepo()
+  w(r, 'requirements.txt', 'fastapi\nuvicorn\n')
+  // module-scope ctor, no __main__ → a bare `python main.py` imports, binds, exits 0 (the failure Slice E fixes)
+  w(r, 'main.py', 'from fastapi import FastAPI\napp = FastAPI()\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.equal(out.recipe.kind, 'python')
+  // MUTATION: reverting resolvePythonRun's ctor detection → main.py unsupported → needs-recipe (red)
+  assert.ok(out.recipe.run && out.recipe.run.server === 'uvicorn', `recipe.run resolved: ${JSON.stringify(out.recipe.run)}`)
+  assert.equal(out.recipe.run.module, 'main')
+  assert.equal(out.recipe.run.var, 'app')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
