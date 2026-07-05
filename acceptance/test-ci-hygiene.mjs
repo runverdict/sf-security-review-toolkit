@@ -136,5 +136,22 @@ check('SC-readme-claim: README carries the supply-chain / zero-dependency claim'
     'README must state the digest-verified scanner-install posture (install-scanners.mjs)')
 })
 
+// ── Skill-prose guard (0.8.84): compose IaC routes to trivy config, never checkov ──
+
+check('F8-compose-iac: run-scans Family 8 scans compose with `trivy config`, never an improvised checkov docker_compose framework', () => {
+  const skill = readFileSync(join(PLUGIN, 'skills', 'run-scans', 'SKILL.md'), 'utf8')
+  // Cold-run finding: on a compose target the driver improvised a checkov
+  // `docker_compose` framework value (not a valid checkov framework) → empty/errored
+  // scan, then fell back to trivy. The skill must carry the trivy route explicitly
+  // and must never (re)introduce the bogus checkov flag value.
+  // MUTATION: adding the literal `--framework docker_compose` anywhere in the skill turns this red first.
+  assert.doesNotMatch(skill, /--framework docker_compose/,
+    'checkov has no docker_compose framework — the skill must never carry that flag value')
+  assert.match(skill, /trivy config -f json/,
+    'the compose-IaC invocation (`trivy config -f json <dir>`) must be documented in Family 8')
+  assert.match(skill, /compose IaC is scanned with `trivy config[^`]*`, NOT\s+checkov/,
+    'the compose→trivy-not-checkov routing line must be present')
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

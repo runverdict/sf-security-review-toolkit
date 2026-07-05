@@ -691,7 +691,14 @@ families PENDING until a re-audit.
    osv-scanner -r <server-root> --format json > evidence/osv-<date>.json
    checkov -d <iac-dir> --framework terraform -o json > evidence/iac-terraform-<date>.json
    checkov -f <Dockerfile> --framework dockerfile -o json > evidence/iac-dockerfile-<date>.json
+   trivy config -f json <compose-dir> > evidence/iac-compose-<date>.json   # docker-compose / compose files
    ```
+
+   **docker-compose / compose IaC is scanned with `trivy config -f json <dir>`, NOT
+   checkov** — checkov has no `docker_compose` framework (a cold run improvised that
+   framework value and got an empty/errored scan; never pass it — route compose files
+   to Trivy as above). Both the checkov and trivy ingest adapters already file
+   `iac-misconfig` at class severity, so the ingest is unchanged either way.
 
    *Agent runs:* both passes, parsing, the SBOM / component-version table for the
    security-program element-4 slot (reuse the OSV output), dossier rows. *Owner

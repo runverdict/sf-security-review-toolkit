@@ -51,6 +51,29 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.84] — 2026-07-05
+
+**Compose IaC routes to `trivy config`, never checkov (Family 8 prose + guard).** Cold-run
+finding: on a docker-compose target the driver improvised `checkov --framework docker_compose`
+— not a valid checkov framework — got an empty/errored scan, and only then fell back to
+`trivy config`. Family 8 listed checkov frameworks (terraform/dockerfile) with NO compose
+guidance.
+
+### Fixed
+- `skills/run-scans/SKILL.md` Family 8: explicit invocation
+  `trivy config -f json <compose-dir> > evidence/iac-compose-<date>.json` + the routing rule —
+  compose IaC is scanned with `trivy config`, NOT checkov (checkov has no `docker_compose`
+  framework; never pass that flag value). Ingest unchanged: both the checkov and trivy
+  adapters already file `iac-misconfig` at class severity.
+
+### Hardened
+- Test-backed via a new prose guard in `acceptance/test-ci-hygiene.mjs` (F8-compose-iac):
+  the skill must NOT contain the literal `--framework docker_compose` and MUST carry the
+  trivy-config-for-compose invocation + routing line. Mutation-verified: appending the bogus
+  flag to the skill reddens the guard (executed, then removed).
+
+Suite: **63 files / 1016 checks** (+1).
+
 ## [0.8.83] — 2026-07-05
 
 **Bandit test-path LOW hygiene filter — the deterministic band stops drowning in test-tree

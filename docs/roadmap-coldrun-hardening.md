@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.83**, suite **63 files / 1015 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.84**, suite **63 files / 1016 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,
@@ -22,7 +22,11 @@
   band de-noised at INGEST on the PATH×band axis — segment-anchored `isTestPath` × `bandFromTool==='low'` via a
   NEW `hygieneNoise` adapter hook [bandit-only; `securityRelevant` stays undefined; never a severity floor — prod-LOW
   B105 kept, test-path HIGH kept] + ONE aggregated honesty note + seeded genuine-shaped fixture; +2 checks,
-  mutation-proven) · ☐ slice 4 compose-IaC = `trivy config` prose.
+  mutation-proven) · ✅ **slice 4 / 0.8.84 compose-IaC = `trivy config` prose** (Family 8 now carries the explicit
+  `trivy config -f json <compose-dir>` invocation + the compose→trivy-NOT-checkov routing rule [checkov has no
+  `docker_compose` framework — the cold-run driver improvised it into an empty scan]; test-backed by the
+  F8-compose-iac prose guard in test-ci-hygiene [bogus-flag literal forbidden + trivy route required]; +1 check,
+  mutation-proven). **ALL 4 COLD-RUN QUICK-WIN SLICES SHIPPED on the branch — pending off-disk grading + merge.**
   CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 + item 7 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
   seam · determinism proof · single-shape registry · supply-chain README+`SC-*` · E0.1d-EXPAND
   catalog routing 0.8.76 · EXPAND-2 class-less-safe markup/OAuth 0.8.77 · EXPAND-3 owned-class-dimension 0.8.78 ·
