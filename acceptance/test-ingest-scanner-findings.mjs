@@ -202,6 +202,7 @@ import {
   loadLedger,
   recognizeScanner,
   ingestAll,
+  resolveDevScope,
   hasSecurityTag,
   REQ_SEVERITY_TO_FINDING,
   CA_SEVERITY_TO_FINDING,
@@ -4919,6 +4920,117 @@ check('NPM-CLI-merge: --scanner npm-audit writes the deterministic findings to t
   execFileSync('node', [CLI, '--scanner', 'npm-audit', '--input', NPM_AUDIT, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'npm-audit').length, 4) // idempotent — no dupes
+})
+
+// ─────────────────────────────── devcve-band (down-rank dev-only npm dependency CVEs below the blocker floor)
+// A CVE on a DIRECT npm devDependency (∈ the target package.json devDependencies, ∉ dependencies) is never
+// shipped in the managed package, so it must not sit in the critical/high band (compute-sci's blocker floor +
+// high gate). The cap is a DOWN-rank to a ceiling of `low` — cleared off both gates but STILL a finding, with an
+// honest caveat on the message — never a raise, never a drop. Scope: npm, direct devDependencies only (osv/
+// npm-audit). Prod deps + the `--all` journey boundary are proven byte-identical / threaded here.
+const devcveOsv = {
+  results: [{
+    source: { path: 'package-lock.json' },
+    packages: [
+      { package: { name: 'vitest', ecosystem: 'npm', version: '1.2.3' },
+        groups: [{ ids: ['GHSA-devonly-vitest'], max_severity: '9.8' }],
+        vulnerabilities: [{ id: 'GHSA-devonly-vitest', summary: 'vitest arbitrary code execution' }] },
+      { package: { name: 'express', ecosystem: 'npm', version: '4.17.1' },
+        groups: [{ ids: ['GHSA-prod-express'], max_severity: '9.8' }],
+        vulnerabilities: [{ id: 'GHSA-prod-express', summary: 'express prod RCE' }] },
+    ],
+  }],
+}
+
+check('DEVCVE-osv-cap: a critical CVE on a direct npm devDependency caps to low with the honest caveat; a prod dep is byte-identical; id + provenance unchanged', () => {
+  const devScope = { npm: new Set(['vitest']) }
+  const capped = ingest(devcveOsv, osvAdapter, { repoRoot: '', pass: 1, devScope }).findings
+  const uncapped = ingest(devcveOsv, osvAdapter, { repoRoot: '', pass: 1 }).findings // no devScope → today's behavior
+  const vitC = findById(capped, (f) => f.ruleId === 'GHSA-devonly-vitest')
+  const vitU = findById(uncapped, (f) => f.ruleId === 'GHSA-devonly-vitest')
+  const expC = findById(capped, (f) => f.ruleId === 'GHSA-prod-express')
+  const expU = findById(uncapped, (f) => f.ruleId === 'GHSA-prod-express')
+  // dev-only: critical → low (clears the blocker floor + the high gate; still visible, not dropped)
+  assert.equal(vitU.adjusted_severity, 'critical', 'untouched without a dev scope')
+  assert.equal(vitC.adjusted_severity, 'low')
+  assert.equal(vitC.severity, 'low')
+  assert.equal(vitC.status, 'confirmed') // kept, not dropped
+  // the honest caveat rides the message → the finding evidence + reasoning, naming the origin band
+  assert.match(vitC.evidence, /dev-only dependency \(not shipped in the managed package\) — downgraded from critical/)
+  assert.match(vitC.verdict_reasoning, /dev-only dependency, not shipped → low/)
+  // still deterministic; the id is band-independent (band is not in the hash) → unchanged by the cap
+  assert.equal(vitC.provenance, 'deterministic')
+  assert.equal(vitC.id, vitU.id)
+  // a PROD dependency (not in the dev set) is byte-identical to today
+  assert.equal(JSON.stringify(expC), JSON.stringify(expU), 'a prod-dep CVE is byte-identical with or without the dev scope')
+  assert.equal(expC.adjusted_severity, 'critical')
+})
+
+check('DEVCVE-osv-noraise + ecosystem gate: an already-low dev CVE is NOT raised; a PyPI dev package is NOT capped (npm only)', () => {
+  // an already-low dev CVE → unchanged; the cap only ever DOWN-ranks (a low→low no-op carries no caveat)
+  const lowOsv = { results: [{ source: { path: 'package-lock.json' }, packages: [
+    { package: { name: 'vitest', ecosystem: 'npm', version: '1' }, groups: [{ ids: ['GHSA-low-vitest'], max_severity: '2.0' }], vulnerabilities: [{ id: 'GHSA-low-vitest', summary: 'minor' }] },
+  ] }] }
+  const f = findById(ingest(lowOsv, osvAdapter, { repoRoot: '', pass: 1, devScope: { npm: new Set(['vitest']) } }).findings, () => true)
+  assert.equal(f.adjusted_severity, 'low') // 2.0 → low already; the cap never raises to a higher band
+  assert.ok(!/downgraded from/.test(f.evidence), 'an already-low dev CVE carries no down-rank caveat (no-op)')
+  // a PyPI dev package is out of scope — the cap keys the npm ecosystem only
+  const pyOsv = { results: [{ source: { path: 'requirements.txt' }, packages: [
+    { package: { name: 'pytest', ecosystem: 'PyPI', version: '7' }, groups: [{ ids: ['PYSEC-dev-pytest'], max_severity: '9.8' }], vulnerabilities: [{ id: 'PYSEC-dev-pytest', summary: 'x' }] },
+  ] }] }
+  const py = findById(ingest(pyOsv, osvAdapter, { repoRoot: '', pass: 1, devScope: { npm: new Set(['pytest']) } }).findings, () => true)
+  assert.equal(py.adjusted_severity, 'critical', 'a PyPI dev package is never capped by the npm dev scope')
+})
+
+check('DEVCVE-npm-cap: a high npm-audit CVE on a direct devDependency caps to low; a prod dep is byte-identical', () => {
+  const raw = { auditReportVersion: 2, vulnerabilities: {
+    vitest: { name: 'vitest', severity: 'high', isDirect: true, via: [{ title: 'vitest advisory', url: 'https://example.test/GHSA-nv', severity: 'high' }], range: '<1.0', fixAvailable: true },
+    express: { name: 'express', severity: 'high', isDirect: true, via: [{ title: 'express advisory', url: 'https://example.test/GHSA-ne', severity: 'high' }], range: '<4.18', fixAvailable: true },
+  } }
+  const capped = ingest(raw, npmAuditAdapter, { repoRoot: '', pass: 1, devScope: { npm: new Set(['vitest']) } }).findings
+  const uncapped = ingest(raw, npmAuditAdapter, { repoRoot: '', pass: 1 }).findings
+  const vitC = findById(capped, (f) => /vitest/.test(f.evidence))
+  const expC = findById(capped, (f) => /express/.test(f.evidence))
+  const expU = findById(uncapped, (f) => /express/.test(f.evidence))
+  assert.equal(vitC.adjusted_severity, 'low')
+  assert.match(vitC.evidence, /dev-only dependency \(not shipped in the managed package\) — downgraded from high/)
+  assert.equal(vitC.provenance, 'deterministic')
+  assert.equal(JSON.stringify(expC), JSON.stringify(expU), 'a prod-dep npm-audit CVE is byte-identical')
+  assert.equal(expC.adjusted_severity, 'high')
+})
+
+check('DEVCVE-resolveDevScope: direct devDependencies minus dependencies; a package in BOTH is excluded; missing/malformed package.json → empty set (never over-cap)', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-devscope-')); dirs.push(d)
+  writeFileSync(join(d, 'package.json'), JSON.stringify({
+    dependencies: { express: '^4', lodash: '^4' },
+    devDependencies: { vitest: '^1', lodash: '^4' }, // lodash is in BOTH → NOT dev-only
+  }))
+  const scope = resolveDevScope(d)
+  assert.ok(scope.npm.has('vitest'), 'a dev-only package is in the npm set')
+  assert.ok(!scope.npm.has('lodash'), 'a package in BOTH deps + devDeps is NOT dev-only')
+  assert.ok(!scope.npm.has('express'), 'a prod-only package is not in the dev set')
+  // no package.json → empty set (fail-open, never over-cap)
+  const e = mkdtempSync(join(tmpdir(), 'ingest-devscope-empty-')); dirs.push(e)
+  assert.equal(resolveDevScope(e).npm.size, 0)
+  // malformed package.json → empty set
+  writeFileSync(join(e, 'package.json'), '{ not valid json')
+  assert.equal(resolveDevScope(e).npm.size, 0)
+})
+
+check('DEVCVE-all-boundary: the --all/ingestAll journey path threads devScope (bypasses collect()) — the dev CVE caps, the prod CVE stays critical', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-devcve-all-')); dirs.push(d)
+  writeFileSync(join(d, 'package.json'), JSON.stringify({ dependencies: { express: '^4' }, devDependencies: { vitest: '^1' } }))
+  const ev = join(d, '.security-review', 'evidence'); mkdirSync(ev, { recursive: true })
+  writeFileSync(join(ev, 'osv-devcve.json'), JSON.stringify(devcveOsv))
+  const result = ingestAll({ target: d, dryRun: true })
+  const vit = findById(result.findings, (f) => f.ruleId === 'GHSA-devonly-vitest')
+  const exp = findById(result.findings, (f) => f.ruleId === 'GHSA-prod-express')
+  assert.ok(vit && exp, 'both the dev + prod CVEs are ingested via the --all evidence path')
+  // the crux: --all hands inline-read raw straight to ingest() (never collect()), so a
+  // collect()-only enrichment would silently no-op here and vitest would stay critical
+  assert.equal(vit.adjusted_severity, 'low', 'the --all path capped the dev-only CVE (devScope threads past collect())')
+  assert.equal(exp.adjusted_severity, 'critical', 'the prod CVE stays critical on the --all path')
+  assert.match(vit.evidence, /downgraded from critical/)
 })
 
 // ─────────────────────────────── trivy (Phase 2 · 2a #9 — IaC misconfig, CONFIG mode only)

@@ -917,6 +917,52 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
 // ----------------------------------------------------------------------------
 // the PURE core: raw (already collected) + adapter -> findings. No I/O, no Date.
 // ----------------------------------------------------------------------------
+// Dev-only dependency down-rank (devcve-band) — the dev-scope resolver + the shared cap.
+// A CVE on a DIRECT npm devDependency (in the target package.json's `devDependencies`, NOT its
+// `dependencies`) is never shipped in the managed package, so it must not occupy the blocker/
+// high band (compute-sci.mjs's critical floor + high gate). This down-ranks such a hit to a
+// CEILING of `low` — cleared off both gates but STILL VISIBLE — and never DROPS it.
+//
+// SCOPE (deliberately narrow, honest in the CHANGELOG): npm, DIRECT devDependencies only.
+// Transitive dev-only (package-lock `dev:true`) and Python dev-scope are a follow-on slice.
+const DEV_CVE_DOWNRANK_CEILING = 'low'
+// Only these bands are DOWN-ranked to the ceiling; a hit already `low`/`info` is UNCHANGED —
+// the cap NEVER raises a band (a prod-dep hit, and a dev hit already at/below the ceiling, are
+// byte-identical to today).
+const DEV_CVE_DOWNRANKABLE = new Set(['critical', 'high', 'medium'])
+
+/**
+ * Resolve a target's DIRECT npm dev-dependency scope: package names in `devDependencies` AND
+ * NOT in `dependencies`. Follows stack-detect's `JSON.parse(readOr(...))` idiom — one file read,
+ * no clock; a missing/malformed package.json yields an EMPTY set (fail-open — never over-cap).
+ * Returns `{ npm: Set<string> }`.
+ */
+export function resolveDevScope(target) {
+  const npm = new Set()
+  try {
+    const pkg = JSON.parse(readFileSync(join(target || '.', 'package.json'), 'utf8'))
+    const deps = pkg && typeof pkg.dependencies === 'object' && pkg.dependencies ? pkg.dependencies : {}
+    const dev = pkg && typeof pkg.devDependencies === 'object' && pkg.devDependencies ? pkg.devDependencies : {}
+    for (const name of Object.keys(dev)) {
+      if (!Object.prototype.hasOwnProperty.call(deps, name)) npm.add(name)
+    }
+  } catch { /* missing/malformed package.json → empty set (never over-cap) */ }
+  return { npm }
+}
+
+/**
+ * The shared cap the osv/npm-audit `capDevBand` hooks delegate to. Returns the ceiling band
+ * (`low`) when `pkgName` is a direct npm dev-only dependency AND the current band is above the
+ * ceiling; else null (not dev-only / no scope / already at-or-below the ceiling — never a raise).
+ */
+function capDevOnlyNpmBand(pkgName, band, devScope) {
+  const npm = devScope && devScope.npm
+  if (!npm || typeof npm.has !== 'function') return null // no scope computed → change nothing
+  if (!pkgName || !npm.has(pkgName)) return null // not a direct dev-only npm dependency
+  if (!DEV_CVE_DOWNRANKABLE.has(band)) return null // already low/info → never raise
+  return DEV_CVE_DOWNRANK_CEILING
+}
+
 export function ingest(raw, adapter, opts = {}) {
   const repoRoot = opts.repoRoot || ''
   const pass = Number.isInteger(opts.pass) && opts.pass >= 1 ? opts.pass : 1
@@ -968,6 +1014,9 @@ export function ingest(raw, adapter, opts = {}) {
   // buried the deterministic band at ~93.6% bandit on a real target). Aggregated into ONE
   // note per ingest below, never one-per-hit. OPTIONAL hook, guarded like `securityRelevant`.
   let hygieneFiltered = 0
+  // Dev-only dependency down-rank accounting (devcve-band). Aggregated into ONE note per
+  // ingest below, never one-per-hit — mirrors hygieneFiltered.
+  let devCapped = 0
   for (const h of hits) {
     if (!h || !h.file || h.ruleId == null || h.engine == null) {
       notes.push(`${adapter.name}: skipped a malformed hit (missing engine/ruleId/file)`)
@@ -996,7 +1045,28 @@ export function ingest(raw, adapter, opts = {}) {
     } catch {
       classKey = null
     }
-    findings.push(buildFinding({ ...h, classKey, repoRoot, pass }))
+    // Dev-only dependency down-rank (devcve-band): OPTIONAL hook, guarded exactly like
+    // `hygieneNoise` / `securityRelevant` above. A CVE on a DIRECT npm devDependency is never
+    // shipped in the managed package, so a critical/high/medium band is capped to `low` —
+    // cleared off the blocker floor + the high gate but STILL a finding. Down-rank ONLY (the
+    // hook never raises); the finding is KEPT with an honest caveat on the band label + message,
+    // never dropped (mirrors the PV-advisory caveat precedent). osv/npm-audit only.
+    let hit = h
+    if (typeof adapter.capDevBand === 'function') {
+      const cap = adapter.capDevBand(h, opts.devScope)
+      if (cap) {
+        hit = {
+          ...h,
+          bandFromTool: cap,
+          // buildFinding renders the reasoning as `(<toolSevLabel> → <cappedBand>)`, so the label
+          // carries the WHY of the cap; the message carries the operator-facing caveat.
+          toolSevLabel: `${h.toolSevLabel || 'unknown'}; dev-only dependency, not shipped`,
+          message: `${h.message} — dev-only dependency (not shipped in the managed package) — downgraded from ${h.bandFromTool}`,
+        }
+        devCapped++
+      }
+    }
+    findings.push(buildFinding({ ...hit, classKey, repoRoot, pass }))
     // Substrate-unavailable accounting (B5 · item 7): an OPTIONAL hook, same guard shape as
     // `securityRelevant` above. Counts only hits that actually became findings.
     if (typeof adapter.expectsTrace === 'function' && adapter.expectsTrace(h) && !h.reachabilityPath) {
@@ -1006,11 +1076,12 @@ export function ingest(raw, adapter, opts = {}) {
       // Honest note on the severity SOURCE of an unmapped hit: a tool→band adapter (Semgrep)
       // carries its own per-finding band, while a class-severity adapter (code-analyzer) with
       // an unmapped SECURITY rule uses the Code-Analyzer-severity fallback. Keeps the word
-      // "unmapped" either way (the owned-class is still none).
-      const how = h.bandFromTool
-        ? `the ${adapter.name} tool band (${h.toolSevLabel || 'unknown'} → ${h.bandFromTool})`
+      // "unmapped" either way (the owned-class is still none). Reads the EFFECTIVE hit so a
+      // dev-only down-rank reports its capped band, not the tool's pre-cap band.
+      const how = hit.bandFromTool
+        ? `the ${adapter.name} tool band (${hit.toolSevLabel || 'unknown'} → ${hit.bandFromTool})`
         : 'the Code-Analyzer-severity fallback'
-      notes.push(`${adapter.name}: rule ${h.ruleId} is unmapped (owns no toolkit class) — ingested as deterministic with ${how}`)
+      notes.push(`${adapter.name}: rule ${hit.ruleId} is unmapped (owns no toolkit class) — ingested as deterministic with ${how}`)
     }
   }
   // Substrate-unavailable honesty marker (B5 · item 7): a toolkit taint rule fired but the
@@ -1040,6 +1111,16 @@ export function ingest(raw, adapter, opts = {}) {
     notes.push(
       `${adapter.name}: ${hygieneFiltered} test-path LOW hygiene hit(s) (assert/import, e.g. B101/B404 under tests) ` +
         `filtered as non-security noise — not findings`
+    )
+  }
+  // Dev-only dependency down-rank honesty marker (devcve-band): ONE aggregated note per ingest —
+  // the operator learns how many dep-CVEs were capped below the blocker floor because the
+  // package is a direct npm devDependency (not shipped), without N note rows. The findings are
+  // KEPT (visible at `low` with the caveat on the message), never dropped.
+  if (devCapped > 0) {
+    notes.push(
+      `${adapter.name}: ${devCapped} dev-only npm dependency CVE(s) capped to '${DEV_CVE_DOWNRANK_CEILING}' ` +
+        `(direct devDependency, not shipped in the managed package) — below the blocker floor, still recorded`
     )
   }
   // stable order so the output is byte-identical regardless of scanner emission order
@@ -2597,6 +2678,10 @@ export const osvAdapter = {
             gateLabel: 'scan-external-sca', // the dep-CVE gate (NOT scan-external-sast)
             dimensionHint: 'dependency-cve', // deterministic-only grouping label (no LLM dep finder)
             tags: [],
+            // devcve-band: the package name + ecosystem let capDevBand key the dev-only down-rank
+            // (npm ecosystem only). Ignored by buildFinding — findings stay byte-identical.
+            pkgName: pkg.name || null,
+            ecosystem: pkg.ecosystem || null,
           })
           // DELIBERATELY ABSENT from the hit: the raw CVSS vector (v.severity[].score), affected ranges,
           // references — the band is the numeric max_severity (or the label), NEVER the vector string.
@@ -2611,6 +2696,12 @@ export const osvAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (every OSV hit is a known CVE), like checkov/semgrep/secrets.
+  // devcve-band: down-rank a DIRECT npm dev-only dependency CVE (npm ecosystem only — a PyPI/Go
+  // dep is out of scope); returns the ceiling band or null (never a raise). Keys on pkg.name.
+  capDevBand(hit, devScope) {
+    if (String(hit && hit.ecosystem || '').toLowerCase() !== 'npm') return null
+    return capDevOnlyNpmBand(hit && hit.pkgName, hit && hit.bandFromTool, devScope)
+  },
 }
 
 // ----------------------------------------------------------------------------
@@ -2699,6 +2790,9 @@ export const npmAuditAdapter = {
         gateLabel: 'scan-dependency-vulnerabilities', // the npm-deps gate (applies_to all, major) — NOT scan-external-sca
         dimensionHint: 'dependency-cve',
         tags: [],
+        // devcve-band: npm audit keys by package name; carry it so capDevBand can key the
+        // dev-only down-rank. Ignored by buildFinding — findings stay byte-identical.
+        pkgName: pkg,
       })
       // DELIBERATELY ABSENT from the hit: the advisory's CVSS vector (via[i].cvss.vectorString), cwe, the affected
       // `range` of each sub-advisory, `nodes`, `fixAvailable` — the band is the npm severity label, never the vector.
@@ -2711,6 +2805,11 @@ export const npmAuditAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (every npm-audit entry is a known CVE), like osv/checkov/secrets.
+  // devcve-band: npm audit is npm-by-construction, so every hit is npm ecosystem — key the
+  // dev-only down-rank straight off the package name; returns the ceiling band or null.
+  capDevBand(hit, devScope) {
+    return capDevOnlyNpmBand(hit && hit.pkgName, hit && hit.bandFromTool, devScope)
+  },
 }
 
 // ----------------------------------------------------------------------------
@@ -3209,6 +3308,11 @@ export function ingestAll({ target, pass, dryRun } = {}) {
   }
   const passId = Number.isInteger(pass) && pass >= 1 ? pass : defaultPass
 
+  // devcve-band: resolve the target's direct npm dev-dependency scope ONCE at this journey
+  // boundary and thread it into every ingest() below. This path bypasses collect() (raw is
+  // read inline at L~3357), so the enrichment MUST live here, not in an adapter's collect().
+  const devScope = resolveDevScope(root)
+
   const notes = []
   const scanners = [] // { scanner, kind, [file], findings, status:'ran'|'clean' }
   const skipped = [] // { file, reason }
@@ -3354,7 +3458,7 @@ export function ingestAll({ target, pass, dryRun } = {}) {
       )
     }
     const adapter = ADAPTERS[rec]
-    const res = ingest(raw, adapter, { repoRoot: root, pass: passId })
+    const res = ingest(raw, adapter, { repoRoot: root, pass: passId, devScope })
     notes.push(...res.notes)
     allFindings.push(...res.findings)
     recognized.add(rec)
@@ -3441,7 +3545,9 @@ function main() {
   }
   const pass = Number.isInteger(passArg) && passArg >= 1 ? passArg : defaultPass
 
-  const { findings, notes } = ingest(raw, adapter, { repoRoot: target, pass })
+  // devcve-band: resolve the target's direct npm dev-dependency scope at THIS I/O boundary and
+  // thread it into the pure ingest() (the file read happens here; ingest() stays pure).
+  const { findings, notes } = ingest(raw, adapter, { repoRoot: target, pass, devScope: resolveDevScope(target) })
 
   let merged = null
   if (!dryRun) {
