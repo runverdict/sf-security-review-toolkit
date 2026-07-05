@@ -51,6 +51,40 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.87] — 2026-07-05
+
+**run-dast honesty consumption + machine-readable provenance (the keystone).** `run-dast` had no
+health/tier input and self-labelled only in a prose `README-throwaway-dast.md`, so Slice A's
+right-tier pick and Slice B1's health classification produced an honest MANIFEST but a still-clean-
+looking SCAN OUTPUT — a near-zero ZAP alert count on an unhealthy / redirect-only / wrong-tier boot
+printed as a clean result, and `compile-submission`/`reviewer-simulation` (which ingest JSON, not a
+README) over-credited it.
+
+### Fixed
+- `harness/run-dast.mjs`: `run-dast` now CONSUMES the stand-up status. New optional args
+  `--health` / `--migration` / `--guarded` / `--service` / `--scored-port` (the journey threads them
+  from the manifest) feed a pure `dastDegrade(plan)` that sets `degraded` + a reason when the
+  stand-up was not verified `up` (the unverified default degrades too — never claim clean without a
+  verified up) OR the scanned port is not the detected web-tier port. The stdout summary prefixes a
+  loud `DEGRADED` line before the alert counts.
+
+### Hardened
+- Machine-readable provenance: pure `buildDastProvenance` writes `dast-provenance.json` beside the
+  ZAP report with hard `authenticated:false` + `specFedScan:false` + `healthState` + `scannedTier` +
+  `PENDING` prod-equivalence — the field the downstream consumers read structurally. Pure
+  `dastDisclaimer` composes the README with the base boundary (loopback, unauthenticated, shallow
+  spider, did NOT import the captured OpenAPI spec) plus a per-condition caveat set; both encode the
+  same flags so the label can never drift. New `--absent` mode + pure `absentCorroborationStub`
+  stamp a `not-run` / `NOT-ATTEMPTED` provenance for every terminal not-scanned state (the journey
+  emits it on `failed`/`unknown`/`needs-recipe`/`n/a`/declined) so an unscanned partner is an
+  explicit evidence-of-absence, never a silent gap.
+- Journey chain-gating updated to thread the flags and emit the absent stub. Test-backed:
+  `acceptance/test-run-dast.mjs` G1–G4 (disclaimer two-sided; provenance field-set mutation-proven
+  on `authenticated`/`specFedScan`; degrade logic two-sided incl. wrong-tier + unverified-default;
+  absent stub).
+
+Suite: **63 files / 1035 checks** (+4).
+
 ## [0.8.86] — 2026-07-05
 
 **Stand-up health honesty — a 3-state liveness classification that degrades, never over-claims.**

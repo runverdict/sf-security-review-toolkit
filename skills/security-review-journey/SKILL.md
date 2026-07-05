@@ -553,7 +553,13 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    declined consent, nothing is captured and the api-endpoints artifact stays code-derived —
    unchanged behavior) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --base-url <baseUrl from
-   standup> --target <target>` (digest-pinned ZAP → real evidence under `evidence/dast/`) →
+   standup> --target <target> --health <stack-standup.json status> --scored-port <scannedPort>
+   --service <scannedService> [--guarded] [--migration <tool>]` (digest-pinned ZAP → real
+   evidence under `evidence/dast/`; run-dast reads the manifest's health/tier flags, prefixes
+   the alert counts with a **DEGRADED** line when the stand-up was not verified `up` or the
+   scanned port is not the detected web tier, and stamps a machine-readable
+   `dast-provenance.json` — the field `compile-submission`/`reviewer-simulation` ingest, since
+   they cannot read the prose README) →
    `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-stack.mjs --target <target>` (destroy the
    throwaway, keep the evidence). **ALWAYS run teardown, even on failure/abort** — never
    leave a stack (with secrets in its env) up. As a backstop against a crash between
@@ -568,8 +574,12 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    (the framework spec is served at import time, before any DB hit — keep the evidence) AND
    run-dast, but the scan carries a degraded label (the manifest's `guarded`/`readiness`
    flags qualify it); on **`failed`** / **`unknown`**, skip capture + DAST and go straight to
-   teardown, emitting the ZAP plan into `PENDING-OWNER-RUN.md` (on `unknown` the detected web
-   tier may be wrong — hint `--port`). Teardown ALWAYS runs, on every branch.
+   teardown, recording evidence-of-absence with
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --absent --reason "<status: shape>" --target
+   <target>` (writes a `not-run` `dast-provenance.json` so `compile-submission` renders an
+   explicit "corroboration not attempted", never a silent gap) and emitting the ZAP plan into
+   `PENDING-OWNER-RUN.md` (on `unknown` the detected web tier may be wrong — hint `--port`).
+   Teardown ALWAYS runs, on every branch.
    If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
    ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
    the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):
@@ -583,7 +593,10 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    docker loads the values straight into the container — they never touch argv, the manifest,
    or `.security-review/`; the whole `/tmp/sf-srt-stack/<id>/` tree, stub included, is
    destroyed at teardown). If `needs-recipe`/`n/a`, or the consent was declined, DAST
-   stays owner-run — emit the ZAP plan into `PENDING-OWNER-RUN.md`, no stand-up.
+   stays owner-run — emit the ZAP plan into `PENDING-OWNER-RUN.md`, no stand-up, AND record the
+   evidence-of-absence stub (`run-dast.mjs --absent --reason "<needs-recipe / n-a / declined:
+   shape>" --target <target>`) so the not-attempted corroboration is explicit downstream, never
+   a silent gap.
 
 7. **Deep audit (runs when the deployed-org power-up was accepted at preflight).**
    Before compile, fold in the CLI-gated deployed-org pass — *what the Salesforce

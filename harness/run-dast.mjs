@@ -48,8 +48,11 @@ export const URL_OK = /^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i
 /** Loopback-only hosts — an active DAST may ONLY ever hit a local throwaway. */
 export const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
 
-/** PURE. Compute the ZAP scan plan. Deterministic given (baseUrl, target, runId, tmpRoot). */
-export function planDast(baseUrl, { target, runId, tmpRoot } = {}) {
+/** PURE. Compute the ZAP scan plan. Deterministic given (baseUrl, target, runId, tmpRoot).
+ *  The honesty inputs (health/migration/guarded/service/scoredPort/exposedApiTier — all
+ *  optional, from the stand-up manifest) are carried on the plan and consumed by runDast to
+ *  degrade the label + stamp the provenance sidecar. */
+export function planDast(baseUrl, { target, runId, tmpRoot, health = 'unverified', migration = null, guarded = false, service = null, scoredPort = null, exposedApiTier = [] } = {}) {
   if (!URL_OK.test(String(baseUrl || ''))) throw new Error(`planDast: invalid base url '${baseUrl}'`)
   // HARD: the active scan must target a LOOPBACK throwaway only — never live prod, a remote
   // host, or Salesforce infra. Fail closed on anything else (audit: loopback enforcement).
@@ -72,6 +75,10 @@ export function planDast(baseUrl, { target, runId, tmpRoot } = {}) {
     // ZAP in a container reaches the host-published 127.0.0.1:<port> via --network host.
     dockerArgs: ['run', '--rm', '--network', 'host', '-v', `${tmpRoot}:/zap/wrk:rw`, image,
       'zap-baseline.py', '-t', baseUrl, '-J', 'report.json', '-m', '1'],
+    // honesty inputs (Slice G) — consumed by runDast, never affect the scan command itself
+    health, migration, guarded: Boolean(guarded), service,
+    scoredPort: scoredPort != null ? Number(scoredPort) : null,
+    exposedApiTier: Array.isArray(exposedApiTier) ? exposedApiTier : [],
   }
 }
 
@@ -92,6 +99,100 @@ export function summarizeZap(report) {
   }
 }
 
+export const DAST_PROVENANCE_SCHEMA = 'sf-srt-dast-provenance/1'
+
+/**
+ * PURE. The self-labelling README body. Always states the base boundary (loopback,
+ * unauthenticated, shallow spider from `/`, corroborating, NOT production-equivalent, and
+ * that it did NOT import the captured OpenAPI spec — the spec feeds the api-endpoints
+ * ARTIFACT only). Appends a caveat for each non-clean condition; never claims clean/healthy.
+ */
+export function dastDisclaimer({ health = 'unverified', migration = null, guarded = false, service = null, port = null, exposedApiTier = [] } = {}) {
+  const L = [
+    '# Throwaway DAST evidence — LOCAL, not production-equivalent',
+    '',
+    "This is the toolkit's **corroborating** DAST + a de-risking dry run: a digest-pinned ZAP",
+    'baseline against a disposable throwaway the toolkit stood up on 127.0.0.1 (loopback only).',
+    'It is UNAUTHENTICATED and shallow — a spider from `/`. It is NOT the production-equivalent,',
+    "authenticated submission scan (debug off, same hardening, same edge), nor Salesforce's own",
+    'penetration test.',
+    '',
+    'It did NOT import the captured OpenAPI spec — the captured spec feeds the api-endpoints',
+    'ARTIFACT only, so this baseline did not necessarily exercise those endpoints.',
+  ]
+  const caveats = []
+  if (health !== 'up') caveats.push(`the throwaway was \`${health}\` at scan time — liveness/header-level only; DB-backed endpoints unverified (may error)`)
+  if (migration) caveats.push(`a migration mechanism was DETECTED (\`${migration}\`) but NOT run — the DB schema is unverified`)
+  if (guarded) caveats.push('the target answered only auth/method-guarded — unauthenticated coverage is a floor, not a bill of health')
+  if (Array.isArray(exposedApiTier) && exposedApiTier.length) {
+    caveats.push(`the API tier \`${exposedApiTier.join(', ')}\` is expose-only and was NOT scanned — this baseline covers only the host-published ${service ? `\`${service}\`` : 'web'} tier`)
+  }
+  if (caveats.length) L.push('', 'CAVEATS (this run):', ...caveats.map((c) => `- ${c}`))
+  L.push('', `Scanned tier: ${service || 'n/a'}${port != null ? ` (port ${port})` : ''}. Fidelity is bounded by the repo's run recipe.`)
+  return L.join('\n') + '\n'
+}
+
+/**
+ * PURE. The machine-readable provenance sidecar `compile-submission`/`reviewer-simulation`
+ * ingest (they read JSON, never the README). authenticated + specFedScan are HARD false —
+ * this baseline is neither authenticated nor spec-fed; prod-equivalence stays PENDING.
+ */
+export function buildDastProvenance(plan, { health = 'unverified', migration = null, guarded = false, scannedTier = {} } = {}) {
+  return {
+    schema: DAST_PROVENANCE_SCHEMA,
+    artifact: 'artifact-dast-throwaway',
+    scanKind: 'unauthenticated-baseline-spider',
+    authenticated: false,
+    specFedScan: false,
+    healthState: health,
+    guarded: Boolean(guarded),
+    migration: migration || null,
+    scannedTier: { port: scannedTier.port != null ? scannedTier.port : null, service: scannedTier.service || null },
+    baseUrl: plan.baseUrl,
+    runId: plan.runId || null,
+    prodEquivalence: 'PENDING owner attestation — throwaway loopback mirror, not production',
+    note: 'corroborating only; NOT the production-equivalent authenticated submission scan',
+  }
+}
+
+/**
+ * PURE. The evidence-of-absence stub written for every terminal NOT-scanned state
+ * (needs-secrets-declined, needs-recipe, n/a, failed, unknown, non-REST/GraphQL, TLS-only)
+ * so a downstream consumer renders "corroboration not attempted: <reason>", never a silent gap.
+ */
+export function absentCorroborationStub({ reason = 'not attempted', partnerShape = null } = {}) {
+  return {
+    schema: DAST_PROVENANCE_SCHEMA,
+    artifact: 'artifact-dast-throwaway',
+    scanKind: 'not-run',
+    authenticated: false,
+    specFedScan: false,
+    reason,
+    partnerShape: partnerShape || null,
+    honestyBoundary: 'NOT-ATTEMPTED',
+    note: 'corroboration not attempted — evidence of absence, not a scan result',
+  }
+}
+
+/**
+ * PURE. Whether this scan must carry a degraded label: a non-`up` stand-up health (or the
+ * unverified default — we never claim clean without a verified `up`) OR a scanned port that
+ * doesn't match the detected web-tier port (wrong tier). Deterministic given the plan.
+ */
+export function dastDegrade(plan) {
+  let scanPort = ''
+  try { scanPort = new URL(plan.baseUrl).port } catch {}
+  const wrongTier = plan.scoredPort != null && String(plan.scoredPort) !== String(scanPort)
+  const notUp = (plan.health || 'unverified') !== 'up'
+  const degraded = notUp || wrongTier
+  let degradeReason = null
+  if (wrongTier) degradeReason = `scanned port ${scanPort || '(none)'} != detected web-tier port ${plan.scoredPort} — likely the wrong tier`
+  else if (notUp) degradeReason = plan.health && plan.health !== 'unverified'
+    ? `stand-up health was '${plan.health}' at scan time — the alert counts are not a clean bill of health`
+    : 'stand-up health was not verified (no status threaded) — the alert counts are not a clean bill of health'
+  return { degraded, degradeReason }
+}
+
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts })
 const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
 
@@ -104,8 +205,11 @@ export function runDast(plan, { consent = false } = {}) {
   if (consent !== true) throw new Error('run-dast: refusing to run an active scan without explicit consent (a live op). Pass --consent.')
   // Docker runs the digest-pinned ZAP — fail with an honest hint if it's unavailable.
   const dock = dockerStatus()
-  if (!dock.runnable) return { status: 'no-docker', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, log: dock.hint }
-  const rec = { status: 'scanning', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, log: '' }
+  if (!dock.runnable) return { status: 'no-docker', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, degraded: true, degradeReason: 'docker unavailable — no scan ran', log: dock.hint }
+  // honesty consumption (Slice G): degrade the label when the stand-up was not verified `up`
+  // or the scanned port is not the detected web-tier port — never emit a clean-looking count.
+  const { degraded, degradeReason } = dastDegrade(plan)
+  const rec = { status: 'scanning', baseUrl: plan.baseUrl, image: plan.image, evidencePath: null, summary: null, degraded, degradeReason, log: '' }
   try {
     mkdirSync(plan.wrkDir, { recursive: true, mode: 0o777 }) // ZAP's container user must write here
     mkdirSync(plan.evidenceDir, { recursive: true })
@@ -115,18 +219,15 @@ export function runDast(plan, { consent = false } = {}) {
     if (!existsSync(plan.reportInWrk)) { rec.status = 'failed'; rec.log = clampLog(`ZAP produced no report — ${rec.log}`, 1500); return rec }
     copyFileSync(plan.reportInWrk, plan.evidencePath) // root-readable → host-owned copy in the project
     rec.evidencePath = plan.evidencePath
-    // self-labelling note so this is never mistaken for the production-equivalent submission scan.
+    // self-labelling: the prose README + the machine-readable provenance sidecar (the field
+    // compile-submission/reviewer-simulation ingest — they cannot read a README). Both encode
+    // the same degraded/health/guarded/expose-only caveats, so the label can never drift.
     try {
       writeFileSync(join(plan.evidenceDir, 'README-throwaway-dast.md'),
-        '# Throwaway DAST evidence — LOCAL, not production-equivalent\n\n' +
-        `The \`zap-throwaway-local-*.json\` reports here were produced by a digest-pinned ZAP\n` +
-        `scan against a disposable throwaway the toolkit stood up locally (${plan.baseUrl}).\n\n` +
-        'This is the toolkit\'s **corroborating** DAST + a de-risking dry run. It is NOT a\n' +
-        'substitute for the **production-equivalent** DAST the Salesforce submission requires\n' +
-        '(debug off, same hardening, same edge), nor for Salesforce\'s own penetration test.\n' +
-        'Fidelity is bounded by the repo\'s run recipe — where prod depends on external managed\n' +
-        'services, the throwaway only approximates it.\n')
-    } catch { /* note is best-effort */ }
+        dastDisclaimer({ health: plan.health, migration: plan.migration, guarded: plan.guarded, service: plan.service, port: plan.scoredPort, exposedApiTier: plan.exposedApiTier }))
+      writeFileSync(join(plan.evidenceDir, 'dast-provenance.json'),
+        JSON.stringify(buildDastProvenance(plan, { health: plan.health, migration: plan.migration, guarded: plan.guarded, scannedTier: { port: plan.scoredPort, service: plan.service } }), null, 2) + '\n')
+    } catch { /* self-labelling is best-effort */ }
     try { rec.summary = summarizeZap(JSON.parse(readFileSync(plan.evidencePath, 'utf8'))) } catch (e) { rec.summary = { error: String(e.message) } }
     rec.status = 'done'
   } catch (e) {
@@ -145,6 +246,18 @@ function main() {
   const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
   const baseUrl = arg('--base-url', null)
   const target = arg('--target', process.cwd())
+  const asJson = argv.includes('--json')
+
+  // ABSENT-CORROBORATION stub (Slice G): for a terminal NOT-scanned state the journey records
+  // evidence-of-absence — no scan runs, so no consent is needed (writing "we did not scan" is
+  // not a live op). compile-submission renders it as an explicit gap, never a silent one.
+  if (argv.includes('--absent')) {
+    const stub = absentCorroborationStub({ reason: arg('--reason', 'not attempted'), partnerShape: arg('--shape', null) })
+    try { mkdirSync(join(target, '.security-review', 'evidence', 'dast'), { recursive: true }); writeFileSync(join(target, '.security-review', 'evidence', 'dast', 'dast-provenance.json'), JSON.stringify(stub, null, 2) + '\n') } catch {}
+    process.stdout.write((asJson ? JSON.stringify(stub, null, 2) : `## run-dast — corroboration NOT attempted: ${stub.reason}`) + '\n')
+    return
+  }
+
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(3).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-dast', runId))
   // --consent alone is insufficient: a recorded affirmative 'throwaway-dast' consent
@@ -152,10 +265,15 @@ function main() {
   const consentFlag = argv.includes('--consent')
   const consentRecorded = verifyConsent('throwaway-dast', { target })
   const consent = consentFlag && consentRecorded
-  const asJson = argv.includes('--json')
+  // honesty inputs from the stand-up manifest (Slice B1 wrote them; the journey threads them)
+  const health = arg('--health', 'unverified')
+  const migration = arg('--migration', null)
+  const service = arg('--service', null)
+  const scoredPort = arg('--scored-port', arg('--port', null))
+  const guarded = argv.includes('--guarded')
 
   let plan
-  try { plan = planDast(baseUrl, { target, runId, tmpRoot }) }
+  try { plan = planDast(baseUrl, { target, runId, tmpRoot, health, migration, guarded, service, scoredPort }) }
   catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
   if (!consent) {
     const why = consentFlag && !consentRecorded
@@ -166,8 +284,10 @@ function main() {
 
   const r = runDast(plan, { consent })
   if (asJson) { process.stdout.write(JSON.stringify(r, null, 2) + '\n'); if (r.status !== 'done') process.exitCode = 1; return }
-  const L = [`## run-dast — ${r.status}`]
+  const L = [`## run-dast — ${r.status}${r.degraded ? ' (DEGRADED)' : ''}`]
   if (r.status === 'done') {
+    // degrade prefix BEFORE the counts — never present a bare clean-looking alert total
+    if (r.degraded) L.push(`DEGRADED — ${r.degradeReason}; the alert counts below are NOT a clean bill of health`)
     L.push(`evidence: ${r.evidencePath}`)
     const s = r.summary || {}
     L.push(`alerts: ${s.total} (High ${s.byRisk?.High || 0} · Medium ${s.byRisk?.Medium || 0} · Low ${s.byRisk?.Low || 0} · Info ${s.byRisk?.Informational || 0})`)
