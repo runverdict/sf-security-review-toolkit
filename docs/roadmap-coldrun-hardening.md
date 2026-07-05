@@ -73,13 +73,14 @@
 
 ## ★ POST-MIDPOINT-COLD-RUN PLAN → 0.9.0 (2026-07-05)
 
-The ★ midpoint cold run (item 8) RAN end-to-end on cached 0.8.80 against `srt-verdict-coldrun`
-(9 phases, ~2.2 h audit). **The engine works:** real, correct findings — 2 admin-console token
-bugs, 5 deleted-history secrets, a deployed-artifact uninstall-integrity MEDIUM (source review
-cannot see it), cross-border Gemini/Vertex egress, prod dependency CVEs — an honest **BLOCKED /
-0-critical** verdict, and a clean deployed-org lifecycle (standup → install → permission battery →
-uninstall → teardown, zero residue). Graded off disk: the final band is exactly **0 crit / 29 high**
-(21 dep CVEs + 5 history secrets + 2 admin-token + 1 MD5); the 351 FP dispositions were correct.
+The ★ midpoint cold run (item 8) RAN end-to-end on cached 0.8.80 against a real partner-shaped target
+(9 phases, ~2.2 h audit). **The engine works:** it surfaced real, correct findings across the classes it
+is designed for (dependency CVEs, history-secret hygiene, deployed-artifact install/uninstall integrity
+that source review cannot see, outbound-egress / subprocessor exposure), reached an honest **BLOCKED /
+0-critical** verdict, and ran a clean deployed-org lifecycle (standup → install → permission battery →
+uninstall → teardown, zero residue). Graded off disk: the open band was dominated by owner-remediable
+dependency + hygiene items and the FP dispositions were correct. (Partner-specific findings live in the
+partner's own tracker — never in this partner-general toolkit doc.)
 The run also re-confirmed, on the pre-fix baseline, the exact defects the branch slices target
 (bandit noise = slice 3; DAST `needs-secrets` → owner-run = slice 1). But it surfaced
 correctness/quality defects that GATE the tag. **Two work-orders close them; neither belongs in the
@@ -88,10 +89,10 @@ other (disjoint subsystems, disjoint files → parallelizable as two builder ses
 ### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). **SHIPPED on the branch (A3 0.8.92 → A1 0.8.93 → A4 0.8.94, one slice per commit; off-disk grade pending)** → `srt-wo-a-audit-honesty-prompt.md`; scope **A1 + A3 + A4**.
 Subsystem: `merge-ledger.mjs` / `write-drafted-content.mjs` + `artifact-workflow-template.mjs` / `generate-artifacts` SKILL.
 **Grounding CORRECTED the cold-run premise (verified off disk — reconcile re-run WITH and WITHOUT the label):**
-the blocker count is ALREADY honest (the final **29** is correct; **56** was a transient pre-disposition
-state, never a shipped verdict). `reconcile-provenance` already treats an unlabeled finding as
-`llm-inferred`, 0 LLM findings co-locate with any deterministic one (all 4768×46 pairs), and the counters
-are provenance-blind. So none of A1/A2 is a correctness/tag gate.
+the blocker count is ALREADY honest (the final count is correct; a transient higher count before the run's
+own FP-dispositions applied was never a shipped verdict). `reconcile-provenance` already treats an unlabeled
+finding as `llm-inferred`, no LLM finding co-locates with any deterministic one (verified across all pairs),
+and the counters are provenance-blind. So none of A1/A2 is a correctness/tag gate.
 - ✅ **A3 / 0.8.92 — artifact preamble strip** (clean, hermetic): agent chatter ("I have everything I
   need…") leaked into every drafted artifact. Pure `stripPreamble` at `write-drafted-content.mjs` (gated to
   `.md`, no-H1 → verbatim, front-matter kept, applied once in `planWrites`) + a drafting-prompt H1-first
