@@ -16,7 +16,10 @@
  *   O7   captureOpenapi FAILS CLOSED without consent
  *   O8   captureOpenapi re-asserts loopback on the executed plan (even WITH consent)
  *   O9   candidate paths: fixed deterministic order, /openapi.json first, bare rooted only
+ *        (+ Slice C: proxied-FastAPI /api/v1/openapi.json + NestJS /api-json /docs-json shapes)
  *   O10  no listener → `not-exposed`, and NOTHING is written (honest no-capture path)
+ *   O11  planCapture --root-path: prepend+dedupe to front; no-rootPath byte-identical; fail-closed
+ *        (a scheme/URL root-path throws — the GET can never be re-aimed off loopback)
  *   W1   generate-artifacts Step 3 consumes the mirror capture; PENDING only on
  *        prod-equivalence; the code-derived + `PENDING live capture` fallback survives
  *   W2   ORDER: the journey invokes capture-openapi AFTER standup-stack, BEFORE teardown-stack
@@ -31,7 +34,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
-  planCapture, validateSpec, buildProvenance, captureOpenapi, CANDIDATE_SPEC_PATHS, CAPTURE_SCHEMA,
+  planCapture, validateSpec, buildProvenance, captureOpenapi, normalizeRootPath,
+  CANDIDATE_SPEC_PATHS, CAPTURE_SCHEMA,
 } from '../harness/capture-openapi.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -98,6 +102,12 @@ check('O6 buildProvenance: isolated-mirror source + PENDING prod-equivalence, ne
   // the envelope never claims to BE the production spec
   assert.notEqual(prov.source, 'production')
   assert.ok(!/source[":\s]+production/i.test(JSON.stringify(prov)), 'no production-source claim anywhere in the envelope')
+  // capture-only provenance (Slice C): the spec was READ, not SCANNED — two-sided (present +
+  // the disclaimer NEGATES scanned/exercised rather than claiming them)
+  assert.match(prov.scanCoverage, /CAPTURE-ONLY/)
+  assert.match(prov.scanCoverage, /does NOT consume it/)
+  assert.match(prov.scanCoverage, /not necessarily exercised/)
+  assert.match(prov.singleSpec, /first-match single-spec/)
 })
 
 check('O7 captureOpenapi FAILS CLOSED without consent', () => {
@@ -113,11 +123,32 @@ check('O8 captureOpenapi re-asserts loopback on the executed plan (a hand-built 
 check('O9 candidate paths: deterministic order, /openapi.json first, bare rooted paths only', () => {
   assert.equal(CANDIDATE_SPEC_PATHS[0], '/openapi.json')
   for (const path of CANDIDATE_SPEC_PATHS) assert.match(path, /^\/[A-Za-z0-9._/-]*$/, `bare rooted path: ${path}`)
+  // Slice C extensions: proxied-FastAPI + NestJS shapes present, /openapi.json still index 0
+  assert.equal(CANDIDATE_SPEC_PATHS[2], '/api/v1/openapi.json', 'proxied-FastAPI spec after /api/openapi.json')
+  for (const p of ['/api-json', '/docs-json', '/api/docs-json']) assert.ok(CANDIDATE_SPEC_PATHS.includes(p), `NestJS path ${p} present`)
+  assert.equal(CANDIDATE_SPEC_PATHS.length, 12)
   const p1 = planCapture('http://127.0.0.1:1', { target: '/r', date: '2026-07-02' })
   const p2 = planCapture('http://127.0.0.1:1', { target: '/r', date: '2026-07-02' })
   assert.deepEqual(p1.candidatePaths, p2.candidatePaths) // deterministic plan
   p1.candidatePaths.pop() // a caller mutating its plan copy must not mutate the shared list
   assert.equal(CANDIDATE_SPEC_PATHS.length, p2.candidatePaths.length)
+})
+
+check('O11 planCapture --root-path: prepends+dedupes to front; no-rootPath byte-identical; fails closed', () => {
+  const withRp = planCapture('http://127.0.0.1:8000', { target: '/r', date: '2026-07-02', rootPath: '/api/v1' })
+  assert.equal(withRp.candidatePaths[0], '/api/v1/openapi.json', 'root-path spec prepended to the front')
+  // dedupe: the constant already carries /api/v1/openapi.json → it appears exactly once
+  assert.equal(withRp.candidatePaths.filter((p) => p === '/api/v1/openapi.json').length, 1)
+  // no-rootPath order is byte-identical to the exported constant (O9 stays valid)
+  assert.deepEqual(planCapture('http://127.0.0.1:8000', { target: '/r', date: '2026-07-02' }).candidatePaths, [...CANDIDATE_SPEC_PATHS])
+  assert.equal(normalizeRootPath('api/v2/'), '/api/v2')  // single leading slash, trailing trimmed
+  assert.equal(normalizeRootPath(''), '')
+  assert.equal(normalizeRootPath(null), '')
+  // FAIL CLOSED: a scheme/URL normalizes to /http://evil, fails SPEC_PATH_OK → throws (the GET
+  // can never be re-aimed off loopback).
+  // MUTATION: dropping the SPEC_PATH_OK throw in normalizeRootPath makes this pass a remote URL (red)
+  assert.throws(() => normalizeRootPath('http://evil'), /refusing unsafe root-path/)
+  assert.throws(() => planCapture('http://127.0.0.1:8000', { target: '/r', date: '2026-07-02', rootPath: 'http://evil' }), /refusing unsafe root-path/)
 })
 
 check('O10 no listener → not-exposed, and NOTHING is written (the honest no-capture path)', () => {

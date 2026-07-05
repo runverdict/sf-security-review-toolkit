@@ -51,6 +51,34 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.88] — 2026-07-05
+
+**capture-openapi spec-path generalization + capture-only provenance (Tier-1 honesty gate closes).**
+`CANDIDATE_SPEC_PATHS` was 8 fixed JSON paths (FastAPI-shaped); proxied-FastAPI and NestJS partners
+came back `not-exposed` even when they served a spec. Separately, an `openapi-<date>.json` sitting
+beside a `zap-throwaway-local-*.json` implied the DAST exercised those endpoints — a live adjacency
+over-claim (the baseline is an unauthenticated spider from `/` that does NOT consume the spec).
+
+### Fixed
+- `harness/capture-openapi.mjs`: `CANDIDATE_SPEC_PATHS` extended (12 paths) — `/openapi.json` stays
+  index 0; adds proxied-FastAPI `/api/v1/openapi.json` and NestJS `/api-json` / `/docs-json` /
+  `/api/docs-json`. New pure `normalizeRootPath` + a `--root-path` flag front-load `${rp}/openapi.json`
+  for a proxied `root_path='/api/v1'`, deduped, WITHOUT mutating the exported constant — and FAIL
+  CLOSED: a scheme/URL root-path (`http://evil` → `/http://evil`) fails `SPEC_PATH_OK` and throws, so
+  the GET can never be re-aimed off the loopback host.
+
+### Hardened
+- Capture-only provenance: `buildProvenance` gains a `scanCoverage` field (CAPTURE-ONLY — the spec was
+  READ for the api-endpoints artifact, the throwaway DAST does NOT consume it, so these endpoints were
+  not necessarily exercised) + a `singleSpec` caveat, and the captured CLI label prints the same — this
+  closes the adjacency over-claim NOW, alongside Slice G's `specFedScan:false`, without building the
+  deferred spec-fed DAST. The 4 loopback layers stay byte-frozen. Test-backed: `test-capture-openapi.mjs`
+  O9 extended (new paths at index, length 12, constant untouched), O6 extended two-sided for
+  `scanCoverage`, new O11 (root-path prepend+dedupe, no-rootPath byte-identical, fail-closed
+  mutation-proven).
+
+Suite: **63 files / 1036 checks** (+1).
+
 ## [0.8.87] — 2026-07-05
 
 **run-dast honesty consumption + machine-readable provenance (the keystone).** `run-dast` had no

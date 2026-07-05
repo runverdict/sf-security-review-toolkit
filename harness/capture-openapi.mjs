@@ -48,14 +48,18 @@ export const CAPTURE_SCHEMA = 'sf-srt-openapi/1'
  * artifact stands).
  */
 export const CANDIDATE_SPEC_PATHS = [
-  '/openapi.json', // FastAPI/Starlette default — the python recipe's most common shape
+  '/openapi.json', // FastAPI/Starlette default — the python recipe's most common shape (index 0, pinned)
   '/api/openapi.json', // mounted-under-/api variants
+  '/api/v1/openapi.json', // versioned-prefix / proxied-FastAPI (root_path='/api/v1') variants
   '/docs/openapi.json', // docs-mounted variants
   '/swagger.json', // classic swagger-tools / express swagger integrations
   '/swagger/v1/swagger.json', // ASP.NET Core Swashbuckle default
   '/v3/api-docs', // Spring springdoc default (serves JSON)
   '/api-docs', // swagger-ui-express common mount
   '/v1/openapi.json', // versioned-prefix variants
+  '/api-json', // NestJS SwaggerModule default (setup('api'))
+  '/docs-json', // NestJS setup('docs') — the common documentation-mount shape
+  '/api/docs-json', // NestJS nested setup('api/docs')
 ]
 
 const DATE_OK = /^\d{4}-\d{2}-\d{2}$/
@@ -71,17 +75,36 @@ function assertLoopback(baseUrl, who) {
   }
 }
 
-/** PURE. Compute the capture plan. Deterministic given (baseUrl, target, date). */
-export function planCapture(baseUrl, { target, date } = {}) {
+/**
+ * PURE. Normalize an optional proxy root-path (FastAPI `root_path='/api/v1'`, etc.) to a
+ * single-leading-slash, no-trailing-slash rooted path. FAILS CLOSED: a scheme/colon/full URL
+ * (`http://evil` → `/http://evil`) fails SPEC_PATH_OK and THROWS, so the GET can never be
+ * re-aimed off the loopback host. Empty/absent → '' (no root-path prefix).
+ */
+export function normalizeRootPath(rootPath) {
+  let rp = String(rootPath == null ? '' : rootPath).trim()
+  if (!rp) return ''
+  rp = '/' + rp.replace(/^\/+/, '').replace(/\/+$/, '')
+  if (!SPEC_PATH_OK.test(rp)) throw new Error(`normalizeRootPath: refusing unsafe root-path '${rootPath}' — must be a bare rooted path`)
+  return rp
+}
+
+/** PURE. Compute the capture plan. Deterministic given (baseUrl, target, date, rootPath). */
+export function planCapture(baseUrl, { target, date, rootPath } = {}) {
   if (!URL_OK.test(String(baseUrl || ''))) throw new Error(`planCapture: invalid base url '${baseUrl}'`)
   // HARD: the capture must target the LOOPBACK throwaway mirror only (audit: loopback enforcement).
   assertLoopback(baseUrl, 'planCapture')
   if (!target) throw new Error('planCapture: target repo required')
   if (!DATE_OK.test(String(date || ''))) throw new Error(`planCapture: invalid date '${date}' (need YYYY-MM-DD)`)
   const evidenceDir = join(target, '.security-review', 'evidence')
+  // A proxy root-path prepends `${rp}/openapi.json` to the front (deduped) — never mutating
+  // the exported constant (keeps O9's constant-untouched invariant). Fails closed on a
+  // non-rooted-path root (throws above).
+  const rp = normalizeRootPath(rootPath)
+  const candidatePaths = rp ? [...new Set([`${rp}/openapi.json`, ...CANDIDATE_SPEC_PATHS])] : [...CANDIDATE_SPEC_PATHS]
   return {
     schema: CAPTURE_SCHEMA, baseUrl, date,
-    candidatePaths: [...CANDIDATE_SPEC_PATHS],
+    candidatePaths,
     evidenceDir,
     evidencePath: join(evidenceDir, `openapi-${date}.json`),
     provenancePath: join(evidenceDir, `openapi-${date}.provenance.json`),
@@ -122,6 +145,11 @@ export function buildProvenance(plan, { capturedFrom, kind, version, pathCount, 
     runId: runId || null,
     spec: { kind, version, pathCount },
     secrets: 'The mirror ran on synthetic secrets the toolkit generated at stand-up — no production credential was present in the container, and the spec body is public API shape only.',
+    // capture-only honesty: the spec was READ, not SCANNED. Closes the adjacency over-claim
+    // where an openapi-*.json sitting beside a zap-throwaway-local-*.json implies the DAST
+    // exercised those endpoints — it does not (the baseline is an unauthenticated spider from /).
+    scanCoverage: 'CAPTURE-ONLY. This spec was read for the api-endpoints artifact; the throwaway DAST is an unauthenticated loopback spider that does NOT consume it, so these endpoints were not necessarily exercised. Authenticated / prod-equivalent endpoint testing remains owner-run.',
+    singleSpec: 'first-match single-spec capture — a gateway/multi-service partner may expose additional specs not enumerated here.',
     prodEquivalence: 'PENDING owner attestation — this spec was captured from the container-isolated throwaway mirror the toolkit stood up, NOT from production. Only the owner can attest that production serves an equivalent spec.',
   }
 }
@@ -171,6 +199,7 @@ function main() {
   const target = arg('--target', process.cwd())
   const runId = arg('--run-id', null)
   const date = arg('--date', new Date().toISOString().slice(0, 10))
+  const rootPath = arg('--root-path', null) // optional proxy root_path (e.g. /api/v1); fails closed if unsafe
   // --consent alone is insufficient: the capture rides on the SAME recorded affirmative
   // 'throwaway-dast' consent that stood the mirror up (no new gate) — verified exactly the
   // way run-dast verifies it.
@@ -180,7 +209,7 @@ function main() {
   const asJson = argv.includes('--json')
 
   let plan
-  try { plan = planCapture(baseUrl, { target, date }) }
+  try { plan = planCapture(baseUrl, { target, date, rootPath }) }
   catch (e) { process.stdout.write(`## capture-openapi — ${e.message}\n`); process.exitCode = 3; return }
   if (!consent) {
     const why = consentFlag && !consentRecorded
@@ -196,6 +225,7 @@ function main() {
   if (r.status === 'captured') {
     L.push(`evidence: ${r.evidencePath}`)
     L.push(`spec: ${r.kind} ${r.version} · ${r.pathCount} paths (from ${r.capturedFrom})`)
+    L.push('coverage: CAPTURE-ONLY — the throwaway DAST does NOT consume this spec; these endpoints were not necessarily exercised (authenticated endpoint testing remains owner-run)')
     L.push('prod-equivalence: PENDING owner attestation (captured from the isolated mirror, not production)')
   } else {
     L.push(r.reason)
