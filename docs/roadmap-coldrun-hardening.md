@@ -9,17 +9,18 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.78** (code `7a78c04`), suite **63 files / 993 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2 + E0.1d-EXPAND-3 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
+- **`main` @ 0.8.79** (code `7b6b444`), suite **63 files / 998 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
   seam · determinism proof · single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND
-  catalog routing 0.8.76 · E0.1d-EXPAND-2 class-less-safe markup/OAuth routing 0.8.77 · **E0.1d-EXPAND-3
-  owned-class-dimension routing 0.8.78** — `AvoidSControls`/`AvoidAuraWithLockerDisabled`/`AvoidLmcIsExposedTrue`
-  → package-metadata + `ProtectSensitiveData` → secrets-credentials, full 4-rule capture, the three-part
-  supersession invariant proven end-to-end against a byte-frozen engine — all graded PASS off disk).
-  NEXT: E0.1d-EXPAND-4 (GROUNDED + Fable-verified — the catalog's 14-rule remainder; 8 route to package-metadata
-  [4 `AvoidJavaScript*` + 4 fixture-gated `Load*`], 5 Apex-behavior rules stay NO-OP/unrouted, 1 SKIP — full
-  disposition table in the EXPAND-4 bullet below), then item 7 (substrate/version-drift markers), then the
-  ★ MIDPOINT COLD RUN.
+  catalog routing 0.8.76 · E0.1d-EXPAND-2 class-less-safe markup/OAuth 0.8.77 · E0.1d-EXPAND-3
+  owned-class-dimension routing 0.8.78 · **E0.1d-EXPAND-4 JS-in-metadata + resource-loader routing 0.8.79** —
+  8 rules → package-metadata [4 `AvoidJavaScript*` + 4 `Load*`, the Load* fixture-gate resolved ROUTE: inline
+  probe page = 0 violations], the 5 Apex-behavior rules confirmed NO-OP [default to `apex-exposed-surface`,
+  a row proven build-breaking], 1 SKIP — all graded PASS off disk against a byte-frozen engine). **The
+  pmd-appexchange catalog is now fully triaged** — every Security rule is routed, a fixture-proven NO-OP, or a
+  sourced SKIP; only genuinely-ambiguous rules remain deferred, and none blocks the cold run.
+  NEXT: **item 7 (substrate/version-drift markers)** — a scanner fired but its trace is missing / a tool version
+  drifted → emit an honest marker; small + self-contained — then the **★ MIDPOINT COLD RUN**.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
@@ -436,8 +437,17 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      scans all files) and the sensitive-data seed pinned to customMetadata/custom-setting so the capture cannot
      contradict it; (g) the package-metadata owner-supersedes-LLM lock is NEW among the ingested-adapter locks
      (GL-/DS-supersedes-LLM); the generic reconcile suite's R1 already locks a crud-fls owner.
-   - **E0.1d-EXPAND-4 (GROUNDED + Fable-verified 2026-07-04 — the catalog remainder = 14 rules; stage a LIGHT
-     prompt AFTER EXPAND-3 lands, rigor on the CODE hand-back not the prompt).** A read-only Fable research pass
+   - ~~**E0.1d-EXPAND-4 — the catalog remainder (14 rules)**~~ **DONE (0.8.79, `7b6b444`), graded PASS off disk
+     2026-07-05.** 8 rules routed class-less → `package-metadata` (4 `AvoidJavaScript*` + all 4 `Load*` — the
+     Load* FP-gate resolved ROUTE: the inline/`$Resource` probe page produced 0 violations, locked in
+     `EXP4-fixture`); the 5 Apex-behavior rules confirmed NO-OP (absent from `RULE_DIMENSION` + default to
+     `apex-exposed-surface`, a row proven build-breaking via `SESS-disjoint` in mutation 2); `AvoidLwcBubblesComposedTrue`
+     SKIP. SESS-disjoint value set unchanged (no new dimension); engine + all 3 prior fixtures byte-frozen;
+     defer-locks retargeted to the SKIP + NO-OP reps; the EXPAND-3 DEFERRED-comment nit fixed (Apex rules now
+     framed as NO-OP). The **light prompt + one Fable verify pass** flow worked cleanly (Fable caught the
+     `LoadCSSApexStylesheet`-in-EXP3-defer coupling pre-dispatch). Historical Fable-research grounding for this
+     slice retained below:
+   - **(E0.1d-EXPAND-4 grounding record, retained):** A read-only Fable research pass
      enumerated the live catalog (37 pmd rules, all Security-tagged) and dispositioned every remaining rule off
      the methodology docs' SPECIFIC class sections + the live rule messages. It CORRECTED four of my initial
      leans — recorded honestly below so they don't recur.
