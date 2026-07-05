@@ -146,7 +146,7 @@ check('G3b host-port decoupling: an ephemeral host port ≠ container port does 
   const resolved = resolveBaseUrl(null, { schema: 'sf-srt-stack/1', runId: 'g3b', baseUrl: `http://127.0.0.1:${hostPort}`, status: 'up', scannedPort: hostPort })
   assert.equal(resolved.baseUrl, `http://127.0.0.1:${hostPort}`)
   // MUTATION the slice prevents: recording scannedPort = the CONTAINER port when the host port
-  // differs WOULD false-degrade — the exact CLAUDE.md-class bug the pointer contract locks out
+  // differs WOULD false-degrade — the exact regression the pointer contract locks out
   assert.equal(dastDegrade(planDast(`http://127.0.0.1:${hostPort}`, { ...base, health: 'up', scoredPort: 8000 })).degraded, true)
 })
 

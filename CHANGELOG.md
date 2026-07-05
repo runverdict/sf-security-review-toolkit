@@ -51,6 +51,59 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.95] — 2026-07-05
+
+**Cold-run hardening bundle (four independent robustness fixes toward the next tag).**
+Four defects surfaced by the midpoint cold run, each shipped with a hermetic standing
+test: the `sf` CLI update banner no longer corrupts JSON reads; the two highest-stakes
+live-op consents are pinned in the frozen gate catalog; the throwaway stand-up publishes
+on a free host port so a busy host port can't block the DAST; and dev-only npm dependency
+CVEs are down-ranked below the blocker floor so a test-runner advisory can't gate a
+submission. The frozen invariants (loopback enforcement, `--network host`, DAST provenance
+HARD fields, `reconcile-provenance` supersession, the severity enum) are untouched.
+
+### Fixed
+- **The `sf` CLI auto-update banner no longer corrupts `--json` reads.** The Salesforce
+  CLI prints an update-availability banner to stdout ahead of the JSON payload, which
+  broke a keystone query mid-run. New `harness/sf-env.mjs`: `sfEnv()` spreads the parent
+  environment (so `PATH` still resolves the `sf` binary) and forces both
+  `SF_AUTOUPDATE_DISABLE` + `SF_DISABLE_AUTOUPDATE`; `parseSfJson()` tolerates a stray
+  leading banner line. Threaded into every `sf` invocation + JSON parse in
+  `standup-org` / `teardown-org` / `namespace-check`, and the deployed-package /
+  scope-submission skills export the two flags once at the top of their `sf`-using
+  sections. Test-backed: `test-sf-env.mjs`.
+- **The throwaway stand-up publishes to a free host port** so a busy host port can no
+  longer block the throwaway DAST (the cold run's tag blocker). `harness/standup-stack.mjs`
+  decouples the HOST published port from the container listen port and the compose
+  web-tier selector (both stay the web port): the executor publishes on an ephemeral
+  loopback host port (`127.0.0.1:0:<containerPort>`) and reads the assigned port back
+  after start (no bind-race), keeping `baseUrl` loopback and the manifest's `scannedPort`
+  equal to `new URL(baseUrl).port` — so a real run never false-degrades as "wrong tier."
+  The pure planners stay deterministic; the ephemeral-publish discovery lives in the
+  impure executor and is validated by the operator cold run. Test-backed:
+  `test-standup-stack.mjs` (host-port decoupling), `test-run-dast.mjs` (no false-degrade).
+
+### Added
+- **Two live-op consents pinned in the frozen gate catalog.** `harness/gate-spec.mjs`
+  registers `throwaway-dast` and `sf-deep-audit-ops` — the highest-stakes
+  reach-outside-read-only-local consents — so their operator-facing option text renders
+  verbatim run-to-run instead of drifting. Purely additive to the render/pinning path;
+  consent recording and verification (which key off the gate-name string) are unchanged.
+  Each carries a single affirm option plus the force-injected safe-default decline.
+  Test-backed: `test-gate-spec.mjs` (golden snapshots + the consent-gate reps matrix).
+- **Dev-only npm dependency CVEs down-ranked below the blocker floor.**
+  `harness/ingest-scanner-findings.mjs` caps a CVE on a DIRECT npm `devDependency` (a
+  package in the target `package.json` devDependencies and not dependencies — never
+  shipped in the managed package) to a ceiling of `low`: cleared off the blocker floor
+  and the high gate but still recorded, with an honest caveat on the finding naming the
+  original band. Down-rank only (never a raise); prod-dependency hits and the finding id
+  are byte-identical, and the resolver reads the package manifest at both ingest I/O
+  boundaries (single-scanner and the `--all` journey path). Scope is npm direct
+  devDependencies only — transitive dev-only (`package-lock` `dev:true`) and Python
+  dev-scope remain a follow-on. Test-backed: `test-ingest-scanner-findings.mjs`.
+
+Suite: **64 files / 1064 checks** (+13).
+
 ## [0.8.94] — 2026-07-05
 
 **Exposed-tools drafting rigor (prose-only — NOT-test-backed, CONVENTIONS §7).** The cold-run
