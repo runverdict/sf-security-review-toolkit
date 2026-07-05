@@ -9,18 +9,20 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.79** (code `7b6b444`), suite **63 files / 998 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
-  CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
-  seam · determinism proof · single-shape registry · supply-chain README+`SC-*` posture locks · E0.1d-EXPAND
-  catalog routing 0.8.76 · E0.1d-EXPAND-2 class-less-safe markup/OAuth 0.8.77 · E0.1d-EXPAND-3
-  owned-class-dimension routing 0.8.78 · **E0.1d-EXPAND-4 JS-in-metadata + resource-loader routing 0.8.79** —
-  8 rules → package-metadata [4 `AvoidJavaScript*` + 4 `Load*`, the Load* fixture-gate resolved ROUTE: inline
-  probe page = 0 violations], the 5 Apex-behavior rules confirmed NO-OP [default to `apex-exposed-surface`,
-  a row proven build-breaking], 1 SKIP — all graded PASS off disk against a byte-frozen engine). **The
-  pmd-appexchange catalog is now fully triaged** — every Security rule is routed, a fixture-proven NO-OP, or a
-  sourced SKIP; only genuinely-ambiguous rules remain deferred, and none blocks the cold run.
-  NEXT: **item 7 (substrate/version-drift markers)** — a scanner fired but its trace is missing / a tool version
-  drifted → emit an honest marker; small + self-contained — then the **★ MIDPOINT COLD RUN**.
+- **`main` @ 0.8.80** (code `05e3dbd`), suite **63 files / 1006 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+  CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 + item 7 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
+  seam · determinism proof · single-shape registry · supply-chain README+`SC-*` · E0.1d-EXPAND
+  catalog routing 0.8.76 · EXPAND-2 class-less-safe markup/OAuth 0.8.77 · EXPAND-3 owned-class-dimension 0.8.78 ·
+  EXPAND-4 JS-in-metadata + resource-loader 0.8.79 [catalog FULLY TRIAGED] · **item 7 substrate/version-drift
+  honesty markers 0.8.80** — the ingest now emits a deterministic `note` when a toolkit `rules.injection.*` taint
+  rule fires with no dataflow trace ("reachability substrate unavailable…") and when an opengrep evidence version
+  drifts from the `BINARY_PINS` pin; honestly scoped [toolkit-taint-only + opengrep-only], notes-only [engine +
+  ledger schema byte-frozen, findings byte-identical], both markers mutation-proven — graded PASS off disk).
+  **★ ALL SEQUENCED HARDENING SLICES ARE DONE. NEXT = the ★ MIDPOINT COLD RUN** — run the whole accumulated stack
+  (the audit-codebase journey → scanners → ingest → reviewer-sim → compile) against a real partner-shaped target,
+  end-to-end; validate the ~16 accumulated test-backed-but-HERMETIC slices against reality; assess whether it
+  justifies moving the held tag toward `0.9.0`. Operator-run (needs a real SFDX target + scan consent + ~hours);
+  the auditor scopes the run + grades the gaps it surfaces. This is the single most valuable open item.
   4 (single-shape registry, 0.8.74 — `SINGLE_SHAPE` set + mechanical `SS-*` forcing check: every owned class
   must be declared single-shape)
   SHIPPED. Item 3 caught + fixed a real `mergeFindings` defect (band pushed by reference → JSON+SARIF
@@ -488,9 +490,19 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      - **Overlap: clean.** package-metadata's owned classes read only `.remoteSite/.cspTrustedSite/.namedCredential-meta.xml`;
        the JS cluster fires on `.weblink-meta.xml`/webLinks/homePageComponent, the `Load*` cluster on `.page` — zero
        suffix overlap, no det-det double-report. RetireJS scans static-resource CONTENTS, not hotlink declarations.
-7. **Substrate-unavailable + version-drift markers** — taint rule fired but no trace in evidence → visible
-   marker; evidence tool version ≠ pinned → marker. Closes the silent-degradation channel the borrowed-substrate
-   honesty rule warns about (today it is operator-prose only, no harness enforcement).
+7. ~~**Substrate-unavailable + version-drift markers**~~ **DONE (0.8.80, `05e3dbd`), graded PASS off disk
+   2026-07-05.** The ingest `notes` channel now emits both markers deterministically: (a) substrate-unavailable —
+   when a toolkit `rules.injection.*` taint rule fires with no dataflow trace (the ONLY output-knowable taint
+   signal; registry/third-party taintness is unknowable and out of scope) via an `expectsTrace(hit)` hook on
+   semgrep + **its own** opengrep alias + sarif; (b) version-drift — opengrep-only (the sole recorded∩pinned
+   adapter) via a `recordedVersion(raw)` hook, SARIF-gated to the `Opengrep OSS` driver so the frozen Semgrep OSS
+   fixture can't false-fire, comparing against `PINNED_TOOL_VERSIONS.opengrep` (derived from `BINARY_PINS`,
+   single-source-locked). Notes-only: `buildFinding`/schema/ledger/`reconcile-provenance.mjs`/findings-bytes all
+   byte-frozen; harness change pure additive (+99/−0); both markers mutation-proven (283/2, 281/4). The three
+   pre-dispatch Fable-caught defects (opengrep hook inheritance, SARIF Semgrep-OSS false-fire, `BINARY_PINS` export)
+   were all applied correctly. Nit (non-blocking): the semgrep substrate note reads `v unknown` (semgrepAdapter has
+   no `recordedVersion`) though `raw.version` is present — optional future polish. Closes the silent-degradation
+   channel that was operator-prose only (`skills/run-scans/SKILL.md` prose updated to match).
 8. **★ MIDPOINT COLD RUN** — validate the ~15 accumulated test-backed-but-HERMETIC slices + real integration
    the hermetic tests can't reach; assess whether it justifies moving the held tag. The single most valuable
    open item; do NOT keep deferring it to "after the whole E0.3 arc."
