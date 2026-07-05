@@ -51,6 +51,42 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.83] — 2026-07-05
+
+**Bandit test-path LOW hygiene filter — the deterministic band stops drowning in test-tree
+lint.** Cold-run finding: the deterministic band was 4768 findings, ~93.6% bandit — B101
+`assert_used` / B404 `import subprocess` across the Python tree INCLUDING tests. The separating
+axis is **PATH × band**, deliberately NOT a severity floor (a blanket "drop bandit LOW" kills
+B105/B106/B107 hardcoded-password hits in PROD — a real-secret honesty violation) and NOT
+confidence (`-iii` is the wrong axis — B101 is high-confidence).
+
+### Added
+- `harness/ingest-scanner-findings.mjs`: segment-anchored `isTestPath(file)` (a whole
+  `/`-segment ∈ {`test`, `tests`, `__tests__`} or basename `test_*.py` / `*_test.py` /
+  `conftest.py` — so `latest/`, `contest/`, `mytest.py` do NOT match) + a NEW, DISTINCT
+  optional adapter hook `hygieneNoise(hit)` on `banditAdapter` only
+  (`bandFromTool === 'low' && isTestPath(hit.file)`). Deliberately NOT `securityRelevant` —
+  the BN-adapter-contract pins that as `undefined` (bandit stays security-by-construction);
+  deliberately NOT generalized to semgrep/njsscan.
+- Ingest core: `hygieneFiltered` counter beside `tracelessTaint`, guarded exactly like the
+  other optional hooks (`typeof adapter.hygieneNoise === 'function'`), with ONE aggregated
+  honesty note per ingest (mirrors the substrate-unavailable block): `bandit: N test-path LOW
+  hygiene hit(s) (assert/import, e.g. B101/B404 under tests) filtered as non-security noise —
+  not findings`. Every other adapter is inert; `buildFinding`/`CLASS_DEFS` untouched.
+- `skills/run-scans/SKILL.md` Family 7: one-line note that bandit test-path LOW hygiene is
+  filtered at ingest (prod-path LOW + every MEDIUM/HIGH ingest unchanged).
+- Fixture `acceptance/fixtures/bandit-test-hygiene-seeded.json` — genuine-SHAPED bandit 1.9.x
+  output, SEEDED not captured: B101 LOW `tests/test_server.py` + B404 LOW `tests/conftest.py`
+  (filtered) · B608 MEDIUM `mcp/server.py` · B105 LOW `mcp/app.py` (prod hardcoded password) ·
+  B602 HIGH `tests/test_x.py` (all kept).
+
+Suite: **63 files / 1015 checks** (+2: BN-hygiene — kept ruleIds exactly {B105, B602, B608},
+one aggregated note with count 2, `securityRelevant` still `undefined`; BN-hygiene-anchoring —
+the two-sided FP guard: `latest/`/`contest/`/`mytest.py` all KEPT, every documented test-path
+shape filtered). Existing 4-finding bandit coldstart assertions byte-identical (the real
+fixture is all-MEDIUM under `mcp/`). Mutation-verified: removing the core-loop guard reddens
+both new checks (executed, then restored).
+
 ## [0.8.82] — 2026-07-05
 
 **Target-map dimension-key validation — a bogus key can no longer masquerade as coverage.**

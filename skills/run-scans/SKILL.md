@@ -549,6 +549,10 @@ families PENDING until a re-audit.
    across languages, and custom-rule capable (a future pack can re-express the LLM
    dimensions' heuristics as deterministic rules). Add a language gate where it
    sharpens recall: **Bandit** (Python), **njsscan** (Node), **gosec** (Go).
+   Ingest note (0.8.83): bandit **test-path LOW** hygiene hits (B101 assert / B404
+   import under `tests/`, `test_*.py`, `*_test.py`, `conftest.py`) are filtered at
+   ingest as non-security noise with one aggregated note per evidence file — prod-path
+   LOW (e.g. a B105 hardcoded password) and every MEDIUM/HIGH hit ingest unchanged.
    *Invocation (verify flags against your installed version):*
 
    ```bash

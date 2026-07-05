@@ -234,6 +234,7 @@ const CHECKOV = join(FIX, 'checkov-dockerfile-solano.json')
 const SEMGREP_WARN = join(FIX, 'semgrep-coldstart-full.json') // 2× WARNING (dynamic-urllib, CWE-939 — stays external-sast: the negative-routing anchor)
 const SEMGREP_ERR = join(FIX, 'semgrep-helios.json') // 1× ERROR (detect-child-process, CWE-78 → injection-xss: the semgrep routing anchor)
 const BANDIT = join(FIX, 'bandit-coldstart-full.json') // 4× MEDIUM (B608 CWE-89 → injection-xss anchor + 2× B310 CWE-22 + B104 CWE-605 — all three stay external-sast)
+const BANDIT_HYG = join(FIX, 'bandit-test-hygiene-seeded.json') // genuine-SHAPED, seeded (0.8.83): the test-path LOW hygiene anchor — B101/B404 under tests/ filtered; prod-LOW B105 + MEDIUM B608 + test-path HIGH B602 kept
 const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secret ERROR + helmet_feature_disabled WARNING
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
@@ -2087,6 +2088,37 @@ check('BN-band HIGH/LOW/unknown (inline synthetic): HIGH→high, LOW→low, CRIT
   assert.equal(byRule.B311.adjusted_severity, 'low') // LOW → low
   assert.ok(byRule.B311.verdict_reasoning.includes('https://cwe.mitre.org/data/definitions/330.html'), 'issue_cwe.link is the fallback when no more_info')
   assert.equal(byRule.B999.adjusted_severity, 'info') // unknown CRITICAL → info, never dropped
+})
+
+check('BN-hygiene: test-path LOW (B101 assert / B404 import under tests/) filtered at ingest; prod-LOW + MEDIUM + test-path HIGH kept; ONE aggregated note', () => {
+  // The cold-run separating axis is PATH × band — NOT a severity floor (a blanket
+  // "drop bandit LOW" would kill the prod-path B105 hardcoded password below, a
+  // real-secret honesty violation) and NOT confidence (-iii: B101 is high-confidence).
+  const { findings, notes } = ingestBandit(readJSON(BANDIT_HYG))
+  // MUTATION: removing the hygieneNoise guard in the ingest core loop turns this red first (5 kept, not 3)
+  assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['B105', 'B602', 'B608'])
+  assert.ok(findings.some((f) => f.ruleId === 'B105' && f.adjusted_severity === 'low' && f.file.includes('mcp/app.py')),
+    'prod-path LOW B105 (hardcoded password) MUST survive — the honesty case')
+  assert.ok(findings.some((f) => f.ruleId === 'B602' && f.adjusted_severity === 'high' && f.file.includes('tests/')),
+    'a test-path HIGH survives — only the LOW band is hygiene')
+  assert.ok(findings.some((f) => f.ruleId === 'B608' && f.adjusted_severity === 'medium'),
+    'a prod MEDIUM survives untouched')
+  const hyg = notes.filter((n) => /test-path .*hygiene|filtered as non-security noise/.test(n))
+  assert.equal(hyg.length, 1, 'ONE aggregated note per ingest, never one-per-hit')
+  assert.match(hyg[0], /bandit: 2 test-path LOW hygiene hit\(s\)/)
+  // BN-adapter-contract intact: hygieneNoise is a DISTINCT hook — securityRelevant stays undefined
+  assert.equal(banditAdapter.securityRelevant, undefined)
+})
+
+check('BN-hygiene-anchoring: the predicate is SEGMENT-anchored — latest/, contest/, mytest.py are NOT test paths; tests/, test_*.py, *_test.py, conftest.py, __tests__/ are', () => {
+  const mk = (filename) => ({ test_id: 'B101', test_name: 'assert_used', issue_severity: 'LOW', issue_confidence: 'HIGH', filename, line_number: 1, issue_text: 'Use of assert detected.' })
+  // clean side: substring lookalikes must NOT be filtered (the FP guard on the path axis)
+  const kept = ingestBandit({ results: [mk('latest/util.py'), mk('contest/entry.py'), mk('src/mytest.py')] }).findings
+  assert.equal(kept.length, 3, 'latest/, contest/, mytest.py are NOT test paths')
+  // fires side: every documented test-path shape is filtered at LOW
+  const { findings: dropped, notes } = ingestBandit({ results: [mk('pkg/tests/util.py'), mk('src/test_util.py'), mk('src/util_test.py'), mk('src/conftest.py'), mk('a/__tests__/x.py')] })
+  assert.equal(dropped.length, 0, 'segment tests/ + test_*.py + *_test.py + conftest.py + __tests__/ filter at LOW')
+  assert.ok(notes.some((n) => /5 test-path LOW hygiene hit\(s\)/.test(n)), 'the aggregated note carries the count')
 })
 
 check('BN-severity-FROM-TOOL-BAND: mutating issue_severity MEDIUM→HIGH MOVES the band medium→high (the tool→band behaviour, same as SG)', () => {

@@ -963,9 +963,21 @@ export function ingest(raw, adapter, opts = {}) {
   // set whose taint mode is knowable from output) that carry NO dataflow trace. Aggregated
   // below into ONE substrate-unavailable note per ingest, never one-per-hit.
   let tracelessTaint = 0
+  // Test-path LOW hygiene filter (cold-run fix, 0.8.83): hits an adapter marks as hygiene
+  // noise (bandit-only today — LOW-band B101 assert / B404 import under test paths, which
+  // buried the deterministic band at ~93.6% bandit on a real target). Aggregated into ONE
+  // note per ingest below, never one-per-hit. OPTIONAL hook, guarded like `securityRelevant`.
+  let hygieneFiltered = 0
   for (const h of hits) {
     if (!h || !h.file || h.ruleId == null || h.engine == null) {
       notes.push(`${adapter.name}: skipped a malformed hit (missing engine/ruleId/file)`)
+      continue
+    }
+    // Hygiene-noise filter: the separating axis is PATH × band (test-path AND tool-LOW),
+    // NEVER a severity floor — a prod-path LOW (a B105 hardcoded password) or a test-path
+    // MEDIUM/HIGH must always ingest. The adapter owns the predicate; the core just counts.
+    if (typeof adapter.hygieneNoise === 'function' && adapter.hygieneNoise(h)) {
+      hygieneFiltered++
       continue
     }
     // Security/AppExchange tag filter (Slice 2): only a security-relevant hit becomes a
@@ -1020,6 +1032,14 @@ export function ingest(raw, adapter, opts = {}) {
       `${adapter.name}: ${tracelessTaint} toolkit taint rule(s) fired with no dataflow trace ` +
         `(${adapter.name} v${recorded || 'unknown'}) — reachability substrate unavailable on this engine ` +
         `version / output surface; findings ingest normally, reachabilityPath absent (use Opengrep or SARIF codeFlows)`
+    )
+  }
+  // Hygiene-noise honesty marker (0.8.83): ONE aggregated note per ingest — the operator
+  // learns the deterministic band was de-noised and by how much, without N note rows.
+  if (hygieneFiltered > 0) {
+    notes.push(
+      `${adapter.name}: ${hygieneFiltered} test-path LOW hygiene hit(s) (assert/import, e.g. B101/B404 under tests) ` +
+        `filtered as non-security noise — not findings`
     )
   }
   // stable order so the output is byte-identical regardless of scanner emission order
@@ -2174,6 +2194,18 @@ export const opengrepAdapter = {
 // semgrep/checkov/metadata it is SECURITY-BY-CONSTRUCTION (Bandit is a security scanner), so NO
 // `securityRelevant` — the ingest core keeps every emitted hit. Only `results[]` become findings.
 // `issue_confidence` is recorded by Bandit but deliberately NOT band-weighting here (Phase-2b note).
+// Test-path predicate for the bandit hygiene filter (0.8.83) — SEGMENT-ANCHORED, never a
+// substring match: a path is a test path iff a whole '/'-segment is `test`/`tests`/`__tests__`
+// or the basename is `test_*.py` / `*_test.py` / `conftest.py`. So `latest/`, `contest/`,
+// `mytest.py` do NOT match. Works on absolute or relative paths (the raw pre-repoRoot-strip
+// filename bandit emits).
+function isTestPath(file) {
+  const segs = String(file || '').split('/')
+  if (segs.some((s) => s === 'test' || s === 'tests' || s === '__tests__')) return true
+  const base = segs[segs.length - 1] || ''
+  return /^test_.*\.py$/.test(base) || /_test\.py$/.test(base) || base === 'conftest.py'
+}
+
 export const banditAdapter = {
   name: 'bandit',
   kind: 'file-parser',
@@ -2231,6 +2263,16 @@ export const banditAdapter = {
     return null
   },
   // NO securityRelevant — security-by-construction (Bandit is a security scanner), like semgrep/checkov/metadata.
+  // Test-path LOW hygiene (cold-run fix, 0.8.83): a DISTINCT hook — deliberately NOT
+  // `securityRelevant` (the BN-adapter-contract pins that as undefined; bandit stays
+  // security-by-construction). The separating axis is PATH × band: bandit's own LOW band
+  // (B101 assert_used / B404 blacklist-import) under a test path is hygiene lint, not a
+  // security finding — on the cold-run target it was ~93.6% of the whole deterministic band.
+  // NEVER a severity floor: a prod-path LOW (B105/B106/B107 hardcoded password) and every
+  // test-path MEDIUM/HIGH ingest unchanged. Bandit-only; not generalized to semgrep/njsscan.
+  hygieneNoise(hit) {
+    return Boolean(hit && hit.bandFromTool === 'low' && isTestPath(hit.file))
+  },
 }
 
 // ----------------------------------------------------------------------------
