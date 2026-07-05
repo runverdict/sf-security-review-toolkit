@@ -51,6 +51,40 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.85] — 2026-07-05
+
+**Compose web-tier selection — the throwaway DAST scans the API, not the frontend.** Cold-run
+finding on the grounded Verdict compose: `gatherRecipe` picked the web tier by the FIRST bare
+`digit:digit` in the whole file. postgres/redis/api all publish `${VAR:-N}:N` (the `}` breaks
+the digit run, so the naive regex skips them) and only the Next.js `web` service publishes a
+bare `"3000:3000"` — so the DAST physically scanned the frontend on 3000, not the FastAPI API
+on 8000, and reported it clean. The wrong port also drove `planCompose`'s host-publish, so the
+mis-pick rebound the wrong service to loopback.
+
+### Fixed
+- `harness/stack-detect.mjs`: new pure exported `composeWebTier(text)` replaces the first-match
+  port regex. It indent-walks the `services:` block, parses ports in every form (short `H:C`,
+  interpolated `${VAR:-N}:M`, long-form `target`/`published`, bind-IP `IP:H:C`), scores each
+  host-publishing service (API-name +3, run-command fingerprint +3, frontend/proxy −2, +1 per
+  incoming `depends_on` in BOTH list- and map-form), and hard-excludes datastores by service
+  NAME and by `image:` — with an api-named rescue (`database-api`/`db-gateway`).
+
+### Hardened
+- Honesty label degrades loudly rather than guessing: a top-score tie infers the file-order
+  winner but flags `ambiguous` + `candidates[]` and tells the operator to pass `--port`; a
+  frontend/proxy-only or expose-only-API shape emits a note naming the unreachable API tier
+  (`exposedApiTier[]`); zero non-infra host-publishers returns `port:null` (refuse — never scan
+  a datastore). `classifyStack`'s reason threads the note; `gatherRecipe` returns the full
+  object even when `.port===null`. The port-only contract (`planStandup` reads `.port`) is
+  preserved — the new fields feed only reason strings and the honesty label.
+- Test-backed: `acceptance/test-stack-detect.mjs` A1–A11 (Verdict-shape CLI → api:8000; db-first
+  not mis-picked; all port forms; tie→ambiguous; expose-only trap two-sided; zero-candidate
+  refuse; image-based infra exclude two-sided; api-name rescue; map-form depends_on; run-command
+  fingerprint). Mutation-proven (image-exclude, api-rescue, map-form, fingerprint each redden
+  a two-sided assert when reverted).
+
+Suite: **63 files / 1027 checks** (+11).
+
 ## [0.8.84] — 2026-07-05
 
 **Compose IaC routes to `trivy config`, never checkov (Family 8 prose + guard).** Cold-run

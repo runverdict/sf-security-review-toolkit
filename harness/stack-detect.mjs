@@ -113,6 +113,268 @@ export function composeConcreteAssigned(text) {
   return out
 }
 
+// ── Compose web-tier selection (pure, raw-text — picks the DAST target service) ──
+// The naive "first bare digit:digit in the whole file" picker mis-selects: an
+// interpolated infra mapping (`${VAR:-N}:N`) is skipped because the `}` breaks the
+// digit run, so a frontend's bare `"3000:3000"` wins and the DAST scans the UI, not
+// the API. composeWebTier scores every host-publishing service — API-name and
+// run-command fingerprint UP, frontend/proxy DOWN, +1 per incoming depends_on — hard-
+// excludes datastores by NAME and by IMAGE, and degrades the label loudly on a
+// frontend-only / expose-only-API / zero-candidate shape rather than guessing.
+const INFRA_NAME = /^(postgres|postgresql|pg|mysql|mariadb|mongo|mongodb|redis|valkey|memcache|rabbit|rabbitmq|amqp|kafka|zookeeper|elastic|opensearch|etcd|minio|clickhouse|cassandra|cockroach|nats|vault|db|database|cache|queue|broker|mailhog|mailpit|adminer|pgadmin|prometheus|grafana)/i
+const INFRA_IMAGE = /(postgres|postgresql|mysql|mariadb|mongo|redis|valkey|memcached?|rabbitmq|kafka|zookeeper|elasticsearch|opensearch|etcd|minio|clickhouse|cassandra|cockroach|nats|vault|adminer|pgadmin|prometheus|grafana|mailhog|mailpit)/i
+// API-name matches the keyword at the start OR after a `-`/`_` separator (so `db-gateway`
+// and `database-api` are rescued from the infra name filter), plus `api` anywhere.
+const API_NAME = /(?:^|[-_])(api|backend|server|app|gateway|service|core|rest|graphql)\b|-?api/i
+const FRONTEND_NAME = /(web|frontend|ui|client|next|nuxt|vite|react|vue|angular|svelte|static|nginx|traefik|caddy|envoy|haproxy|proxy|admin|dashboard|console|backoffice)/i
+const PROXY_NAME = /(nginx|traefik|caddy|envoy|haproxy|proxy)/i
+const WEBSERVER_CMD = /\b(uvicorn|gunicorn|hypercorn|daphne|granian|node|nodemon|next|npm(?:\s+run)?\s+(?:start|dev)|yarn\s+(?:start|dev)|http-server|serve|puma|unicorn|rails\s+s|flask\s+run|waitress)\b/i
+
+const unq = (s) => String(s == null ? '' : s).trim().replace(/^["']|["']$/g, '')
+
+/** Pure: segment the `services:` block into per-service { name, lines } records —
+ *  indent-walk mirroring composeServiceNames (BREAK at the first zero-indent line so a
+ *  top-level volumes:/networks: block is never captured as a service). */
+function composeServiceBlocks(text) {
+  const blocks = []
+  let inServices = false
+  let childIndent = -1
+  let current = null
+  for (const line of String(text || '').split('\n')) {
+    if (!inServices) {
+      if (/^services:\s*(?:#.*)?$/.test(line)) inServices = true
+      continue
+    }
+    if (/^\S/.test(line)) break // first zero-indent line → left the services block
+    const m = line.match(/^(\s+)([A-Za-z0-9_.-]+):\s*(?:#.*)?$/)
+    if (m && (childIndent < 0 || m[1].length === childIndent)) {
+      if (childIndent < 0) childIndent = m[1].length
+      if (m[1].length === childIndent) { current = { name: m[2], lines: [] }; blocks.push(current); continue }
+    }
+    if (current) current.lines.push(line)
+  }
+  return blocks
+}
+
+/** Pure: split a port spec on top-level `:` (never inside `${...}`). */
+function splitColon(s) {
+  const parts = []; let cur = ''; let depth = 0
+  for (const ch of String(s)) {
+    if (ch === '{') depth++
+    else if (ch === '}') depth = Math.max(0, depth - 1)
+    if (ch === ':' && depth === 0) { parts.push(cur); cur = '' } else cur += ch
+  }
+  parts.push(cur); return parts
+}
+
+/** Pure: resolve one port token → a number, or null when it interpolates with no default.
+ *  `${VAR:-N}`/`${VAR:=N}` → N; `${VAR}`/`${VAR:?..}`/`${VAR:+..}`/`$VAR` → null; bare N → N. */
+function resolveTok(tok) {
+  const t = String(tok == null ? '' : tok).trim()
+  const def = t.match(/^\$\{[A-Za-z_][A-Za-z0-9_]*:[-=]([0-9]+)\}/)
+  if (def) return Number(def[1])
+  if (/\$\{|\$[A-Za-z_]/.test(t)) return null
+  if (/^[0-9]+$/.test(t)) return Number(t)
+  return null
+}
+
+/** Pure: `H:C` | `IP:H:C` | `C` | `${VAR:-H}:C` → { host, container, port }. An
+ *  unresolvable host interpolation falls back to the container port (aligns with
+ *  planCompose's `target` match). */
+function resolvePortSpec(spec) {
+  const parts = splitColon(unq(spec)).map((x) => x.trim()).filter((x) => x !== '')
+  if (!parts.length) return null
+  let hostTok = null; let contTok = null
+  if (parts.length === 1) contTok = parts[0]
+  else if (parts.length === 2) { hostTok = parts[0]; contTok = parts[1] }
+  else { hostTok = parts[parts.length - 2]; contTok = parts[parts.length - 1] }
+  const container = resolveTok(contTok)
+  const host = hostTok == null ? null : resolveTok(hostTok)
+  const port = host != null ? host : container
+  if (port == null && container == null) return null
+  return { host, container, port }
+}
+
+/** Pure: long-form `{ target, published }` → { host, container, port }. */
+function resolveMapPort(map) {
+  const container = resolveTok(map.target)
+  const host = map.published != null ? resolveTok(map.published) : null
+  const port = host != null ? host : container
+  if (port == null && container == null) return null
+  return { host, container, port }
+}
+
+/** Pure: parse `[a, b]` / bare-scalar inline YAML list → trimmed, unquoted items. */
+function inlineList(s) {
+  const t = String(s).trim()
+  const arr = t.match(/^\[(.*)\]$/)
+  const items = arr ? arr[1].split(',') : [t]
+  return items.map(unq).filter(Boolean)
+}
+
+/** Pure: a service's host-published ports (short, long, bind-IP, and interpolated forms). */
+function svcPorts(lines) {
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)ports:\s*(.*)$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[2].trim()) { for (const tok of inlineList(m[2])) { const p = resolvePortSpec(tok); if (p) out.push(p) } ; continue }
+    let map = null
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      const li = lines[j].match(/^\s*-\s*(.*)$/)
+      if (li) {
+        if (map) { const p = resolveMapPort(map); if (p) out.push(p); map = null }
+        const rest = li[1].trim()
+        const kv = rest.match(/^([A-Za-z_]+):\s*(.+)$/)
+        if (kv) map = { [kv[1]]: unq(kv[2]) }
+        else { const p = resolvePortSpec(rest); if (p) out.push(p) }
+      } else if (map) {
+        const kv = lines[j].match(/^\s*([A-Za-z_]+):\s*(.+)$/)
+        if (kv) map[kv[1]] = unq(kv[2])
+      }
+    }
+    if (map) { const p = resolveMapPort(map); if (p) out.push(p) }
+  }
+  return out
+}
+
+/** Pure: a service's `expose:` container-only ports (never host-reachable). */
+function svcExpose(lines) {
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)expose:\s*(.*)$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[2].trim()) { for (const tok of inlineList(m[2])) { const n = resolveTok(tok); if (n) out.push(n) } ; continue }
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      const li = lines[j].match(/^\s*-\s*(.+)$/)
+      if (li) { const n = resolveTok(unq(li[1])); if (n) out.push(n) }
+    }
+  }
+  return out
+}
+
+/** Pure: the service `image:` string, or null. */
+function svcImage(lines) {
+  for (const line of lines) { const m = line.match(/^\s*image:\s*["']?([^"'#\s]+)/); if (m) return m[1] }
+  return null
+}
+
+/** Pure: the concatenated `command:`/`entrypoint:` text (inline + list forms). */
+function svcCommand(lines) {
+  let cmd = ''
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)(command|entrypoint):\s*(.*)$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[3].trim()) { cmd += ' ' + m[3]; continue }
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      cmd += ' ' + lines[j].replace(/^\s*-?\s*/, '')
+    }
+  }
+  return cmd
+}
+
+/** Pure: `depends_on` service names in BOTH list-form (`- name`) and map-form
+ *  (`name:` child, with nested `condition:` ignored). */
+function svcDependsOn(lines) {
+  const deps = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)depends_on:\s*(.*)$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[2].trim()) { for (const tok of inlineList(m[2])) deps.push(tok); continue }
+    let depIndent = -1
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      const li = lines[j].match(/^\s*-\s*(.+)$/)
+      if (li) { deps.push(unq(li[1])); continue }
+      const kv = lines[j].match(/^(\s*)([A-Za-z0-9_.-]+):\s*(.*)$/)
+      if (kv) { if (depIndent < 0) depIndent = kv[1].length; if (kv[1].length === depIndent) deps.push(kv[2]) }
+    }
+  }
+  return deps
+}
+
+/**
+ * PURE. Pick the DAST-target web tier from raw compose text. Returns
+ * `{ port, service, ambiguous, candidates[], exposedApiTier[], note }`. `port` is null
+ * when no non-infra service host-publishes (REFUSE — never scan a datastore). Never
+ * throws; a malformed file yields `port:null`.
+ */
+export function composeWebTier(text) {
+  const parsed = composeServiceBlocks(text).map((b) => ({
+    name: b.name,
+    ports: svcPorts(b.lines),
+    expose: svcExpose(b.lines),
+    image: svcImage(b.lines),
+    command: svcCommand(b.lines),
+    dependsOn: svcDependsOn(b.lines),
+  }))
+  const incoming = {}
+  for (const s of parsed) for (const d of s.dependsOn) incoming[d] = (incoming[d] || 0) + 1
+  // datastore hard-exclude (name OR image), with the api-named rescue
+  const isInfra = (s) => (INFRA_NAME.test(s.name) || (s.image && INFRA_IMAGE.test(s.image))) && !API_NAME.test(s.name)
+  const candidates = parsed.filter((s) => s.ports.length > 0 && !isInfra(s))
+  const exposedApiTier = parsed
+    .filter((s) => s.ports.length === 0 && s.expose.length > 0 && API_NAME.test(s.name) && !isInfra(s))
+    .map((s) => s.name)
+  if (!candidates.length) {
+    const apiNote = exposedApiTier.length
+      ? `API tier ${exposedApiTier.join(', ')} is expose-only and is NOT host-reachable / NOT scanned — ` : ''
+    return { port: null, service: null, ambiguous: false, candidates: [], exposedApiTier, note: `${apiNote}no application web tier is host-published` }
+  }
+  const portOf = (s) => { for (const p of s.ports) if (p.port != null) return p.port; return null }
+  const scoreOf = (s) => {
+    let sc = 0
+    if (API_NAME.test(s.name)) sc += 3
+    if (s.command && WEBSERVER_CMD.test(s.command)) sc += 3
+    if (FRONTEND_NAME.test(s.name)) sc -= 2
+    return sc + (incoming[s.name] || 0)
+  }
+  const scored = candidates.map((s, i) => ({ service: s.name, port: portOf(s), score: scoreOf(s), order: i, svc: s }))
+  scored.sort((a, b) => b.score - a.score || a.order - b.order)
+  const winner = scored[0]
+  const tied = scored.filter((s) => s.score === winner.score)
+  const ambiguous = tied.length > 1
+  const notes = []
+  if (ambiguous) notes.push(`multiple web tiers tie (${tied.map((s) => `${s.service}:${s.port}`).join(', ')}) — inferred ${winner.service}:${winner.port}; pass --port to target another`)
+  if (winner.score < 0) {
+    const forwards = PROXY_NAME.test(winner.service) && winner.svc.dependsOn.some((d) => exposedApiTier.includes(d))
+    notes.push(forwards
+      ? `scanned via the front proxy ${winner.service} — reaches the API transitively if it forwards`
+      : `web tier ${winner.service} is a UI/frontend — this is a UI/frontend scan, not an API scan`)
+  }
+  if (exposedApiTier.length) notes.push(`API tier ${exposedApiTier.join(', ')} is expose-only and is NOT host-reachable / NOT scanned — this baseline covers only the host-published ${winner.service} tier`)
+  return {
+    port: winner.port, service: winner.service, ambiguous, exposedApiTier,
+    candidates: scored.map((s) => ({ service: s.service, port: s.port, score: s.score })),
+    note: notes.join('; '),
+  }
+}
+
+/** Pure: the classifyStack reason fragment for a resolved web tier (or the no-tier note). */
+function webTierReason(wt) {
+  if (!wt) return ''
+  if (wt.port == null) return `; NO SCANNABLE WEB TIER — ${wt.note || 'no application web tier is host-published'}; pass --port to target one`
+  let frag = `, web tier port ${wt.port}${wt.service ? ` (${wt.service})` : ''}`
+  if (wt.ambiguous) frag += ` AMBIGUOUS — ${wt.note}`
+  else if (wt.note) frag += `; NOTE: ${wt.note}`
+  return frag
+}
+
 /** Pure: from gathered facts, classify the throwaway-DAST readiness. */
 export function classifyStack(facts = {}) {
   const roots = Array.isArray(facts.serverRoots) ? facts.serverRoots : []
@@ -146,7 +408,7 @@ export function classifyStack(facts = {}) {
   }
   const services = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
   return { status: 'runnable', recipe, webTier: facts.webTier || null, serverRoots: roots, env,
-    reason: `standable: ${recipe.kind} recipe${facts.webTier ? `, web tier port ${facts.webTier.port}` : ''}` +
+    reason: `standable: ${recipe.kind} recipe${webTierReason(facts.webTier)}` +
       (services.length ? ` (in-compose services: ${services.join(', ')})` : '') +
       `; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` +
       '; note: stand-up is HTTP-liveness-verified only (a port answers), not app-health-verified — migrations/deep readiness are not asserted' }
@@ -228,8 +490,10 @@ function gatherRecipe(target, roots) {
   const compose = firstExisting(target, COMPOSE_FILES)
   if (compose) {
     const t = readOr(compose)
-    const portM = t.match(/(\d{2,5})\s*:\s*(\d{2,5})/) // host:container
-    return { recipe: { kind: 'compose', file: compose.replace(target + '/', '') }, webTier: portM ? { port: Number(portM[1]) } : null }
+    // full honesty object (port + service + ambiguity + expose-only-API note), NOT the
+    // naive first-bare-digit:digit pick — and returned even when .port === null so the
+    // no-scannable-tier note survives into the classifyStack reason.
+    return { recipe: { kind: 'compose', file: compose.replace(target + '/', '') }, webTier: composeWebTier(t) }
   }
   // per-root recipes
   for (const root of roots) {

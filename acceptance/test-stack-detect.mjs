@@ -23,8 +23,20 @@
  *   S11 CLI cold-run shape (self-contained compose + scripts/*.py reading
  *       ADMIN_DATABASE_URL): compose-scoped gathering clears it → runnable;
  *       an env_file: directive falls back to union gathering → needs-secrets
+ *   A1  composeWebTier via CLI on the Verdict shape → api:8000, not web:3000/db:5432
+ *   A2  db-publishes-first not mis-picked (datastore hard-excluded)
+ *   A3  port forms parsed: interpolated / long-form target-published / bind-IP
+ *   A4  top-score tie → ambiguous + candidates (infer file-order-first, hint --port)
+ *   A5  single publisher → picked, not ambiguous (unchanged)
+ *   A6  expose-only API + host-published SPA → exposedApiTier + degrade note (two-sided)
+ *   A7  zero non-infra host-publishers → port:null (refuse to scan a datastore)
+ *   A8  image-based infra exclude (clickhouse image, app-ish name) — two-sided
+ *   A9  api-named rescue (database-api / db-gateway survive the infra name filter)
+ *   A10 map-form depends_on incoming count fires (breaks a tie list-only would miss)
+ *   A11 run-command fingerprint (uvicorn rescues anonymized svc; redis-server stays infra)
  *
- * Dependency-free: `node acceptance/test-stack-detect.mjs` (exit 0 = pass).
+ * The pure composeWebTier is tested directly (hermetic); A1 drives the CLI to pin the
+ * gatherRecipe → classifyStack threading. Dependency-free: `node acceptance/test-stack-detect.mjs`.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -33,7 +45,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
-  classifyEnvName, classifyStack,
+  classifyEnvName, classifyStack, composeWebTier,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned,
 } from '../harness/stack-detect.mjs'
 
@@ -225,6 +237,179 @@ check('S11 CLI cold-run shape: compose-scoped gathering clears scripts-only ADMI
   const out2 = cli(r2)
   assert.equal(out2.status, 'needs-secrets', out2.reason)
   assert.deepEqual(out2.env.external, ['ADMIN_DATABASE_URL'])
+})
+
+// ── Compose web-tier selection (Slice A) — the naive first-digit:digit picker scanned
+//    the frontend, not the API. composeWebTier scores services, hard-excludes datastores
+//    by name AND image, and degrades the label on frontend-only / expose-only shapes. ──
+
+// The grounded Verdict shape: postgres/redis/api publish `${VAR:-N}:N` (the naive regex
+// skips them — `}` breaks the digit run), only web publishes a bare `"3000:3000"`, and the
+// api carries `command: uvicorn` + map-form depends_on. The old picker landed on web:3000.
+const VERDICT_SHAPE_COMPOSE = [
+  'services:',
+  '  postgres:',
+  '    image: postgres:16',
+  '    ports:',
+  '      - "${POSTGRES_PORT:-5432}:5432"',
+  '    environment:',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  '  redis:',
+  '    image: redis:7',
+  '    ports:',
+  '      - "${REDIS_PORT:-6379}:6379"',
+  '  api:',
+  '    build: ./api',
+  '    command: uvicorn app.main:app --host 0.0.0.0 --port 8000',
+  '    ports:',
+  '      - "${API_PORT:-8000}:8000"',
+  '    environment:',
+  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      REDIS_URL: redis://redis:6379/0',
+  '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
+  '    depends_on:',
+  '      postgres:',
+  '        condition: service_healthy',
+  '      redis:',
+  '        condition: service_started',
+  '  web:',
+  '    build: ./web',
+  '    ports:',
+  '      - "3000:3000"',
+  '    depends_on:',
+  '      - api',
+  'volumes:',
+  '  postgres_data:',
+  '',
+].join('\n')
+
+check('A1 CLI on the Verdict-shape compose → web tier is api:8000, NOT web:3000 or db:5432', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', VERDICT_SHAPE_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.equal(out.webTier.port, 8000, `expected api:8000, got ${out.webTier.port} (${out.webTier.service})`)
+  assert.equal(out.webTier.service, 'api')
+  assert.equal(out.webTier.ambiguous, false)
+  // the reason names the picked tier (the honesty label threads through classifyStack)
+  assert.ok(/web tier port 8000 \(api\)/.test(out.reason), out.reason)
+})
+
+check('A2 db-publishes-first is not mis-picked (datastore hard-excluded before scoring)', () => {
+  const wt = composeWebTier(['services:',
+    '  db:', '    image: postgres:16', '    ports:', '      - "5432:5432"',
+    '  api:', '    ports:', '      - "8000:8000"', ''].join('\n'))
+  assert.equal(wt.port, 8000)
+  assert.equal(wt.service, 'api')      // NOT db, even though db publishes first in file order
+  assert.notEqual(wt.service, 'db')
+})
+
+check('A3 port forms parsed: interpolated `${VAR:-N}`, long-form target/published, bind-IP', () => {
+  const wt = composeWebTier(['services:',
+    '  api:', '    ports:', '      - "${API_PORT:-8000}:8000"',
+    '  admin:', '    ports:', '      - target: 9090', '        published: 9090',
+    '  metrics:', '    ports:', '      - "127.0.0.1:9100:9100"', ''].join('\n'))
+  const byName = Object.fromEntries(wt.candidates.map((c) => [c.service, c.port]))
+  assert.equal(byName.api, 8000, 'interpolated ${VAR:-8000}:8000 → 8000')
+  assert.equal(byName.admin, 9090, 'long-form target/published → 9090')
+  assert.equal(byName.metrics, 9100, 'bind-IP 127.0.0.1:9100:9100 → host 9100')
+})
+
+check('A4 top-score tie → ambiguous + candidates (infer file-order-first, tell operator to --port)', () => {
+  const wt = composeWebTier(['services:',
+    '  api-a:', '    ports:', '      - "8000:8000"',
+    '  api-b:', '    ports:', '      - "8001:8001"', ''].join('\n'))
+  assert.equal(wt.ambiguous, true)
+  assert.equal(wt.port, 8000)          // file-order-first inference
+  assert.equal(wt.service, 'api-a')
+  assert.equal(wt.candidates.length, 2)
+  assert.ok(/api-a:8000/.test(wt.note) && /api-b:8001/.test(wt.note), wt.note)
+  assert.ok(/--port/.test(wt.note), 'ambiguous note must tell the operator to pass --port')
+})
+
+check('A5 single publisher → picked, not ambiguous (unchanged behavior)', () => {
+  const wt = composeWebTier(['services:',
+    '  api:', '    ports:', '      - "8000:8000"',
+    '  worker:', '    image: python:3.12', ''].join('\n'))
+  assert.equal(wt.port, 8000)
+  assert.equal(wt.service, 'api')
+  assert.equal(wt.ambiguous, false)
+  assert.equal(wt.candidates.length, 1)
+})
+
+check('A6 expose-only API + host-published SPA → exposedApiTier + degrade note (two-sided)', () => {
+  const wt = composeWebTier(['services:',
+    '  api:', '    expose:', '      - "8000"',
+    '  web:', '    ports:', '      - "3000:3000"', '    depends_on:', '      - api', ''].join('\n'))
+  // the SPA is what host-publishes → it wins, but the label must SAY the API was never reached
+  assert.equal(wt.service, 'web')
+  assert.deepEqual(wt.exposedApiTier, ['api'])
+  assert.ok(/api/.test(wt.note) && /expose-only/.test(wt.note), 'note must name the unreachable API: ' + wt.note)
+  assert.ok(/not an API scan/.test(wt.note), 'note must state this is a UI/frontend scan')
+  // two-sided: no clean/complete claim — the note is a loud, non-empty degrade
+  assert.ok(wt.note.length > 0 && !/clean|complete|full(y)? scanned/i.test(wt.note), wt.note)
+})
+
+check('A7 zero non-infra host-publishers → port:null (REFUSE — never scan a datastore)', () => {
+  const wt = composeWebTier(['services:',
+    '  postgres:', '    image: postgres:16', '    ports:', '      - "5432:5432"',
+    '  redis:', '    image: redis:7', '    ports:', '      - "6379:6379"', ''].join('\n'))
+  assert.equal(wt.port, null)
+  assert.equal(wt.service, null)
+  assert.ok(/no application web tier is host-published/.test(wt.note), wt.note)
+})
+
+check('A8 image-based infra exclude: clickhouse image + app-ish name → excluded (two-sided vs app image)', () => {
+  const clickhouse = composeWebTier(['services:',
+    '  analytics:', '    image: clickhouse/clickhouse-server:latest', '    ports:', '      - "8123:8123"', ''].join('\n'))
+  // MUTATION: dropping the `INFRA_IMAGE.test(image)` clause makes analytics a candidate → port 8123 (red)
+  assert.equal(clickhouse.port, null, 'a clickhouse image is infra even with an app-ish service name')
+  // two-sided: the SAME app-ish name on a non-datastore image IS a candidate
+  const appImage = composeWebTier(['services:',
+    '  analytics:', '    image: node:18', '    ports:', '      - "8123:8123"', ''].join('\n'))
+  assert.equal(appImage.port, 8123)
+  assert.equal(appImage.service, 'analytics')
+})
+
+check('A9 api-named rescue survives the infra name filter (database-api / db-gateway)', () => {
+  for (const name of ['database-api', 'db-gateway']) {
+    const wt = composeWebTier(['services:', `  ${name}:`, '    ports:', '      - "8000:8000"', ''].join('\n'))
+    // MUTATION: dropping the `&& !API_NAME.test(name)` rescue → these read as infra → port null (red)
+    assert.equal(wt.port, 8000, `${name} must be rescued from the infra name filter`)
+    assert.equal(wt.service, name)
+  }
+})
+
+check('A10 map-form depends_on incoming count fires (breaks a tie the list-only parser would miss)', () => {
+  const wt = composeWebTier(['services:',
+    '  svca:', '    ports:', '      - "8000:8000"',
+    '  svcb:', '    ports:', '      - "8001:8001"',
+    '    depends_on:', '      svca:', '        condition: service_started', ''].join('\n'))
+  // svcb depends_on svca via MAP form → svca gets +1 incoming → wins; without map-form
+  // parsing both score 0 → a tie.
+  // MUTATION: making svcDependsOn list-only regresses this to ambiguous:true (red)
+  assert.equal(wt.service, 'svca')
+  assert.equal(wt.ambiguous, false)
+})
+
+check('A11 run-command fingerprint: uvicorn rescues an anonymized svc; a redis-server cmd stays infra-excluded', () => {
+  // decisive: svc(uvicorn +3) beats a neutral helper(0); without the fingerprint they tie
+  const decisive = composeWebTier(['services:',
+    '  svc:', '    command: uvicorn app.main:app --host 0.0.0.0', '    ports:', '      - "8000:8000"',
+    '  helper:', '    ports:', '      - "8001:8001"', ''].join('\n'))
+  // MUTATION: dropping the WEBSERVER_CMD +3 → svc/helper both score 0 → ambiguous:true (red)
+  assert.equal(decisive.service, 'svc')
+  assert.equal(decisive.port, 8000)
+  assert.equal(decisive.ambiguous, false)
+  // fidelity: svc beats an nginx sibling, and a redis-server command stays infra-excluded
+  const withInfra = composeWebTier(['services:',
+    '  svc:', '    command: uvicorn app.main:app', '    ports:', '      - "8000:8000"',
+    '  nginx:', '    image: nginx:latest', '    ports:', '      - "80:80"',
+    '  cache:', '    image: redis:7', '    command: redis-server --appendonly yes', '    ports:', '      - "6379:6379"', ''].join('\n'))
+  assert.equal(withInfra.service, 'svc')
+  assert.ok(!withInfra.candidates.some((c) => c.service === 'cache'), 'a redis-server command does not rescue a datastore from the infra exclude')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
