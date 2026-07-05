@@ -34,6 +34,8 @@
  *   A9  api-named rescue (database-api / db-gateway survive the infra name filter)
  *   A10 map-form depends_on incoming count fires (breaks a tie list-only would miss)
  *   A11 run-command fingerprint (uvicorn rescues anonymized svc; redis-server stays infra)
+ *   B2  detectMigration: alembic / prisma / django / knex / compose-migrate → {tool,command};
+ *       none → null; the CLI threads the detected migration onto the classified stack
  *
  * The pure composeWebTier is tested directly (hermetic); A1 drives the CLI to pin the
  * gatherRecipe → classifyStack threading. Dependency-free: `node acceptance/test-stack-detect.mjs`.
@@ -45,7 +47,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
-  classifyEnvName, classifyStack, composeWebTier,
+  classifyEnvName, classifyStack, composeWebTier, detectMigration,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned,
 } from '../harness/stack-detect.mjs'
 
@@ -410,6 +412,28 @@ check('A11 run-command fingerprint: uvicorn rescues an anonymized svc; a redis-s
     '  cache:', '    image: redis:7', '    command: redis-server --appendonly yes', '    ports:', '      - "6379:6379"', ''].join('\n'))
   assert.equal(withInfra.service, 'svc')
   assert.ok(!withInfra.candidates.some((c) => c.service === 'cache'), 'a redis-server command does not rescue a datastore from the infra exclude')
+})
+
+check('B2 detectMigration: each mechanism → {tool,command}; none → null; CLI threads it onto the stack', () => {
+  // pure matrix (PRESENCE only — no file contents)
+  assert.deepEqual(detectMigration({ files: ['alembic.ini'] }), { tool: 'alembic', command: 'alembic upgrade head' })
+  assert.deepEqual(detectMigration({ files: ['alembic/'] }), { tool: 'alembic', command: 'alembic upgrade head' })
+  assert.deepEqual(detectMigration({ files: ['migrations/env.py'] }), { tool: 'alembic', command: 'alembic upgrade head' })
+  assert.equal(detectMigration({ files: ['prisma/schema.prisma'] }).tool, 'prisma')
+  assert.equal(detectMigration({ files: ['manage.py'] }).tool, 'django')
+  assert.equal(detectMigration({ files: ['knexfile.ts'] }).tool, 'knex')
+  assert.equal(detectMigration({ composeServices: ['api', 'migrate', 'db'] }).tool, 'compose:migrate')
+  assert.equal(detectMigration({ composeServices: ['api', 'flyway'] }).tool, 'compose:flyway')
+  // two-sided: no migration signal → null (a plain service name is NOT a migration service)
+  assert.equal(detectMigration({ files: [], composeServices: ['api', 'web', 'worker'] }), null)
+  assert.equal(detectMigration({}), null)
+  // CLI thread: an alembic.ini in the repo surfaces on the classified stack
+  const r = mkrepo()
+  w(r, 'api/requirements.txt', 'fastapi\n')
+  w(r, 'api/main.py', "import os\ndb=os.environ.get('SESSION_SECRET')\napp = 1\n")
+  w(r, 'api/alembic.ini', '[alembic]\n')
+  const out = cli(r)
+  assert.ok(out.migration && out.migration.tool === 'alembic', `migration threaded onto the stack: ${JSON.stringify(out.migration)}`)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

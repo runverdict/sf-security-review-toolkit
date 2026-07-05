@@ -365,6 +365,25 @@ export function composeWebTier(text) {
   }
 }
 
+/**
+ * PURE. Detect a schema-migration mechanism from PRESENCE signals — DETECTION ONLY, for the
+ * honesty label (never run). `signals.files` is a list of canonical presence keys; a compose
+ * migration service (name in the set below) counts too. Returns `{tool,command}` or null.
+ * The command is a descriptive hint the label surfaces ("DETECTED but NOT run"), never executed.
+ */
+export function detectMigration(signals = {}) {
+  const files = new Set((Array.isArray(signals.files) ? signals.files : []).map(String))
+  const services = Array.isArray(signals.composeServices) ? signals.composeServices : []
+  const has = (p) => files.has(p)
+  if (has('alembic.ini') || has('alembic/') || has('migrations/env.py')) return { tool: 'alembic', command: 'alembic upgrade head' }
+  if (has('prisma/schema.prisma')) return { tool: 'prisma', command: 'prisma migrate deploy' }
+  if (has('manage.py')) return { tool: 'django', command: 'python manage.py migrate' }
+  if (has('knexfile.js') || has('knexfile.ts')) return { tool: 'knex', command: 'knex migrate:latest' }
+  const svc = services.find((n) => /^(migrate|migration|db-migrate|init|flyway|liquibase)$/i.test(String(n)))
+  if (svc) return { tool: `compose:${svc}`, command: `docker compose run ${svc}` }
+  return null
+}
+
 /** Pure: the classifyStack reason fragment for a resolved web tier (or the no-tier note). */
 function webTierReason(wt) {
   if (!wt) return ''
@@ -403,11 +422,11 @@ export function classifyStack(facts = {}) {
       reason: `external source at ${roots.join(', ')} but no runnable recipe (no compose / Dockerfile / start script) — provide a start command` }
   }
   if (env.external.length) {
-    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, serverRoots: roots, env,
+    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
       reason: `recipe present but needs external-service credentials the toolkit cannot synthesize: ${env.external.join(', ')} — scaffold-and-guide` }
   }
   const services = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
-  return { status: 'runnable', recipe, webTier: facts.webTier || null, serverRoots: roots, env,
+  return { status: 'runnable', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
     reason: `standable: ${recipe.kind} recipe${webTierReason(facts.webTier)}` +
       (services.length ? ` (in-compose services: ${services.join(', ')})` : '') +
       `; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` +
@@ -523,6 +542,19 @@ function gatherRecipe(target, roots) {
   return { recipe: null, webTier: null }
 }
 
+/** Collect schema-migration PRESENCE signals (no file contents, no secrets) → detectMigration. */
+function gatherMigrationSignals(target, roots, composeServices) {
+  const files = new Set()
+  const bases = ['.', ...roots.filter((r) => r !== '.')]
+  const probes = ['alembic.ini', 'migrations/env.py', 'prisma/schema.prisma', 'manage.py', 'knexfile.js', 'knexfile.ts']
+  for (const root of bases) {
+    const base = root === '.' ? target : join(target, root)
+    for (const rel of probes) if (isFile(join(base, rel))) files.add(rel)
+    if (isDir(join(base, 'alembic'))) files.add('alembic/')
+  }
+  return { files: [...files], composeServices: composeServices || [] }
+}
+
 function gatherFacts(target) {
   const roots = serverRoots(target)
   const { recipe, webTier } = gatherRecipe(target, roots)
@@ -531,7 +563,8 @@ function gatherFacts(target) {
   const composeText = readOr(firstExisting(target, COMPOSE_FILES) || '')
   const satisfiable = new Set([...composeDefaultedVars(composeText), ...composeConcreteAssigned(composeText)])
   const composeServices = composeServiceNames(composeText)
-  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices }
+  const migration = detectMigration(gatherMigrationSignals(target, roots, composeServices))
+  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration }
 }
 
 function main() {

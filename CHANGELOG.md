@@ -51,6 +51,29 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.89] — 2026-07-05
+
+**Migration DETECTION for the label (Tier-2, severable).** A partner whose DB-backed routes 500
+because migrations never ran should have that named in the honesty label — but the toolkit had no
+migration-mechanism signal.
+
+### Added
+- `harness/stack-detect.mjs`: pure exported `detectMigration(signals)` → `{tool,command}` (alembic
+  via `alembic.ini`/`alembic/`/`migrations/env.py`; prisma; django via `manage.py`; knex; or a compose
+  service named `migrate`/`migration`/`db-migrate`/`init`/`flyway`/`liquibase`) or null. DETECTION
+  ONLY — the impure gatherer reads PRESENCE (no file contents, no secrets); the command is a
+  descriptive hint the label surfaces ("DETECTED but NOT run"), never executed. Auto-run stays
+  DEFERRED (a separate `throwaway-migrate` consent class).
+
+### Hardened
+- `classifyStack` carries `migration` onto the runnable + needs-secrets result; `planStandup` threads
+  it onto every plan kind; the stand-up manifest + pointer record it (Slice B1 slots), so `run-dast
+  --migration <tool>` surfaces it in the DAST disclaimer + provenance (Slice G). Test-backed:
+  `test-stack-detect.mjs` B2 (pure matrix two-sided — each mechanism → its `{tool,command}`, none →
+  null; plus a CLI thread proving an `alembic.ini` reaches the classified stack).
+
+Suite: **63 files / 1037 checks** (+1).
+
 ## [0.8.88] — 2026-07-05
 
 **capture-openapi spec-path generalization + capture-only provenance (Tier-1 honesty gate closes).**

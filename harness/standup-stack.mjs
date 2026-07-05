@@ -186,6 +186,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       command: `${PY_INSTALL} && ${pythonRunCommand(entry, webPort)}`,
       synthEnvNames: [...synthNames], benignEnv: benign,
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      migration: (stack && stack.migration) || null,
       tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
       pointerRel: join('.security-review', 'stack-standup.json'),
     }
@@ -203,6 +204,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       buildContext, dockerfilePath,
       synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      migration: (stack && stack.migration) || null,
       tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
       pointerRel: join('.security-review', 'stack-standup.json'),
     }
@@ -225,6 +227,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
       composeFile, overridePath: join(tmpRoot, 'compose.loopback-override.yml'),
       synthEnvNames: [...synthNames], benignEnv: { PORT: String(webPort) },
       envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+      migration: (stack && stack.migration) || null,
       tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
       pointerRel: join('.security-review', 'stack-standup.json'),
     }
@@ -250,6 +253,7 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {
     // operator-filled external creds (from scaffold-env) loaded via docker --env-file →
     // the VALUES go straight into the container, never into argv or the manifest.
     envFile: envFile || null, externalEnvNames: (stack.env && stack.env.external) || [],
+    migration: (stack && stack.migration) || null,
     tmpRoot, manifestPath: join(tmpRoot, 'stack-manifest.json'),
     pointerRel: join('.security-review', 'stack-standup.json'),
   }
