@@ -29,6 +29,8 @@
  *   H2  resolveHealth: up wins; failed / unhealthy / redirect-only / unknown terminal map
  *   H3  standupHealthNote: degrade note present; no clean/healthy/prod-equivalent on non-up
  *   H4  mapDockerHealth: partner's declared HEALTHCHECK honored; empty → HTTP-probe fallthrough
+ *   U20 checkEnvFileRunId: matching toolkit path passes; mismatched refuses; custom allowed (fired in planStandup)
+ *   U21 classifyPortOwnership: occupied-before + not-ours → refuse (misattribution); ours → ok
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
  * CI-hermetic — these tests pin the PURE planCompose (loopback override +
@@ -42,6 +44,7 @@ import { tmpdir } from 'node:os'
 import {
   planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE,
   classifyHealthCode, resolveHealth, mapDockerHealth, standupHealthNote, HEALTH_STATES,
+  checkEnvFileRunId, classifyPortOwnership,
 } from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
@@ -393,6 +396,32 @@ check('H4 mapDockerHealth: honors the partner declared HEALTHCHECK; empty → fa
   assert.equal(mapDockerHealth(''), '')          // no declared healthcheck → the HTTP probe decides
   assert.equal(mapDockerHealth(null), '')
   assert.equal(mapDockerHealth('HEALTHY'), 'up')  // case-insensitive
+})
+
+// ── Run-id integrity + port-collision guards (Slice D). Pure predicates, hermetic. ──
+
+check('U20 checkEnvFileRunId: matching toolkit path passes; mismatched refuses; custom path allowed', () => {
+  // matching id (the U7 fixture shape) → no throw
+  assert.doesNotThrow(() => checkEnvFileRunId('/tmp/sf-srt-stack/u7/throwaway.env', 'u7'))
+  // MUTATION: dropping the `m[1] !== runId` refuse lets an orphaning env-file through (red)
+  assert.throws(() => checkEnvFileRunId('/tmp/sf-srt-stack/other/throwaway.env', 'u7'), /belongs to run/)
+  // a non-convention custom path → allowed (operator owns its lifecycle); null → allowed
+  assert.doesNotThrow(() => checkEnvFileRunId('/home/me/creds.env', 'u7'))
+  assert.doesNotThrow(() => checkEnvFileRunId(null, 'u7'))
+  // planStandup FIRES it: a mismatched toolkit env-file path is refused at plan time (orphan prevention)
+  assert.throws(() => planStandup(
+    { status: 'needs-secrets', recipe: { kind: 'node', root: 'api', entry: 'index.js' }, webTier: { port: 3000 }, env: { external: ['DATABASE_URL'] } },
+    { runId: 'u20', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u20'), envFile: '/tmp/sf-srt-stack/WRONG/throwaway.env' }), /belongs to run/)
+})
+
+check('U21 classifyPortOwnership: occupied-before + not-ours → refuse (misattribution); ours → ok', () => {
+  assert.equal(classifyPortOwnership({ freeBefore: true, ownedAfter: true }).ok, true)
+  // MUTATION: making the occupied-before-and-not-ours case ok would scan a pre-existing service (red)
+  const collide = classifyPortOwnership({ freeBefore: false, ownedAfter: false })
+  assert.equal(collide.ok, false)
+  assert.match(collide.reason, /misattributed/)
+  // free before but our container still didn't own the socket → refuse (don't scan what we don't own)
+  assert.equal(classifyPortOwnership({ freeBefore: true, ownedAfter: false }).ok, false)
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

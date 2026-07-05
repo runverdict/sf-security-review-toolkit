@@ -12,6 +12,7 @@
  *   G2  buildDastProvenance: field set, authenticated:false + specFedScan:false, PENDING prod-equivalence
  *   G3  dastDegrade: non-up health OR scored-port mismatch degrades; matching port + up → clean
  *   G4  absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a clean result
+ *   D5  resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw
  *
  * Dependency-free: `node acceptance/test-run-dast.mjs` (exit 0 = pass).
  */
@@ -21,6 +22,7 @@ import { tmpdir } from 'node:os'
 import {
   planDast, summarizeZap, runDast, ZAP_IMAGE, ZAP_DIGEST,
   dastDisclaimer, buildDastProvenance, absentCorroborationStub, dastDegrade, DAST_PROVENANCE_SCHEMA,
+  resolveBaseUrl,
 } from '../harness/run-dast.mjs'
 
 let pass = 0, fail = 0
@@ -139,6 +141,33 @@ check('G4 absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a cl
   assert.equal(s.reason, 'needs-recipe: Rails detected')
   assert.equal(s.partnerShape, 'rails')
   assert.ok(!/\bclean\b|\bhealthy\b/i.test(JSON.stringify(s)))
+})
+
+// ── Base-url pointer resolution (Slice D) — explicit wins; the {up,unhealthy} status gate; the
+//    additive 5th loopback layer re-asserts on the resolved URL. Pure resolver, hermetic. ──
+
+check('D5 resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw', () => {
+  const P = (over) => ({ schema: 'sf-srt-stack/1', runId: 'r', baseUrl: 'http://127.0.0.1:8000', status: 'up', ...over })
+  // explicit --base-url ALWAYS wins, even with a pointer present
+  const ex = resolveBaseUrl('http://127.0.0.1:9000', P({ baseUrl: 'http://127.0.0.1:8000' }))
+  assert.equal(ex.baseUrl, 'http://127.0.0.1:9000')
+  assert.equal(ex.source, 'explicit')
+  // up + unhealthy resolve from the pointer (unhealthy is reachable-but-degraded)
+  assert.equal(resolveBaseUrl(null, P({ status: 'up' })).baseUrl, 'http://127.0.0.1:8000')
+  assert.equal(resolveBaseUrl(null, P({ status: 'unhealthy' })).status, 'unhealthy')
+  // MUTATION: widening SCANNABLE to include failed/unknown would let a dead throwaway resolve (red)
+  assert.throws(() => resolveBaseUrl(null, P({ status: 'failed' })), /not scannable/)
+  assert.throws(() => resolveBaseUrl(null, P({ status: 'unknown' })), /not scannable/)
+  // torn-down (teardown nulls baseUrl + sets status 'torn-down') → refuse
+  assert.throws(() => resolveBaseUrl(null, P({ status: 'torn-down', baseUrl: null })), /torn-down/)
+  assert.throws(() => resolveBaseUrl(null, P({ baseUrl: null })), /torn-down/)
+  // a foreign pointer schema → refuse
+  assert.throws(() => resolveBaseUrl(null, P({ schema: 'other/1' })), /foreign pointer schema/)
+  // a tampered pointer with a non-loopback baseUrl → refuse (the additive 5th loopback layer)
+  assert.throws(() => resolveBaseUrl(null, P({ baseUrl: 'http://evil.com:8000' })), /non-loopback/)
+  // no --base-url and no pointer → honest error; an explicit non-loopback is still refused
+  assert.throws(() => resolveBaseUrl(null, null), /no --base-url and no stand-up pointer/)
+  assert.throws(() => resolveBaseUrl('http://evil.com', null), /non-loopback/)
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

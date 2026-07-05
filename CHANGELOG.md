@@ -51,6 +51,35 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.90] — 2026-07-05
+
+**Base-url pointer resolution + run-id integrity + target-identity guards (Tier-2).** run-dast +
+capture-openapi took `--base-url` from argv only — a hand-copied wrong port silently scanned a
+dead/wrong target — and nothing verified the target's identity before scanning.
+
+### Added
+- `harness/run-dast.mjs`: pure `resolveBaseUrl(explicit, pointer)` + impure `readStandupPointer` —
+  explicit `--base-url` always wins; otherwise the stand-up pointer must be `sf-srt-stack/1`, not
+  torn-down (teardown nulls the baseUrl + sets status `torn-down`), and `up`/`unhealthy` (the
+  SCANNABLE gate). Every resolved URL is re-asserted loopback — an **additive 5th loopback layer
+  that REUSES the shared `LOOPBACK` set**; the 4 frozen layers are byte-untouched. `--from-standup`
+  wires it into run-dast + capture-openapi (capture imports the ONE resolver — no fork), threading
+  the pointer's health/tier/migration flags, with a staleness guard (a swept manifest → refuse).
+- `harness/standup-stack.mjs`: pure `checkEnvFileRunId` (Option 1 — a toolkit-convention env-file
+  path whose embedded run-id != runId is refused, orphan prevention; a custom path is allowed; NOT
+  tmpRoot-derivation, which would break `teardown --run-id`), fired inside `planStandup`; pure
+  `classifyPortOwnership` + an impure pre-publish probe that refuses when a pre-existing service
+  already answers on the loopback port (findings would be misattributed to the partner).
+
+### Hardened
+- Journey notes `--from-standup` as the hand-copy-removal path. Test-backed: `test-run-dast.mjs` D5
+  (resolver matrix two-sided, SCANNABLE-gate mutation-proven), `test-standup-stack.mjs` U20
+  (checkEnvFileRunId two-sided + fired in planStandup) / U21 (classifyPortOwnership), `test-capture-
+  openapi.mjs` O12 (shared-resolver import identity + torn-down refuse). Teardown name-scope/sweep
+  stay green.
+
+Suite: **63 files / 1041 checks** (+4).
+
 ## [0.8.89] — 2026-07-05
 
 **Migration DETECTION for the label (Tier-2, severable).** A partner whose DB-backed routes 500

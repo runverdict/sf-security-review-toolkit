@@ -48,6 +48,43 @@ export const URL_OK = /^https?:\/\/[^\s\x00-\x1f<>"'\\]+$/i
 /** Loopback-only hosts — an active DAST may ONLY ever hit a local throwaway. */
 export const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
 
+/** Additive 5th loopback layer (Slice D) — REUSES the shared LOOPBACK set; the 4 frozen
+ *  layers are untouched. A resolved/pointer URL must be loopback or it is refused. */
+function assertLoopbackHost(baseUrl, who = 'resolveBaseUrl') {
+  let host
+  try { host = new URL(baseUrl).hostname } catch { throw new Error(`${who}: unparseable base url '${baseUrl}'`) }
+  if (!LOOPBACK.has(host) && !/^127\./.test(host)) throw new Error(`${who}: refusing a non-loopback target '${host}' — the DAST may only hit a local throwaway`)
+}
+
+/** IMPURE. Read the gitignored stand-up pointer (the ONLY fs read — kept out of the pure
+ *  resolver so it stays hermetic). Returns the parsed pointer or null. */
+export function readStandupPointer(target) {
+  try { return JSON.parse(readFileSync(join(target, '.security-review', 'stack-standup.json'), 'utf8')) } catch { return null }
+}
+
+/**
+ * PURE. Resolve the scan base URL. Explicit `--base-url` ALWAYS wins (source 'explicit');
+ * otherwise the stand-up pointer must be `sf-srt-stack/1`, not torn-down (teardown nulls the
+ * baseUrl + sets status 'torn-down'), and `up`/`unhealthy` (the SCANNABLE gate — `unhealthy`
+ * is reachable-but-degraded, Slice G's label covers it). Every URL — explicit or pointer — is
+ * re-asserted loopback, so a tampered pointer can never smuggle a non-loopback target.
+ */
+export function resolveBaseUrl(explicitBaseUrl, pointer) {
+  if (explicitBaseUrl) {
+    if (!URL_OK.test(String(explicitBaseUrl))) throw new Error(`resolveBaseUrl: invalid base url '${explicitBaseUrl}'`)
+    assertLoopbackHost(explicitBaseUrl)
+    return { baseUrl: explicitBaseUrl, source: 'explicit', runId: (pointer && pointer.runId) || null, status: (pointer && pointer.status) || null }
+  }
+  if (!pointer || typeof pointer !== 'object') throw new Error('resolveBaseUrl: no --base-url and no stand-up pointer — stand up first, or pass --base-url')
+  if (pointer.schema !== 'sf-srt-stack/1') throw new Error(`resolveBaseUrl: refusing a foreign pointer schema '${pointer.schema}'`)
+  if (pointer.status === 'torn-down' || pointer.baseUrl == null) throw new Error('resolveBaseUrl: the stand-up pointer is torn-down (no live throwaway) — stand up again')
+  const SCANNABLE = new Set(['up', 'unhealthy'])
+  if (!SCANNABLE.has(pointer.status)) throw new Error(`resolveBaseUrl: stand-up status '${pointer.status}' is not scannable (need up/unhealthy)`)
+  if (!URL_OK.test(String(pointer.baseUrl))) throw new Error(`resolveBaseUrl: pointer base url '${pointer.baseUrl}' is invalid`)
+  assertLoopbackHost(pointer.baseUrl)
+  return { baseUrl: pointer.baseUrl, source: 'standup', runId: pointer.runId || null, status: pointer.status }
+}
+
 /** PURE. Compute the ZAP scan plan. Deterministic given (baseUrl, target, runId, tmpRoot).
  *  The honesty inputs (health/migration/guarded/service/scoredPort/exposedApiTier — all
  *  optional, from the stand-up manifest) are carried on the plan and consumed by runDast to
@@ -244,7 +281,7 @@ export function runDast(plan, { consent = false } = {}) {
 function main() {
   const argv = process.argv
   const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
-  const baseUrl = arg('--base-url', null)
+  let baseUrl = arg('--base-url', null)
   const target = arg('--target', process.cwd())
   const asJson = argv.includes('--json')
 
@@ -266,11 +303,31 @@ function main() {
   const consentRecorded = verifyConsent('throwaway-dast', { target })
   const consent = consentFlag && consentRecorded
   // honesty inputs from the stand-up manifest (Slice B1 wrote them; the journey threads them)
-  const health = arg('--health', 'unverified')
-  const migration = arg('--migration', null)
-  const service = arg('--service', null)
-  const scoredPort = arg('--scored-port', arg('--port', null))
-  const guarded = argv.includes('--guarded')
+  let health = arg('--health', 'unverified')
+  let migration = arg('--migration', null)
+  let service = arg('--service', null)
+  let scoredPort = arg('--scored-port', arg('--port', null))
+  let guarded = argv.includes('--guarded')
+
+  // --from-standup (Slice D): resolve the base URL + honesty flags from the stand-up pointer,
+  // removing the hand-copy foot-gun. Explicit --base-url still wins; the resolver re-asserts
+  // loopback + the {up,unhealthy} status gate; the staleness guard catches a swept manifest.
+  if (argv.includes('--from-standup') && !baseUrl) {
+    const pointer = readStandupPointer(target)
+    let resolved
+    try { resolved = resolveBaseUrl(null, pointer) }
+    catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
+    if (pointer && pointer.manifestPath && !existsSync(pointer.manifestPath)) {
+      process.stdout.write(`## run-dast — the stand-up pointer references a manifest that no longer exists (${pointer.manifestPath}) — the throwaway is gone; stand up again\n`); process.exitCode = 3; return
+    }
+    baseUrl = resolved.baseUrl
+    if (health === 'unverified') health = resolved.status || 'unverified'
+    if (!migration && pointer.migration) migration = pointer.migration.tool || pointer.migration
+    if (!service && pointer.scannedService) service = pointer.scannedService
+    if (!scoredPort && pointer.scannedPort != null) scoredPort = pointer.scannedPort
+    guarded = guarded || Boolean(pointer.guarded)
+    if (!asJson) process.stdout.write(`## run-dast — resolved from stand-up ${pointer.runId} (created ${pointer.createdAt}), status ${resolved.status}\n`)
+  }
 
   let plan
   try { plan = planDast(baseUrl, { target, runId, tmpRoot, health, migration, guarded, service, scoredPort }) }

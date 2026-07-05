@@ -20,6 +20,7 @@
  *   O10  no listener → `not-exposed`, and NOTHING is written (honest no-capture path)
  *   O11  planCapture --root-path: prepend+dedupe to front; no-rootPath byte-identical; fail-closed
  *        (a scheme/URL root-path throws — the GET can never be re-aimed off loopback)
+ *   O12  base-url resolver reuse (Slice D): capture imports the ONE resolveBaseUrl; torn-down refused
  *   W1   generate-artifacts Step 3 consumes the mirror capture; PENDING only on
  *        prod-equivalence; the code-derived + `PENDING live capture` fallback survives
  *   W2   ORDER: the journey invokes capture-openapi AFTER standup-stack, BEFORE teardown-stack
@@ -37,6 +38,7 @@ import {
   planCapture, validateSpec, buildProvenance, captureOpenapi, normalizeRootPath,
   CANDIDATE_SPEC_PATHS, CAPTURE_SCHEMA,
 } from '../harness/capture-openapi.mjs'
+import { resolveBaseUrl } from '../harness/run-dast.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 let pass = 0, fail = 0
@@ -160,6 +162,15 @@ check('O10 no listener → not-exposed, and NOTHING is written (the honest no-ca
   assert.match(r.reason, /no candidate path served a valid OpenAPI/)
   assert.equal(existsSync(p.evidencePath), false, 'no evidence file fabricated')
   assert.equal(existsSync(p.provenancePath), false, 'no provenance fabricated')
+})
+
+check('O12 base-url resolver reuse (Slice D): capture imports the ONE resolveBaseUrl from run-dast; torn-down refused', () => {
+  const src = readFileSync(join(ROOT, 'harness', 'capture-openapi.mjs'), 'utf8')
+  // ONE loopback/resolution definition — capture imports the shared resolver, never forks it
+  assert.match(src, /import \{[^}]*resolveBaseUrl[^}]*\} from '\.\/run-dast\.mjs'/, 'capture imports the shared resolveBaseUrl')
+  assert.match(src, /readStandupPointer/, 'capture reuses the shared pointer reader')
+  // behavioral: the shared resolver refuses a torn-down pointer (no live throwaway)
+  assert.throws(() => resolveBaseUrl(null, { schema: 'sf-srt-stack/1', baseUrl: null, status: 'torn-down' }), /torn-down/)
 })
 
 // ─────────────────────────────────────────────────────────────── WIRING (read the skills)

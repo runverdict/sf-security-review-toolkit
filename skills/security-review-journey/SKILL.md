@@ -579,7 +579,11 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    <target>` (writes a `not-run` `dast-provenance.json` so `compile-submission` renders an
    explicit "corroboration not attempted", never a silent gap) and emitting the ZAP plan into
    `PENDING-OWNER-RUN.md` (on `unknown` the detected web tier may be wrong — hint `--port`).
-   Teardown ALWAYS runs, on every branch.
+   Teardown ALWAYS runs, on every branch. (Robustness: instead of hand-copying the
+   `baseUrl`/health/tier from the manifest, run-dast + capture-openapi accept `--from-standup`,
+   which resolves them from the gitignored `stack-standup.json` pointer through ONE shared
+   resolver — it re-asserts loopback, gates on `{up, unhealthy}`, and refuses a torn-down,
+   swept-stale, or foreign pointer. An explicit `--base-url` always wins.)
    If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
    ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
    the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):

@@ -142,6 +142,31 @@ export function standupHealthNote(status, { guarded = false, saw400 = false } = 
   return 'stand-up failed: the web tier did not become reachable in time (run docker logs / docker compose logs yourself while the container exists — the toolkit does not capture it, to avoid persisting secret-bearing app output)'
 }
 
+/**
+ * PURE (Slice D). Run-id integrity (Option 1 — NOT tmpRoot-derivation, which would break
+ * `teardown --run-id`): a TOOLKIT-convention env-file path
+ * (`.../sf-srt-stack/<id>/<name>.env`) whose embedded id != runId is REFUSED (orphan
+ * prevention — the filled secret stub would live in a tmp dir teardown never destroys). A
+ * non-convention custom path is allowed (the operator owns its lifecycle).
+ */
+export function checkEnvFileRunId(envFile, runId) {
+  const m = String(envFile || '').match(/[\\/]sf-srt-stack[\\/]([A-Za-z0-9][A-Za-z0-9._-]*)[\\/][^\\/]+\.env$/)
+  if (m && m[1] !== runId) throw new Error(`checkEnvFileRunId: env-file '${envFile}' belongs to run '${m[1]}', not '${runId}' — refusing (orphan prevention); use the matching --run-id or a custom path`)
+  return true
+}
+
+/**
+ * PURE (Slice D). Port-collision decision: a pre-existing dev service already on the loopback
+ * port would be read as `up` and scanned, misattributing findings to the partner. `freeBefore`
+ * = was the port free before we published; `ownedAfter` = does OUR container own the socket.
+ * The impure probe is operator-cold-run-only; this predicate is the retunable decision.
+ */
+export function classifyPortOwnership({ freeBefore, ownedAfter } = {}) {
+  if (!freeBefore && !ownedAfter) return { ok: false, reason: 'a pre-existing service already held the loopback port before stand-up and our container does not own it — refusing to scan (findings would be misattributed to the partner); free the port or pass --port' }
+  if (!ownedAfter) return { ok: false, reason: 'our container does not own the published loopback socket after stand-up — refusing to scan' }
+  return { ok: true, reason: null }
+}
+
 /** Resource names are derived ONLY from the validated run-id → teardown can name-scope. */
 export function stackNames(runId) {
   if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`standup-stack: invalid run-id '${runId}'`)
@@ -155,6 +180,7 @@ export function stackNames(runId) {
 export function planStandup(stack, { runId, target, tmpRoot, port, envFile } = {}) {
   if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`planStandup: invalid run-id '${runId}'`)
   if (!target) throw new Error('planStandup: target repo required')
+  if (envFile) checkEnvFileRunId(envFile, runId) // Slice D: refuse an orphaning toolkit-path env-file
   assertSafeTmpRoot(tmpRoot)
   // 'runnable' stands up directly; a 'needs-secrets' stack stands up only once an
   // operator-filled env-file satisfies the external creds (the scaffold-env loop).
@@ -446,6 +472,14 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   // fail-closed, docker present, needs-secrets re-check — have already held.
   if (plan.kind === 'compose') return standupCompose(plan, { target, createdAt, timeoutMs })
 
+  // port-collision guard (Slice D): a pre-existing service already answering on the loopback
+  // port would be scanned + its findings misattributed to the partner. Probe FREE before we
+  // publish; refuse on a collision (the pure decision is classifyPortOwnership).
+  if (probeHealth(plan.baseUrl).code !== '000') {
+    const own = classifyPortOwnership({ freeBefore: false, ownedAfter: false })
+    return { status: 'failed', reason: own.reason, log: own.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
+  }
+
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }
   // A dockerfile stand-up BUILDS a toolkit-named image; record it from the name-stub on
@@ -525,6 +559,12 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   // V1 binary is deliberately NOT used as a fallback.
   if (!quiet('docker', ['compose', 'version'])) {
     return { status: 'no-compose', reason: 'Docker Compose V2 is not available (`docker compose version` failed) — install the compose plugin once, system-wide (Linux: `sudo apt-get install docker-compose-plugin`; Docker Desktop bundles it), then re-run — or this multi-container stack stays owner-run.', resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
+  }
+  // port-collision guard (Slice D): refuse if a pre-existing service already answers on the
+  // loopback port — scanning it would misattribute findings to the partner.
+  if (probeHealth(plan.baseUrl).code !== '000') {
+    const own = classifyPortOwnership({ freeBefore: false, ownedAfter: false })
+    return { status: 'failed', reason: own.reason, log: own.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
   }
   const stamp = createdAt || new Date().toISOString()
   const rec = { status: 'creating', createdAt: stamp, network: null, builtImage: null, log: '' }

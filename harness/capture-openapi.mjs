@@ -31,11 +31,11 @@
  *
  * USAGE: node capture-openapi.mjs --base-url <url> --target <repo> --consent [--run-id <id>] [--date YYYY-MM-DD] [--json]
  */
-import { mkdirSync, writeFileSync, realpathSync } from 'node:fs'
+import { mkdirSync, writeFileSync, existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { URL_OK, LOOPBACK } from './run-dast.mjs'
+import { URL_OK, LOOPBACK, resolveBaseUrl, readStandupPointer } from './run-dast.mjs'
 import { verifyConsent } from './record-consent.mjs'
 
 export const CAPTURE_SCHEMA = 'sf-srt-openapi/1'
@@ -195,11 +195,22 @@ export function captureOpenapi(plan, { consent = false, runId = null, timeoutSec
 function main() {
   const argv = process.argv
   const arg = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d }
-  const baseUrl = arg('--base-url', null)
+  let baseUrl = arg('--base-url', null)
   const target = arg('--target', process.cwd())
   const runId = arg('--run-id', null)
   const date = arg('--date', new Date().toISOString().slice(0, 10))
   const rootPath = arg('--root-path', null) // optional proxy root_path (e.g. /api/v1); fails closed if unsafe
+  // --from-standup (Slice D): reuse run-dast's ONE resolver — explicit --base-url still wins;
+  // the resolver re-asserts loopback + the scannable-status gate; staleness guard catches a
+  // swept manifest. The capture is DB-independent, so it still runs on an `unhealthy` mirror.
+  if (argv.includes('--from-standup') && !baseUrl) {
+    const pointer = readStandupPointer(target)
+    try { baseUrl = resolveBaseUrl(null, pointer).baseUrl }
+    catch (e) { process.stdout.write(`## capture-openapi — ${e.message}\n`); process.exitCode = 3; return }
+    if (pointer && pointer.manifestPath && !existsSync(pointer.manifestPath)) {
+      process.stdout.write(`## capture-openapi — the stand-up pointer references a manifest that no longer exists (${pointer.manifestPath}) — the throwaway is gone; stand up again\n`); process.exitCode = 3; return
+    }
+  }
   // --consent alone is insufficient: the capture rides on the SAME recorded affirmative
   // 'throwaway-dast' consent that stood the mirror up (no new gate) — verified exactly the
   // way run-dast verifies it.
