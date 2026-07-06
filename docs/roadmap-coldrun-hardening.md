@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.80** (code `05e3dbd`) + branch `fix/coldrun-dast-quickwins` @ **0.8.94** (the quick-wins slices below), plus the bundle branch `fix/coldrun-bundle-consent-env-devcve-webport` @ **0.8.95** (consent/env/webport/devcve); suite **64 files / 1064 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved).
+- **`main` @ 0.8.95** — the quick-wins slices (0.8.81–0.8.94) + the cold-run bundle (consent/env/webport/devcve), all merged; suite **64 files / 1064 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved pending the 0.8.95 clean cold run).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,
@@ -128,12 +128,18 @@ honesty gate** (any alone still permits a clean-looking wrong-tier / unhealthy r
   don't-over-claim; C + G close the adjacency); compiled-stack breadth JVM/Ruby/Go/.NET (an honest
   framework-named `needs-recipe` is the floor).
 
+### COLD-RUN BUNDLE (0.8.95) — consent/env/webport/devcve. **SHIPPED — graded PASS off disk** (branch `fix/coldrun-bundle-consent-env-devcve-webport`, 4 slices + count-sync, suite **64 files / 1064 checks / 0 failed**, identity-clean, the 3 byte-frozen files `run-dast`/`capture-openapi`/`reconcile-provenance` untouched) → `srt-bundle-builder-prompt.md`.
+The 0.8.94 cold run confirmed WO-B's `composeWebTier`→api:8000 landed, but the throwaway-DAST still could not stand up: on a host already running the app (a busy web-tier port — e.g. a live stack holding 8000) the standup published to the SAME fixed host port and collided. A grounding + adversarial contract-guard fan-out re-scoped an original 6 candidates to 4 (two would have touched a byte-frozen invariant or shipped an under-decided design):
+- ✅ **wo-c-standup — host-port-agnostic throwaway** (the tag blocker): decouple the HOST published port from the container/compose-selector port; publish on an EPHEMERAL `127.0.0.1:0:<target>` (docker assigns only FREE ports) and read the assigned port back after start (`docker port` / `docker compose port`), on BOTH the single-container and compose executors. `baseUrl` stays loopback (the loopback layers + `--network host` byte-frozen); `scannedPort === new URL(baseUrl).port` on every path (no `dastDegrade` false-flag). Planners stay pure (discovery is executor-only). Hermetic planner + dastDegrade proofs.
+- ✅ **gate-catalog — pin the two live-op consents**: `throwaway-dast` + `sf-deep-audit-ops` added to the frozen `GATE_CATALOG` (own selector branch + `LOAD_CHECK_FACTS` + stale-comment fix), mirroring `scanner-install` (single affirm in `base`, force-injected `safeDefault` deny). Purely additive to the render path — the string-keyed enforcement is unchanged.
+- ✅ **sf-env — kill the `sf` auto-update banner**: new `harness/sf-env.mjs` (`sfEnv()` spreads `...process.env` first so PATH resolves the binary + forces both auto-update-off flags; `parseSfJson()` is banner-tolerant). Threaded into every harness `sf` spawn PLUS a session export in the six `sf`-running skills (the agent-Bash half that actually broke the keystone `sf data query --json` mid-run).
+- ✅ **devcve-band — down-rank dev-only dependency CVEs**: a CVE on a DIRECT npm devDependency (in `devDependencies`, NOT `dependencies`) caps to `low` (below the blocker floor + high gate) — never a raise, prod-deps byte-identical, finding KEPT with an honest caveat. `resolveDevScope` threaded at BOTH ingest boundaries (`main()` + the `--all`/`ingestAll` path that bypasses `collect()`) via an optional `capDevBand` hook on osv/npm only; `buildFinding` + `CLASS_DEFS` untouched.
+- **DEFERRED — wo-c-dast (network-internal `--internal` DAST): REJECTED for this bundle** — it widens the byte-frozen scan-target acceptance predicate to a non-loopback host, and the bridge/network variant is already recorded above as rejected. Option (b) fully solves the collision, so this is superseded, not scheduled.
+- **DEFERRED — sarif-band (unmapped-SARIF de-noise): OWN SLICE.** The run emits BOTH JSON + SARIF for semgrep/opengrep and the routes converge on one id (`engine\nruleId\nloc`, severity excluded), so a SARIF-only demotion is order-dependent/masked and the order-independent version would bury real bandit/OSV/njsscan highs. Needs a focused merge-semantics design (SARIF-as-reachability-only, or dedup-before-band). Quality, not a correctness gate — the fan-out already dispositions the FPs to the correct final band.
+- **DEFERRED — compile-digest (deterministic band-digest fn): POST-TAG.** Not a correctness gate; bundling it reopens the clean-run gate the held tag is pinned on.
+
 ### SEQUENCE TO 0.9.0
-WO-B **DONE** (graded PASS). WO-A (A1+A3+A4 honesty/quality polish) **SHIPPED (0.8.92–0.8.94; off-disk
-grade pending)** → scrub the branch trailers
-(slices 1–4; 5–11 already clean) → merge → **bump plugin + RE-RUN the cold run** to confirm the honest band +
-the DAST chain firing. **No correctness gate remains** — the tag question is now A+ quality + one clean
-re-run. If clean, move `v0.7.0` → **`0.9.0`**. The tag stays HELD until that clean re-run.
+WO-B **DONE**. WO-A **SHIPPED**. Cold-run bundle (0.8.95) **SHIPPED — graded PASS**. → merge → bump plugin to **0.8.95** + push → **RE-RUN the cold run on 0.8.95** to confirm the honest band AND — the whole point of the bundle — the throwaway-DAST chain FIRING on a busy host (the ephemeral host port sidesteps the collision) and emitting the Slice-G provenance. **No correctness gate remains.** If that run comes back with DAST fired + a clean band, move `v0.7.0` → **`0.9.0`**. The tag stays HELD until that clean re-run. Do NOT gate the tag on the deferred slices (sarif-band = own slice; compile-digest = post-tag).
 
 ## Shipped + cold-validated this arc (context — DONE)
 - **0.8.40 journey-wiring** — the 11 ingest adapters run in the journey via content-shape `--all`.
