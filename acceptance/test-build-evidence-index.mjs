@@ -13,6 +13,10 @@
  *   B3 — end-to-end: the produced index, fed to compute-sci, credits ONLY the
  *        reviewer-reproducible clear (the 9%→17% self-grading regression stays closed).
  *   B4 — determinism: same input + same files ⇒ byte-identical index.json.
+ *   B6/B7 — agent-test evidence fold (S1): the fragment normalize-agent-test.mjs
+ *        emits is classified by THIS engine unchanged — a spec-only (no result)
+ *        fold ⇒ pending-owner; an on-disk `sf agent test` result under
+ *        .security-review/evidence/ ⇒ reviewer-reproducible + satisfied.
  *
  * Dependency-free: `node acceptance/test-build-evidence-index.mjs`.
  */
@@ -22,6 +26,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { foldToEvidenceInput, parseAgentTestResult } from '../harness/normalize-agent-test.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const BUILD = join(PLUGIN, 'harness', 'build-evidence-index.mjs')
@@ -140,6 +145,50 @@ check('B4 determinism: same input + files → byte-identical index.json', () => 
   build(d)
   const b = readFileSync(join(d, '.security-review', 'evidence', 'index.json'), 'utf8')
   assert.equal(a, b)
+})
+
+// S1 — the normalize-agent-test evidence fold flows through this engine unchanged.
+const AGENT_RESULT = {
+  status: 'COMPLETED',
+  testCases: [
+    { testCaseName: 'ok', testResults: [{ name: 'topic_sequence_match', result: 'PASS', expectedValue: 'T', actualValue: 'T', score: 1 }] },
+    { testCaseName: 'misroute', testResults: [{ name: 'topic_sequence_match', result: 'FAILURE', expectedValue: 'T', actualValue: 'U', score: 0 }] },
+  ],
+}
+function makeAgentRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'bei-agent-'))
+  mkdirSync(join(dir, 'specs'), { recursive: true })
+  mkdirSync(join(dir, '.security-review'), { recursive: true })
+  writeFileSync(join(dir, 'specs', 'A-testSpec.yaml'), 'subjectName: A\ntestCases: []\n')
+  return dir
+}
+
+check('B6 agent-test: spec-only fold ⇒ pending-owner for testenv-agent-testing-center', () => {
+  const d = makeAgentRepo(); dirs.push(d)
+  const records = parseAgentTestResult(AGENT_RESULT)
+  // no result on disk yet — fold produces the pending fragment
+  const frag = foldToEvidenceInput(records, { specPath: 'specs/A-testSpec.yaml', resultPath: join('.security-review', 'evidence', 'utterance-validation', 'A-run-eval.json'), repo: d })
+  assert.ok(frag.pending, 'spec-only fold must be pending')
+  writeFileSync(join(d, '.security-review', 'evidence-input.json'), JSON.stringify(frag))
+  build(d)
+  const e = reqEntry(indexOf(d), 'testenv-agent-testing-center')
+  assert.equal(e.disposition, 'pending-owner', 'no on-disk result ⇒ pending-owner')
+  assert.equal(e.reviewer_reproducible, false)
+})
+
+check('B7 agent-test: on-disk result ⇒ reviewer-reproducible + satisfied', () => {
+  const d = makeAgentRepo(); dirs.push(d)
+  const rel = join('.security-review', 'evidence', 'utterance-validation', 'A-run-eval.json')
+  mkdirSync(join(d, '.security-review', 'evidence', 'utterance-validation'), { recursive: true })
+  writeFileSync(join(d, rel), JSON.stringify(AGENT_RESULT))
+  const records = parseAgentTestResult(AGENT_RESULT)
+  const frag = foldToEvidenceInput(records, { specPath: 'specs/A-testSpec.yaml', resultPath: rel, repo: d })
+  assert.ok(frag.scans, 'a present result must fold to a scans fragment')
+  writeFileSync(join(d, '.security-review', 'evidence-input.json'), JSON.stringify(frag))
+  build(d)
+  const e = reqEntry(indexOf(d), 'testenv-agent-testing-center')
+  assert.equal(e.disposition, 'satisfied', 'on-disk agent-test result ⇒ satisfied')
+  assert.equal(e.reviewer_reproducible, true, 'a result under .security-review/evidence/ is reviewer-reproducible')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

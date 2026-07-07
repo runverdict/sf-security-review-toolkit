@@ -217,17 +217,80 @@ bounce.
    the credentials they require; closing with a suggested reviewer
    quick-start order. Write it to
    `<target>/docs/security-review/agent-utterances.md`.
-   *Validation:* run every utterance through the platform's agent testing
-   tooling — batch CSV (utterance, expected topic, expected action) where
-   available, Agent Preview for routing-reasoning visibility (baseline:
-   `testenv-agent-testing-center`) — and capture the results to
-   `.security-review/evidence/utterance-validation/`. The submitted list
-   contains ONLY utterances that demonstrably produced successful tool
-   calls; an utterance that fails to route is an un-testable-environment
-   bounce in slow motion. And a non-obvious invalidation rule: routing is
-   classification over tool *descriptions*, so a server-side description
-   edit can silently break a previously validated utterance — re-validate
-   the full list after any tools/list change, not just after org changes.
+   *Validation:* validate every utterance HEADLESSLY with the `sf agent
+   test` CLI (baseline: `testenv-agent-testing-center`) and capture the
+   machine-readable results to `.security-review/evidence/utterance-validation/`
+   — per-test-case pass/fail, expected-vs-actual topic, expected-vs-actual
+   actions, evaluator scores, and duration, with the generated test-spec
+   YAML deposited alongside. This replaces the old Testing Center /
+   Agent Preview UI punt with reproducible evidence.
+   *Author the test-spec YAML first (local, no org op).* From the
+   already-generated `agent-utterances.md`, hand-map each utterance →
+   expected topic → expected action(s) → expected outcome into a test-spec
+   YAML. Seed it with `sf agent generate test-spec --output-file
+   specs/<AGENT>-testSpec.yaml` (add `--force-overwrite` to replace; pick
+   the runner with `--test-runner testing-center` for the legacy
+   `AiEvaluationDefinition` or `--test-runner agentforce-studio` for the
+   NGT `AiTestingDefinition`), or derive it from an existing definition
+   with `sf agent generate test-spec --from-definition <meta XML>`. Note
+   plainly: `generate test-spec` is INTERACTIVE and reads the DX-project
+   METADATA (not the live tools/list), so the spec is authored from
+   `agent-utterances.md` by hand (or via `--from-definition`), NOT
+   auto-generated from the live tools/list — one clean autonomous call
+   does not exist here.
+   *Path A — PRIMARY, residue-free (spec-direct via the Einstein Eval
+   API):* `sf agent test run-eval --spec specs/<AGENT>-testSpec.yaml
+   --result-format json` — the agent is inferred from the spec's
+   `subjectName` (override with `--api-name <DeveloperName>`); it supports
+   8+ evaluator types including **subagent-routing assertions** and
+   **action-invocation checks** — exactly the routing/authz evidence this
+   step needs — and deposits NO metadata in the review org. `run-eval` has
+   NO `--output-dir` flag; it prints to stdout, so capture it by redirect:
+   `sf agent test run-eval --spec specs/<AGENT>-testSpec.yaml
+   --result-format json > .security-review/evidence/utterance-validation/<AGENT>-run-eval.json`.
+   Requires the Einstein Eval API enabled in the org; optional
+   `--batch-size <=5`, `--no-normalize`.
+   *Path B — DURABLE ARTIFACT (a reusable `AiEvaluationDefinition` the
+   reviewer can re-run):* `sf agent test create --spec
+   specs/<AGENT>-testSpec.yaml --api-name <NEW_NAME>` then `sf agent test
+   run --api-name <NEW_NAME> --wait <minutes> --result-format json
+   --output-dir .security-review/evidence/utterance-validation/`. Here
+   `agent test create` DEPLOYS an `AiEvaluationDefinition` (a metadata
+   mutation) into the review org — `--api-name` must NOT already exist
+   (`--test-runner agentforce-studio` for NGT; `--preview` to build
+   without deploying; `--force-overwrite` to replace) — and `agent test
+   run --wait <min>` blocks for the run and writes the JSON results to
+   disk. Re-fetch later with `sf agent test results --use-most-recent
+   --result-format json --output-dir .security-review/evidence/utterance-validation/`
+   (or `--job-id <id>`).
+   *Trade-off (both genuine, neither a false friend):* Path A is richer
+   (8+ evaluators, subagent-routing + action-invocation) and residue-free
+   but needs the Einstein Eval API; Path B leaves a reusable
+   `AiEvaluationDefinition` the reviewer can re-run but MUTATES the review
+   org. Pick per what the org has enabled and whether a durable artifact
+   is wanted.
+   *Live-leg boundary:* `agent test create` / `run` / `run-eval` require a
+   real ACTIVATED + PUBLISHED agent in the review org — without one they
+   error `No published version found for agent` / `No agent found with
+   DeveloperName`. All of `create` / `run` / `run-eval` stay
+   OWNER-executed against the live review org and are cold-run-validated,
+   exactly as the throwaway scratch-org stand-up keeps `sf org create
+   scratch` operator-cold. The toolkit's buildable-now surface is this
+   runbook plus the deterministic argv-builder + JSON→evidence normalizer
+   in `harness/normalize-agent-test.mjs`.
+   The driver folds this evidence into the index via `build-evidence-index.mjs`:
+   the spec-YAML alone ⇒ `pending-owner` (owner still has to run the live
+   leg); the on-disk JSON result under
+   `.security-review/evidence/utterance-validation/` ⇒ reviewer-reproducible
+   and satisfied. The submitted list contains ONLY utterances that
+   demonstrably produced successful tool calls — a routing-FAIL utterance
+   is never credited as passing (enforced in code by
+   `normalize-agent-test.mjs`, not just prose); an utterance that fails to
+   route is an un-testable-environment bounce in slow motion. And a
+   non-obvious invalidation rule: routing is classification over tool
+   *descriptions*, so a server-side description edit can silently break a
+   previously validated utterance — re-validate the full list after any
+   tools/list change, not just after org changes.
 
 10. **Run the bidirectional authorization probe and record the transcript.**
     This is the evidence behind the two-user requirement. The agent

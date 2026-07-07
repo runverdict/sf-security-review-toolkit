@@ -2587,23 +2587,32 @@
   last_verified: "2026-06-12"
 
 - id: testenv-agent-testing-center
-  requirement: Validate agent/topic/utterance routing with the platform's agent testing tooling before submission.
+  requirement: Validate agent/topic/utterance routing headlessly with the `sf agent test` CLI before submission.
   details: >
-    Batch CSV test templates (utterance, expected topic, expected action)
-    run in the Agentforce Testing Center (sandbox-context tooling); Agent
-    Preview shows routing reasoning. Run the example-utterance list through
-    this before handing it to a reviewer — an utterance that fails to route
-    is an un-testable-environment bounce in slow motion.
+    Author a test-spec YAML from the example-utterance list (utterance →
+    expected topic → expected action(s) → expected outcome), then run it
+    headlessly with the `sf agent` CLI for machine-readable pass/fail per
+    utterance. Path A (residue-free): `sf agent test run-eval --spec
+    <yaml> --result-format json` runs spec-direct through the Einstein
+    Eval API (8+ evaluators incl. subagent-routing + action-invocation)
+    and deposits no metadata. Path B (durable): `sf agent test create`
+    deploys a reusable `AiEvaluationDefinition` and `sf agent test run …
+    --output-dir` writes the JSON results the reviewer can re-run. Run the
+    list through this before handing it to a reviewer — an utterance that
+    fails to route is an un-testable-environment bounce in slow motion.
   applies_to: [mcp-server]
   automation: partially
-  automation_notes: The toolkit generates the CSV from the utterance list; upload and execution happen in the org UI.
+  automation_notes: The toolkit authors the test-spec YAML from the utterance list and normalizes the `sf agent test` JSON results into per-utterance evidence; the live run against a published agent in the review org is owner-executed (Einstein Eval API for `run-eval`; `agent test create` deploys an `AiEvaluationDefinition`).
   severity_if_missing: minor
   sources:
     - url: https://trailhead.salesforce.com/content/learn/modules/agentforce-agent-testing/set-up-testing-criteria
       date: "2025"
       kind: official
-  verification: web_research_unverified
-  last_verified: null
+    - url: https://developer.salesforce.com/docs/atlas.en-us.sfdx_cli_reference.meta/sfdx_cli_reference/cli_reference_agent_commands_unified.htm
+      date: "2026"
+      kind: official
+  verification: verified_primary
+  last_verified: "2026-07-07"
 
 - id: testenv-usage-documentation
   requirement: Provide complete setup and usage documentation — login steps, configuration, critical features, typical user paths — that a reviewer can execute end-to-end without help.

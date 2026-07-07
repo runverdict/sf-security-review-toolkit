@@ -29,7 +29,7 @@ Every entry in the baseline sits on one of three rungs:
 
 1. `web_research_unverified` (`last_verified: null`) — found in public web
    research only. The fact may be right, but no primary channel has confirmed
-   it. 43 entries remain here (mostly the MCP-spec threat-model section, the
+   it. 42 entries remain here (mostly the MCP-spec threat-model section, the
    WI-19 written-policy artifact stubs, and a handful of endpoint/test-env
    hygiene items the 2026-06 evidence did not touch). Counts are emitted
    deterministically by `harness/baseline-counts.mjs` — do not hand-edit them.
@@ -37,7 +37,7 @@ Every entry in the baseline sits on one of three rungs:
    primary source: the ISVforce Guide read directly at its current version,
    an official Salesforce blog/page read directly, a login-gated partner
    document or official partner-Slack post, or an empirical test. A fact
-   merely re-found on another blog is NOT a promotion. 122 entries.
+   merely re-found on another blog is NOT a promotion. 123 entries.
 3. `conflicting` — primary-grade sources disagree, or the only source is
    single-tier and uncorroborated; the `conflicts:` field states exactly what
    is open. Skills surface these as "verify with your Partner Account
@@ -225,6 +225,7 @@ All Summer '26 (doc v262.0), read 2026-06-12.
 | https://trailhead.salesforce.com/content/learn/modules/isv_security_review/isv_security_review_prepare | 2026 | Test-environment expectations; DAST proof-of-scanned-URL | 2026-06-12 |
 | https://trailhead.salesforce.com/content/learn/modules/isv_security_review/isv_security_review_fix | 2025 | Failure/remediation flow | 2026-06-12 |
 | https://trailhead.salesforce.com/content/learn/modules/agentforce-agent-testing/set-up-testing-criteria | 2025 | CSV utterance test templates, Testing Center mechanics | 2026-06-12 |
+| https://developer.salesforce.com/docs/atlas.en-us.sfdx_cli_reference.meta/sfdx_cli_reference/cli_reference_agent_commands_unified.htm | 2026 | `sf agent generate test-spec` / `agent test create` / `agent test run` / `agent test run-eval` / `agent test results` flags — headless utterance-routing validation (plugin-agent 1.44.4) | 2026-07-07 |
 
 ## Historical sources
 

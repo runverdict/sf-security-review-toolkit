@@ -7,6 +7,35 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **S1 · `harness/normalize-agent-test.mjs` — the deterministic argv-builder +
+  JSON→evidence normalizer for the headless `sf agent test` utterance-validation flow.**
+  A `render-*.mjs`-shaped engine (pure transform + one thin `sf` spawn through `sfEnv()`),
+  NOT a `standup-org`-style live-op engine (no consent gate, no name-guarded delete, no
+  NAMES-only manifest). Pure exports: `planGenerateTestSpec` / `planRunEval` (which **never
+  emits `--output-dir`** — that flag does not exist on `run-eval`, which prints to stdout) /
+  `planTestCreate` / `planTestRun` / `planTestResults` (each validates its enum/int args and
+  emits a flag only when set), plus `parseAgentTestResult` → canonical per-utterance records
+  (expected-vs-actual topic + actions, evaluator score, duration, `pass`/`fail`),
+  `passingUtterances`, and `foldToEvidenceInput`. The "submitted list contains ONLY utterances
+  that demonstrably produced successful tool calls" rule is now a **code invariant**: a
+  routing-FAIL utterance is `status:'fail'` and is never in the passing set; and the fold
+  **fail-closes** — an absent/empty result JSON yields the `pending-owner` fragment (owner
+  hasn't run the live leg), never a fabricated pass, while an on-disk result under
+  `.security-review/evidence/utterance-validation/` yields the reviewer-reproducible
+  `scans` fragment. `build-evidence-index.mjs` is byte-unchanged — it classifies both fragments
+  as-is. New standing test `acceptance/test-normalize-agent-test.mjs` (10 checks: exact argv
+  shapes incl. the no-`--output-dir` invariant, throw-on-bad `--batch-size`/`--test-runner`,
+  determinism, the routing-FAIL-not-credited invariant, and the fail-closed fold) +
+  `test-build-evidence-index.mjs` B6/B7 (+2 checks: the spec-only ⇒ `pending-owner` and
+  on-disk-result ⇒ `satisfied`/reproducible dispositions flow through the engine unchanged).
+  Suite **66 files / 1079 checks**. **HONEST GAP (recorded in the module docstring +
+  `docs/roadmap-coldrun-hardening.md`, NOT fixed here):** `hooks/sf-ops-gate-hook.mjs::classifySfVerb`
+  does not classify `agent test create` / `agent test run` (metadata-deploying but not `project
+  deploy` → returns `null`, ungated); acceptable while the leg stays owner-run + interactive,
+  needs a classifier arm IF ever run non-interactively. **Live-leg caveat (honest):** the actual
+  `create`/`run`/`run-eval` against a real ACTIVATED+PUBLISHED agent + the Einstein Eval API
+  defers to the midpoint cold run — the hermetic surface is fully offline-deterministic; the live
+  invocation is not claimed proven here.
 - **S0 · `bootstrap-cli-auth` pins `@salesforce/plugin-agent@1.44.4` so `agent mcp` installs
   on a cold box.** The deployed-org deep audit's MCP steps (`sf agent mcp list` /
   `sf agent mcp create`, the S3/S4 consumers) need the `agent mcp` topic, which first shipped
@@ -50,6 +79,27 @@ follow semantic versioning.
   defining the states (`REFERENCE` / `HONEST-ARTIFACT` / `ACTIVE` / `DESIGN` / `DELIVERED`) and the
   rule that a doc whose thesis was later refuted must link the refutation. Docs-only governance, no
   engine change (prompted by a docs-hygiene audit before public release).
+
+### Changed
+- **S1 · `prepare-test-environment` step 9 *Validation* — headless `sf agent test` evidence
+  replaces the Agent Testing Center / Agent Preview UI punt.** The runbook now prescribes
+  authoring a test-spec YAML from the already-generated `agent-utterances.md` (`sf agent generate
+  test-spec`, interactive + DX-metadata-sourced, or `--from-definition`) then validating headlessly
+  via **Path A** `sf agent test run-eval --spec … --result-format json` (PRIMARY, residue-free,
+  Einstein Eval API, 8+ evaluators incl. subagent-routing + action-invocation; NO `--output-dir` →
+  capture stdout by redirect) or **Path B** `sf agent test create` (deploys a durable, reusable
+  `AiEvaluationDefinition` — MUTATES the review org) + `sf agent test run … --output-dir` — with the
+  trade-off stated honestly and the live-leg boundary (create/run/run-eval need a real
+  ACTIVATED+PUBLISHED agent) called out as owner-executed + cold-run-deferred. The
+  "submitted list contains ONLY successful utterances" invariant and the re-validate-after-any-
+  tools/list-change rule are preserved.
+- **S1 · `baseline/requirements-baseline.yaml` `testenv-agent-testing-center` synced to the CLI
+  reality** — requirement/details/automation_notes reworded to the headless `sf agent test` flow,
+  a `plugin-agent` CLI source row added, and `verification` **promoted `web_research_unverified` →
+  `verified_primary`** (`last_verified: 2026-07-07`; plugin-agent 1.44.4 flags locally confirmed).
+  The promotion moves the baseline tallies: `verified_primary` 122 → **123**, `web_research_unverified`
+  43 → **42** — README §baseline and `baseline/SOURCES.md` counts updated to match (`test-baseline-counts.mjs`
+  green). New CLI source row added to `SOURCES.md`'s "Trailhead & agent testing" table.
 
 ### Fixed (docs currency)
 - `docs/recurrence-confidence.md` — status banner said skill-wiring was "still pending"; it wired
