@@ -50,7 +50,8 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    org.** This skill installs the CLI globally (`npm install -g`) and writes org
    credentials (`sf org login`) — both modify the host or store secrets. Before either,
    ask the operator ONCE with `AskUserQuestion` (name that it installs `@salesforce/cli`
-   globally and captures org auth on this machine), and on an affirmative yes record it:
+   globally, installs the `auth` and pinned `@salesforce/plugin-agent` plugins, and
+   captures org auth on this machine), and on an affirmative yes record it:
    `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-cli-setup --answer "<operator's exact yes>" --target <repo>`.
    The shipped PreToolUse hook (`hooks/sf-ops-gate-hook.mjs`) is the fail-closed backstop:
    without that recorded consent it **DENIES** `npm install -g` and `sf org login`, so a
@@ -89,6 +90,33 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    ```bash
    sf plugins install auth
    ```
+
+   **Then install the agent plugin at its pinned version** — the deployed-org
+   deep audit's MCP steps (`sf agent mcp list` / `sf agent mcp create`) need the
+   `agent mcp` topic, which the CLI's *bundled* `@salesforce/plugin-agent` (1.42.1
+   even on the latest CLI) does not carry — it first shipped in plugin-agent 1.43.0.
+   Pin it explicitly so a cold box is deterministic:
+
+   ```bash
+   sf plugins install @salesforce/plugin-agent@1.44.4
+   ```
+
+   Then confirm the topic landed (exit 0 proves `agent mcp` is present) and record
+   the on-disk version so a misreport is impossible — capture this `{pinned,
+   installed}` pair (pinned = `1.44.4`, installed = the `version` reported by
+   `sf plugins inspect`) into the deep-audit evidence log, mirroring the CA stack's
+   deterministic plugin-version readout:
+
+   ```bash
+   sf agent mcp --help
+   sf plugins inspect @salesforce/plugin-agent --json
+   ```
+
+   > **Live-leg boundary.** This runbook step is deterministic to *specify* offline,
+   > but the actual proof that the install succeeds and `sf agent mcp --help` then
+   > exits 0 on a truly-cold box — and that `sf agent mcp create` / `sf agent mcp
+   > list` run against a real authed org (the deep-audit MCP consumers) — is verified
+   > on the machine, in the midpoint cold run. It is not claimed as proven here.
 
 3. **Pick the auth flow per org.** Use AskUserQuestion to determine whether this machine has a local browser, then choose:
 
@@ -171,6 +199,7 @@ This prints the URL (the human opens it on whatever machine has their browser) r
 |---|---|---|
 | Commands that worked yesterday now fail with an expired access/refresh token error | Refresh token revoked or expired (admin revoked sessions, org token policy) | Re-run the web flow for that alias; stored auth URLs minted from the old token are dead too — re-capture |
 | `Warning: org login web is not a sf command` | The auth plugin isn't installed — core CLI ships only `access-token`/`jwt` login | `sf plugins install auth` (step 2) |
+| `agent mcp` subcommands are missing, or `agent mcp create` errors as an unknown topic | The CLI-bundled `@salesforce/plugin-agent` (1.42.1) predates the `agent mcp` topic (1.43.0+) | `sf plugins install @salesforce/plugin-agent@1.44.4` (step 2) |
 | `sf org login web` starts but the printed URL never completes login | The OAuth redirect can't reach `localhost:1717` on this box | Forward the port (VS Code Remote does it automatically; plain SSH: `ssh -L 1717:localhost:1717`), or fall back to a stored auth URL (step 5) |
 | A deploy or query lands in the wrong org | Default `target-org` points elsewhere | `sf org list` shows the default markers; fix with `sf config set target-org={ORG_ALIAS}`, and pass `-o` explicitly in anything scripted |
 | A login popup authenticated the *wrong* org — e.g., a Setup flow that asks you to log into a second org silently lands in your Dev Hub | Browser password-manager autofill submitted saved credentials for a different org on the shared login domain | Verify which org you actually hit before proceeding (`sf org display`, or `SELECT NamespacePrefix, OrganizationType FROM Organization` via `sf data query`); redo the popup in a private window with autofill off. In our experience this is the classic failure inside the Dev Hub's Namespace Registry link flow — full namespace-linking context in `/sf-security-review-toolkit:build-managed-package` step 1 |
@@ -188,7 +217,7 @@ This prints the URL (the human opens it on whatever machine has their browser) r
 
 **Executed headlessly:**
 - Node.js and `sf` CLI version checks; CLI installation via npm
-- Auth-plugin installation, web-flow initiation, stored-auth-URL capture and replay, JWT login (given cert + client ID)
+- Auth-plugin installation, pinned `@salesforce/plugin-agent@1.44.4` installation (delivers the `agent mcp` topic the deployed-org deep audit needs), web-flow initiation, stored-auth-URL capture and replay, JWT login (given cert + client ID)
 - Alias assignment, default org / default Dev Hub configuration, fleet verification (`sf org list`, per-alias `sf org display`)
 
 **Required a human:**

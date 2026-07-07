@@ -185,6 +185,18 @@ const CA_STACK_PINS = {
 // code-analyzer-stack branch isn't the one install method without a name allow-list.
 const CA_STACK_NAMES = new Set(['sf'])
 
+// S0 · bootstrap-cli-auth agent-plugin pin — the SINGLE authoritative version literal
+// the runbook (skills/bootstrap-cli-auth/SKILL.md) and its doc-grounding acceptance test
+// both read, so the two can never diverge. This is NOT a CA-stack CLI bump: the hermetic
+// CA stack (CA_STACK_PINS) is CRUD/FLS SAST only and never runs `agent mcp`. The live-org
+// bootstrap path resolves the system `sf` via PATH (harness/sf-env.mjs); this pin is the
+// plugin that path installs so the `agent mcp` topic (added in plugin-agent 1.43.0, absent
+// from the CLI-bundled 1.42.1) is present for the S3/S4 MCP consumers. npm-over-TLS plugin
+// doctrine (like `auth`/`code-analyzer`), NOT the sha256 raw-binary doctrine.
+export const AGENT_PLUGIN_PIN = '1.44.4'
+// The floor `agent mcp` first shipped at; pinning below this loses the topic entirely.
+export const AGENT_PLUGIN_MCP_FLOOR = '1.43.0'
+
 // Temurin (Eclipse Adoptium) JDK 17 — the JRE PMD/SFGE need (JDK 11+). Mirrors
 // BINARY_PINS: a per-platform { file, sha256 }, sha256-verified BEFORE extract; an
 // unpinned platform (and no present java≥11) FAILS CLOSED → PENDING-OWNER-RUN, never

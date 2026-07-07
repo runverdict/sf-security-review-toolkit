@@ -9,7 +9,7 @@
 > implementation detail to start a focused change without re-deriving the finding.
 
 ## Baseline at time of writing
-- **`main` @ 0.8.95** — the quick-wins slices (0.8.81–0.8.94) + the cold-run bundle (consent/env/webport/devcve), all merged; suite **64 files / 1064 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved pending the 0.8.95 clean cold run).
+- **`main` @ 0.8.96** — the quick-wins slices (0.8.81–0.8.94) + the cold-run bundle (consent/env/webport/devcve) + the S0 bootstrap agent-plugin pin (0.8.96), all merged; suite **65 files / 1067 checks**, tag **HELD** (newest `v0.7.0`; `0.9.0` reserved pending the 0.8.95 clean cold run).
   COLD-RUN QUICK-WIN FIXES (branch, 2026-07-05): ✅ **slice 1 / 0.8.81 stack-detect compose-satisfiability**
   (self-contained compose → `runnable` so the throwaway-DAST consent gate fires: `satisfiable` reclassification
   [defaulted `${VAR:-..}` + concrete `KEY: value`] + compose-scoped env gathering [no `env_file:` → compose-only,

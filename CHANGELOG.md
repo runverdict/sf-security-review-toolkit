@@ -7,6 +7,33 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **S0 · `bootstrap-cli-auth` pins `@salesforce/plugin-agent@1.44.4` so `agent mcp` installs
+  on a cold box.** The deployed-org deep audit's MCP steps (`sf agent mcp list` /
+  `sf agent mcp create`, the S3/S4 consumers) need the `agent mcp` topic, which first shipped
+  in plugin-agent **1.43.0**. **False-friend guard:** bumping `@salesforce/cli` in the hermetic
+  CA stack does **NOT** deliver it — even the latest CLI bundles plugin-agent **1.42.1**, which
+  lacks the topic, and the hermetic CA stack (`CA_STACK_PINS`) is CRUD/FLS SAST only and never
+  runs `agent mcp`. So the enabler is an explicit pinned plugin install on the live-org bootstrap
+  path (which resolves the system `sf` via PATH), mirroring the existing `sf plugins install auth`
+  line. Step 2 of the runbook now installs the pinned plugin and records a deterministic
+  `{pinned, installed}` version readout (`sf agent mcp --help` + `sf plugins inspect … --json`)
+  into the deep-audit evidence log; a new error-recovery row maps the missing/too-old case; the
+  step-0 consent parenthetical and the automated-recap name the agent plugin. Single-sourced as
+  two exported constants in `harness/install-scanners.mjs` — `AGENT_PLUGIN_PIN` (`1.44.4`) and
+  `AGENT_PLUGIN_MCP_FLOOR` (`1.43.0`) — read by the runbook prose and the new standing test so
+  the two can never diverge. This is npm-over-TLS plugin doctrine (like `auth`/`code-analyzer`),
+  **not** the sha256 raw-binary doctrine — no checksum; and the opengrep-only version-drift
+  honesty marker is **not** extended to it. New standing test `acceptance/test-agent-plugin-pin.mjs`
+  (3 checks): (1) a runbook↔constant equality lock — SKILL.md must contain the exact
+  `sf plugins install @salesforce/plugin-agent@${AGENT_PLUGIN_PIN}` string; (2) a semver floor +
+  upper bound — the pin parses as semver, is `>= AGENT_PLUGIN_MCP_FLOOR` (nobody may pin back to a
+  1.42.x that lacks `agent mcp`) and `< 2.0.0`; (3) a hermetic-stack purity guard — the
+  frozen `code-analyzer-stack` install plan's commands (and its source branch) never mention
+  `plugin-agent` or the pin, so the SAST stack stays agent-free. **Live-leg caveat (honest):** S0
+  is fully deterministic offline (runbook edit + single-sourced constant + hermetic tests); the
+  actual proof that `sf plugins install @salesforce/plugin-agent@1.44.4` succeeds on a truly-cold
+  box, that `sf agent mcp --help` then exits 0, and that `sf agent mcp create` / `list` run against
+  a REAL authed org **defers to the midpoint cold run** — not claimed as proven here.
 - `docs/roadmap-coldrun-hardening.md` — the `ACTIVE` post-cold-run hardening backlog: B1 run static
   deterministic scanners before the LLM fan-out (the top PENDING-OWNER-RUN drainer) · B2 throwaway-tier
   pull-forward engines (compose/dockerfile standup + org-standup/teardown) + container-isolated OpenAPI
