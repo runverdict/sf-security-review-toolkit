@@ -51,6 +51,52 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.100] — 2026-07-07
+
+**Deterministic DevHub auto-resolve producer engine — reliable `0Ho`→`04t` query
+sequence, fail-closed keystone read.** Completes the producer→render pair for
+scope-submission step 4: the DevHub Tooling readout is no longer producer-improvised
+prose (a real cold run drifted to `version: "undefined.undefined.undefined.undefined"`
+and risked a false-positive "already reviewed"). A pure planner locks the
+id-resolution order (resolve the `0Ho` package id first, then `--packages <0Ho>`
+for the `04t`, then `--package <04t>` — never `--packages <NAME>`, the
+`InvalidPackageIdError` regression) and pure normalizers enforce the two keystone
+guarantees under a standing test. Robustness/polish, not a correctness gate — the
+cold run degraded gracefully and still succeeded; this removes the noise and makes a
+regression to a false "reviewed" or an `undefined…` version impossible.
+
+### Added
+- `harness/sf-autoresolve.mjs` — the producer engine (pure `planSfAutoResolve` +
+  `normalizeVersionString` / `normalizeSecurityReviewed` / `normalizeVersionReport` +
+  fail-closed per-step `runSfAutoResolve`), mirrors `standup-org.mjs`; every `sf`
+  spawn routes through `sfEnv()`, every `--json` through `parseSfJson()`. Writes
+  `sf-autoresolve.json` in the frozen render's exact contract and sets the manifest's
+  `sfAutoResolved` flag; **no new consent gate** (read-only Tooling against an
+  already-authed hub — never authenticates), degrades to `sfAutoResolved:false` on
+  no-devhub. Per-command flags verified against sf 2.137.7 (`package*` →
+  `--target-dev-hub`; `data query` → `--target-org` + `--query`).
+- `acceptance/test-sf-autoresolve.mjs` (10 checks) — pins the argv order + the
+  `InvalidPackageIdError` regression, the never-`undefined` version guarantee, the
+  fail-closed `IsSecurityReviewed` read, empty-coverage labeling (never `0% covered`),
+  per-step executor degradation via an injected runner, the no-devhub degrade, and a
+  render round-trip through the frozen `render-sf-autoresolve.mjs`. Suite **69 files /
+  1109 checks**. Byte-frozen `reconcile-provenance.mjs` / `merge-ledger.mjs` /
+  `finding-clusters.mjs`, the frozen render, and `sf-env.mjs` untouched.
+
+### Changed
+- `skills/scope-submission/SKILL.md` step 4 — rows 1/2 prescribe the reliable
+  `0Ho`→`04t` id sequence (never `sf package version report --packages <NAME>`) and
+  the fail-closed keystone read (never a version built from `undefined` parts); the
+  raw agent-Bash `sf sobject describe` / Tooling query fence is removed (the engine
+  runs it now; the describe-first doctrine prose stays as what it encodes); step 4 now
+  runs the producer engine, then renders VERBATIM (render block byte-unchanged). The
+  `allowed-tools` frontmatter grants `Bash(node *harness/sf-autoresolve.mjs *)`.
+- **Live-leg caveat:** the real `sf package list` / `version list` / `version report`
+  / Tooling `data query` against an authed DevHub defers to the midpoint cold run
+  (exactly like standup-org keeps `sf org create scratch` operator-cold); the
+  deterministic planner + normalizers + the 10 hermetic checks are fully offline, the
+  live invocation is NOT claimed proven here.
+
 ## [0.8.99] — 2026-07-07
 
 **S3 of the CLI-integration arc — org-effective MCP tool-surface capture: the THIRD provenance

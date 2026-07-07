@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -261,11 +261,11 @@ elements, get the requirement list those elements imply.
      JS-rendered and were corroborated only from secondary sources — never
      hardcode a query you have not described. A query against a field the org
      doesn't expose fails the whole pass; describe-first makes it degrade
-     per-field instead.
-
-     ```bash
-     sf sobject describe --use-tooling-api --sobject SubscriberPackageVersion --target-org <devhub> --json
-     ```
+     per-field instead. The producer engine `harness/sf-autoresolve.mjs` now
+     runs the resolution + the fail-closed per-field normalization for you — this
+     doctrine is exactly what it encodes, so you no longer hand-run the Tooling
+     `describe` / `SubscriberPackageVersion` / `package version` queries in
+     agent-Bash; the engine is defense-in-depth on top of this stated prose.
 
    - **Per-class coverage from a finished 2GP version is unreliable.**
      `CodeCoveragePercentages` / `ApexCodeCoverageAggregate` on code already
@@ -282,8 +282,8 @@ elements, get the requirement list those elements imply.
 
    | Auto-resolved | `sf` / Tooling source | Feeds |
    |---|---|---|
-   | Promotion / coverage / validation-skipped | `sf package version report --json` (`IsReleased`, `CodeCoveragePercentages`, `HasPassedCodeCoverageCheck`, `ValidationSkipped`) + `ApexCodeCoverageAggregate` per-class | The promotion gate (step 5) **and the exact under-covered class names** — far better than a bare 75% pass/fail |
-   | **Already security-reviewed?** (the keystone) | Tooling SOQL `SELECT IsSecurityReviewed FROM SubscriberPackageVersion WHERE Id='04t...'` | **If true, SKIP the whole flow — the package already passed.** ⚠ caveat: `IsSecurityReviewed` may only flip true *after* a review; for an own not-yet-reviewed package confirm via the `describeSObject` + a live query that the field is queryable and reads `false`, and never report "already reviewed" off an absent/null field |
+   | Promotion / coverage / validation-skipped | Resolve ids in the reliable order **first**: `sf package list` → the `0Ho` package id (never assume it), then `sf package version list --packages <0Ho>` → the `04t` version id, then `sf package version report --package <04t> --json` (`IsReleased`, `CodeCoveragePercentages`, `HasPassedCodeCoverageCheck`, `ValidationSkipped`) + `ApexCodeCoverageAggregate` per-class. **Never `sf package version report --packages <NAME>` — it throws `InvalidPackageIdError`; always the single `--package <04t>`, and pass the `0Ho` id (not the human `<NAME>`) to `version list --packages`.** | The promotion gate (step 5) **and the exact under-covered class names** — far better than a bare 75% pass/fail |
+   | **Already security-reviewed?** (the keystone) | Tooling SOQL `SELECT IsSecurityReviewed, MajorVersion, MinorVersion, PatchVersion, BuildNumber FROM SubscriberPackageVersion WHERE Id='<04t>'` | **If true, SKIP the whole flow — the package already passed.** The read **fails closed to `unknown`** on an absent / null / errored field — `reviewed` is reported **only** on an explicit boolean `true`; a missing / null / `false` field is never a false "already reviewed." ⚠ `IsSecurityReviewed` may only flip true *after* a review, so for an own not-yet-reviewed package it reads `false` / `unknown`, never a false positive. And the version row **NEVER emits a string built from `undefined` parts** — any absent part degrades the whole version to `unknown`, never `undefined.undefined.undefined.undefined` |
    | **External-endpoint inventory** | Tooling SOQL over `RemoteSiteSettings` + `CspTrustedSites` for the package version | **This is THE DAST target list AND the API-callouts doc** — the exact host list reviewers scrutinize, fed straight into the `endpoints` array and `/sf-security-review-toolkit:run-scans` scope. Flag every `http://` (non-TLS), every wildcard host, and every host with **no matching Named Credential** |
    | **Permission matrix** (the #1 review category) | Tooling SOQL over `PermissionSet` / `ObjectPermissions` / `FieldPermissions` | The access-control artifact; **flag `PermissionsViewAllRecords` / `PermissionsModifyAllData` (ViewAll/ModifyAll) over-grants** on packaged permission sets — the most common authZ rejection |
    | **Per-class coverage** | `ApexCodeCoverageAggregate` (with the empty-coverage caveat above) | Names the under-covered classes for the operator to fix — corroborating only, scratch-org run is primary |
@@ -311,6 +311,17 @@ elements, get the requirement list those elements imply.
    fee (baseline: `process-review-fee` — read it at run time), the Submit
    button, and status monitoring. The toolkit auto-answers the evidence;
    the human owns the Console residue.
+
+   **Run the producer engine — it writes `sf-autoresolve.json`.** The deterministic
+   producer resolves the ids in the reliable `0Ho`→`04t` order and writes the
+   readout in the render's exact contract, with both keystone guarantees locked in
+   code (never an `undefined…` version string, `IsSecurityReviewed` fail-closed to
+   `unknown`). It degrades honestly to `"sfAutoResolved": false` when no DevHub is
+   authed and NEVER authenticates:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/sf-autoresolve.mjs --target <target>
+   ```
 
    **Render the auto-resolution readout — VERBATIM.** After writing
    `sf-autoresolve.json`, surface it by printing the render's stdout byte-for-byte
