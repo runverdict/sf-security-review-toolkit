@@ -7,166 +7,6 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
-- **S3 · `harness/capture-org-mcp.mjs` — the THIRD, org-effective provenance lane for
-  `artifact-exposed-tools-list`: what the Salesforce ORG actually sees.** The toolkit
-  already has two lanes — the CODE REGISTRY (the tool registration/dispatch table the
-  audit AST-verifies, the SOURCE OF TRUTH) and the raw MCP protocol `tools/list` (the
-  client-advertised surface). The missing lane is which registered MCP servers Agentforce
-  ingested into its API-Catalog and — the unique evidence neither the code registry nor
-  the raw `tools/list` reveals — which of their tools/prompts/resources are `active` and
-  wired as callable **agent actions** (`is-agent-action`). It is captured by reading the
-  org through `sf agent mcp list/get/asset list` (+ opt-in `fetch`). Mirrors
-  `standup-org.mjs` structure verbatim: a PURE planner `planMcpCapture` (deterministic
-  `listArgv` = `agent mcp list --type EXTERNAL --json --target-org <alias>` run **WITHOUT
-  `--status`** so DISCONNECTED / admin-registered servers are enumerated too — each
-  server's `status` recorded, never filtered on) + a PURE `serverArgv(alias, id, verb)`
-  argv-builder (`get` / `asset list` / `fetch`; the alias is an input, every argv carries
-  `--target-org`; throws on an unknown verb or an injection-shaped id) + an IMPURE
-  `captureOrgMcp` executor (every `sf` spawn through `sfEnv()`, every `--json` via the
-  banner-tolerant `parseSfJson` — the mcp commands print a "preview" banner) that
-  **FAILS CLOSED** without the recorded `sf-deep-audit-ops` consent (thrown BEFORE any
-  `sf` spawn) and rides that SAME token — **no new gate, `gate-spec.mjs` untouched**.
-  **NAMES/IDS-ONLY** strict field-by-field allowlist (never a spread of raw `sf` output):
-  per server `{ id, label, type, status, serverUrlHost }` where `serverUrlHost` is the URL
-  HOST ONLY (path/query/token discarded; unparseable → null, never the raw string — the
-  `get`/`fetch` bodies can carry `serverUrl` query tokens / session ids / `authFields`),
-  per asset `{ name, kind, active, isAgentAction }` (kind ∈ MCP_TOOL｜MCP_PROMPT｜
-  MCP_RESOURCE; missing booleans default to `null`, not `false` — the PREVIEW CLI's JSON
-  shape is not contract-stable). **EMPTY IS HONEST:** an empty `agent mcp list` →
-  `no-mcp-servers`, no fabricated tools, the exposed-tools artifact stays
-  code+protocol-derived. The provenance sidecar
-  (`evidence/mcp-org-effective-<date>.provenance.json`, source
-  `org-effective-agentforce-api-catalog`, `org: { alias, orgId }` names-only with `orgId`
-  read from the standup manifest or `null`, `prodEquivalence: PENDING`) carries
-  ORG-EFFECTIVE counts only — `{ servers, activeAgentActions, registeredAssets }` — plus a
-  note that the org-effective active-agent-action count `A` **CORROBORATES** the
-  code-registry count `N` (the source of truth) and **never substitutes** it; the N-vs-A
-  reconciliation lives in `generate-artifacts` step 4, which now names all three counts.
-  The `--fetch` opt-in adds a LIVE callout that EGRESSES to the partner's MCP endpoint
-  (OFF by default, covered by the same token, recorded as a names-only advertised-vs-
-  catalog delta). Wired into `generate-artifacts` (step 3 org-effective lane + step 4
-  three-count reconciliation + `allowed-tools` grant) and `run-scans` (deep-audit tail
-  note at `mcp-listing-managed-package` + the SSL-Labs MCP-host note + `allowed-tools`
-  grant). New standing test `acceptance/test-capture-org-mcp.mjs` (M1 deterministic
-  argv/paths + serverArgv shapes + validation · M2 consent fail-closed [stub never
-  invoked, nothing written] · M3 stubbed-`sf` banner-strip + kind-bucketing +
-  active/isAgentAction · M4 names/ids-only no-leak · M5 `--dry-run` purity · M6
-  degrade-honestly `no-mcp-servers` · M7 reconciliation contract [org-effective counts
-  only, A corroborates/never-substitutes N, orgId null-tolerant, step-4 wiring] · M8
-  `--fetch` off by default · W1–W4 skill wiring). Suite **68 files / 1099 checks**. Byte-
-  frozen `reconcile-provenance.mjs` / `merge-ledger.mjs` / `finding-clusters.mjs`,
-  read-only `capture-openapi.mjs`, and `gate-spec.mjs` all untouched. **LIVE-LEG CAVEAT
-  (honest):** the actual `sf agent mcp list/get/asset list/fetch` against a real authed
-  org with the partner MCP server registered (Einstein1AIPlatform + Agentforce, package
-  installed, Connect-API MCP registration done) — including the `--fetch` egress and the
-  N-vs-A reconciliation against the code registry — defers to the midpoint cold run,
-  exactly like standup-org's `sf org create scratch` and capture-openapi's loopback GETs;
-  the deterministic engine + the twelve hermetic checks are fully offline, the live
-  invocation is NOT claimed proven here.
-- **S2 · `harness/agent-trace-probe.mjs` — the deployed-package AGENTFORCE-RUNTIME lens:
-  a scripted agent conversation + execution-trace evidence answering "what can this agent
-  actually DO / where does it egress."** The Agentforce-egress evidence the
-  `install-and-verify-package` Apex smoke test explicitly CANNOT reach (Apex egress ≠
-  Agentforce egress — the smoke test proves the credential chain resolves; this proves the
-  runtime path). Modelled line-for-line on `standup-org.mjs`: a PURE planner
-  `planAgentTraceProbe` (deterministic argv SEQUENCE — `agent preview start` → one
-  `agent preview send` per scripted utterance → the three
-  `agent trace read --format detail --dimension actions|errors|routing` → `agent trace list`
-  → `agent preview end`, byte-identical on re-run) + a FAIL-CLOSED impure executor
-  `agentTraceProbe` (every `sf` spawn routed through `sfEnv()`, every `--json` parsed with
-  the banner-tolerant `parseSfJson`) + the load-bearing `verifyConsent('sf-deep-audit-ops')`
-  guard + NAMES/metadata-only evidence + a `finally`-block that ALWAYS ends the preview
-  session. **MODE CONTRACT:** published `--api-name` agents always use live actions (NO mode
-  flag); an `--authoring-bundle` start MUST carry `--use-live-actions`, and a
-  `--simulate-actions` request THROWS — simulated actions do not prove egress.
-  **LOAD-BEARING CONSENT:** `hooks/sf-ops-gate-hook.mjs::classifySfVerb` does NOT enumerate
-  `agent preview` verbs, so this engine's own `verifyConsent` guard (fails closed before ANY
-  spawn) is the ONLY thing stopping an ungated `agent preview send`; it rides the SAME
-  recorded `sf-deep-audit-ops` token — **no new gate, `gate-spec.mjs` untouched.**
-  **REDACTION:** a pure `redactSecrets(node)` replaces any secret-shaped KEY or VALUE (JWT /
-  Bearer / sf access token / long hex) with `***redacted***` BEFORE any trace payload is
-  persisted; the manifest is a STRICT allowlist assembled field-by-field
-  (`runId`/`apiName`|`authoringBundle`/`mode`/`sessionId`/`utterances`/`turnCount`/`alias`/
-  `evidencePaths`/`status`) — never a spread `--json` payload. **EMPTY IS HONEST:** an empty
-  `trace read` dimension is recorded as `"no observed actions"`, NEVER `clean`/`ADDRESSED`.
-  Evidence emits under `.security-review/evidence/deployed-package/`
-  (`agent-trace-actions|errors|routing-<date>.json` + a names-only manifest + a
-  `.security-review/agent-trace.json` pointer); findings fold into the existing
-  `audit-ledger.json` `deployed-package` dimension keyed
-  `deployed-package/agent-trace:<action-or-egress-host>` per the SAME convention
-  audit-deployed step 4 uses for `callout-smoke` — the frozen `merge-ledger.mjs` /
-  `reconcile-provenance.mjs` engines are NOT touched. Wired into three runbooks:
-  `install-and-verify-package` Step 7b (the runtime-path lens that fills the gap the Apex
-  caveat names), `audit-deployed-package` Step 4b (the executed-action evidence step +
-  Automated-vs-manual recap), and `reviewer-simulation` Step 2 (the S2 evidence lets the
-  agent-runtime challenges carry a dynamically-observed pointer instead of bare
-  NOT-STATICALLY-EXAMINED silence — honesty floor kept verbatim). New standing test
-  `acceptance/test-agent-trace-probe.mjs` (8 checks: deterministic argv sequence, mode
-  contract, consent fail-closed, `--dry-run` purity, names-only manifest, redaction,
-  stubbed-`sf` sessionId threading + finally cleanup, empty-actions honesty).
-  Suite **67 files / 1087 checks**. **LIVE-LEG CAVEAT (honest):** the actual scripted
-  conversation against a live ACTIVATED agent + the real trace capture defers to the midpoint
-  cold run (needs a standing org + activated agent + registered MCP tools; `agent trace read`
-  reads the LOCAL DX project, so the executor runs with `cwd` inside the package DX project) —
-  the deterministic engine + the eight hermetic tests are fully offline; the live invocation
-  is NOT claimed proven here (exactly as `standup-org` keeps `sf org create scratch`
-  operator-cold).
-- **S1 · `harness/normalize-agent-test.mjs` — the deterministic argv-builder +
-  JSON→evidence normalizer for the headless `sf agent test` utterance-validation flow.**
-  A `render-*.mjs`-shaped engine (pure transform + one thin `sf` spawn through `sfEnv()`),
-  NOT a `standup-org`-style live-op engine (no consent gate, no name-guarded delete, no
-  NAMES-only manifest). Pure exports: `planGenerateTestSpec` / `planRunEval` (which **never
-  emits `--output-dir`** — that flag does not exist on `run-eval`, which prints to stdout) /
-  `planTestCreate` / `planTestRun` / `planTestResults` (each validates its enum/int args and
-  emits a flag only when set), plus `parseAgentTestResult` → canonical per-utterance records
-  (expected-vs-actual topic + actions, evaluator score, duration, `pass`/`fail`),
-  `passingUtterances`, and `foldToEvidenceInput`. The "submitted list contains ONLY utterances
-  that demonstrably produced successful tool calls" rule is now a **code invariant**: a
-  routing-FAIL utterance is `status:'fail'` and is never in the passing set; and the fold
-  **fail-closes** — an absent/empty result JSON yields the `pending-owner` fragment (owner
-  hasn't run the live leg), never a fabricated pass, while an on-disk result under
-  `.security-review/evidence/utterance-validation/` yields the reviewer-reproducible
-  `scans` fragment. `build-evidence-index.mjs` is byte-unchanged — it classifies both fragments
-  as-is. New standing test `acceptance/test-normalize-agent-test.mjs` (10 checks: exact argv
-  shapes incl. the no-`--output-dir` invariant, throw-on-bad `--batch-size`/`--test-runner`,
-  determinism, the routing-FAIL-not-credited invariant, and the fail-closed fold) +
-  `test-build-evidence-index.mjs` B6/B7 (+2 checks: the spec-only ⇒ `pending-owner` and
-  on-disk-result ⇒ `satisfied`/reproducible dispositions flow through the engine unchanged).
-  Suite **66 files / 1079 checks**. **HONEST GAP (recorded in the module docstring +
-  `docs/roadmap-coldrun-hardening.md`, NOT fixed here):** `hooks/sf-ops-gate-hook.mjs::classifySfVerb`
-  does not classify `agent test create` / `agent test run` (metadata-deploying but not `project
-  deploy` → returns `null`, ungated); acceptable while the leg stays owner-run + interactive,
-  needs a classifier arm IF ever run non-interactively. **Live-leg caveat (honest):** the actual
-  `create`/`run`/`run-eval` against a real ACTIVATED+PUBLISHED agent + the Einstein Eval API
-  defers to the midpoint cold run — the hermetic surface is fully offline-deterministic; the live
-  invocation is not claimed proven here.
-- **S0 · `bootstrap-cli-auth` pins `@salesforce/plugin-agent@1.44.4` so `agent mcp` installs
-  on a cold box.** The deployed-org deep audit's MCP steps (`sf agent mcp list` /
-  `sf agent mcp create`, the S3/S4 consumers) need the `agent mcp` topic, which first shipped
-  in plugin-agent **1.43.0**. **False-friend guard:** bumping `@salesforce/cli` in the hermetic
-  CA stack does **NOT** deliver it — even the latest CLI bundles plugin-agent **1.42.1**, which
-  lacks the topic, and the hermetic CA stack (`CA_STACK_PINS`) is CRUD/FLS SAST only and never
-  runs `agent mcp`. So the enabler is an explicit pinned plugin install on the live-org bootstrap
-  path (which resolves the system `sf` via PATH), mirroring the existing `sf plugins install auth`
-  line. Step 2 of the runbook now installs the pinned plugin and records a deterministic
-  `{pinned, installed}` version readout (`sf agent mcp --help` + `sf plugins inspect … --json`)
-  into the deep-audit evidence log; a new error-recovery row maps the missing/too-old case; the
-  step-0 consent parenthetical and the automated-recap name the agent plugin. Single-sourced as
-  two exported constants in `harness/install-scanners.mjs` — `AGENT_PLUGIN_PIN` (`1.44.4`) and
-  `AGENT_PLUGIN_MCP_FLOOR` (`1.43.0`) — read by the runbook prose and the new standing test so
-  the two can never diverge. This is npm-over-TLS plugin doctrine (like `auth`/`code-analyzer`),
-  **not** the sha256 raw-binary doctrine — no checksum; and the opengrep-only version-drift
-  honesty marker is **not** extended to it. New standing test `acceptance/test-agent-plugin-pin.mjs`
-  (3 checks): (1) a runbook↔constant equality lock — SKILL.md must contain the exact
-  `sf plugins install @salesforce/plugin-agent@${AGENT_PLUGIN_PIN}` string; (2) a semver floor +
-  upper bound — the pin parses as semver, is `>= AGENT_PLUGIN_MCP_FLOOR` (nobody may pin back to a
-  1.42.x that lacks `agent mcp`) and `< 2.0.0`; (3) a hermetic-stack purity guard — the
-  frozen `code-analyzer-stack` install plan's commands (and its source branch) never mention
-  `plugin-agent` or the pin, so the SAST stack stays agent-free. **Live-leg caveat (honest):** S0
-  is fully deterministic offline (runbook edit + single-sourced constant + hermetic tests); the
-  actual proof that `sf plugins install @salesforce/plugin-agent@1.44.4` succeeds on a truly-cold
-  box, that `sf agent mcp --help` then exits 0, and that `sf agent mcp create` / `list` run against
-  a REAL authed org **defers to the midpoint cold run** — not claimed as proven here.
 - `docs/roadmap-coldrun-hardening.md` — the `ACTIVE` post-cold-run hardening backlog: B1 run static
   deterministic scanners before the LLM fan-out (the top PENDING-OWNER-RUN drainer) · B2 throwaway-tier
   pull-forward engines (compose/dockerfile standup + org-standup/teardown) + container-isolated OpenAPI
@@ -183,27 +23,6 @@ follow semantic versioning.
   defining the states (`REFERENCE` / `HONEST-ARTIFACT` / `ACTIVE` / `DESIGN` / `DELIVERED`) and the
   rule that a doc whose thesis was later refuted must link the refutation. Docs-only governance, no
   engine change (prompted by a docs-hygiene audit before public release).
-
-### Changed
-- **S1 · `prepare-test-environment` step 9 *Validation* — headless `sf agent test` evidence
-  replaces the Agent Testing Center / Agent Preview UI punt.** The runbook now prescribes
-  authoring a test-spec YAML from the already-generated `agent-utterances.md` (`sf agent generate
-  test-spec`, interactive + DX-metadata-sourced, or `--from-definition`) then validating headlessly
-  via **Path A** `sf agent test run-eval --spec … --result-format json` (PRIMARY, residue-free,
-  Einstein Eval API, 8+ evaluators incl. subagent-routing + action-invocation; NO `--output-dir` →
-  capture stdout by redirect) or **Path B** `sf agent test create` (deploys a durable, reusable
-  `AiEvaluationDefinition` — MUTATES the review org) + `sf agent test run … --output-dir` — with the
-  trade-off stated honestly and the live-leg boundary (create/run/run-eval need a real
-  ACTIVATED+PUBLISHED agent) called out as owner-executed + cold-run-deferred. The
-  "submitted list contains ONLY successful utterances" invariant and the re-validate-after-any-
-  tools/list-change rule are preserved.
-- **S1 · `baseline/requirements-baseline.yaml` `testenv-agent-testing-center` synced to the CLI
-  reality** — requirement/details/automation_notes reworded to the headless `sf agent test` flow,
-  a `plugin-agent` CLI source row added, and `verification` **promoted `web_research_unverified` →
-  `verified_primary`** (`last_verified: 2026-07-07`; plugin-agent 1.44.4 flags locally confirmed).
-  The promotion moves the baseline tallies: `verified_primary` 122 → **123**, `web_research_unverified`
-  43 → **42** — README §baseline and `baseline/SOURCES.md` counts updated to match (`test-baseline-counts.mjs`
-  green). New CLI source row added to `SOURCES.md`'s "Trailhead & agent testing" table.
 
 ### Fixed (docs currency)
 - `docs/recurrence-confidence.md` — status banner said skill-wiring was "still pending"; it wired
@@ -231,6 +50,105 @@ follow semantic versioning.
 > `Hardened` / `Roadmap` record and the program-note checkpoints those summaries draw on) is
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
+
+## [0.8.99] — 2026-07-07
+
+**S3 of the CLI-integration arc — org-effective MCP tool-surface capture: the THIRD provenance
+lane for `artifact-exposed-tools-list`.** A new `harness/capture-org-mcp.mjs` reads what the
+Salesforce org actually sees — which registered MCP servers Agentforce ingested, and which of
+their tools/prompts/resources are `active` and wired as callable **agent actions** — via
+`sf agent mcp list/get/asset list` (+ opt-in `fetch`); the evidence neither the code registry nor
+the raw `tools/list` reveals.
+
+### Added
+- `harness/capture-org-mcp.mjs` (mirrors `standup-org.mjs`): pure `planMcpCapture` +
+  `serverArgv(alias, id, verb)` + a fail-closed `captureOrgMcp` executor that rides the recorded
+  `sf-deep-audit-ops` consent (**no new gate**). NAMES/IDS-only strict allowlist — host-only URLs,
+  never a token / `authFields` / session leak; an empty catalog degrades honestly to
+  `no-mcp-servers`. Provenance carries **org-effective counts only**: the active-agent-action count
+  `A` corroborates, never substitutes, the code-registry `N` (the N-vs-A reconciliation lives in
+  `generate-artifacts` step 4, which now names all three counts). `--fetch` opt-in adds a live
+  MCP-endpoint callout (off by default). Wired into `generate-artifacts` + `run-scans`. New
+  `acceptance/test-capture-org-mcp.mjs` (12 checks). Suite **68 files / 1099 checks**. Byte-frozen
+  `reconcile-provenance.mjs` / `merge-ledger.mjs` / `finding-clusters.mjs`, read-only
+  `capture-openapi.mjs`, and `gate-spec.mjs` untouched.
+- **Live-leg caveat:** the real `sf agent mcp …` calls against an authed org with the partner MCP
+  server registered (incl. the `--fetch` egress) defer to the midpoint cold run; the deterministic
+  engine + the 12 hermetic checks are fully offline.
+
+## [0.8.98] — 2026-07-07
+
+**S2 of the CLI-integration arc — Agentforce-runtime lens: scripted agent conversation +
+execution-trace evidence.** A new `harness/agent-trace-probe.mjs` answers "what can this agent
+actually DO / where does it egress" — the Agentforce-egress evidence the
+`install-and-verify-package` Apex smoke test explicitly cannot reach (Apex egress ≠ Agentforce
+egress).
+
+### Added
+- `harness/agent-trace-probe.mjs` (mirrors `standup-org.mjs`): pure `planAgentTraceProbe`
+  (deterministic `agent preview start` → one `agent preview send` per utterance →
+  `agent trace read --dimension actions|errors|routing` → `agent preview end`) + a fail-closed
+  `agentTraceProbe` executor with a `finally` that ALWAYS ends the preview session. Rides the
+  recorded `sf-deep-audit-ops` consent (**no new gate**; `sf-ops-gate-hook` doesn't classify
+  `agent preview`, so this engine's `verifyConsent` is the only guard). `redactSecrets` strips any
+  secret-shaped key/value (JWT / Bearer / access token / long-hex) before any trace payload is
+  persisted; NAMES/metadata-only manifest; an empty dimension is recorded as `"no observed
+  actions"`, never `clean`/`ADDRESSED`. Wired into `install-and-verify-package` (7b),
+  `audit-deployed-package` (4b), and `reviewer-simulation` (2). New
+  `acceptance/test-agent-trace-probe.mjs` (8 checks). Suite **67 files / 1087 checks**.
+- **Live-leg caveat:** the live scripted conversation against an ACTIVATED agent + the real trace
+  capture defer to the midpoint cold run; the engine + 8 hermetic tests are fully offline.
+
+## [0.8.97] — 2026-07-07
+
+**S1 of the CLI-integration arc — headless `sf agent test` utterance-validation replaces the Agent
+Testing Center UI punt.** `prepare-test-environment` now validates utterances headlessly through the
+`sf agent test` CLI and captures machine-readable pass/fail evidence, backed by a deterministic
+result-normalizer.
+
+### Added
+- `harness/normalize-agent-test.mjs` (a `render-*.mjs`-shaped pure engine, not a live-op engine):
+  planners `planGenerateTestSpec` / `planRunEval` (never emits `--output-dir` — `run-eval` prints to
+  stdout) / `planTestCreate` / `planTestRun` / `planTestResults`, plus `parseAgentTestResult` →
+  per-utterance records, `passingUtterances`, and a **fail-closed** `foldToEvidenceInput` (an
+  absent/empty result ⇒ `pending-owner`, never a fabricated pass). The "submitted list contains ONLY
+  successful utterances" rule is now a code invariant — a routing-FAIL utterance is never credited.
+  New `acceptance/test-normalize-agent-test.mjs` (10 checks) + `test-build-evidence-index.mjs` B6/B7.
+  Suite **66 files / 1079 checks**. **Honest gap (recorded, not fixed):**
+  `sf-ops-gate-hook.mjs::classifySfVerb` doesn't classify `agent test create`/`run` — acceptable
+  while owner-run + interactive.
+
+### Changed
+- `prepare-test-environment` step 9 *Validation* — authors a test-spec YAML from
+  `agent-utterances.md`, then validates via `sf agent test run-eval --spec … --result-format json`
+  (residue-free, Einstein Eval API, 8+ evaluators) or `sf agent test create` +
+  `run … --output-dir` (a durable, reusable `AiEvaluationDefinition` that MUTATES the review org),
+  with the live-leg boundary (create/run need a real activated agent) called out as owner-executed +
+  cold-run-deferred.
+- `baseline/requirements-baseline.yaml` `testenv-agent-testing-center` synced to the CLI reality + a
+  `plugin-agent` source row added; `verification` promoted `web_research_unverified` →
+  `verified_primary` (tallies 122→123 / 43→42; README + `SOURCES.md` updated; `test-baseline-counts.mjs`
+  green).
+
+## [0.8.96] — 2026-07-07
+
+**S0 of the CLI-integration arc — `bootstrap-cli-auth` pins `@salesforce/plugin-agent@1.44.4` so
+`agent mcp` installs on a cold box.** The deployed-org deep audit's MCP steps need the `agent mcp`
+topic, first shipped in plugin-agent 1.43.0.
+
+### Added
+- **False-friend guard:** bumping `@salesforce/cli` does NOT deliver `agent mcp` — even the latest
+  CLI bundles plugin-agent 1.42.1, and the hermetic CA stack (`CA_STACK_PINS`) is CRUD/FLS SAST only
+  and never runs `agent mcp`. So step 2 of the runbook does an explicit pinned
+  `sf plugins install @salesforce/plugin-agent@1.44.4` on the live-org bootstrap path and records a
+  `{pinned, installed}` version readout into the deep-audit evidence. Single-sourced as
+  `AGENT_PLUGIN_PIN` (`1.44.4`) + `AGENT_PLUGIN_MCP_FLOOR` (`1.43.0`) in
+  `harness/install-scanners.mjs` (npm-over-TLS plugin doctrine — no sha256; the opengrep-only
+  version-drift marker is not extended to it). New `acceptance/test-agent-plugin-pin.mjs` (3 checks:
+  runbook↔constant equality lock, semver floor `>= 1.43.0` and `< 2.0.0`, hermetic CA-stack purity
+  guard). Suite **65 files / 1067 checks**.
+- **Live-leg caveat:** the actual cold-box install + `sf agent mcp create`/`list` against a real org
+  defer to the midpoint cold run.
 
 ## [0.8.95] — 2026-07-05
 
