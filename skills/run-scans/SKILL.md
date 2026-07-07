@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -202,6 +202,13 @@ families PENDING until a re-audit.
    though never assert a GA date), and `mcp-listing-managed-package` (an
    AgentExchange MCP listing carries BOTH the package-scanning track and
    the external-endpoint track).
+   *Deep-audit wiring note (no new gate):* when the deployed-package deep
+   audit has stood up an org, point the deep-audit tail at
+   `harness/capture-org-mcp.mjs` for the org-effective agent-mcp catalog read
+   (which registered MCP servers Agentforce ingested + their `active` /
+   `is-agent-action` state) — it rides the SAME recorded `sf-deep-audit-ops`
+   consent, no new gate, and feeds the third provenance lane
+   `generate-artifacts` folds into `artifact-exposed-tools-list`.
 
 2. **Family 1 — Code Analyzer (package track).**
    *Requires:* the current Code Analyzer's HTML report, submitted with the
@@ -450,7 +457,11 @@ families PENDING until a re-audit.
    `endpoint-trusted-ca-certificates`).
    *Agent runs:* query SSL Labs for **every** external hostname in the
    manifest's endpoint inventory — app, API, MCP host, identity host if
-   separate, webhook receivers. Use the API (poll the analyze call until the
+   separate, webhook receivers. (For the MCP host specifically, when the
+   deployed-package deep audit stood up an org, `harness/capture-org-mcp.mjs`
+   records the org-effective MCP server `serverUrlHost` — the same registered
+   host the org catalog ingested — riding the recorded `sf-deep-audit-ops`
+   consent, no new gate.) Use the API (poll the analyze call until the
    assessment is READY; request a **fresh** assessment, not a cached one —
    a result from before your last config change is not evidence) or walk the
    owner through the web UI. Save the JSON per host to

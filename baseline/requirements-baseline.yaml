@@ -2786,7 +2786,7 @@
     (read/write/admin) to make the access-control story legible.
   applies_to: [mcp-server]
   automation: fully
-  automation_notes: Generated from tools/list plus code cross-check so dormant/conditional tools are not missed.
+  automation_notes: Generated from tools/list plus code cross-check so dormant/conditional tools are not missed, plus — when the deployed-package deep audit stands up an org — the org-effective Agentforce API-Catalog view (which registered MCP servers were ingested + their active / is-agent-action state) via harness/capture-org-mcp.mjs as a third corroborating source.
   severity_if_missing: blocker
   sources:
     - url: "partner Slack security-review post"

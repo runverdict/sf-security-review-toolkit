@@ -7,6 +7,62 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **S3 · `harness/capture-org-mcp.mjs` — the THIRD, org-effective provenance lane for
+  `artifact-exposed-tools-list`: what the Salesforce ORG actually sees.** The toolkit
+  already has two lanes — the CODE REGISTRY (the tool registration/dispatch table the
+  audit AST-verifies, the SOURCE OF TRUTH) and the raw MCP protocol `tools/list` (the
+  client-advertised surface). The missing lane is which registered MCP servers Agentforce
+  ingested into its API-Catalog and — the unique evidence neither the code registry nor
+  the raw `tools/list` reveals — which of their tools/prompts/resources are `active` and
+  wired as callable **agent actions** (`is-agent-action`). It is captured by reading the
+  org through `sf agent mcp list/get/asset list` (+ opt-in `fetch`). Mirrors
+  `standup-org.mjs` structure verbatim: a PURE planner `planMcpCapture` (deterministic
+  `listArgv` = `agent mcp list --type EXTERNAL --json --target-org <alias>` run **WITHOUT
+  `--status`** so DISCONNECTED / admin-registered servers are enumerated too — each
+  server's `status` recorded, never filtered on) + a PURE `serverArgv(alias, id, verb)`
+  argv-builder (`get` / `asset list` / `fetch`; the alias is an input, every argv carries
+  `--target-org`; throws on an unknown verb or an injection-shaped id) + an IMPURE
+  `captureOrgMcp` executor (every `sf` spawn through `sfEnv()`, every `--json` via the
+  banner-tolerant `parseSfJson` — the mcp commands print a "preview" banner) that
+  **FAILS CLOSED** without the recorded `sf-deep-audit-ops` consent (thrown BEFORE any
+  `sf` spawn) and rides that SAME token — **no new gate, `gate-spec.mjs` untouched**.
+  **NAMES/IDS-ONLY** strict field-by-field allowlist (never a spread of raw `sf` output):
+  per server `{ id, label, type, status, serverUrlHost }` where `serverUrlHost` is the URL
+  HOST ONLY (path/query/token discarded; unparseable → null, never the raw string — the
+  `get`/`fetch` bodies can carry `serverUrl` query tokens / session ids / `authFields`),
+  per asset `{ name, kind, active, isAgentAction }` (kind ∈ MCP_TOOL｜MCP_PROMPT｜
+  MCP_RESOURCE; missing booleans default to `null`, not `false` — the PREVIEW CLI's JSON
+  shape is not contract-stable). **EMPTY IS HONEST:** an empty `agent mcp list` →
+  `no-mcp-servers`, no fabricated tools, the exposed-tools artifact stays
+  code+protocol-derived. The provenance sidecar
+  (`evidence/mcp-org-effective-<date>.provenance.json`, source
+  `org-effective-agentforce-api-catalog`, `org: { alias, orgId }` names-only with `orgId`
+  read from the standup manifest or `null`, `prodEquivalence: PENDING`) carries
+  ORG-EFFECTIVE counts only — `{ servers, activeAgentActions, registeredAssets }` — plus a
+  note that the org-effective active-agent-action count `A` **CORROBORATES** the
+  code-registry count `N` (the source of truth) and **never substitutes** it; the N-vs-A
+  reconciliation lives in `generate-artifacts` step 4, which now names all three counts.
+  The `--fetch` opt-in adds a LIVE callout that EGRESSES to the partner's MCP endpoint
+  (OFF by default, covered by the same token, recorded as a names-only advertised-vs-
+  catalog delta). Wired into `generate-artifacts` (step 3 org-effective lane + step 4
+  three-count reconciliation + `allowed-tools` grant) and `run-scans` (deep-audit tail
+  note at `mcp-listing-managed-package` + the SSL-Labs MCP-host note + `allowed-tools`
+  grant). New standing test `acceptance/test-capture-org-mcp.mjs` (M1 deterministic
+  argv/paths + serverArgv shapes + validation · M2 consent fail-closed [stub never
+  invoked, nothing written] · M3 stubbed-`sf` banner-strip + kind-bucketing +
+  active/isAgentAction · M4 names/ids-only no-leak · M5 `--dry-run` purity · M6
+  degrade-honestly `no-mcp-servers` · M7 reconciliation contract [org-effective counts
+  only, A corroborates/never-substitutes N, orgId null-tolerant, step-4 wiring] · M8
+  `--fetch` off by default · W1–W4 skill wiring). Suite **68 files / 1099 checks**. Byte-
+  frozen `reconcile-provenance.mjs` / `merge-ledger.mjs` / `finding-clusters.mjs`,
+  read-only `capture-openapi.mjs`, and `gate-spec.mjs` all untouched. **LIVE-LEG CAVEAT
+  (honest):** the actual `sf agent mcp list/get/asset list/fetch` against a real authed
+  org with the partner MCP server registered (Einstein1AIPlatform + Agentforce, package
+  installed, Connect-API MCP registration done) — including the `--fetch` egress and the
+  N-vs-A reconciliation against the code registry — defers to the midpoint cold run,
+  exactly like standup-org's `sf org create scratch` and capture-openapi's loopback GETs;
+  the deterministic engine + the twelve hermetic checks are fully offline, the live
+  invocation is NOT claimed proven here.
 - **S2 · `harness/agent-trace-probe.mjs` — the deployed-package AGENTFORCE-RUNTIME lens:
   a scripted agent conversation + execution-trace evidence answering "what can this agent
   actually DO / where does it egress."** The Agentforce-egress evidence the

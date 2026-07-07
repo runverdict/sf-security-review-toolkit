@@ -1,7 +1,7 @@
 ---
 name: generate-artifacts
 description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton, and the written-policy / org-config pack (incident-response, data-retention + deletion-on-uninstall, DR/backup, vuln-remediation SLA, hosting architecture, prior-pen-test attestation) as owner-completed stubs — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
-allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) Bash(node *harness/write-drafted-content.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) Bash(node *harness/write-drafted-content.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Generate Artifacts
@@ -133,6 +133,27 @@ marked owner-input.
      baseline `mcp-tools-list-metadata-completeness`: every tool needs a
      name, an honest description, and schemas — gaps are findings for the
      draft, not silent fixes.
+   - **The org-effective Agentforce API-Catalog view — ADDITIVE, deep-audit-gated.**
+     The `tools/list` above is the CLIENT-advertised surface; it does not reveal
+     which tools the Salesforce ORG actually ingested and ACTIVATED. When the
+     deployed-package deep audit stood up a throwaway org (an
+     `.security-review/org-standup.json` pointer exists AND the partner MCP server
+     was registered), run `harness/capture-org-mcp.mjs` to capture what the org
+     sees: which registered MCP servers Agentforce ingested into its API-Catalog,
+     and — the unique evidence neither the code registry nor the raw `tools/list`
+     reveals — which of their tools/prompts/resources are `active` and wired as
+     callable **agent actions** (`is-agent-action`). It reads the org through
+     `sf agent mcp list/get/asset list` (names/ids only — server URL tokens, session
+     ids, and auth material are field-allowlisted out) into
+     `evidence/mcp-org-effective-<date>.json` plus a provenance sidecar (source
+     `org-effective-agentforce-api-catalog`, prod-equivalence PENDING owner
+     attestation — captured from the throwaway audit org, not production). It rides
+     the SAME recorded `sf-deep-audit-ops` consent that stood the org up —
+     **no new gate**; the opt-in `--fetch` live callout to the partner's MCP endpoint is
+     covered by the same token and recorded as a names-only delta. This lane is
+     strictly **ADDITIVE** and gated on the deep-audit opt-in: in the source-only
+     journey there is nothing to capture, the engine degrades to `no-mcp-servers`,
+     and the exposed-tools artifact stays code+protocol-derived.
    - **The API spec from framework introspection, never hand-written.** A
      hand-authored OpenAPI drifts from the routes the moment someone edits a
      handler, and the reviewer imports the spec and diffs it against live
@@ -180,10 +201,18 @@ marked owner-input.
    under `mcpthreat-scope-minimization`); never collapse or drop a tier,
    and a refresh must never replace a fuller prior inventory with a thinner
    subset. Close with the reconciliation statement the checklist's Row 7
-   guidance demands, naming BOTH counts: "the registry defines N tools
-   (tiers a/b/c); the client/ESR exposes M operations; the delta is the X
-   admin + Y conditional/approval tools that are registry-resident but not
-   client-listed because…". A count that doesn't reconcile is a generator
+   guidance demands, naming all three counts: "the registry defines N tools
+   (tiers a/b/c); the client/ESR exposes M operations;
+   the org catalog has A active agent actions of the N registered;
+   the delta is the X admin + Y conditional/approval tools that are
+   registry-resident but not client-listed because…". The org-catalog A (from
+   `harness/capture-org-mcp.mjs`, when the deployed-package deep audit ran) is
+   CORROBORATING — it uniquely shows which registered tools are actually ACTIVE
+   agent actions, grounding the baseline's "including the administrative ones" +
+   privilege-tiering ask; the registry N stays the source of truth and A is
+   never substituted for N (the same numeric-collision trap: when A happens to
+   equal one tier's count, a refresh must not silently draft A as the whole
+   registry). A count that doesn't reconcile is a generator
    bug to fix now — every later artifact (access-control matrix,
    data-sensitivity tool map) reconciles against this number, and fudging it
    here propagates the lie three documents deep.
