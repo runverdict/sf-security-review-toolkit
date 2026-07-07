@@ -1,7 +1,7 @@
 ---
 name: bootstrap-cli-auth
 description: Install the Salesforce CLI and authenticate the orgs the deployed-org deep audit needs — from a machine that may have no local browser (CI box, remote server, devcontainer). The CLI-gated entry step the autonomous orchestrator invokes only when the operator opts into auditing the deployed package; read-only on the partner's source.
-allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Write AskUserQuestion
+allowed-tools: Bash(node --version) Bash(npm install -g @salesforce/cli) Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Write AskUserQuestion
 ---
 
 # Bootstrap CLI Auth
@@ -71,23 +71,24 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    npm install -g @salesforce/cli
    ```
 
-   Then disable the CLI's update-availability banner once for this session — it
-   prints to stdout ahead of `--json` payloads and corrupts their parsing in every
-   later skill:
-
-   ```bash
-   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
-   ```
+   The CLI's update-availability banner prints to stdout ahead of `--json` payloads
+   and corrupts their parsing. Because every Bash tool call runs in a **fresh shell**
+   — an `export` never carries to the next call — the two banner-disable flags
+   (`export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true`) must sit on their
+   own line at the **top of every Bash block that runs `sf`** in this skill, as each
+   `sf` fence below does.
 
    Then verify:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf --version
    ```
 
    **Then install the auth plugin** — current CLI builds ship only `access-token` and `jwt` login in core; the `web` and `sfdx-url` flows live in a plugin (a missing flow errors with `Warning: org login web is not a sf command`):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf plugins install auth
    ```
 
@@ -98,6 +99,7 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    Pin it explicitly so a cold box is deterministic:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf plugins install @salesforce/plugin-agent@1.44.4
    ```
 
@@ -108,6 +110,7 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    deterministic plugin-version readout:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf agent mcp --help
    sf plugins inspect @salesforce/plugin-agent --json
    ```
@@ -135,6 +138,7 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
    - **Plain SSH**: reconnect with `ssh -L 1717:localhost:1717 {user}@{host}` first, then the printed URL works in the human's local browser.
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org login web --alias {ORG_ALIAS} --instance-url https://login.salesforce.com
    ```
 
@@ -143,12 +147,14 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
 5. **Capture stored auth for re-use.** Once any org is authenticated, capture its auth URL so the same org can be authorized on another machine without a human:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org display --target-org {ORG_ALIAS} --verbose --json
    ```
 
    The `result.sfdxAuthUrl` field (format `force://...`) is the portable credential. Store it in a secrets manager. To re-authenticate anywhere, write it to a file and execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org login sfdx-url --sfdx-url-file authfile.txt --alias {ORG_ALIAS}
    ```
 
@@ -157,6 +163,7 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
 6. **Repeat per fleet org.** Run the chosen flow once per alias (`devhub`, `ns-holder`, `test-1`, `golden`). Then set the defaults so subsequent commands don't need `-o` flags:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf config set target-dev-hub=devhub
    sf config set target-org=test-1
    ```
@@ -166,12 +173,14 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
 8. **Verify the fleet.** Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org list
    ```
 
    Confirm every alias is present and connected, and that the default org and default Dev Hub markers point where you expect. Then spot-check each alias:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org display -o {ORG_ALIAS} --json
    ```
 
@@ -188,6 +197,7 @@ The deep audit is never one org, and mixing the roles up is the most expensive c
 Convention across the deep-audit steps (`/sf-security-review-toolkit:build-managed-package`, `/sf-security-review-toolkit:install-and-verify-package`, `/sf-security-review-toolkit:teardown-mcp-registration`): **never assume the machine can launch a browser.** Whenever a human must perform a Setup step, generate a clickable deep link instead of opening one:
 
 ```bash
+export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 sf org open -o {ORG_ALIAS} --path "/lightning/setup/NamedCredential/home" --url-only
 ```
 

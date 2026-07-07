@@ -1,7 +1,7 @@
 ---
 name: build-managed-package
 description: Cut a released managed 2GP from the partner's source — ONLY when the deployed-org deep audit finds no released version to audit yet. The common case is the partner already has a release; this is the fallback that produces an installable artifact so the deep audit has something to stand up. It does not modify the partner's application logic, but it DOES generate packaging scaffolding (a post-install handler, a CspTrustedSite) into force-app/ and edit sfdx-project.json — and only on the no-existing-release path.
-allowed-tools: Bash(sf *) Bash(git diff*) Bash(cat *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write Edit AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(git diff*) Bash(cat *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write Edit AskUserQuestion
 ---
 
 # Build Managed Package
@@ -45,9 +45,11 @@ This is the **build-only-if-needed** step of the deployed-org deep audit. The co
    **Promotion (step 10) is a SEPARATE, distinctly-worded ask** — this consent
    does NOT cover it. A skipped ask means the op is denied, not silently run.
 
-Before the first `sf` call below, disable the CLI's update-availability banner once
-for this session — it prints to stdout ahead of the JSON payload and corrupts
-`--json` parsing:
+Every Bash tool call runs in a **fresh shell** — an `export` never carries to the
+next call — so the banner-disable flags must sit at the **top of every Bash block
+that runs `sf`** in this skill, on their own line above the `sf` command. The CLI's
+update-availability banner otherwise prints to stdout ahead of the JSON payload and
+corrupts `--json` parsing. Prepend this line to each `sf` fence below:
 
 ```bash
 export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
@@ -56,12 +58,14 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 1. **Verify the namespace prerequisites.** A managed 2GP requires a registered namespace LINKED to the Dev Hub. The namespace lives in a plain signup Developer Edition org (the "namespace holder" — don't use the Dev Hub itself, it can't be linked). Verify headlessly:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {NS_HOLDER_ALIAS} -q "SELECT NamespacePrefix, OrganizationType FROM Organization"
    ```
 
    `NamespacePrefix` must show the registered namespace. Verify the Dev Hub link headlessly too (note: the object has no `Status` field):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {DEVHUB_ALIAS} -q "SELECT Id, NamespacePrefix FROM NamespaceRegistry" --json
    ```
 
@@ -75,6 +79,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    Both registration steps are browser-only. Generate the links (never assume a local browser can launch):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {NS_HOLDER_ALIAS} --path "/0A2?setupid=Package" --url-only   # Setup → Package Manager (classic page, opened top-level)
    sf org open -o {DEVHUB_ALIAS} --path "/lightning/setup/NamespaceRegistry/home" --url-only   # Setup → Namespace Registry → Link Namespace
    ```
@@ -105,12 +110,14 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 3. **Create the package — explicitly Managed.** Pass `--package-type Managed` explicitly — an installable AgentExchange listing must be Managed, and `postInstallScript` requires it. Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package create --name "{MCP_NAME}" --package-type Managed --path force-app -v {DEVHUB_ALIAS}
    ```
 
    Verify via the Container Options column:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package list -v {DEVHUB_ALIAS}
    ```
 
@@ -176,6 +183,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    Confirm `"postInstallScript": "MCPPostInstall"` is in `sfdx-project.json`, then **re-run the step 4 guard** — package commands are exactly what drops it. Deploy the classes to the dev org (`sf project deploy start --source-dir force-app/main/default/classes -o {ORG_ALIAS}`; if deploying alongside the credentials and perm set, follow the two-step ordering in the footnote), then run the tests before packaging:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf apex run test --class-names MCPPostInstallTest -o {ORG_ALIAS} --code-coverage --result-format human --wait 10
    ```
 
@@ -188,6 +196,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    with the definition carrying the MCP feature — `"features": ["Einstein1AIPlatform"]` plus the `EinsteinGptSettings` settings block (`Einstein1AIPlatform` enables third-party MCP server registration; the older `Chatbot` feature is retired — as of June 2026 it fails org creation with `INVALID_INPUT: Chatbot is not a valid Features value` — and `botSettings` has failed the scratch settings deploy with `ProblemDeployingSettings`; omit both unless you need them). The engine always passes `--no-ancestors` — exactly right on this path, since this skill only runs while the package has no released version — creates the org under the toolkit alias `sf-srt-org-<runId>`, and records the manifest its paired `teardown-org.mjs` deletes from (name-guarded: only orgs the engine created are deletable; it rides the step-0 `sf-deep-audit-ops` consent, nothing new to ask). Before promoting, test-install the beta into a **namespace-less** scratch org (a second engine run without `--def-file`, outside the namespaced project root; betas install fine into scratch orgs) and run the post-install battery from `/sf-security-review-toolkit:install-and-verify-package` — cheaper to catch an install-time problem before the promote is burned. After the version builds, test-install it into the same org to verify the perm sets auto-assign. When the orgs have served their purpose, delete each with `node ${CLAUDE_PLUGIN_ROOT}/harness/teardown-org.mjs --consent --run-id <id>`. Then execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package version create --package "{MCP_NAME}" --code-coverage --installation-key-bypass --wait 30 -v {DEVHUB_ALIAS}
    ```
 
@@ -204,6 +213,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
     denied, not silently run. Beta versions cannot install into the Trialforce-template test orgs the MCP Client Partner Technical Guide prescribes — exact error: `Unable to install beta package ... only in sandbox or Developer Edition organizations` (yes, even though those orgs are nominally Developer Edition). Promotion requires ≥75% Apex coverage (the template test class lands well above it), and security review needs a released version anyway. Execute:
 
     ```bash
+    export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
     sf package version promote --package "{MCP_NAME}@0.1.0-1" -v {DEVHUB_ALIAS}
     ```
 

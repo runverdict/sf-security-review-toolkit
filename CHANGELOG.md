@@ -51,6 +51,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.101] — 2026-07-07
+
+**Per-Bash-block `sf` update-banner guard replaces the broken export-once
+mitigation across every sf-running skill.** Each Claude Code Bash tool call runs in
+a fresh shell (shell state does not persist), so an `export SF_AUTOUPDATE_DISABLE=…`
+in one Bash block never reached the next — every later `sf --json` call ran with the
+CLI's update-availability banner re-enabled, and the banner prints ahead of the JSON
+payload and corrupts parsing (it broke a keystone query mid cold-run). The only
+reliable fix is to put the two flags in the SAME fence as the `sf` command; this
+slice does that across every `sf`-running fence and locks it with a standing test.
+No harness engine — `harness/sf-env.mjs` (`sfEnv()` / `parseSfJson()`) already
+forces both flags on every `node`-spawned `sf`; this is the agent-Bash half only.
+
+### Fixed
+- The once-per-session `export` anti-pattern (architecturally broken across fresh
+  Bash shells) in the five skills that still carried it — `bootstrap-cli-auth`,
+  `teardown-mcp-registration`, `build-managed-package`, `audit-deployed-package`,
+  `install-and-verify-package`: the "disable the banner once for the session" prose
+  is rewritten to the fresh-shell root cause, and the two flags are prepended to the
+  top of every `sf`-running Bash fence (each on its own line — never inline
+  `VAR=… sf …` or `export … && sf …`, which would break the `Bash(sf *)` allow-match).
+- `scope-submission` — its now-VESTIGIAL "banner once" prose is DELETED, not
+  rewritten: the R2 slice (0.8.100) moved every agent-Bash `sf` call in step 4 into
+  `harness/sf-autoresolve.mjs`, so the skill has zero raw `sf` invocations left for
+  that prose to guard. R2's `Bash(node *harness/sf-autoresolve.mjs *)` grant is intact.
+
+### Added
+- Per-block banner guard to `prepare-test-environment` (its `sf data query` expiry
+  probe) and `run-scans` (both `sf code-analyzer run` fences) — neither carried a
+  guard before.
+- The `Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true)` allow-rule
+  (the narrow exact string, not `Bash(export *)`, so the `export` sub-command matches
+  without a permission prompt while `sf …` still matches `Bash(sf *)`) to the seven
+  skills that run agent-Bash `sf` — plus an explicit `Bash(sf code-analyzer *)` on
+  `run-scans`, whose only `sf` grant was a bare `Bash`.
+- `acceptance/test-sf-banner-guard.mjs` (2 checks) — a pure-filesystem standing test
+  over every `skills/*/SKILL.md`: CHECK A fails the build on any surviving
+  "update-availability banner once" phrasing; CHECK B splits each file into
+  whitespace-tolerant bash fences and asserts every `sf`-bearing fence (`sfdx`
+  excluded) contains the literal `SF_AUTOUPDATE_DISABLE`, with a nonzero-floor guard
+  (≥20 of the ~53 real fences) so a parser that silently matches nothing fails CLOSED.
+  Suite **70 files / 1111 checks**. Byte-frozen `reconcile-provenance.mjs` /
+  `merge-ledger.mjs` / `finding-clusters.mjs`, `harness/sf-env.mjs`, and R2's
+  `harness/sf-autoresolve.mjs` / `render-sf-autoresolve.mjs` untouched.
+
 ## [0.8.100] — 2026-07-07
 
 **Deterministic DevHub auto-resolve producer engine — reliable `0Ho`→`04t` query

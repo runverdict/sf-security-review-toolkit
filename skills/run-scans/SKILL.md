@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(sf code-analyzer *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -242,9 +242,14 @@ families PENDING until a re-audit.
    FLS band AND the `--all`-ingestable evidence JSON, and it is the primary
    command for **BOTH** a present `sf` and the cold-installed stack — the only
    difference between the two is how `sf` got onto PATH (a pre-existing install
-   vs. the 0.8.41 cold-install provision above), not which command you run:
+   vs. the 0.8.41 cold-install provision above), not which command you run. Every Bash
+   tool call runs in a **fresh shell**, so the CLI's update-availability banner-disable
+   flags must sit at the **top of every Bash block that runs `sf code-analyzer`** in
+   this skill, on their own line above the command — the banner otherwise prints ahead
+   of the `--json` / evidence payload and corrupts its parsing:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf code-analyzer run --workspace <force-app-root> \
      -r AppExchange -r sfge -r pmd \
      --output-file .security-review/evidence/code-analyzer-<date>.json --view detail
@@ -284,6 +289,7 @@ families PENDING until a re-audit.
    byte-verified required invocation recorded in `scan-code-analyzer-invocation`:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf code-analyzer run --rule-selector AppExchange \
      --rule-selector Recommended:Security \
      --output-file CodeAnalyzerReport.html

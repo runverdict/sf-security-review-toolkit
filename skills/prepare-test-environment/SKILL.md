@@ -1,7 +1,7 @@
 ---
 name: prepare-test-environment
 description: Phase 4 of security review prep. Guided runbooks for the reviewer-facing test environment — the review org, the configured agent with Topics and a validated utterance list (MCP listings), two test users with a bidirectional authorization proof, the isolated external test tenant, and the end-to-end self-test that makes "un-testable environment" bounces impossible. Use after scans; the environment must stay alive through the whole review window.
-allowed-tools: Read Write Edit Bash(sf *) Bash(curl *) Bash(ls *) Bash(cat *) AskUserQuestion
+allowed-tools: Read Write Edit Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(curl *) Bash(ls *) Bash(cat *) AskUserQuestion
 ---
 
 # Prepare Test Environment
@@ -91,9 +91,14 @@ bounce.
    MCP-path Trialforce-templated org's lifespan (and that the Trialforce
    route is prescribed, not optional, for the MCP review path), but the org
    in front of you is the fact that matters (baseline:
-   `testenv-trialforce-org-lifespan`):
+   `testenv-trialforce-org-lifespan`). Every Bash tool call runs in a **fresh shell**,
+   so the CLI's update-availability banner-disable flags must sit at the **top of every
+   Bash block that runs `sf`** in this skill, on their own line above the `sf` command —
+   the banner otherwise prints ahead of a `--json` / query payload and corrupts its
+   parsing:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {REVIEW_ORG_ALIAS} -q "SELECT TrialExpirationDate, OrganizationType FROM Organization"
    ```
 

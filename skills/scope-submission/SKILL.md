@@ -241,14 +241,6 @@ elements, get the requirement list those elements imply.
    manifest, and let the operator-asked / code-inferred values stand. Never
    block the phase on it.
 
-   Before the first `sf` call, disable the CLI's update-availability banner once
-   for the session — it prints to stdout ahead of the payload and corrupts
-   `--json` parsing (it has broken a keystone query mid-run):
-
-   ```bash
-   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
-   ```
-
    First, two hard guardrails before any query — skipping either is how this
    step produces confident garbage:
 

@@ -1,7 +1,7 @@
 ---
 name: install-and-verify-package
 description: Stand up the partner's EXISTING released managed package in a throwaway scratch/trial org and audit the deployed artifact — exactly what the Salesforce reviewer does when they install your package. Pre-install contamination check, headless permission-chain verification (the install-time UEC grant drop), Connect API credential configuration, Manage Tools sync, install+uninstall integrity, and an Apex smoke test through the installed Named Credential. The core of the CLI-gated deployed-org deep audit.
-allowed-tools: Bash(sf *) Bash(rm *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(rm *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write AskUserQuestion
 ---
 
 # Install and Verify Package
@@ -41,9 +41,11 @@ This is the **core** of the deployed-org deep audit — the step the whole CLI-g
    a version, that is a SEPARATE `sf-package-promote` permanence ask — see
    `/sf-security-review-toolkit:build-managed-package` step 10.)
 
-Before the first `sf` call below, disable the CLI's update-availability banner once
-for this session — it prints to stdout ahead of the JSON payload and corrupts
-`--json` parsing:
+Every Bash tool call runs in a **fresh shell** — an `export` never carries to the
+next call — so the banner-disable flags must sit at the **top of every Bash block
+that runs `sf`** in this skill, on their own line above the `sf` command. The CLI's
+update-availability banner otherwise prints to stdout ahead of the JSON payload and
+corrupts `--json` parsing. Prepend this line to each `sf` fence below:
 
 ```bash
 export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
@@ -52,6 +54,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 1. **Pre-install contamination check — one MCP registration per server per org. Ever.** Installing the package into an org that still has a hand-created registration of the same server (same label, same tool names — every PoC org has one) breaks a previously-working agent instantly with `tool validation failed while setting up the external MCP connection`, and leaves registry state that keeps poisoning runtime enablement even after cleanup. Detect it headlessly — look for any existing row registering the same server:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT Id, DeveloperName, MasterLabel, NamespacePrefix, Endpoint FROM NamedCredential" --json
    sf data query -o {ORG_ALIAS} -t -q "SELECT Id, DeveloperName, MasterLabel, NamespacePrefix FROM ExternalServiceRegistration" --json
    ```
@@ -61,6 +64,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    The **primary signal is the name**: a `NamespacePrefix = null` Named Credential or ESR whose `DeveloperName`/`MasterLabel` matches your server is a hand registration. Do **not** key on `Endpoint` — hand registrations created via the MCP Servers Setup UI (and the toolkit scaffold) are `SecuredEndpoint`-type Named Credentials whose URL lives in `NamedCredentialParameter` rows, so the legacy `Endpoint` field is null on exactly the rows you're hunting (a null `Endpoint` with a matching name still counts as a hit). To match by URL anyway, query the parameters via the Tooling API:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -t -q "SELECT NamedCredentialId, ParameterValue FROM NamedCredentialParameter WHERE ParameterType = 'Url'" --json
    ```
 
@@ -71,6 +75,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    To eyeball the registry, generate a deep link (never assume a local browser can launch) — Setup → MCP Servers:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {ORG_ALIAS} --path "/lightning/setup/McpServer/home" --url-only
    ```
 
@@ -81,6 +86,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 2. **Check the version is promoted (beta gate).** Only released versions install into Trialforce template test orgs — beta installs fail with `Unable to install beta package ... only in sandbox or Developer Edition organizations`, even though the template orgs are nominally Developer Edition. Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package version list --packages "{MCP_NAME}" -v {DEVHUB_ALIAS} --json
    ```
 
@@ -89,6 +95,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 3. **Install the package.** Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package install -p {PACKAGE_VERSION_ID} -o {ORG_ALIAS} --wait 10 --security-type AdminsOnly
    ```
 
@@ -99,6 +106,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    a. **Permission set assignments** — the installing admin AND the Platform Integration User (the identity that makes the egress callout at runtime; deterministic username `cloud@{orgId18}`, 18-char org id lowercased). Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT PermissionSet.Name, Assignee.Username FROM PermissionSetAssignment WHERE PermissionSet.Name = '{MCP_NAME}_Perm_Set'" --json
    sf data query -o {ORG_ALIAS} -q "SELECT PermissionSet.Name, Assignee.Username FROM PermissionSetAssignment WHERE Assignee.Username LIKE 'cloud@%'" --json
    ```
@@ -108,6 +116,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    b. **Which permission sets actually carry the UEC read grant.** Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT Parent.Name, PermissionsRead FROM ObjectPermissions WHERE SobjectType = 'UserExternalCredential' AND PermissionsRead = true" --json
    ```
 
@@ -116,6 +125,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    c. **The handler's fallback perm set.** Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT Id, Name, NamespacePrefix FROM PermissionSet WHERE Name = '{MCP_NAME}_UEC_Access'" --json
    ```
 
@@ -124,6 +134,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    d. **External Credential parameter access.** Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT Parent.Name, Parent.NamespacePrefix FROM SetupEntityAccess WHERE SetupEntityType = 'ExternalCredentialParameter'" --json
    ```
 
@@ -136,6 +147,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    First, GET the resource to discover the expected per-protocol field names (the GET takes the principal coordinates as query params):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf api request rest "/services/data/v66.0/named-credentials/credential?externalCredential={NAMESPACE}__{MCP_NAME}&principalType=NamedPrincipal&principalName={PRINCIPAL_NAME}" -o {ORG_ALIAS}
    ```
 
@@ -160,6 +172,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    (`{PRINCIPAL_NAME}` is the NamedPrincipal defined in your External Credential. The scaffold wizard names it `MCPAuthentication` — matching the partner guide's packaged example `ns__MyMCP-MCPAuthentication`; other packages may differ. Confirm via the GET discovery call above or the package's `externalCredentials/` source before POSTing.) Then execute, and delete the body file after:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf api request rest "/services/data/v66.0/named-credentials/credential" --method POST --body @/tmp/mcp-credential.json -o {ORG_ALIAS}
    rm /tmp/mcp-credential.json
    ```
@@ -181,6 +194,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 6. **Register the tools (human step — Manage Tools).** Generate the deep link; the breadcrumb is Setup → MCP Servers → {your server} → **Manage Tools**:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {ORG_ALIAS} --path "/lightning/setup/McpServer/home" --url-only
    ```
 
@@ -210,6 +224,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf apex run -o {ORG_ALIAS} --file /tmp/mcp-smoke.apex
    ```
 

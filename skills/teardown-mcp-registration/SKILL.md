@@ -1,7 +1,7 @@
 ---
 name: teardown-mcp-registration
 description: Provision a clean throwaway org and leave zero residue after the deployed-package audit — remove an MCP server registration (agent references, tool actions, the MCP Servers registry row, ESR/Named Credential/External Credential, and the permission set) in the dependency order that works. Used by the deep audit to clean a contaminated org before install, and to tear the package down to nothing after the audit.
-allowed-tools: Bash(sf *) Bash(grep *) Bash(node *harness/record-consent.mjs *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(grep *) Bash(node *harness/record-consent.mjs *) Read Write AskUserQuestion
 ---
 
 # Teardown MCP Registration
@@ -32,6 +32,7 @@ This skill bookends the deployed-org deep audit on **both** sides, and is **opt-
 - The registration's component names on hand: `{MCP_NAME}` (ESR + Named Credential + External Credential developer name) and `{MCP_NAME}_Perm_Set`. **If the registration was created through the Setup UI (Setup → MCP Servers) rather than the metadata wizard**, the auto-created Named/External Credential and "<ServerName> - Permission Set" may not follow these conventions — discover the real names first and substitute them throughout (a name-keyed verification query with a guessed name returns empty and falsely reads as clean):
 
   ```bash
+  export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
   sf data query -o {ORG_ALIAS} --json -q "SELECT Id, Name, Label FROM PermissionSet WHERE Label LIKE '%{SERVER_LABEL}%'"
   sf data query -o {ORG_ALIAS} --json -q "SELECT Id, DeveloperName, MasterLabel FROM NamedCredential"
   ```
@@ -39,9 +40,12 @@ This skill bookends the deployed-org deep audit on **both** sides, and is **opt-
 
 ## Steps
 
-Before the first `sf` call in this skill (including the discovery queries above),
-disable the CLI's update-availability banner once for this session — it prints to
-stdout ahead of the JSON payload and corrupts `--json` parsing:
+Every Bash tool call runs in a **fresh shell** — an `export` never carries to the
+next call — so the banner-disable flags must sit at the **top of every Bash block
+that runs `sf`** in this skill (including the discovery queries in Prerequisites
+above), on their own line above the `sf` command. The CLI's update-availability
+banner otherwise prints to stdout ahead of the JSON payload and corrupts `--json`
+parsing. Prepend this line to each `sf` fence:
 
 ```bash
 export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
@@ -60,6 +64,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 1. **Remove tool-action references from EVERY agent — including agents you forgot about.** Find them headlessly via the Tooling API. Execute all three sweeps:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query --use-tooling-api -o {ORG_ALIAS} --json \
      -q "SELECT Id, DeveloperName, MasterLabel FROM GenAiFunctionDefinition"
    sf data query --use-tooling-api -o {ORG_ALIAS} --json \
@@ -73,6 +78,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    For each referencing agent: open it in the builder, deactivate it, and remove the MCP actions from its topics. Agent Studio is the current builder — legacy agent creation retires the week of 2026-07-13. Generate the org link (never assume a local browser can launch):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {ORG_ALIAS} --url-only
    ```
 
@@ -81,12 +87,14 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 2. **Delete the MCP Tool Actions.** Headless path — delete each `GenAiFunctionDefinition` row found in step 1:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data delete record --use-tooling-api -s GenAiFunctionDefinition -i {FUNCTION_ID} -o {ORG_ALIAS}
    ```
 
    If the delete is rejected as still referenced, join rows may need deleting first (e.g. `GenAiPluginFunctionDef`, the plugin↔function link). Discover its shape, query, and delete:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf sobject describe --sobject GenAiPluginFunctionDef --use-tooling-api -o {ORG_ALIAS}
    sf data delete record --use-tooling-api -s GenAiPluginFunctionDef -i {JOIN_ID} -o {ORG_ALIAS}
    ```
@@ -94,6 +102,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    UI alternative: generate the org link, breadcrumb Setup → Quick Find "Agentforce Assets" → delete the server's tool actions there. (This is also the recovery path for GACK `-1826465994`.)
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {ORG_ALIAS} --url-only
    ```
 
@@ -102,6 +111,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 3. **Delete the MCP Server registry row — UI only.** `McpServerDefinition` is not API-writable, and while the row exists it pins the ESR: every destructive deploy fails with `setup object in use`. Hand the human a deep link:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf org open -o {ORG_ALIAS} --path "/lightning/setup/McpServer/home" --url-only
    ```
 
@@ -132,6 +142,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    Execute:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf project deploy start --metadata-dir /tmp/mcp-teardown -o {ORG_ALIAS} --wait 10
    ```
 
@@ -140,6 +151,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 5. **Permission set last — assignments first.** A perm set with live assignments will not delete. Query the `PermissionSetAssignment` rows, delete each, then delete the perm set itself:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} --json \
      -q "SELECT Id, Assignee.Username FROM PermissionSetAssignment WHERE PermissionSet.Name = '{MCP_NAME}_Perm_Set'"
    sf data delete record -s PermissionSetAssignment -i {PSA_ID} -o {ORG_ALIAS}
@@ -151,6 +163,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
 6. **Verification battery — confirm zero residue.** Re-query every object class touched. Execute all of these; every one must come back empty (or, for the GenAi sweeps, free of your server's label and tool names):
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query --use-tooling-api -o {ORG_ALIAS} --json \
      -q "SELECT Id, DeveloperName, MasterLabel FROM GenAiFunctionDefinition"
    sf data query --use-tooling-api -o {ORG_ALIAS} --json \

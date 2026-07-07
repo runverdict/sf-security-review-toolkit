@@ -1,7 +1,7 @@
 ---
 name: audit-deployed-package
 description: The opt-in deep audit of the INSTALLED package, run against the throwaway org it was installed into — the thin dynamic pass that previews what the Salesforce reviewer actually does (install your package, then test it). Verifies the subscriber-effective permission grants (including the install-time UEC grant drop), the post-install handler's real granted scope, Code Analyzer Graph Engine CRUD/FLS data-flow on the installed source, that Named/External-Credential callouts resolve with org-entered secrets, and install + uninstall integrity. Use only after sf is authed and /sf-security-review-toolkit:install-and-verify-package has stood the package up in a clean org. Augments — never replaces — the source audit-codebase pass.
-allowed-tools: Bash(sf *) Bash(node *harness/record-consent.mjs *) Read Write Grep AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/record-consent.mjs *) Read Write Grep AskUserQuestion
 ---
 
 # Audit Deployed Package
@@ -117,9 +117,11 @@ finding (CONVENTIONS §2). Redact any secret value to `***redacted***` before wr
 (CONVENTIONS §6); the queries below are designed to never *return* a secret, but the
 Connect-API discovery in step 4 can echo principal coordinates — strip them.
 
-Before the first `sf` call, disable the CLI's update-availability banner once for
-this session — it prints to stdout ahead of the JSON payload and corrupts `--json`
-parsing:
+Every Bash tool call runs in a **fresh shell** — an `export` never carries to the
+next call — so the banner-disable flags must sit at the **top of every Bash block
+that runs `sf`** in this skill, on their own line above the `sf` command. The CLI's
+update-availability banner otherwise prints to stdout ahead of the JSON payload and
+corrupts `--json` parsing. Prepend this line to each `sf` fence below:
 
 ```bash
 export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
@@ -145,6 +147,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
      is moot — query it and stop early if true:
 
      ```bash
+     export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
      sf data query -o {DEVHUB} -t -q "SELECT IsSecurityReviewed FROM SubscriberPackageVersion WHERE Id = '{PACKAGE_VERSION_ID_04t}'" --json
      ```
 
@@ -165,6 +168,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    Query the live grants, not the package metadata:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    # The packaged permission set(s) and what object permissions they actually carry post-install
    sf data query -o {ORG_ALIAS} -q "SELECT Parent.Name, Parent.NamespacePrefix, SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, PermissionsDelete, PermissionsViewAllRecords, PermissionsModifyAllRecords FROM ObjectPermissions WHERE Parent.NamespacePrefix = '{NAMESPACE}'" --json
    # System-level permissions on the packaged perm set(s) — the over-grant hunt
@@ -201,6 +205,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
      landed."** Verify the END STATE, on a permission set that is actually **assigned**:
 
      ```bash
+     export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
      sf data query -o {ORG_ALIAS} -q "SELECT Parent.Name, Parent.NamespacePrefix, PermissionsRead FROM ObjectPermissions WHERE SobjectType = 'UserExternalCredential' AND PermissionsRead = true" --json
      sf data query -o {ORG_ALIAS} -q "SELECT PermissionSet.Name, Assignee.Username FROM PermissionSetAssignment WHERE PermissionSet.Name LIKE '%{NAMESPACE}%'" --json
      ```
@@ -229,6 +234,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    from — same source, the install just proves it is the released shape), and run:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf code-analyzer run --rule-selector AppExchange --rule-selector Recommended:Security \
      --output-file .security-review/evidence/deployed-package/code-analyzer-graph-{date}.html
    ```
@@ -270,6 +276,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    then prove resolution:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -t -q "SELECT Id, DeveloperName, MasterLabel, NamespacePrefix FROM NamedCredential WHERE NamespacePrefix = '{NAMESPACE}'" --json
    sf data query -o {ORG_ALIAS} -q "SELECT Parent.Name, Parent.NamespacePrefix FROM SetupEntityAccess WHERE SetupEntityType = 'ExternalCredentialParameter'" --json
    # Resolution proof — calloutStatus must be a live, resolvable status, not 'NotConfigured'
@@ -339,6 +346,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    *actually granted* against what the package metadata *declares*:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    # Everything assigned to the installer and the Platform Integration User post-install
    sf data query -o {ORG_ALIAS} -q "SELECT PermissionSet.Name, PermissionSet.NamespacePrefix, Assignee.Username FROM PermissionSetAssignment WHERE Assignee.Username LIKE 'cloud@%' OR Assignee.Username = '{INSTALLER_USERNAME}'" --json
    # Handler-created artifacts that are NOT in the package source (the fallback perm set is the known one)
@@ -394,6 +402,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    uninstall is clean — **in the throwaway org, which is about to be torn down anyway**:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf package uninstall -p {PACKAGE_VERSION_ID_04t} -o {ORG_ALIAS} --wait 10
    ```
 
@@ -401,6 +410,7 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    set, credential principals, and any assignment — every query must come back empty:
 
    ```bash
+   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf data query -o {ORG_ALIAS} -q "SELECT Id, Name FROM PermissionSet WHERE NamespacePrefix = '{NAMESPACE}'" --json
    sf data query -o {ORG_ALIAS} -q "SELECT Id, Name FROM PermissionSet WHERE NamespacePrefix = null AND Name LIKE '%UEC%'" --json
    sf data query -o {ORG_ALIAS} -t -q "SELECT Id, DeveloperName FROM NamedCredential WHERE NamespacePrefix = '{NAMESPACE}'" --json
