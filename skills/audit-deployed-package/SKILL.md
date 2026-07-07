@@ -297,6 +297,39 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    step is the finding. Never write a captured secret to evidence — reference it by its
    last four characters at most (CONVENTIONS §6).
 
+4b. **Executed-action evidence — the Agentforce-RUNTIME lens (agent-trace probe).** Step 4's
+   Apex smoke test proves the credential chain *resolves*; it does not exercise the
+   Agentforce runtime (Apex egress ≠ Agentforce egress). If
+   `/sf-security-review-toolkit:install-and-verify-package` step 6 activated the agent and
+   registered its MCP tools (Manage Tools → **Save**), drive a scripted conversation and
+   capture the executed-action surface + egress-host observations:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/agent-trace-probe.mjs --consent --target <repo> \
+     --api-name {PUBLISHED_AGENT_API_NAME} --org-alias {ORG_ALIAS} \
+     --utterances-file .security-review/evidence/utterance-validation/agent-utterances.md
+   ```
+
+   **Same recorded `sf-deep-audit-ops` token — no new consent** (the engine's own
+   `verifyConsent` fails closed before any `sf agent preview` spawn, because the
+   sf-ops-gate-hook does not classify `agent preview` verbs — that guard is the only thing
+   stopping an ungated conversation). It emits, under `evidence/deployed-package/`:
+   `agent-trace-actions-{date}.json` (per-turn action name / inputs / output / latency — THE
+   "what can this agent do" evidence) + `agent-trace-errors-{date}.json` (session errors /
+   tool-failure egress) + `agent-trace-routing-{date}.json` (subagent routing), each
+   **redacted per CONVENTIONS §6** (any secret-shaped value is `***redacted***` before write;
+   never a raw secret). Fold findings into `audit-ledger.json` in the SAME `deployed-package`
+   dimension as steps 2–5 (step 6), keyed with a stable synthetic path
+   `deployed-package/agent-trace:<action-or-egress-host>` so re-runs dedup — e.g. an action
+   that calls out to a host with no Named Credential routing it, or a tool that egresses a
+   record handle. An empty `actions` dimension is recorded honestly as **"no observed
+   actions"** (the agent wasn't activated, or the scripted utterances triggered no tools) —
+   never a clean pass. This does **NOT** edit the frozen merge engine (`merge-ledger.mjs`):
+   the probe writes evidence; step 6 folds the finding by key exactly like `callout-smoke`.
+   Coverage is bounded to the scripted utterance list — dynamic evidence, not Salesforce's
+   live pen test; the live conversation is cold-run-validated (run the executor with `cwd`
+   inside the package DX project — `agent trace read` reads the local DX project's traces).
+
 5. **Verify the post-install handler's REAL granted scope — does it grant MORE than the
    packaged permission sets define? (privilege-escalation check).** The post-install
    script runs with elevated rights and can assign permission sets, create the fallback
@@ -427,6 +460,10 @@ export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
   user-mode awareness applied (step 3)
 - Named/External-Credential inventory + resolution proof + the read-only Apex callout
   smoke test (step 4)
+- The agent-trace probe (`harness/agent-trace-probe.mjs`) — a scripted conversation against
+  the activated agent capturing the executed-action / error / routing trace as
+  `deployed-package` evidence (the Agentforce-runtime egress lens the Apex smoke test cannot
+  reach), redacted names-only, fail-closed on the `sf-deep-audit-ops` consent (step 4b)
 - The post-install handler scope comparison — assignments + handler-created perm sets
   vs. packaged declarations (step 5)
 - The mechanical ledger merge + run-log update (step 6)

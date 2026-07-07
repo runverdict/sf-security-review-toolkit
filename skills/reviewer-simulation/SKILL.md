@@ -78,6 +78,22 @@ reviewer intent, **not** the reviewer's live penetration test (CONVENTIONS §2).
      strength of silence. If the challenge is statically answerable but the
      toolkit simply did not run that dimension/scan, mark it **UNEXAMINED — run
      <dimension/family>** and route back, not ADDRESSED.
+   - **DYNAMICALLY-OBSERVED (S2 agent-trace evidence)** — when the S2 agent-trace
+     probe (`harness/agent-trace-probe.mjs`, evidence under
+     `evidence/deployed-package/agent-trace-{actions,errors,routing}-<date>.json`)
+     ran against the activated agent, the agent-RUNTIME challenges that would
+     otherwise sit at NOT-STATICALLY-EXAMINED may instead carry a
+     **dynamically-observed pointer** — a real executed-action + egress-host
+     observation from the trace. This applies to challenge **2.2** (record-handle
+     leak), the **4.x** egress / third-party-LLM challenges, and the Agentforce
+     two-account probe (per `methodology/reviewer-challenges.md` challenges 2.2 /
+     4.x). Cite the specific action name + egress host from the trace, and label it
+     **"dynamically observed for the scripted utterances"** — this MOVES the
+     challenge from NOT-STATICALLY-EXAMINED *toward* dynamically-observed, it does
+     NOT make it ADDRESSED: the trace shows what the agent DID for those utterances,
+     not the full reachable surface, and an empty `actions` dimension stays
+     "no observed actions" (never a pass). It remains coverage-bounded, not a
+     substitute for Salesforce's live pen test (see the honesty floor below).
 
    Never invent a verdict. The mapping is mechanical: a challenge is WILL-FIND
    only with a real matching open entry, ADDRESSED only with a real fixed/refuted

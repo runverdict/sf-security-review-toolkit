@@ -7,6 +7,54 @@ follow semantic versioning.
 ## [Unreleased]
 
 ### Added
+- **S2 · `harness/agent-trace-probe.mjs` — the deployed-package AGENTFORCE-RUNTIME lens:
+  a scripted agent conversation + execution-trace evidence answering "what can this agent
+  actually DO / where does it egress."** The Agentforce-egress evidence the
+  `install-and-verify-package` Apex smoke test explicitly CANNOT reach (Apex egress ≠
+  Agentforce egress — the smoke test proves the credential chain resolves; this proves the
+  runtime path). Modelled line-for-line on `standup-org.mjs`: a PURE planner
+  `planAgentTraceProbe` (deterministic argv SEQUENCE — `agent preview start` → one
+  `agent preview send` per scripted utterance → the three
+  `agent trace read --format detail --dimension actions|errors|routing` → `agent trace list`
+  → `agent preview end`, byte-identical on re-run) + a FAIL-CLOSED impure executor
+  `agentTraceProbe` (every `sf` spawn routed through `sfEnv()`, every `--json` parsed with
+  the banner-tolerant `parseSfJson`) + the load-bearing `verifyConsent('sf-deep-audit-ops')`
+  guard + NAMES/metadata-only evidence + a `finally`-block that ALWAYS ends the preview
+  session. **MODE CONTRACT:** published `--api-name` agents always use live actions (NO mode
+  flag); an `--authoring-bundle` start MUST carry `--use-live-actions`, and a
+  `--simulate-actions` request THROWS — simulated actions do not prove egress.
+  **LOAD-BEARING CONSENT:** `hooks/sf-ops-gate-hook.mjs::classifySfVerb` does NOT enumerate
+  `agent preview` verbs, so this engine's own `verifyConsent` guard (fails closed before ANY
+  spawn) is the ONLY thing stopping an ungated `agent preview send`; it rides the SAME
+  recorded `sf-deep-audit-ops` token — **no new gate, `gate-spec.mjs` untouched.**
+  **REDACTION:** a pure `redactSecrets(node)` replaces any secret-shaped KEY or VALUE (JWT /
+  Bearer / sf access token / long hex) with `***redacted***` BEFORE any trace payload is
+  persisted; the manifest is a STRICT allowlist assembled field-by-field
+  (`runId`/`apiName`|`authoringBundle`/`mode`/`sessionId`/`utterances`/`turnCount`/`alias`/
+  `evidencePaths`/`status`) — never a spread `--json` payload. **EMPTY IS HONEST:** an empty
+  `trace read` dimension is recorded as `"no observed actions"`, NEVER `clean`/`ADDRESSED`.
+  Evidence emits under `.security-review/evidence/deployed-package/`
+  (`agent-trace-actions|errors|routing-<date>.json` + a names-only manifest + a
+  `.security-review/agent-trace.json` pointer); findings fold into the existing
+  `audit-ledger.json` `deployed-package` dimension keyed
+  `deployed-package/agent-trace:<action-or-egress-host>` per the SAME convention
+  audit-deployed step 4 uses for `callout-smoke` — the frozen `merge-ledger.mjs` /
+  `reconcile-provenance.mjs` engines are NOT touched. Wired into three runbooks:
+  `install-and-verify-package` Step 7b (the runtime-path lens that fills the gap the Apex
+  caveat names), `audit-deployed-package` Step 4b (the executed-action evidence step +
+  Automated-vs-manual recap), and `reviewer-simulation` Step 2 (the S2 evidence lets the
+  agent-runtime challenges carry a dynamically-observed pointer instead of bare
+  NOT-STATICALLY-EXAMINED silence — honesty floor kept verbatim). New standing test
+  `acceptance/test-agent-trace-probe.mjs` (8 checks: deterministic argv sequence, mode
+  contract, consent fail-closed, `--dry-run` purity, names-only manifest, redaction,
+  stubbed-`sf` sessionId threading + finally cleanup, empty-actions honesty).
+  Suite **67 files / 1087 checks**. **LIVE-LEG CAVEAT (honest):** the actual scripted
+  conversation against a live ACTIVATED agent + the real trace capture defers to the midpoint
+  cold run (needs a standing org + activated agent + registered MCP tools; `agent trace read`
+  reads the LOCAL DX project, so the executor runs with `cwd` inside the package DX project) —
+  the deterministic engine + the eight hermetic tests are fully offline; the live invocation
+  is NOT claimed proven here (exactly as `standup-org` keeps `sf org create scratch`
+  operator-cold).
 - **S1 · `harness/normalize-agent-test.mjs` — the deterministic argv-builder +
   JSON→evidence normalizer for the headless `sf agent test` utterance-validation flow.**
   A `render-*.mjs`-shaped engine (pure transform + one thin `sf` spawn through `sfEnv()`),
