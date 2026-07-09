@@ -63,7 +63,7 @@ heavy image while the audit fan-out saturated all cores. DAST is a flagship feat
 FIRE in the common case and degrade only as a genuine last resort. Two facts make it fireable:
 the engine already scans an already-running instance (`run-dast.mjs` `resolveBaseUrl` — explicit
 `--base-url` ALWAYS wins, zero build/stand-up), and the partner ships PREBUILT images
-(`docker-compose.prod.yml` `image: verdict-api:latest`) that `stack-detect` ignored. Same
+(a prebuilt `image:` ref in a `docker-compose.prod.yml`) that `stack-detect` ignored. Same
 changeset closes two more cold-run gaps: `apps/api/pyproject.toml` went un-SCA'd (OSV can't
 resolve version ranges, no lockfile — the whole FastAPI backend dep tree, incl. the unmaintained
 `python-jose`, unscanned), and the regexploit `.txt` ReDoS output needed a manual ingest re-run

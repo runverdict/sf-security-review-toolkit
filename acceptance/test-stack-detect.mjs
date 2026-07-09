@@ -506,7 +506,7 @@ const DEV_BUILD_COMPOSE = [
 const PROD_IMAGE_COMPOSE = [
   'services:',
   '  api:',
-  '    image: verdict-api:latest',
+  '    image: myapp-api:latest',
   '    ports:',
   '      - "8000:8000"',
   '    environment:',
@@ -534,7 +534,7 @@ check('C1 composeWebTierImage: prebuilt web tier → prebuilt:true; a build-from
   // MUTATION: dropping svcImage() on the picked tier → prebuilt:false → the preference pass never fires (red)
   assert.equal(prebuilt.prebuilt, true, 'a prod compose whose api tier ships image: is prebuilt')
   assert.equal(prebuilt.service, 'api')          // the scored web/api tier, not web:3000 or postgres
-  assert.equal(prebuilt.image, 'verdict-api:latest')
+  assert.equal(prebuilt.image, 'myapp-api:latest')
   // two-sided: a build-from-source dev compose's picked tier is NOT prebuilt
   const built = composeWebTierImage(DEV_BUILD_COMPOSE)
   assert.equal(built.prebuilt, false, 'a build: tier resolves no image: → not prebuilt')
@@ -555,7 +555,7 @@ check('C2 CLI: BOTH a build dev compose AND a prebuilt-image *.prod.yml → prod
   // recipe.file is docker-compose.yml and buildsFromSource is true/undefined (RED on both asserts).
   assert.equal(out.recipe.file, 'docker-compose.prod.yml', 'the prebuilt-image prod compose must be preferred')
   assert.equal(out.recipe.buildsFromSource, false, 'the prebuilt path records buildsFromSource:false')
-  assert.equal(out.recipe.prebuiltImage, 'verdict-api:latest')
+  assert.equal(out.recipe.prebuiltImage, 'myapp-api:latest')
   assert.equal(out.webTier.port, 8000)
   assert.equal(out.webTier.service, 'api')
 })

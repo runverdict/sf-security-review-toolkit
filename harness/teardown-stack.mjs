@@ -81,7 +81,7 @@ const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }
  * PURE (0.8.109). The same-run compose `down` argv. `--rmi local` removes images the project
  * BUILT this run — the locally-built, project-tagged `<project>-<svc>` images a
  * build-succeeds/health-fails run leaves on disk until a later `--sweep`. `local` (NOT `all`)
- * is deliberate: a PREBUILT image the partner shipped (`verdict-api:latest` — a custom registry
+ * is deliberate: a PREBUILT image the partner shipped (`myapp-api:latest` — a custom registry
  * tag) is NOT locally built, so `--rmi local` leaves it untouched (we never remove a partner
  * artifact). `composeFile`/`overridePath` are passed already existence-checked by the caller.
  */
