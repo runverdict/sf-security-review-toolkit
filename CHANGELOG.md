@@ -51,59 +51,66 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
-## [0.8.107] — 2026-07-09
+## [0.8.109] — 2026-07-09
 
-**sf-engine correctness three-pack from a real nested-two-package cold run: the update banner is
-now actually suppressed at the source, an all-unknown auto-resolve reports `degraded` instead of
-`resolved`, and the namespace gate no longer fails OPEN on nested layouts.** All three defects
-surfaced on one cold run against a repo whose two packages live in subdirectories with no root
-`sfdx-project.json`.
-
-### Fixed
-- `harness/sf-env.mjs`: `SF_AUTOUPDATE_OFF` now carries **`SF_SKIP_NEW_VERSION_CHECK: 'true'`**.
-  The two existing flags (`SF_AUTOUPDATE_DISABLE` / `SF_DISABLE_AUTOUPDATE`) disable the
-  auto-*update* itself but do NOT silence the `› Warning: @salesforce/cli update available…`
-  banner — that is a different oclif control (proven off disk: with only the two flags the banner
-  still prints; adding the third suppresses it). Only `parseSfJson`'s banner-tolerance had been
-  saving every `sf --json` call; it stays as defence-in-depth.
-- `harness/sf-autoresolve.mjs`: honest **`degraded`** status (new, alongside `resolved` /
-  `no-devhub`). The nested-repo run reported `status:'resolved'` + `sfAutoResolved:true` over SIX
-  all-`unknown` rows — a consumer reads "resolved" and receives nothing. `resolved` now requires
-  ≥1 non-`unknown` resolvable row; when EVERY row degraded to `unknown` the engine returns
-  `degraded` + `sfAutoResolved:false`, flips the scope-manifest flag to `false` (so the frozen
-  render's existing gate shows the honest skipped line — `render-sf-autoresolve.mjs` untouched),
-  and the CLI headline says degraded + "resolve manually", never "resolved". A PARTIAL resolve
-  (some rows real, some unknown) stays `resolved`/`true` — per-step degradation is designed
-  behavior, not a failure. (Root cause was NOT `sfdx-project.json` probing — the engine never
-  reads that file; the queries ran and returned nothing usable for this layout.)
-- `harness/namespace-check.mjs`: the namespace read no longer fails OPEN on nested layouts. The
-  root-only `<target>/sfdx-project.json` probe read `pkgNamespace=''` on a repo whose packages
-  (both declaring a namespace) live in subdirectories → `classifyNamespace` took the
-  "no namespace declared → buildable" branch — backwards for a 0.7.2 gate that exists to err
-  CONSERVATIVE. New pure exported helper **`collectDeclaredNamespaces(target)`** walks every
-  `sfdx-project.json` via the already-exported `discoverPackages` (`package-readiness.mjs`) and
-  collects the declared-namespace set; `namespaceStatus` classifies EVERY declared namespace and
-  the first unconfirmed one decides (`buildable:false`, the existing unregistered branch) — never
-  silently `buildable:true`. `classifyNamespace`'s pure contract is unchanged.
+**The throwaway DAST FIRES regardless of app size — a fires-path ladder, plus lockfile-less
+Python SCA and a ReDoS auto-route.** A real cold run's throwaway DAST did not fire: verified
+off disk, NOT a regression (the stand-up got a port — `scannedPort:8000` — and failed LATER at
+the api image build, strictly after the 0.8.95 ephemeral-port fix) and NOT a broken build
+(`apps/api/Dockerfile` rebuilds standalone in ~240s; a trivial `pip install` build succeeds — the
+sandbox is not network-blocked). The failure was **resource contention**: the stand-up built the
+heavy image while the audit fan-out saturated all cores. DAST is a flagship feature, so it must
+FIRE in the common case and degrade only as a genuine last resort. Two facts make it fireable:
+the engine already scans an already-running instance (`run-dast.mjs` `resolveBaseUrl` — explicit
+`--base-url` ALWAYS wins, zero build/stand-up), and the partner ships PREBUILT images
+(`docker-compose.prod.yml` `image: verdict-api:latest`) that `stack-detect` ignored. Same
+changeset closes two more cold-run gaps: `apps/api/pyproject.toml` went un-SCA'd (OSV can't
+resolve version ranges, no lockfile — the whole FastAPI backend dep tree, incl. the unmaintained
+`python-jose`, unscanned), and the regexploit `.txt` ReDoS output needed a manual ingest re-run
+because `--all` enumerates only `*.{json,sarif}`.
 
 ### Added
-- `acceptance/test-sf-env.mjs` — SE1/SE2 extended: the exported `SF_AUTOUPDATE_OFF` deepEqual is
-  now the three-key object, `sfEnv()` carries `SF_SKIP_NEW_VERSION_CHECK`, and a colliding extra
-  cannot clobber it.
-- `acceptance/test-sf-banner-guard.mjs` — CHECK C: `SF_AUTOUPDATE_OFF` carries
-  `SF_SKIP_NEW_VERSION_CHECK` (the banner control itself, not just the update switch). Hermetic —
-  asserts on the exported object, no live `sf`.
-- `acceptance/test-sf-autoresolve.mjs` — A11 honest degrade: all-unknown rows → `degraded` +
-  `sfAutoResolved:false` + manifest flag `false` + the artifact still written with no `undefined`
-  token; A12 the resolved threshold: ONE non-unknown row keeps `resolved`/`true` (the partial-
-  resolve boundary, locked from both sides with A6). Both drive the executor through the injected
-  runner seam — hermetic, no live `sf`.
-- `acceptance/test-namespace-check.mjs` — N4: `collectDeclaredNamespaces` on a nested two-package
-  fixture (no root `sfdx-project.json`, both subdir projects declaring the same namespace, plus a
-  namespace-less sibling) returns exactly the declared set — the root-only read that failed OPEN
-  returns `{}` and goes RED. Deliberately locks the PURE helper, not the impure `namespaceStatus`
-  (which needs a live Dev Hub and short-circuits to `buildable:false` without one — a hermetic
-  assertion through it would be vacuous).
+- `harness/stack-detect.mjs` — a **prebuilt-image compose preference pass** in `gatherRecipe`
+  (fires-path ladder rung 2): when a `*.prod.yml` exists whose picked web/api tier resolves an
+  `image:` (not `build:`), it is PREFERRED over the build-from-source dev compose and the recipe
+  records `buildsFromSource:false` (+ `prebuiltImage`). A new PURE `composeWebTierImage(text)`
+  reads the scored web-tier's `image:` via `svcImage`; `PROD_COMPOSE_FILES` + `findProdCompose`
+  discover the prod compose. **Kept OUT of `COMPOSE_FILES`** on purpose — that set feeds
+  `firstExisting` at three env/satisfiability call-sites and adding prod variants would
+  over-broaden them; the prod compose only changes WHICH recipe is stood up, never the env read.
+- `acceptance/test-run-scans-fires-path.mjs` (6 checks, F1–F6) — prose guards locking the
+  run-scans fires-path ladder, the `--base-url` first-rung surfacing, the rung-3 serialize rule,
+  the pip-audit lockfile-less-SCA fallback + fail-loud-on-uncovered-manifest coverage rule, and
+  the ReDoS `.txt` auto-route. Skill-prose guard pattern (mirrors `test-ci-hygiene.mjs`).
+
+### Fixed
+- `harness/teardown-stack.mjs` — the same-run compose `down` now carries **`--rmi local`** (via a
+  new PURE `composeDownArgs` helper the test drives): a build-succeeds/health-fails run no longer
+  strands a `<project>-*` image on disk until a later `--sweep`. `local` (not `all`) is
+  deliberate — a prebuilt partner image (a custom registry tag) is NOT locally built, so it is
+  spared. Additive, low-risk.
+
+### Changed
+- `skills/run-scans/SKILL.md` — Family 3 gains the **4-rung DAST fires-path ladder** (rung 1
+  already-running loopback `--base-url` → rung 2 prebuilt-image `*.prod.yml` → rung 3
+  build-from-source SERIALIZED, before/after the audit fan-out, **never DURING** → rung 4
+  honest-degrade as the last resort), surfacing `--base-url` as a first-class option and stating
+  the invariant "fire first, degrade last". Family 8 (SCA) gains the **lockfile-less Python SCA**
+  rule (OSV can't resolve ranges → run `pip-audit`, agent-run present / owner-run absent, no
+  `install-scanners.mjs` change) plus a **fail-loud-on-uncovered-manifest** rule (a manifest no
+  scanner audited surfaces as a coverage gap in the scan-status render, never a silent
+  `scan-external-sca` pass). Family 7's ReDoS leg now **auto-runs** the explicit-scanner ingest
+  immediately after the redos scan.
+- `harness/run-dast.mjs` (JSDoc only — loopback enforcement byte-identical) + `harness/standup-stack.mjs`
+  (header note): document the ladder — `resolveBaseUrl`'s explicit-wins is rung 1; `standupStack`
+  stays a single-shot executor that does NOT self-serialize (rung 3 is a driver sequencing rule).
+- `acceptance/test-stack-detect.mjs` (C1–C4), `acceptance/test-run-dast.mjs` (L1),
+  `acceptance/test-teardown-stack.mjs` (T11) — extended for the prebuilt-compose preference,
+  rung-1 explicit-`--base-url`-over-a-torn-down-pointer, and the `--rmi local` same-run down argv.
+  Mutation-proven (revert prebuilt search → C2 red; drop explicit-wins → L1/D5 red; drop
+  `--rmi local` → T11 red; drop each prose rule → its F-check red). This lane adds 12 checks + 1
+  file; the reconciled cross-lane suite total lands at merge.
+
 ## [0.8.108] — 2026-07-09
 
 **The prompt diet: 13 full-auto stops → 2 screens, + deterministic monorepo scope breadth.**
@@ -181,65 +188,59 @@ deterministic engine.
   un-evidencable self-attestation, and an operator's "No" is never overridden by a file).
   Locked by the new `PP*` checks in `acceptance/test-sci.mjs` (+ `C8b` in
   `acceptance/test-record-consent.mjs` for the audit-codebase stop duality).
-## [0.8.109] — 2026-07-09
+## [0.8.107] — 2026-07-09
 
-**The throwaway DAST FIRES regardless of app size — a fires-path ladder, plus lockfile-less
-Python SCA and a ReDoS auto-route.** A real cold run's throwaway DAST did not fire: verified
-off disk, NOT a regression (the stand-up got a port — `scannedPort:8000` — and failed LATER at
-the api image build, strictly after the 0.8.95 ephemeral-port fix) and NOT a broken build
-(`apps/api/Dockerfile` rebuilds standalone in ~240s; a trivial `pip install` build succeeds — the
-sandbox is not network-blocked). The failure was **resource contention**: the stand-up built the
-heavy image while the audit fan-out saturated all cores. DAST is a flagship feature, so it must
-FIRE in the common case and degrade only as a genuine last resort. Two facts make it fireable:
-the engine already scans an already-running instance (`run-dast.mjs` `resolveBaseUrl` — explicit
-`--base-url` ALWAYS wins, zero build/stand-up), and the partner ships PREBUILT images
-(`docker-compose.prod.yml` `image: verdict-api:latest`) that `stack-detect` ignored. Same
-changeset closes two more cold-run gaps: `apps/api/pyproject.toml` went un-SCA'd (OSV can't
-resolve version ranges, no lockfile — the whole FastAPI backend dep tree, incl. the unmaintained
-`python-jose`, unscanned), and the regexploit `.txt` ReDoS output needed a manual ingest re-run
-because `--all` enumerates only `*.{json,sarif}`.
-
-### Added
-- `harness/stack-detect.mjs` — a **prebuilt-image compose preference pass** in `gatherRecipe`
-  (fires-path ladder rung 2): when a `*.prod.yml` exists whose picked web/api tier resolves an
-  `image:` (not `build:`), it is PREFERRED over the build-from-source dev compose and the recipe
-  records `buildsFromSource:false` (+ `prebuiltImage`). A new PURE `composeWebTierImage(text)`
-  reads the scored web-tier's `image:` via `svcImage`; `PROD_COMPOSE_FILES` + `findProdCompose`
-  discover the prod compose. **Kept OUT of `COMPOSE_FILES`** on purpose — that set feeds
-  `firstExisting` at three env/satisfiability call-sites and adding prod variants would
-  over-broaden them; the prod compose only changes WHICH recipe is stood up, never the env read.
-- `acceptance/test-run-scans-fires-path.mjs` (6 checks, F1–F6) — prose guards locking the
-  run-scans fires-path ladder, the `--base-url` first-rung surfacing, the rung-3 serialize rule,
-  the pip-audit lockfile-less-SCA fallback + fail-loud-on-uncovered-manifest coverage rule, and
-  the ReDoS `.txt` auto-route. Skill-prose guard pattern (mirrors `test-ci-hygiene.mjs`).
+**sf-engine correctness three-pack from a real nested-two-package cold run: the update banner is
+now actually suppressed at the source, an all-unknown auto-resolve reports `degraded` instead of
+`resolved`, and the namespace gate no longer fails OPEN on nested layouts.** All three defects
+surfaced on one cold run against a repo whose two packages live in subdirectories with no root
+`sfdx-project.json`.
 
 ### Fixed
-- `harness/teardown-stack.mjs` — the same-run compose `down` now carries **`--rmi local`** (via a
-  new PURE `composeDownArgs` helper the test drives): a build-succeeds/health-fails run no longer
-  strands a `<project>-*` image on disk until a later `--sweep`. `local` (not `all`) is
-  deliberate — a prebuilt partner image (a custom registry tag) is NOT locally built, so it is
-  spared. Additive, low-risk.
+- `harness/sf-env.mjs`: `SF_AUTOUPDATE_OFF` now carries **`SF_SKIP_NEW_VERSION_CHECK: 'true'`**.
+  The two existing flags (`SF_AUTOUPDATE_DISABLE` / `SF_DISABLE_AUTOUPDATE`) disable the
+  auto-*update* itself but do NOT silence the `› Warning: @salesforce/cli update available…`
+  banner — that is a different oclif control (proven off disk: with only the two flags the banner
+  still prints; adding the third suppresses it). Only `parseSfJson`'s banner-tolerance had been
+  saving every `sf --json` call; it stays as defence-in-depth.
+- `harness/sf-autoresolve.mjs`: honest **`degraded`** status (new, alongside `resolved` /
+  `no-devhub`). The nested-repo run reported `status:'resolved'` + `sfAutoResolved:true` over SIX
+  all-`unknown` rows — a consumer reads "resolved" and receives nothing. `resolved` now requires
+  ≥1 non-`unknown` resolvable row; when EVERY row degraded to `unknown` the engine returns
+  `degraded` + `sfAutoResolved:false`, flips the scope-manifest flag to `false` (so the frozen
+  render's existing gate shows the honest skipped line — `render-sf-autoresolve.mjs` untouched),
+  and the CLI headline says degraded + "resolve manually", never "resolved". A PARTIAL resolve
+  (some rows real, some unknown) stays `resolved`/`true` — per-step degradation is designed
+  behavior, not a failure. (Root cause was NOT `sfdx-project.json` probing — the engine never
+  reads that file; the queries ran and returned nothing usable for this layout.)
+- `harness/namespace-check.mjs`: the namespace read no longer fails OPEN on nested layouts. The
+  root-only `<target>/sfdx-project.json` probe read `pkgNamespace=''` on a repo whose packages
+  (both declaring a namespace) live in subdirectories → `classifyNamespace` took the
+  "no namespace declared → buildable" branch — backwards for a 0.7.2 gate that exists to err
+  CONSERVATIVE. New pure exported helper **`collectDeclaredNamespaces(target)`** walks every
+  `sfdx-project.json` via the already-exported `discoverPackages` (`package-readiness.mjs`) and
+  collects the declared-namespace set; `namespaceStatus` classifies EVERY declared namespace and
+  the first unconfirmed one decides (`buildable:false`, the existing unregistered branch) — never
+  silently `buildable:true`. `classifyNamespace`'s pure contract is unchanged.
 
-### Changed
-- `skills/run-scans/SKILL.md` — Family 3 gains the **4-rung DAST fires-path ladder** (rung 1
-  already-running loopback `--base-url` → rung 2 prebuilt-image `*.prod.yml` → rung 3
-  build-from-source SERIALIZED, before/after the audit fan-out, **never DURING** → rung 4
-  honest-degrade as the last resort), surfacing `--base-url` as a first-class option and stating
-  the invariant "fire first, degrade last". Family 8 (SCA) gains the **lockfile-less Python SCA**
-  rule (OSV can't resolve ranges → run `pip-audit`, agent-run present / owner-run absent, no
-  `install-scanners.mjs` change) plus a **fail-loud-on-uncovered-manifest** rule (a manifest no
-  scanner audited surfaces as a coverage gap in the scan-status render, never a silent
-  `scan-external-sca` pass). Family 7's ReDoS leg now **auto-runs** the explicit-scanner ingest
-  immediately after the redos scan.
-- `harness/run-dast.mjs` (JSDoc only — loopback enforcement byte-identical) + `harness/standup-stack.mjs`
-  (header note): document the ladder — `resolveBaseUrl`'s explicit-wins is rung 1; `standupStack`
-  stays a single-shot executor that does NOT self-serialize (rung 3 is a driver sequencing rule).
-- `acceptance/test-stack-detect.mjs` (C1–C4), `acceptance/test-run-dast.mjs` (L1),
-  `acceptance/test-teardown-stack.mjs` (T11) — extended for the prebuilt-compose preference,
-  rung-1 explicit-`--base-url`-over-a-torn-down-pointer, and the `--rmi local` same-run down argv.
-  Mutation-proven (revert prebuilt search → C2 red; drop explicit-wins → L1/D5 red; drop
-  `--rmi local` → T11 red; drop each prose rule → its F-check red). This lane adds 12 checks + 1
-  file; the reconciled cross-lane suite total lands at merge.
+### Added
+- `acceptance/test-sf-env.mjs` — SE1/SE2 extended: the exported `SF_AUTOUPDATE_OFF` deepEqual is
+  now the three-key object, `sfEnv()` carries `SF_SKIP_NEW_VERSION_CHECK`, and a colliding extra
+  cannot clobber it.
+- `acceptance/test-sf-banner-guard.mjs` — CHECK C: `SF_AUTOUPDATE_OFF` carries
+  `SF_SKIP_NEW_VERSION_CHECK` (the banner control itself, not just the update switch). Hermetic —
+  asserts on the exported object, no live `sf`.
+- `acceptance/test-sf-autoresolve.mjs` — A11 honest degrade: all-unknown rows → `degraded` +
+  `sfAutoResolved:false` + manifest flag `false` + the artifact still written with no `undefined`
+  token; A12 the resolved threshold: ONE non-unknown row keeps `resolved`/`true` (the partial-
+  resolve boundary, locked from both sides with A6). Both drive the executor through the injected
+  runner seam — hermetic, no live `sf`.
+- `acceptance/test-namespace-check.mjs` — N4: `collectDeclaredNamespaces` on a nested two-package
+  fixture (no root `sfdx-project.json`, both subdir projects declaring the same namespace, plus a
+  namespace-less sibling) returns exactly the declared set — the root-only read that failed OPEN
+  returns `{}` and goes RED. Deliberately locks the PURE helper, not the impure `namespaceStatus`
+  (which needs a live Dev Hub and short-circuits to `buildable:false` without one — a hermetic
+  assertion through it would be vacuous).
 
 ## [0.8.106] — 2026-07-09
 
