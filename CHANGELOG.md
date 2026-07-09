@@ -51,6 +51,72 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.102] — 2026-07-09
+
+**Provenance survives the cross-dimension collapse — through incremental re-runs: a merged
+deterministic parent stays deterministic, dispositionable, and never-superseded.**
+`collapseCrossDimension`'s explode (`asLenses`) and rebuild (`mergeLensCluster`), AND
+`merge-ledger.mjs`'s incremental-re-merge explode (`explodeForMerge`), used explicit field
+lists that STRIPPED `provenance`/`engine`/`ruleId`/`class` from a cross-dimension merged parent
+and its lenses, so merge-ledger's absence-guard relabeled the parent `llm-inferred`. A parent
+merging two DETERMINISTIC scanner lenses (the real cold-run case: bandit B105/B106 +
+detect-secrets "Secret Keyword" at one locus — 4 of the 5 merged parents in the ledger) became
+permanently un-dispositionable (`apply-dispositions` only touches deterministic rows and matches
+exact engine+ruleId, both destroyed) and silently supersedable by `reconcile-provenance` — 4
+permanently-open HIGH findings the partner could only hand-edit away. Because the ledger is
+incremental and the cold run executed TWO passes, the fix had to hold across passes: the first
+cut fixed pass 1 but `explodeForMerge` re-destroyed the quartet on pass 2, reintroducing the
+phantom HIGHs on the next re-run.
+
+### Fixed
+- `harness/finding-clusters.mjs` — both `asLenses` branches and `mergeLensCluster`'s parent +
+  `lenses[]` rebuilds now carry the provenance quartet through (copied verbatim, genuinely
+  absent when the source carries none). The parent's `provenance` is the CONJUNCTION of its
+  lenses — `deterministic` iff EVERY lens is deterministic, else `llm-inferred` — and is
+  ALWAYS set, making merge-ledger's `if (!f.provenance)` guard a structural no-op for parents.
+  The parent carries `engine`/`ruleId`/`class` ONLY when every lens agrees on the value; on
+  disagreement the fields are OMITTED (inventing one would let a disposition match a rule the
+  partner never adjudicated — the per-lens records are the authority). Determinism-proven: a
+  no-co-location input collapses byte-identically to the pre-change engine (MP8, pinned fixture).
+- `harness/merge-ledger.mjs` — `explodeForMerge` (the ONLY hunk; the rest of the file, including
+  the line-222 absence-guard, is byte-untouched) now carries the same provenance quartet through
+  when it explodes a prior merged entry back to per-dimension lenses for the incremental per-id
+  merge. WITHOUT this, an incremental re-run destroys the fix: pass 1 builds a deterministic
+  merged parent, pass 2's explode strips its lenses' provenance, and the re-collapse relabels the
+  parent `llm-inferred` — un-dispositionable again. The "byte-frozen" designation on this file is
+  a discipline convention (no test hashes it); it is spent deliberately here because the
+  alternative is a fix that does not hold across passes. Locked by MP9 (drives the real CLI
+  twice).
+- The `[0.8.93]` claim below — "a `provenance:'deterministic'` row is never relabeled" — was
+  FALSE for cross-dimension merged parents: the collapse had already destroyed the field, so
+  the absence-guard relabeled them. Corrected in place; merged parents are now covered by the
+  conjunction rule above.
+
+### Added
+- `harness/apply-dispositions.mjs` — lens-aware matching for merged deterministic parents
+  (exact `engine`+`ruleId` per lens; `scope.files` against the lens's own file), restructured
+  to ACCUMULATE lens matches across the whole disposition set and flip in a second pass, under
+  the safety invariant: the parent is flipped out of the open band ONLY when EVERY lens is
+  matched — a partial match records an auditable `partial_disposition` annotation and NEVER
+  changes `status` (a merged parent is a conjunction of observations; a partial flip would let
+  a real finding hide behind a co-located false positive). Target status: `accepted_risk` if
+  any matching disposition accepts the risk (an acknowledged-real lens is never buried under a
+  blanket `refuted`), else `refuted`. Plain single-lens findings keep the immediate-flip path
+  unchanged; the `llm-inferred` outer gate, exact matching, `PROTECTED_STATES`, and the
+  idempotent skip keep their precedence.
+- `templates/audit-ledger.schema.json` — additive: `$defs/lens` declares the four per-lens
+  provenance fields; `$defs/finding` declares `partial_disposition`; the
+  deterministic⇒engine+ruleId conditional now exempts merged parents (`lenses` present),
+  whose per-lens records are the authority.
+- `acceptance/test-merged-parent-provenance.mjs` (9 checks, MP1–MP9) + the pinned pre-change
+  collapse fixture `acceptance/fixtures/mp8-no-colocation-collapse.txt` (`.txt` so the
+  determinism-band evidence sweep — top-level `fixtures/*.json` — does not ingest engine IO as
+  scanner evidence). MP9 is the incremental-re-run lock: it drives the real `merge-ledger.mjs`
+  CLI over two passes and asserts the merged parent stays deterministic + dispositionable after
+  pass 2. Suite **71 files / 1120 checks**. Byte-frozen `reconcile-provenance.mjs` untouched;
+  `merge-ledger.mjs`'s line-222 absence-guard untouched too (it still serves pre-provenance-era
+  ledger rows — it just can no longer catch a parent).
+
 ## [0.8.101] — 2026-07-07
 
 **Per-Bash-block `sf` update-banner guard replaces the broken export-once
@@ -340,7 +406,12 @@ disproved the double-count premise; the counters never keyed on this field).
   `provenance:'llm-inferred'` at its birth site, plus a GUARDED `if (!f.provenance)` normalization
   after the cross-dimension collapse — the explode/collapse rebuilds (lens reconstructions, merged
   parents) carry explicit field lists that drop optional fields, and pre-existing entries predate
-  the field; the guard means a `provenance:'deterministic'` row is never relabeled. The ledger now
+  the field; the guard means a `provenance:'deterministic'` row is never relabeled. **[CORRECTED
+  in 0.8.102: that claim was FALSE for cross-dimension merged parents — the collapse's field
+  lists had already destroyed `provenance` before the guard ran, so `!f.provenance` was true and
+  a parent merging only deterministic lenses WAS relabeled `llm-inferred` (and thereby made
+  un-dispositionable and supersedable). 0.8.102 makes the collapse provenance-preserving; the
+  guard's claim now holds for parents too.]** The ledger now
   states what the schema default implied. Untouched by design: `buildFinding`/the ingest path
   (deterministic stays `'deterministic'`), `dedupId` (provenance is not a key input), the schema's
   optional-with-default posture (back-compat), and `collapseCrossDimension` itself. Test-backed:

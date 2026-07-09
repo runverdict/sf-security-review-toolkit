@@ -129,8 +129,26 @@ export function renderReachabilityPath(input) {
 
 const flat1 = (s) => String(s || '').replace(/\s+/g, ' ').trim()
 
+// A1 (0.8.102) — the provenance quartet. `ingest-scanner-findings.mjs` stamps every
+// deterministic finding with `provenance`/`engine`/`ruleId` (+ `class` for a mapped
+// rule); before this fix the explode/collapse field lists below silently STRIPPED all
+// four, so a cross-dimension merged parent lost its deterministic identity and
+// merge-ledger's absence-guard relabeled it `llm-inferred` — making the merged finding
+// un-dispositionable (apply-dispositions only touches deterministic rows) and
+// supersedable (reconcile-provenance treats absent as llm-inferred). Copied VERBATIM
+// when the source carries them, genuinely ABSENT (no key — never null/undefined-valued)
+// when it does not.
+const PROVENANCE_FIELDS = ['provenance', 'engine', 'ruleId', 'class']
+const provFields = (src) => {
+  const out = {}
+  for (const k of PROVENANCE_FIELDS) if (src && src[k] !== undefined) out[k] = src[k]
+  return out
+}
+
 // A finding is one or more lenses: a prior merged entry carries `lenses[]`; a plain
 // entry is a single lens. Expanding lets collapse stay IDEMPOTENT + incremental.
+// BOTH branches carry the provenance quartet through (A1): the explode is where the
+// fields used to die — a later pass cannot reconstruct what the merge destroyed.
 function asLenses(f) {
   if (Array.isArray(f.lenses) && f.lenses.length) {
     return f.lenses.map((l) => ({
@@ -139,6 +157,7 @@ function asLenses(f) {
       status: l.status ?? f.status, verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
       exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
       first_seen: l.first_seen ?? f.first_seen, last_seen: l.last_seen ?? f.last_seen,
+      ...provFields(l),
     }))
   }
   return [{
@@ -146,6 +165,7 @@ function asLenses(f) {
     adjusted_severity: sevOf(f), verdict: f.verdict, status: f.status, verdict_reasoning: f.verdict_reasoning,
     evidence: f.evidence, exploit_scenario: f.exploit_scenario, recommendation: f.recommendation,
     first_seen: f.first_seen, last_seen: f.last_seen,
+    ...provFields(f),
   }]
 }
 
@@ -166,6 +186,22 @@ function mergeLensCluster(lenses) {
     (SEV_RANK[a.adjusted_severity] ?? 9) - (SEV_RANK[b.adjusted_severity] ?? 9) || (a.dimension < b.dimension ? -1 : 1))[0]
   const maxSev = ls.reduce((m, l) => ((SEV_RANK[l.adjusted_severity] ?? 9) < (SEV_RANK[m] ?? 9) ? l.adjusted_severity : m), 'info')
   const label = (field) => ls.map((l) => `▸ ${l.dimension} [${l.adjusted_severity}]: ${flat1(l[field]) || '(none)'}`).join('\n')
+  // A1 (0.8.102) — the parent's provenance is the CONJUNCTION of its lenses:
+  // 'deterministic' iff EVERY lens is deterministic, else 'llm-inferred'. ALWAYS set,
+  // never absent — that makes merge-ledger's `if (!f.provenance)` absence-guard a
+  // structural no-op for merged parents (a deterministic parent can no longer be
+  // relabeled by it).
+  const provenance =
+    ls.length > 0 && ls.every((l) => l.provenance === 'deterministic') ? 'deterministic' : 'llm-inferred'
+  // A1 — the parent carries engine/ruleId/class ONLY when every lens agrees on the
+  // value. A bandit + detect-secrets parent has two engines and two ruleIds; inventing
+  // one (or picking base's) would let apply-dispositions match a rule the partner never
+  // adjudicated. When lenses disagree the field is OMITTED on the parent — the per-lens
+  // records are the authority.
+  const agreed = (field) => {
+    const v = ls.length ? ls[0][field] : undefined
+    return v !== undefined && ls.every((l) => l[field] === v) ? { [field]: v } : {}
+  }
   const out = {
     id: base.id, dimension: base.dimension, title: base.title,
     severity: base.severity || base.adjusted_severity, adjusted_severity: maxSev,
@@ -178,6 +214,10 @@ function mergeLensCluster(lenses) {
     exploit_scenario: base.exploit_scenario,
     recommendation: base.recommendation,
     resolution_note: flat1(base.recommendation).slice(0, 200) || undefined,
+    provenance,
+    ...agreed('engine'),
+    ...agreed('ruleId'),
+    ...agreed('class'),
     merged_dimensions: ls.map((l) => l.dimension),
     lenses: ls.map((l) => ({
       id: l.id, dimension: l.dimension, title: l.title, file: l.file,
@@ -185,6 +225,7 @@ function mergeLensCluster(lenses) {
       verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
       exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
       first_seen: l.first_seen, last_seen: l.last_seen,
+      ...provFields(l),
     })),
   }
   return out

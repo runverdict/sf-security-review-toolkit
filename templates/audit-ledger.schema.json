@@ -32,7 +32,7 @@
       "minimum": 1
     },
     "lens": {
-      "description": "Track-1b: one dimension's view of a cross-dimension merged finding (audit-methodology.md §5.2). Carries that dimension's own severity/verdict/reasoning/evidence so an incremental re-run can refresh a single lens.",
+      "description": "Track-1b: one dimension's view of a cross-dimension merged finding (audit-methodology.md §5.2). Carries that dimension's own severity/verdict/reasoning/evidence so an incremental re-run can refresh a single lens. Since 0.8.102 a lens also carries its own provenance quartet (provenance/engine/ruleId/class, copied verbatim from the pre-merge finding when present) so the cross-dimension collapse is information-preserving: a merged deterministic lens stays dispositionable through harness/apply-dispositions.mjs, which matches lenses by exact engine+ruleId.",
       "type": "object",
       "additionalProperties": false,
       "required": ["dimension", "adjusted_severity", "verdict_reasoning"],
@@ -50,7 +50,11 @@
         "exploit_scenario": { "type": "string" },
         "recommendation": { "type": "string" },
         "first_seen": { "$ref": "#/$defs/pass_id" },
-        "last_seen": { "$ref": "#/$defs/pass_id" }
+        "last_seen": { "$ref": "#/$defs/pass_id" },
+        "provenance": { "type": "string", "enum": ["deterministic", "llm-inferred"], "description": "This lens's own provenance, copied verbatim from the pre-merge finding (0.8.102). Absent when the pre-merge finding carried none (pre-provenance-era rows default to llm-inferred)." },
+        "engine": { "type": "string", "minLength": 1, "description": "The deterministic engine behind THIS lens (0.8.102). Present iff the lens's pre-merge finding carried one; apply-dispositions matches lenses by exact engine+ruleId." },
+        "ruleId": { "type": "string", "minLength": 1, "description": "The scanner/metadata rule behind THIS lens (0.8.102), recorded verbatim for reviewer reproducibility and exact disposition matching." },
+        "class": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "The toolkit's owned-class label for THIS lens (0.8.102), copied verbatim from the pre-merge deterministic finding when its rule mapped to a known class." }
       }
     },
     "trace_step": {
@@ -130,6 +134,10 @@
           "description": "Set on a `deterministic` finding whose lifecycle status was flipped by a structured class adjudication in .security-review/deterministic-dispositions.json (harness/apply-dispositions.mjs): a one-line auditable note recording the engine/ruleId dispositioned and the adjudication reason — the SAME reason the false-positive dossier row carries (single source, so the dossier and the ledger can never diverge). The finding's provenance/engine/ruleId/class/severity stay intact; only the lifecycle status moved (to `refuted` or `accepted_risk`, never into the open band, never `fixed`). Engine-maintained; do not hand-edit.",
           "type": "string"
         },
+        "partial_disposition": {
+          "description": "Set on a deterministic cross-dimension MERGED parent when dispositions matched SOME but not ALL of its lenses (harness/apply-dispositions.mjs, 0.8.102): a one-line auditable note naming which lens engine/ruleIds were matched. The parent's status is NOT changed — a merged parent is a conjunction of observations and is flipped out of the open band only when EVERY lens is matched (a partial flip would let a real finding hide behind a co-located false positive). Engine-maintained; do not hand-edit.",
+          "type": "string"
+        },
         "first_seen": {
           "$ref": "#/$defs/pass_id",
           "description": "Pass id in which this finding first entered the ledger."
@@ -195,18 +203,18 @@
           "minItems": 2
         },
         "provenance": {
-          "description": "How this finding came to exist (docs/roadmap-deterministic-findings.md §3). `deterministic`: produced MECHANICALLY by a scanner/metadata engine via harness/ingest-scanner-findings.mjs — relayed verbatim, the LLM never re-judges its existence or severity; `engine` + `ruleId` are set and `adjusted_severity` is fixed from the requirement-class map, NOT a per-instance LLM call. `llm-inferred`: reasoned by an LLM finder/verifier over a deterministic fact substrate. DEFAULT `llm-inferred` for back-compat — a finding written before this field existed validates unchanged and is treated as llm-inferred. NOTE the id derivation differs by provenance: an llm-inferred id hashes file+title (line stripped; titles are model prose that drift); a deterministic id hashes engine+ruleId+file:line (one entry per scanner violation at one sink location, so N distinct violations of one rule in a file stay N findings).",
+          "description": "How this finding came to exist (docs/roadmap-deterministic-findings.md §3). `deterministic`: produced MECHANICALLY by a scanner/metadata engine via harness/ingest-scanner-findings.mjs — relayed verbatim, the LLM never re-judges its existence or severity; `engine` + `ruleId` are set and `adjusted_severity` is fixed from the requirement-class map, NOT a per-instance LLM call. `llm-inferred`: reasoned by an LLM finder/verifier over a deterministic fact substrate. DEFAULT `llm-inferred` for back-compat — a finding written before this field existed validates unchanged and is treated as llm-inferred. On a cross-dimension MERGED parent (0.8.102) provenance is the CONJUNCTION of its lenses: `deterministic` iff EVERY lens is deterministic, else `llm-inferred` — always set by the collapse, never absent. NOTE the id derivation differs by provenance: an llm-inferred id hashes file+title (line stripped; titles are model prose that drift); a deterministic id hashes engine+ruleId+file:line (one entry per scanner violation at one sink location, so N distinct violations of one rule in a file stay N findings).",
           "type": "string",
           "enum": ["deterministic", "llm-inferred"],
           "default": "llm-inferred"
         },
         "engine": {
-          "description": "The deterministic engine that produced this finding (e.g. `pmd`, `sfge`, `metadata`). Present iff `provenance` is `deterministic`; absent on llm-inferred findings.",
+          "description": "The deterministic engine that produced this finding (e.g. `pmd`, `sfge`, `metadata`). Present iff `provenance` is `deterministic` — EXCEPT on a cross-dimension MERGED parent (0.8.102): the parent carries `engine` only when every lens agrees on the value; when lenses disagree (e.g. bandit + detect-secrets at one locus) the field is omitted on the parent and the per-lens records are the authority. Absent on llm-inferred findings.",
           "type": "string",
           "minLength": 1
         },
         "ruleId": {
-          "description": "The scanner/metadata rule that fired (e.g. `ApexCRUDViolation`, `DatabaseOperationsMustUseWithSharing`, `viewall-overgrant`). Present iff `provenance` is `deterministic`; the LLM never invents one. Recorded verbatim so the finding is reviewer-reproducible against the same scanner run.",
+          "description": "The scanner/metadata rule that fired (e.g. `ApexCRUDViolation`, `DatabaseOperationsMustUseWithSharing`, `viewall-overgrant`). Present iff `provenance` is `deterministic` — with the same merged-parent exception as `engine` (0.8.102): present on a merged parent only when every lens agrees; the LLM never invents one. Recorded verbatim so the finding is reviewer-reproducible against the same scanner run.",
           "type": "string",
           "minLength": 1
         },
@@ -241,7 +249,8 @@
         {
           "if": {
             "required": ["provenance"],
-            "properties": { "provenance": { "const": "deterministic" } }
+            "properties": { "provenance": { "const": "deterministic" } },
+            "not": { "required": ["lenses"] }
           },
           "then": { "required": ["engine", "ruleId"] }
         }

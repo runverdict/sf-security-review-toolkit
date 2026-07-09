@@ -129,6 +129,18 @@ if (!Array.isArray(ledger.passes)) ledger.passes = []
 // the end. A ledger with no merged entries is unchanged (no `lenses` ⇒ pass-through).
 function explodeForMerge(findings) {
   const out = []
+  // A1 (0.8.102) — carry the provenance quartet verbatim from the lens (genuinely
+  // absent when the lens lacks it), structurally identical to asLenses/mergeLensCluster
+  // in finding-clusters.mjs. WITHOUT this, an INCREMENTAL re-run destroys the fix:
+  // pass 1's collapse produces a deterministic merged parent, pass 2's explode here
+  // strips its lenses' provenance, and the re-collapse relabels the parent llm-inferred
+  // (making it un-dispositionable again). The ledger is incremental by design, so the
+  // fix has to hold across passes, not just on the first.
+  const provFields = (l) => {
+    const o = {}
+    for (const k of ['provenance', 'engine', 'ruleId', 'class']) if (l && l[k] !== undefined) o[k] = l[k]
+    return o
+  }
   for (const f of findings) {
     if (Array.isArray(f.lenses) && f.lenses.length) {
       for (const l of f.lenses) {
@@ -141,6 +153,7 @@ function explodeForMerge(findings) {
           verdict: l.verdict, verdict_reasoning: l.verdict_reasoning, evidence: l.evidence,
           exploit_scenario: l.exploit_scenario, recommendation: l.recommendation,
           resolution_note: f.resolution_note,
+          ...provFields(l),
         })
       }
     } else out.push(f)
