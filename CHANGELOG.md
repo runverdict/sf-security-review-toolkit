@@ -51,6 +51,59 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.104] — 2026-07-09
+
+**The durable artifacts can no longer contradict the ledger: the committed
+run-log's open-confirmed line is re-derived after dispositions, and the report
+headline is verified against the ledger by a deterministic gate.** A real cold
+run committed a `run-log.md` claiming 441 open confirmed / 273 high while the
+post-disposition ledger held 86 / 25, and an audit report headlining "Blocking
+items (critical/high): none this pass" over a ledger holding 2 confirmed
+criticals — two partner-visible surfaces disagreeing by an order of magnitude.
+Root cause: merge-ledger appends the run-log line BEFORE reconcile-provenance /
+apply-dispositions run, and only the transient stdout recap was ever
+re-rendered; the Step-6 verbatim-headline mandate was enforced at prose
+strength, so a driver skipping the block and hand-writing a headline went
+undetected.
+
+### Added
+- `harness/rerender-runlog.mjs` — re-derives the FINAL `## Pass N` block's
+  `- Open confirmed (all passes): …` line in `.security-review/run-log.md` from
+  the CURRENT (post-disposition) ledger. Exact merge-ledger count + severity
+  ordering + formatting, including the `(none above info)` fallback — proven by
+  a LIVE merge-ledger parity run in the standing test, never a lookalike.
+  Rewrites only that one line, only in the final pass block (earlier blocks are
+  historical record, byte-untouched); idempotent; exit-2-and-touch-nothing on a
+  missing ledger / missing run-log / no-`## Pass`-block / dict-shaped `findings`
+  (never a partial write, never an invented count); prints the correction
+  (`run-log: open confirmed 441 → 86 (…)`) so the fix is visible, never silent.
+  `merge-ledger.mjs` stays byte-frozen — the separate helper is the narrower fix.
+- `harness/verify-report-headline.mjs` — turns the Step-6 verbatim-headline
+  mandate into an exit code: exit 2 when the report lacks the verbatim cluster
+  block recomputed from the CURRENT ledger (headline logic IMPORTED from
+  `finding-clusters.mjs` — `renderClusterHeadline` + `clusterOrNullFromFindings` —
+  never reimplemented, so checker and headline cannot drift), or when a stated
+  critical/high claim demonstrably contradicts the ledger. Conservative by
+  design: only the labelled `Blocking items (critical/high): none|N` shape and
+  same-line `N critical` / `N high` counts inside the headline region (the
+  block's own bytes excised; segments scanned separately; "3 high-priority"
+  never matches; a count matching EITHER the raw open count OR the distinct-file
+  count passes) are parsed — anything ambiguous is ignored, because a checker
+  that fires on legitimate prose gets disabled and is worse than none. An
+  unreadable ledger or report fails closed (exit 2), never open.
+- `acceptance/test-rerender-runlog.mjs` (RL1–RL6, 10 checks) and
+  `acceptance/test-verify-report-headline.mjs` (VH1–VH6, 9 checks) — the
+  standing suite is now **72 files / 1130 checks** (counts synced in
+  CONVENTIONS.md + acceptance/README.md).
+
+### Fixed
+- `skills/audit-codebase/SKILL.md` — Step 7 now re-derives the durable run-log
+  alongside the recap re-render (after apply-dispositions) and runs the
+  report-headline gate as a HARD STOP (any non-zero exit halts the run, not a
+  warning); both engines granted in `allowed-tools` (an ungranted auto-run
+  prompts for permission and the gate gets skipped in practice); the Step-6
+  verbatim-headline mandate now names its mechanical enforcement.
+
 ## [0.8.101] — 2026-07-07
 
 **Per-Bash-block `sf` update-banner guard replaces the broken export-once
