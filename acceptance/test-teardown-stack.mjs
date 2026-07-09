@@ -25,7 +25,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertStackName, planTeardown, teardownStack, sweepStacks } from '../harness/teardown-stack.mjs'
+import { assertStackName, planTeardown, teardownStack, sweepStacks, composeDownArgs } from '../harness/teardown-stack.mjs'
 
 let pass = 0, fail = 0
 const dirs = []
@@ -124,6 +124,27 @@ check('T10 teardownStack: compose — tampered project REFUSED (removes nothing)
   const r2 = teardownStack({ manifestPath: okMf })
   assert.equal(r2.status, 'already-clean', JSON.stringify(r2))
   assert.deepEqual(r2.removed, [])
+})
+
+// ── Same-run teardown hygiene (0.8.109): the compose `down` carries `--rmi local` so a
+//    build-succeeds/health-fails run doesn't strand a `<project>-*` image until a `--sweep`. ──
+
+check('T11 composeDownArgs: the same-run `down` argv carries `--rmi local` (removes the same-run built image)', () => {
+  const argv = composeDownArgs('sf-srt-stack-t11', { composeFile: '/repo/docker-compose.yml', overridePath: '/tmp/sf-srt-stack/t11/compose.loopback-override.yml' })
+  const joined = argv.join(' ')
+  // MUTATION: dropping `--rmi local` from composeDownArgs → this includes() fails (red)
+  assert.ok(joined.includes('--rmi local'), `the same-run down must carry --rmi local; got: ${joined}`)
+  // the flag must ride WITH the down (project-scoped), and after `down` — not a bare arg
+  const di = argv.indexOf('down')
+  const ri = argv.indexOf('--rmi')
+  assert.ok(di >= 0 && ri > di, 'the down subcommand precedes --rmi')
+  assert.equal(argv[ri + 1], 'local', '`--rmi` is followed by `local` (never `all` — a prebuilt partner image is spared)')
+  assert.ok(argv.includes('-v') && argv.includes('--remove-orphans'), 'volumes + orphans removal preserved alongside --rmi local')
+  // it stays project-scoped (the `-p <project>` boundary the teardown asserts before calling this)
+  assert.equal(argv[argv.indexOf('-p') + 1], 'sf-srt-stack-t11')
+  // absent compose files → project-label-only down still carries --rmi local
+  const bare = composeDownArgs('sf-srt-stack-t11')
+  assert.ok(bare.join(' ').includes('--rmi local') && !bare.includes('-f'), 'label-only down still removes the same-run image')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

@@ -51,6 +51,66 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.109] — 2026-07-09
+
+**The throwaway DAST FIRES regardless of app size — a fires-path ladder, plus lockfile-less
+Python SCA and a ReDoS auto-route.** A real cold run's throwaway DAST did not fire: verified
+off disk, NOT a regression (the stand-up got a port — `scannedPort:8000` — and failed LATER at
+the api image build, strictly after the 0.8.95 ephemeral-port fix) and NOT a broken build
+(`apps/api/Dockerfile` rebuilds standalone in ~240s; a trivial `pip install` build succeeds — the
+sandbox is not network-blocked). The failure was **resource contention**: the stand-up built the
+heavy image while the audit fan-out saturated all cores. DAST is a flagship feature, so it must
+FIRE in the common case and degrade only as a genuine last resort. Two facts make it fireable:
+the engine already scans an already-running instance (`run-dast.mjs` `resolveBaseUrl` — explicit
+`--base-url` ALWAYS wins, zero build/stand-up), and the partner ships PREBUILT images
+(`docker-compose.prod.yml` `image: verdict-api:latest`) that `stack-detect` ignored. Same
+changeset closes two more cold-run gaps: `apps/api/pyproject.toml` went un-SCA'd (OSV can't
+resolve version ranges, no lockfile — the whole FastAPI backend dep tree, incl. the unmaintained
+`python-jose`, unscanned), and the regexploit `.txt` ReDoS output needed a manual ingest re-run
+because `--all` enumerates only `*.{json,sarif}`.
+
+### Added
+- `harness/stack-detect.mjs` — a **prebuilt-image compose preference pass** in `gatherRecipe`
+  (fires-path ladder rung 2): when a `*.prod.yml` exists whose picked web/api tier resolves an
+  `image:` (not `build:`), it is PREFERRED over the build-from-source dev compose and the recipe
+  records `buildsFromSource:false` (+ `prebuiltImage`). A new PURE `composeWebTierImage(text)`
+  reads the scored web-tier's `image:` via `svcImage`; `PROD_COMPOSE_FILES` + `findProdCompose`
+  discover the prod compose. **Kept OUT of `COMPOSE_FILES`** on purpose — that set feeds
+  `firstExisting` at three env/satisfiability call-sites and adding prod variants would
+  over-broaden them; the prod compose only changes WHICH recipe is stood up, never the env read.
+- `acceptance/test-run-scans-fires-path.mjs` (6 checks, F1–F6) — prose guards locking the
+  run-scans fires-path ladder, the `--base-url` first-rung surfacing, the rung-3 serialize rule,
+  the pip-audit lockfile-less-SCA fallback + fail-loud-on-uncovered-manifest coverage rule, and
+  the ReDoS `.txt` auto-route. Skill-prose guard pattern (mirrors `test-ci-hygiene.mjs`).
+
+### Fixed
+- `harness/teardown-stack.mjs` — the same-run compose `down` now carries **`--rmi local`** (via a
+  new PURE `composeDownArgs` helper the test drives): a build-succeeds/health-fails run no longer
+  strands a `<project>-*` image on disk until a later `--sweep`. `local` (not `all`) is
+  deliberate — a prebuilt partner image (a custom registry tag) is NOT locally built, so it is
+  spared. Additive, low-risk.
+
+### Changed
+- `skills/run-scans/SKILL.md` — Family 3 gains the **4-rung DAST fires-path ladder** (rung 1
+  already-running loopback `--base-url` → rung 2 prebuilt-image `*.prod.yml` → rung 3
+  build-from-source SERIALIZED, before/after the audit fan-out, **never DURING** → rung 4
+  honest-degrade as the last resort), surfacing `--base-url` as a first-class option and stating
+  the invariant "fire first, degrade last". Family 8 (SCA) gains the **lockfile-less Python SCA**
+  rule (OSV can't resolve ranges → run `pip-audit`, agent-run present / owner-run absent, no
+  `install-scanners.mjs` change) plus a **fail-loud-on-uncovered-manifest** rule (a manifest no
+  scanner audited surfaces as a coverage gap in the scan-status render, never a silent
+  `scan-external-sca` pass). Family 7's ReDoS leg now **auto-runs** the explicit-scanner ingest
+  immediately after the redos scan.
+- `harness/run-dast.mjs` (JSDoc only — loopback enforcement byte-identical) + `harness/standup-stack.mjs`
+  (header note): document the ladder — `resolveBaseUrl`'s explicit-wins is rung 1; `standupStack`
+  stays a single-shot executor that does NOT self-serialize (rung 3 is a driver sequencing rule).
+- `acceptance/test-stack-detect.mjs` (C1–C4), `acceptance/test-run-dast.mjs` (L1),
+  `acceptance/test-teardown-stack.mjs` (T11) — extended for the prebuilt-compose preference,
+  rung-1 explicit-`--base-url`-over-a-torn-down-pointer, and the `--rmi local` same-run down argv.
+  Mutation-proven (revert prebuilt search → C2 red; drop explicit-wins → L1/D5 red; drop
+  `--rmi local` → T11 red; drop each prose rule → its F-check red). This lane adds 12 checks + 1
+  file; the reconciled cross-lane suite total lands at merge.
+
 ## [0.8.106] — 2026-07-09
 
 **The dispositions CLI fails closed: an invalid entry rejects the whole file — exit 2,

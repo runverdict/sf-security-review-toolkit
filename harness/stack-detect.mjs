@@ -366,6 +366,23 @@ export function composeWebTier(text) {
 }
 
 /**
+ * PURE. Does the compose's picked web/api tier resolve an `image:` (a PREBUILT image) rather
+ * than build from source? The signal the fires-path ladder's rung 2 keys off (0.8.109): a
+ * `*.prod.yml` whose web tier ships `image: <name>:latest` can be stood up with ZERO image
+ * build — no heavy `docker build` competing with the audit fan-out. Reuses composeWebTier's
+ * scored web-tier pick, then reads that service's `image:` via svcImage. Returns
+ * `{ prebuilt, service, image }`; prebuilt is false when no web tier is host-published or the
+ * picked tier builds from source. Never throws.
+ */
+export function composeWebTierImage(text) {
+  const wt = composeWebTier(text)
+  if (!wt || !wt.service) return { prebuilt: false, service: null, image: null }
+  const block = composeServiceBlocks(text).find((b) => b.name === wt.service)
+  const image = block ? svcImage(block.lines) : null
+  return { prebuilt: Boolean(image), service: wt.service, image: image || null }
+}
+
+/**
  * PURE. Detect a schema-migration mechanism from PRESENCE signals — DETECTION ONLY, for the
  * honesty label (never run). `signals.files` is a list of canonical presence keys; a compose
  * migration service (name in the set below) counts too. Returns `{tool,command}` or null.
@@ -491,11 +508,28 @@ export function classifyStack(facts = {}) {
 // ── CLI fact-gathering (dependency-free; best-effort regex/file scans) ──────────
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'force-app', '.security-review', 'docs', '.claude', 'venv', '.venv', '__pycache__', 'dist', 'build'])
 const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']
+// Prebuilt-image compose names (0.8.109) — a DEDICATED set for the fires-path ladder's rung-2
+// preference pass in gatherRecipe. Kept OUT of COMPOSE_FILES on purpose: that set is consumed by
+// `firstExisting` at three env/satisfiability call-sites, and adding prod variants there would
+// over-broaden them (they must keep reading the app's canonical env surface). The prod compose
+// only changes WHICH recipe file is stood up (prebuilt vs build-from-source), never the env read.
+const PROD_COMPOSE_FILES = ['docker-compose.prod.yml', 'docker-compose.prod.yaml', 'compose.prod.yml', 'compose.prod.yaml']
 const readOr = (p) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 const isDir = (p) => { try { return statSync(p).isDirectory() } catch { return false } }
 const isFile = (p) => { try { return statSync(p).isFile() } catch { return false } }
 
 function firstExisting(target, names) { for (const n of names) { const p = join(target, n); if (isFile(p)) return p } return null }
+
+/** Discover a prebuilt-image compose file: the known `*.prod.{yml,yaml}` names first, then any
+ *  top-level `*.prod.{yml,yaml}` (sorted → deterministic). Returns an absolute path or null. */
+function findProdCompose(target) {
+  const known = firstExisting(target, PROD_COMPOSE_FILES)
+  if (known) return known
+  let entries = []
+  try { entries = readdirSync(target) } catch { return null }
+  const prod = entries.filter((e) => /\.prod\.ya?ml$/i.test(e) && isFile(join(target, e))).sort()
+  return prod.length ? join(target, prod[0]) : null
+}
 
 /** Discover the non-package server source roots (top-level dirs with a server signal). */
 function serverRoots(target) {
@@ -561,13 +595,29 @@ function gatherEnvNames(target, roots, recipe = null) {
 
 /** Resolve a run recipe + web tier (kind, command, port). */
 function gatherRecipe(target, roots) {
+  // FIRES-PATH LADDER rung 2 (0.8.109): PREFER a prebuilt-image compose over a build-from-source
+  // dev compose. When a `*.prod.yml` exists whose picked web/api tier resolves an `image:` (not a
+  // `build:`), stand up THAT — no heavy image build competes with the audit fan-out (the run-time
+  // DAST failure was resource contention, not a broken build). Records buildsFromSource:false.
+  // A prod compose whose web tier still builds from source, or none, falls through to the dev path.
+  const prodCompose = findProdCompose(target)
+  if (prodCompose) {
+    const pt = readOr(prodCompose)
+    const img = composeWebTierImage(pt)
+    if (img.prebuilt) {
+      return {
+        recipe: { kind: 'compose', file: prodCompose.replace(target + '/', ''), buildsFromSource: false, prebuiltImage: img.image },
+        webTier: composeWebTier(pt),
+      }
+    }
+  }
   const compose = firstExisting(target, COMPOSE_FILES)
   if (compose) {
     const t = readOr(compose)
     // full honesty object (port + service + ambiguity + expose-only-API note), NOT the
     // naive first-bare-digit:digit pick — and returned even when .port === null so the
     // no-scannable-tier note survives into the classifyStack reason.
-    return { recipe: { kind: 'compose', file: compose.replace(target + '/', '') }, webTier: composeWebTier(t) }
+    return { recipe: { kind: 'compose', file: compose.replace(target + '/', ''), buildsFromSource: true }, webTier: composeWebTier(t) }
   }
   // per-root recipes
   for (const root of roots) {

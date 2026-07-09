@@ -19,7 +19,16 @@
  *
  * It FAILS CLOSED without explicit consent (standing up a container + active scanning
  * is a live op). PURE planner `planStandup` (deterministic spec) + impure executor
- * `standupStack` (docker). Supported recipes: `node` + `python` (copy-in — toolkit base
+ * `standupStack` (docker).
+ *
+ * FIRES-PATH LADDER rung 3 — SERIALIZE, don't overlap (0.8.109): `standupStack` is a
+ * single-shot executor and deliberately knows NOTHING about the audit fan-out, so it does
+ * NOT self-serialize. The rung-3 rule ("build the throwaway BEFORE or AFTER the audit
+ * fan-out, never DURING it") is a SEQUENCING obligation on the driver (run-scans SKILL.md
+ * Family 3), not this executor: a real cold run's DAST failed because the heavy api image
+ * build lost the last cores to a concurrent fan-out (the same build succeeds fine
+ * standalone). Prefer rung 1 (an already-running `--base-url`) or rung 2 (a prebuilt-image
+ * compose, `stack-detect` `buildsFromSource:false`) to avoid the source build entirely. Supported recipes: `node` + `python` (copy-in — toolkit base
  * image, source copied in), `dockerfile` (build-then-run — the partner's own
  * Dockerfile brings the source + base image; the built image carries the toolkit
  * run-name so teardown removes it), and `compose` (multi-container — docker's OWN
