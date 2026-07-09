@@ -510,6 +510,48 @@ export const CLASS_DEFS = {
 }
 const DEFAULT_DIMENSION = 'apex-exposed-surface'
 
+// ----------------------------------------------------------------------------
+// RULE_BAND_FLOOR (0.8.105 — deterministic-band precision): a sourced, narrow,
+// LOWERING-ONLY per-rule override on the class band, keyed `engine/ruleId`.
+//
+// WHY: the class-severity adapters deliberately discard the scanner's own severity
+// (a mapped classKey always wins — see buildFinding), which is right for the
+// genuinely mixed `iac-misconfig` class (privileged container, root user, exposed
+// docker socket are real security misconfigurations). But it over-bands the
+// AVAILABILITY-ONLY rules in that class: a missing Dockerfile HEALTHCHECK is
+// orchestration/liveness hygiene — it grants no access, leaks no data, crosses no
+// trust boundary — yet it shipped as `high` on a real cold run, carrying the
+// literal suffix "[Trivy severity LOW, recorded for reference]". The LLM
+// dimensions already encode "availability is not security" as an FP pattern; this
+// map is the deterministic band's equivalent, applied per-rule and only when the
+// rule's own official documentation supports the availability-only reading.
+//
+// HONESTY FLOOR: `low` means REAL and NON-BLOCKING — never "false positive". The
+// finding stays in the ledger and the evidence pack; the note says what it is.
+//
+// INVARIANTS (locked by acceptance/test-rule-band-floor.mjs):
+//   - LOWERING-ONLY, enforced in code: a mapped band more severe than the class
+//     band is IGNORED (the class band wins) — the map can never raise.
+//   - NARROW + SOURCED: every entry cites the rule's official documentation. Do
+//     not add a rule you cannot source; never a blanket class demotion.
+//   - Every `engine/ruleId` NOT in this map is byte-identical to before.
+export const FINDING_BAND_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
+const HEALTHCHECK_FLOOR_NOTE =
+  'availability/orchestration hygiene (no container HEALTHCHECK): it grants no access, leaks no data, and ' +
+  'crosses no trust boundary — a real, non-blocking finding, not a security misconfiguration'
+export const RULE_BAND_FLOOR = {
+  // Checkov CKV_DOCKER_2 — "Ensure that HEALTHCHECK instructions have been added to container images"
+  // (the guideline URL Checkov itself emits on the check):
+  // https://docs.prismacloud.io/en/enterprise-edition/policy-reference/docker-policies/docker-policy-index/ensure-that-healthcheck-instructions-have-been-added-to-container-images
+  'checkov/CKV_DOCKER_2': { band: 'low', note: HEALTHCHECK_FLOOR_NOTE },
+  // Trivy DS-0026 — "No HEALTHCHECK defined" (the rule's PrimaryURL; Trivy's own severity: LOW):
+  // https://avd.aquasec.com/misconfig/ds-0026
+  'trivy/DS-0026': { band: 'low', note: HEALTHCHECK_FLOOR_NOTE },
+  // The SAME Trivy rule under its AVDID (the trivy adapter prefers `AVDID` over `ID` when the
+  // scanner emits it — String(m.AVDID || m.ID)); same source URL as DS-0026 above.
+  'trivy/AVD-DS-0026': { band: 'low', note: HEALTHCHECK_FLOOR_NOTE },
+}
+
 // The single-shape (class-owning) registry — the supersession-safety invariant made
 // EXPLICIT. An adapter may OWN a class (its classify() returns a non-null CLASS_DEFS
 // key) ONLY when that class is a distinct SINGLE-SHAPE finding: the deterministic row
@@ -844,6 +886,17 @@ export function buildFinding({ engine, ruleId, severityNum, file, startLine, mes
     adjusted = cs.severity
     dimension = CLASS_DEFS[classKey].dimension
     sevReason = `severity fixed from the ${classKey} class (baseline requirement ${cs.baselineId}${cs.reqSev ? ` = ${cs.reqSev}` : ''})`
+    // RULE_BAND_FLOOR (0.8.105): the sourced availability-only override, LOWERING-ONLY —
+    // enforced in code, not by convention: it applies ONLY when the mapped band ranks
+    // strictly BELOW the class band (an unknown band ranks undefined → the comparison is
+    // false → class band wins, fail-safe). Every `engine/ruleId` not in the map takes the
+    // branch above byte-identically. The note is honest, never a refutation: the finding
+    // is REAL and stays in the ledger — `low` states it is non-blocking, not false.
+    const floor = RULE_BAND_FLOOR[`${engine}/${ruleId}`]
+    if (floor && FINDING_BAND_RANK[floor.band] < FINDING_BAND_RANK[adjusted]) {
+      sevReason += `; banded ${floor.band} by the sourced rule-band floor for ${engine}/${ruleId} (class band ${adjusted} lowered, never raised): ${floor.note}`
+      adjusted = floor.band
+    }
   } else if (bandFromTool) {
     // TOOL→BAND (Phase 2 · 2a #2 Semgrep — the first genuine tool→band path). The hit owns no
     // toolkit class, but the scanner carries a real per-finding severity already resolved to a

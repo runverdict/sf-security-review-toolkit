@@ -265,6 +265,69 @@ undetected.
   warning); both engines granted in `allowed-tools` (an ungranted auto-run
   prompts for permission and the gate gets skipped in practice); the Step-6
   verbatim-headline mandate now names its mechanical enforcement.
+## [0.8.105] — 2026-07-09
+
+**Deterministic-band precision: availability-only IaC rules band `low` via a sourced,
+lowering-only per-rule floor, and un-indexed evidence fails loud.** Two cold-run defects,
+one changeset. C1: the class-severity adapters discard the scanner's own severity — right
+for the mixed `iac-misconfig` class, but a missing Dockerfile `HEALTHCHECK` (trivy
+`DS-0026` / checkov `CKV_DOCKER_2`) shipped as **`high`** while carrying the literal
+suffix "[Trivy severity LOW, recorded for reference]"; both rows needed hand-written
+`accepted_risk` justifications to clear. C2: `evidence/index.json` is driven by the
+driver-authored evidence-input, not a glob — so a scan could run and ingest (161
+detect-secrets findings on the cold run; the opengrep `.sarif` was the second orphan of
+the same class) yet appear nowhere in the index, and un-indexed evidence earns no
+requirement credit in `compute-sci` / `compile-submission`. The `low` band is a statement
+that the finding is real and non-blocking — never a false positive; the finding stays in
+the ledger and the evidence pack.
+
+### Added
+- `RULE_BAND_FLOOR` in `harness/ingest-scanner-findings.mjs` — a sourced, narrow,
+  LOWERING-ONLY override keyed `engine/ruleId`, applied inside `buildFinding`'s
+  mapped-class branch after the class band resolves. Enforced in code, not by
+  convention: a mapped band at or above the class band is ignored (the class wins);
+  the map can never raise. Seeded with exactly the availability-only HEALTHCHECK
+  rules, each cited to its official documentation: `checkov/CKV_DOCKER_2` (Prisma
+  Cloud policy reference) and `trivy/DS-0026` (+ its `AVD-DS-0026` AVDID alias the
+  adapter prefers when the scanner emits it; avd.aquasec.com/misconfig/ds-0026).
+  Floored findings band `low` with an honest, deterministic note (availability/
+  orchestration hygiene, crosses no trust boundary) — lowered, never dropped;
+  `dimension: 'infrastructure-iac'`, the finding `class`, and every unmapped rule
+  stay byte-identical. `CLASS_DEFS` and every other adapter untouched.
+- `--check` mode on `harness/build-evidence-index.mjs` — the evidence-index
+  completeness lint: enumerates top-level `evidence/*.{json,sarif,txt,html}` scan
+  artifacts, compares against `index.json`, reports every **orphan** by name, exit 2
+  on any (an un-citable scan is a submission gap). READ-ONLY — never mutates the
+  index. Excluded by design (each would false-orphan every run): `index.json` itself,
+  `*.provenance.json` sidecars, and subdirectories (`evidence/dast/`).
+- `acceptance/test-rule-band-floor.mjs` (5 checks, BF1–BF5) — fixture-anchored `low`
+  bands + honesty note + never-dropped for both rules; the in-code lowering-only
+  guard (a raise-attempt and an equal-band no-op); an unmapped `iac-misconfig` rule
+  byte-identical to the pre-change `buildFinding` output; other adapters unchanged.
+- `acceptance/test-evidence-index-completeness.mjs` (5 checks, EI1–EI5) — orphan
+  reported by name with exit 2; clean dir exits 0; `--check` never mutates the index
+  (byte-compare); the exact cold-run orphan pair (detect-secrets report +
+  `opengrep-*.sarif`) both reported; the exclusion lock (an index.json +
+  provenance-sidecar + `dast/`-only dir reports zero orphans).
+
+### Fixed
+- `run-scans` Family 6 now names **detect-secrets** alongside gitleaks (the
+  complementary second-opinion tree pass) and requires every secret-scan output this
+  family produced to be recorded in the evidence-input; Family 7 requires **both**
+  Opengrep surfaces (`opengrep-<date>.json` AND `.sarif`) recorded — the two
+  cold-run orphans the completeness check would otherwise fire on.
+
+### Changed
+- `run-scans` Step 11 runs the completeness check after building the index
+  (`build-evidence-index.mjs --repo <target> --check`; orphans exit 2 → fix the
+  evidence-input and rebuild, never hand-edit `index.json`, never render on a failing
+  check); `Bash(node *harness/build-evidence-index.mjs *)` granted in `allowed-tools`.
+- `acceptance/test-ingest-scanner-findings.mjs` — the CK/TRV anchors updated to the
+  floored `low` band; the two severity-from-class consistency checks re-anchored on
+  floor-unmapped rules (`CKV_DOCKER_3` / `DS-0002`) so the class invariant stays
+  locked. Suite **72 files / 1121 checks**. `reconcile-provenance.mjs` /
+  `merge-ledger.mjs` / `finding-clusters.mjs`, `CLASS_DEFS`, and every other adapter
+  byte-untouched.
 
 ## [0.8.101] — 2026-07-07
 
