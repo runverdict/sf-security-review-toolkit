@@ -238,7 +238,7 @@ function main() {
     // A2 (0.8.103) — also read deterministic-dispositions.json (when present + readable)
     // so the deterministic-band line can attribute how many dispositioned findings were
     // covered by a rule-wide (as_of_pass) adjudication. Absent/corrupt file → the
-    // parenthetical is simply omitted (unknown is not zero); never a crash.
+    // parenthetical is omitted (unknown is not zero); never a crash.
     if (facts) {
       try {
         const dj = JSON.parse(

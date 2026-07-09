@@ -54,7 +54,7 @@
  * adjudicated) STAYS `confirmed` and gains an auditable `pending_readjudication` note —
  * never a status change, never a severity change. For a cross-dimension merged parent
  * the gate runs on EACH LENS's own first_seen, never the parent's (the parent's is a
- * fail-open min); a time-excluded lens is simply UNMATCHED, so the every-lens-matched
+ * fail-open min); a time-excluded lens is left UNMATCHED, so the every-lens-matched
  * invariant keeps the parent open — the correct fail-closed composition.
  *
  * BLAST RADIUS (A2): the result carries per-disposition counts (matched / flipped /

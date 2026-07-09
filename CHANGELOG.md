@@ -111,7 +111,7 @@ the ledger and the evidence pack.
 - `acceptance/test-ingest-scanner-findings.mjs` — the CK/TRV anchors updated to the
   floored `low` band; the two severity-from-class consistency checks re-anchored on
   floor-unmapped rules (`CKV_DOCKER_3` / `DS-0002`) so the class invariant stays
-  locked. Suite **72 files / 1121 checks**. `reconcile-provenance.mjs` /
+  locked. Suite **76 files / 1159 checks**. `reconcile-provenance.mjs` /
   `merge-ledger.mjs` / `finding-clusters.mjs`, `CLASS_DEFS`, and every other adapter
   byte-untouched.
 
@@ -157,8 +157,7 @@ undetected.
   unreadable ledger or report fails closed (exit 2), never open.
 - `acceptance/test-rerender-runlog.mjs` (RL1–RL6, 10 checks) and
   `acceptance/test-verify-report-headline.mjs` (VH1–VH6, 9 checks) — the
-  standing suite is now **72 files / 1130 checks** (counts synced in
-  CONVENTIONS.md + acceptance/README.md).
+  standing suite is now **74 files / 1149 checks**.
 
 ### Fixed
 - `skills/audit-codebase/SKILL.md` — Step 7 now re-derives the durable run-log
@@ -215,7 +214,7 @@ remedies) rather than grandfathered.
   gains only an auditable `pending_readjudication` annotation; never a status change, never a
   severity change. For cross-dimension merged parents the gate runs on EACH LENS's own
   `first_seen`, NEVER the parent's (`Math.min(... || 1)` — a fail-open minimum: gating on it
-  would let one old lens mask a brand-new lens); a time-excluded or undatable lens is simply
+  would let one old lens mask a brand-new lens); a time-excluded or undatable lens is left
   unmatched, so A1's every-lens-matched invariant keeps the parent open (BD8 is the regression
   lock against parent-gating).
 
