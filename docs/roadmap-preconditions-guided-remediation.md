@@ -1,6 +1,13 @@
 # Roadmap — Preconditions & guided remediation (the "why-blocked, ask-don't-default" contract)
 
 **Status: design (prompted by the Solano cold-run preflight, 2026-06-20). Not yet built.**
+
+> **Related shipped (0.8.108):** the doc's core *ask-don't-default* principle landed for the
+> partner-program / SCI gate — `compute-sci` now computes `process-partner-program-prerequisites`
+> FROM the manifest `operatorConfirmed` block (write-only before), and `compile-submission` ASKS
+> any not-recorded partner-program answer at the SCI step instead of defaulting, so an operator
+> "No" now blocks a green SCI. The doc's own numbered slices (deep-audit live precondition,
+> stack-detect/tool-detect needs-input, scope detectors, messy-repo fixture) remain still-design.
 The Solano preflight offered the deployed-org deep audit as "✦ READY" for a package that
 **cannot be installed** — its `04t` is a synthetic alias and its namespace is unregistered.
 Claiming a capability is available when it will fail is a CONVENTIONS §2 honesty violation, not

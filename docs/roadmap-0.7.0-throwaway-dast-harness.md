@@ -195,6 +195,11 @@ end-to-end). Remaining: only the slice-5b authenticated-DAST depth — slice 7 (
 - **Stand-up engine vs detect-only first**: starting a stack is intrusive/fragile vs
   detecting an already-running local instance. Likely: detect-running → else offer
   consented stand-up where a recipe exists → else owner-run. Decide per slice 3.
+  **SETTLED — fires-path ladder SHIPPED 0.8.109:** a 4-rung ladder — rung 1 an already-running
+  loopback `--base-url` (zero build) → rung 2 a prebuilt-image `*.prod.yml` preferred over
+  build-from-source (`stack-detect` records `buildsFromSource:false`) → rung 3 build serialized
+  outside the audit fan-out → rung 4 honest-degrade. DAST fires in the common case without the
+  heavy build. Slice-5b (authenticated AF-plan depth) remains the only open DAST item.
 - **ZAP acquisition** (Docker-digest vs TOFU-zip vs owner-run) is subsumed here: if the
   throwaway is containerized, Docker-digest ZAP is the natural, strongest-integrity fit.
 - **Fidelity labelling vocabulary** — how the evidence states "DB synthetic, payment API

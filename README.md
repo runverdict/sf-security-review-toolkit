@@ -254,7 +254,7 @@ The methodology and harness were extracted from real multi-pass audits of a prod
 
 ## Maturity & what's in the box
 
-**14 skills · 19 audit dimensions · 8 scan families · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (300+ checks)** that fails the build if a refactor breaks an enforced gate or its determinism.
+**14 skills · 19 audit dimensions · 8 scan families · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (1,200+ checks across 80 files)** that fails the build if a refactor breaks an enforced gate or its determinism.
 
 Honest beta (see the top of this README). See [`CHANGELOG.md`](CHANGELOG.md) for the current version and release notes. Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
 

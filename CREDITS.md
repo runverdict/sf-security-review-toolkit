@@ -11,7 +11,7 @@ managed package up in a throwaway org and audits the *deployed* artifact) is bui
 set of Salesforce lifecycle skills:
 
 - `bootstrap-cli-auth`
-- `build-managed-package` (and its `templates/MCPPostInstall.cls` / `MCPPostInstallTest.cls`)
+- `build-managed-package` (and its `skills/build-managed-package/templates/MCPPostInstall.cls` / `MCPPostInstallTest.cls`)
 - `install-and-verify-package`
 - `teardown-mcp-registration`
 

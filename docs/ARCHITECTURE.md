@@ -74,7 +74,7 @@ if (!ledger || !Array.isArray(ledger.findings)) return { action: 'deny', reason:
 ```
 
 ### The readiness score credits only reviewer-reproducible evidence
-**Engine** `harness/compute-sci.mjs` :109-152 · **Test** `acceptance/test-sci.mjs`
+**Engine** `harness/compute-sci.mjs` :177-240 · **Test** `acceptance/test-sci.mjs`
 The Submission Completeness Index has a **hard blocker floor** and credits a requirement only when its evidence
 is reviewer-reproducible (a scanner report the reviewer re-runs, an owner-signed artifact, or a structural
 N/A). An audit-only clear is surfaced as a separate `statically-cleared` signal that **never** moves the
@@ -295,7 +295,7 @@ return { action: 'deny', reason: denyReason(gate, cmd) }
 ```
 
 ### The throwaway DAST only ever hits a loopback mirror, and tears down by name
-**Engines** `harness/standup-stack.mjs` · `harness/run-dast.mjs` :42-54 · `harness/teardown-stack.mjs` :31-35 ·
+**Engines** `harness/standup-stack.mjs` · `harness/run-dast.mjs` :49,100-106 · `harness/teardown-stack.mjs` :31-35 ·
 **Tests** `acceptance/test-{standup,run-dast,teardown}-stack.mjs`
 The active scan refuses any non-loopback target before ZAP is invoked; secrets are synthesized at runtime and
 passed by env-file (never in argv or the manifest, which carries names not values); teardown refuses any docker

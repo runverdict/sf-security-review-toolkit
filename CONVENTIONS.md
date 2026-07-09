@@ -151,6 +151,18 @@ Skills write into the PARTNER's repo, never into the plugin:
   but must be labelled NOT-test-backed in the CHANGELOG (same residual class), and
   a high-stakes prose layer is a candidate for promotion to an engine + a
   PreToolUse hook (runtime-independent enforcement).
+- **Scope / element DETECTION lives in a deterministic engine, not SKILL prose
+  (0.8.108).** The 0.5.0 rule above covers self-describing COUNTS and applicability sets;
+  this extends it to the DETECTION of *what gets audited*. Any detection that decides audit
+  BREADTH — which app surfaces, endpoints, or packages the audit covers — MUST be a pure
+  `harness/*.mjs` engine with a fixture-locked standing test, never prose the driver greps.
+  Prose-strength detection is precisely how a surface gets silently missed: a full
+  `apps/admin` Next.js console went absent from a scope manifest until the SCA phase because
+  second/third app-root detection was LLM prose in `scope-submission`, and no mechanical test
+  could lock it. The enforced form is `harness/enumerate-app-roots.mjs` (mirrors the
+  `tool-detect`/`stack-detect`/`package-readiness` detector contract: pure, read-only, emits
+  every conventional app root carrying an app manifest as a CANDIDATE element + evidence),
+  guarded by `acceptance/test-enumerate-app-roots.mjs`.
 - **Operator-facing GATES are pinned by an engine, rendered VERBATIM by the driver
   (0.8.22).** The `AskUserQuestion` gate option sets were driver-improvised prose, and a
   cold campaign caught the drift (the same depth gate offered a different option set
@@ -505,7 +517,8 @@ sf-security-review-toolkit/
 │   ├── ledger-staleness.mjs         # resumption fingerprint: flag findings whose code changed (C1)
 │   ├── injection-check.mjs          # audit-engine pre-launch check: decoy-anchored INJECTED-object validate (G5)
 │   ├── package-readiness.mjs        # preflight power-up precondition: deep-audit install-readiness (installable|needs-build|no-package) from sfdx-project.json. 0.8.24: additive `registered` field splits needs-build into buildable vs unregistered (feeds the render-preflight 4-state enum)
-│   ├── stack-detect.mjs             # 0.7.0 foundation: throwaway-DAST-target detector (runnable|needs-recipe|needs-secrets|n/a) + env class (synthesizable|external|benign)
+│   ├── stack-detect.mjs             # 0.7.0 foundation: throwaway-DAST-target detector (runnable|needs-recipe|needs-secrets|n/a) + env class (synthesizable|external|benign). 0.8.109: prefers a prebuilt-image *.prod.yml over build-from-source (records buildsFromSource:false) — DAST fires without the heavy build
+│   ├── enumerate-app-roots.mjs      # 0.8.108 (WO-108): DETERMINISTIC monorepo app-root enumerator — pure fn of the repo tree; every conventional app root (apps/*, services/*, packages/*, repo root) carrying an app manifest → a CANDIDATE element + evidence (path·framework·port), so a second front-end/admin surface surfaces deterministically. Replaces the scope-submission prose grep that missed apps/admin (§7 detection-in-engine rule)
 │   ├── standup-stack.mjs            # 0.7.0 slice 3: consented stand-up of an isolated throwaway (node/python copy-in, dockerfile build, compose multi-container w/ loopback override, refusing host/container:/service: network_mode; synth secrets, manifest); fails closed w/o consent
 │   ├── teardown-stack.mjs           # 0.7.0 slice 3: asymmetric manifest-driven teardown — remove the container/image/tmp or the whole compose project (project-scoped down), KEEP evidence; name-scoped (refuses non-sf-srt-stack resources/projects)
 │   ├── standup-org.mjs              # 0.8.50 (B2-P2): consented scratch-org stand-up for the deployed-org deep audit — pure planStandupOrg (toolkit alias sf-srt-org-<runId>, Developer+Einstein1AIPlatform def, --no-ancestors, clamped duration) + impure executor (fails closed w/o the recorded sf-deep-audit-ops consent; no-devhub honest degrade — Dev Hub auth stays owner-interactive; manifest carries alias/username/orgId ONLY, never auth material)
