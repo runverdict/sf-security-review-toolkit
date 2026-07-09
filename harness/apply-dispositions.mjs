@@ -34,9 +34,35 @@
  *       "disposition": "refuted",            // "refuted" (FP) | "accepted_risk"
  *       "reason": "constant GUC bound at request entry; the flagged predicate is not user-influenced (…)",
  *       "accepted_risk_justification": "…",  // REQUIRED iff disposition === "accepted_risk"
- *       "scope": { "files": ["…"] }          // OPTIONAL — omit to disposition the WHOLE engine+ruleId class
+ *       "scope": { "files": ["…"] }          // MANDATORY — exactly ONE of `files` | `as_of_pass`
  *     }
  *   ] }
+ *
+ * A2 (0.8.103) — THE SCOPE IS MANDATORY, in exactly one of two forms:
+ *   - `scope.files: [...]` — the loci the adjudicator actually read. Applies only there
+ *     (normalized-file exact match). Semantics unchanged from the original scoped path.
+ *   - `scope.as_of_pass: N` — rule-wide, but BOUNDED IN TIME: applies only to findings
+ *     whose OWN `first_seen` is a valid positive integer <= N. The honest encoding of
+ *     "I reviewed every instance of this rule present at pass N; all false positives."
+ * An unscoped disposition (or both keys, or an empty/invalid scope) is a HARD validation
+ * error — rejected whole, nothing applied. WHY: apply re-runs on every pass, so an
+ * unscoped entry was an unbounded, PERMANENT rule-wide suppression — a finding of the
+ * same rule first discovered months later, at a file that did not exist when the reason
+ * was written, was auto-refuted on arrival. That is now unexpressible. A finding that
+ * matches a rule-wide adjudication but post-dates it (first_seen > N, or missing/invalid
+ * first_seen — FAIL CLOSED: a finding we cannot date is a finding we have not
+ * adjudicated) STAYS `confirmed` and gains an auditable `pending_readjudication` note —
+ * never a status change, never a severity change. For a cross-dimension merged parent
+ * the gate runs on EACH LENS's own first_seen, never the parent's (the parent's is a
+ * fail-open min); a time-excluded lens is simply UNMATCHED, so the every-lens-matched
+ * invariant keeps the parent open — the correct fail-closed composition.
+ *
+ * BLAST RADIUS (A2): the result carries per-disposition counts (matched / flipped /
+ * pending / distinct files) and the CLI prints one line per disposition — a single line
+ * silencing 161 findings is never again silent. Attribution rule for jointly-flipped
+ * merged parents: a parent flips only after the disposition SET matched every lens, so
+ * EVERY disposition that matched at least one of its lenses is credited with the parent
+ * in both its matched and flipped tallies (not just the last one to match).
  *
  * SAFETY / CONSERVATISM (the honesty-preserving core — a disposition can only ever move
  * a DETERMINISTIC finding OUT of the open band):
@@ -44,8 +70,9 @@
  *     `llm-inferred` finding (those are the LLM's OWN confirmed findings — a disposition
  *     must not be able to hide an LLM-confirmed blocker). Paramount safety property.
  *   - Match is EXACT `engine` AND `ruleId` (never a substring/fuzzy match that could
- *     over-flip), optionally narrowed by `scope.files` (normalized-file match; no scope →
- *     the whole engine+ruleId class). A disposition matching nothing is a reported no-op.
+ *     over-flip), ALWAYS bounded by the mandatory scope — `scope.files` (normalized-file
+ *     exact match) or `scope.as_of_pass` (per-finding/per-lens `first_seen <= N` gate,
+ *     fail-closed on missing/invalid `first_seen`). A disposition matching nothing is a reported no-op.
  *   - A1 (0.8.102) — a cross-dimension MERGED PARENT (`provenance:'deterministic'` +
  *     `lenses[]`) is matched THROUGH its lenses (exact engine+ruleId per lens; scope
  *     against the lens's own file), and is flipped ONLY when EVERY lens is matched by
@@ -122,14 +149,34 @@ export function validateDisposition(d) {
   ) {
     errors.push('`accepted_risk` requires a non-empty `accepted_risk_justification` (the ledger schema mandates it)')
   }
-  if (d.scope != null) {
-    const filesOk =
-      typeof d.scope === 'object' &&
-      !Array.isArray(d.scope) &&
-      Array.isArray(d.scope.files) &&
-      d.scope.files.length > 0 &&
-      d.scope.files.every((f) => typeof f === 'string' && f.trim())
-    if (!filesOk) errors.push('`scope` must be { files: [non-empty strings…] } when present')
+  // A2 (0.8.103) — a scope is MANDATORY, in exactly ONE of two forms. An unscoped
+  // disposition matched engine+ruleId across the whole repo FOREVER (apply re-runs every
+  // pass), silently refuting findings discovered later at loci nobody read. Unexpressible.
+  const scopeHelp =
+    'add `scope.files` (the exact loci you read and adjudicated) or `scope.as_of_pass` ' +
+    '(the pass whose findings you reviewed — rule-wide but bounded in time). An unscoped ' +
+    'disposition would re-apply on every future pass and auto-refute findings of the same ' +
+    'rule at loci nobody has looked at — this tool deliberately cannot express that'
+  if (d.scope == null || typeof d.scope !== 'object' || Array.isArray(d.scope)) {
+    errors.push(`missing \`scope\` — ${scopeHelp}`)
+  } else {
+    const hasFiles = 'files' in d.scope
+    const hasAsOf = 'as_of_pass' in d.scope
+    if (hasFiles && hasAsOf) {
+      errors.push(`\`scope\` must carry EXACTLY ONE of \`files\` | \`as_of_pass\`, not both — ${scopeHelp}`)
+    } else if (!hasFiles && !hasAsOf) {
+      errors.push(`empty \`scope\` — ${scopeHelp}`)
+    } else if (hasFiles) {
+      const filesOk =
+        Array.isArray(d.scope.files) &&
+        d.scope.files.length > 0 &&
+        d.scope.files.every((f) => typeof f === 'string' && f.trim())
+      if (!filesOk) errors.push(`\`scope.files\` must be a non-empty array of non-empty strings — ${scopeHelp}`)
+    } else if (!Number.isInteger(d.scope.as_of_pass) || d.scope.as_of_pass < 1) {
+      errors.push(
+        `\`scope.as_of_pass\` must be a positive integer pass id (got ${JSON.stringify(d.scope.as_of_pass)}) — ${scopeHelp}`
+      )
+    }
   }
   return errors
 }
@@ -144,7 +191,10 @@ export function validateDisposition(d) {
  *        deterministic-dispositions.json (or its `dispositions` array directly)
  * @returns {{ findings: Array<object>, applied: number, appliedIds: string[],
  *             unmatched: Array<{engine:string,ruleId:string}>,
- *             invalid: Array<{index:number,errors:string[]}> }}
+ *             invalid: Array<{index:number,errors:string[]}>,
+ *             perDisposition: Array<{index:number,engine:string,ruleId:string,
+ *               disposition:string,matched:number,flipped:number,pending:number,
+ *               files:number}> }}
  */
 export function applyDispositions(findings, dispositions) {
   const arr = Array.isArray(findings) ? findings.map((f) => ({ ...f })) : []
@@ -156,6 +206,23 @@ export function applyDispositions(findings, dispositions) {
   const appliedIds = new Set()
   const unmatched = []
   const invalid = []
+  // A2 (0.8.103) — the BLAST RADIUS, per disposition: which findings each entry matched,
+  // flipped, or left pending re-adjudication, and across how many distinct files. Sets of
+  // finding ids so a parent matched through two lenses of ONE disposition counts once.
+  const stats = [] // one row per VALID disposition, in file order
+  const statBy = new Map() // disposition object → its stats row (for parent attribution)
+  // A2 — the as_of_pass time gate, evaluated per finding (and per LENS for merged
+  // parents). FAIL CLOSED: only a valid positive-integer first_seen <= N passes; an
+  // absent / null / string / fractional first_seen means the row cannot be dated, and a
+  // finding we cannot date is a finding we have not adjudicated — never defaulted to 1.
+  const firstSeenOk = (fs, n) => Number.isInteger(fs) && fs >= 1 && fs <= n
+  const pendingNote = (d, fs) =>
+    oneLine(
+      `matches ${d.engine}/${d.ruleId}, adjudicated as of pass ${d.scope.as_of_pass}; ` +
+        (Number.isInteger(fs) && fs >= 1
+          ? `this locus is new (first_seen ${fs}) — re-adjudicate`
+          : 'this locus has no valid first_seen (fail closed) — re-adjudicate')
+    )
   // A1 (0.8.102) — merged-parent lens matching. A cross-dimension merged parent
   // (`provenance:'deterministic'` + a non-empty `lenses[]`) carries no top-level
   // engine/ruleId when its lenses disagree, so it is matched THROUGH its lenses.
@@ -178,8 +245,21 @@ export function applyDispositions(findings, dispositions) {
       invalid.push({ index, errors })
       return
     }
+    const stat = {
+      index,
+      engine: String(d.engine),
+      ruleId: String(d.ruleId),
+      disposition: String(d.disposition),
+      matched: new Set(),
+      flipped: new Set(),
+      pending: new Set(),
+      files: new Set(),
+    }
+    stats.push(stat)
+    statBy.set(d, stat)
     const scopeFiles =
       d.scope && Array.isArray(d.scope.files) ? new Set(d.scope.files.map(normScopeFile)) : null
+    const asOfPass = d.scope && Number.isInteger(d.scope.as_of_pass) ? d.scope.as_of_pass : null
     let matchedAny = false
     for (const f of arr) {
       // THE paramount safety property: only a deterministic finding is ever touched — an
@@ -194,12 +274,28 @@ export function applyDispositions(findings, dispositions) {
         f.lenses.forEach((l, li) => {
           if (!lensMatches(l, d, scopeFiles)) return
           matchedAny = true
+          stat.matched.add(f.id)
+          stat.files.add(normScopeFile(l.file))
+          // A2 — the time gate runs on the LENS's OWN first_seen, NEVER the parent's:
+          // the parent's is a fail-open min (`|| 1`), so gating on it would let one old
+          // lens mask a brand-new lens — exactly the suppression this slice removes. A
+          // time-excluded (or undatable — fail closed) lens is left UNMATCHED, so the
+          // every-lens-matched invariant below keeps the parent open; the parent gains
+          // the auditable pending note when it sits in the open band.
+          if (asOfPass != null && !firstSeenOk(l.first_seen, asOfPass)) {
+            const st = String(f.status || '').toLowerCase()
+            if (st === 'confirmed' || st === 'regressed') {
+              stat.pending.add(f.id)
+              f.pending_readjudication = pendingNote(d, l.first_seen)
+            }
+            return
+          }
           let m = parentMatches.get(f)
           if (!m) {
             m = new Map()
             parentMatches.set(f, m)
           }
-          if (!m.has(li)) m.set(li, d) // first matching disposition wins for attribution
+          if (!m.has(li)) m.set(li, d) // first matching disposition wins for reason attribution
         })
         continue
       }
@@ -208,8 +304,21 @@ export function applyDispositions(findings, dispositions) {
       if (String(f.ruleId) !== String(d.ruleId)) continue
       if (scopeFiles && !scopeFiles.has(normScopeFile(f.file))) continue
       matchedAny = true
+      stat.matched.add(f.id)
+      stat.files.add(normScopeFile(f.file))
       const status = String(f.status || '').toLowerCase()
       if (PROTECTED_STATES.has(status)) continue // owner/terminal — never overwritten
+      // A2 — the as_of_pass time gate: a finding first seen AFTER the adjudication (or
+      // one we cannot date — fail closed) is NEVER flipped. It stays in the open band,
+      // the headline, the blocker count; it gains only the auditable pending note.
+      // Never a status change, never a severity change.
+      if (asOfPass != null && !firstSeenOk(f.first_seen, asOfPass)) {
+        if (status === 'confirmed' || status === 'regressed') {
+          f.pending_readjudication = pendingNote(d, f.first_seen)
+          stat.pending.add(f.id)
+        }
+        continue
+      }
       if (status === d.disposition) continue // already at the target — idempotent skip
       // The flip: lifecycle status ONLY. provenance/engine/ruleId/class/severity are KEPT —
       // the disposition is a layer on top, never a rewrite. Never verdict, never severity.
@@ -220,7 +329,10 @@ export function applyDispositions(findings, dispositions) {
       if (d.disposition === 'accepted_risk') {
         f.accepted_risk_justification = oneLine(d.accepted_risk_justification, 500)
       }
+      delete f.pending_readjudication // a stale pending note must not survive a legitimate flip
+      for (const s of stats) s.pending.delete(f.id) // it is no longer LEFT pending by anyone
       appliedIds.add(f.id)
+      stat.flipped.add(f.id)
     }
     if (!matchedAny) unmatched.push({ engine: d.engine, ruleId: d.ruleId }) // reported, never guessed
   })
@@ -261,10 +373,30 @@ export function applyDispositions(findings, dispositions) {
       f.accepted_risk_justification = oneLine(riskD.accepted_risk_justification, 500)
     }
     delete f.partial_disposition // a stale partial note from an earlier run must not survive the full flip
+    delete f.pending_readjudication // ditto — every lens is now matched within its bound
     appliedIds.add(f.id)
+    // A2 — ATTRIBUTION RULE for a jointly-flipped merged parent: the flip happened only
+    // because the disposition SET matched every lens, so EVERY disposition that matched
+    // at least one lens is credited with the parent in its flipped tally — never just
+    // the last one to match. (Each already recorded the parent in `matched` above.)
+    for (const d of new Set(m.values())) {
+      const s = statBy.get(d)
+      if (s) s.flipped.add(f.id)
+    }
+    for (const s of stats) s.pending.delete(f.id) // flipped, so no longer LEFT pending by anyone
   }
   const ids = [...appliedIds].sort()
-  return { findings: arr, applied: ids.length, appliedIds: ids, unmatched, invalid }
+  const perDisposition = stats.map((s) => ({
+    index: s.index,
+    engine: s.engine,
+    ruleId: s.ruleId,
+    disposition: s.disposition,
+    matched: s.matched.size,
+    flipped: s.flipped.size,
+    pending: s.pending.size,
+    files: s.files.size,
+  }))
+  return { findings: arr, applied: ids.length, appliedIds: ids, unmatched, invalid, perDisposition }
 }
 
 // ----------------------------------------------------------------------------
@@ -312,7 +444,10 @@ function main() {
     }
   }
 
-  const { findings, applied, appliedIds, unmatched, invalid } = applyDispositions(ledger.findings, dispositions)
+  const { findings, applied, appliedIds, unmatched, invalid, perDisposition } = applyDispositions(
+    ledger.findings,
+    dispositions
+  )
   ledger.findings = findings
 
   if (!dryRun) {
@@ -326,7 +461,11 @@ function main() {
 
   if (asJson) {
     process.stdout.write(
-      JSON.stringify({ applied, appliedIds, unmatched, invalid, dispositionsFile: dispPresent ? 'present' : 'absent', dryRun }, null, 2) + '\n'
+      JSON.stringify(
+        { applied, appliedIds, unmatched, invalid, perDisposition, dispositionsFile: dispPresent ? 'present' : 'absent', dryRun },
+        null,
+        2
+      ) + '\n'
     )
   } else {
     process.stdout.write(
@@ -335,6 +474,14 @@ function main() {
         (dryRun ? ' (dry-run, not written)' : ` → ${ledgerPath}`) +
         '\n'
     )
+    // A2 — the blast radius, one line per disposition: a single line silencing 161
+    // findings must never again be silent.
+    for (const p of perDisposition) {
+      process.stdout.write(
+        `  ${p.engine}/${p.ruleId} → ${p.disposition}: ${p.matched} matched, ${p.flipped} flipped, ` +
+          `${p.pending} pending (${p.files} files)\n`
+      )
+    }
     for (const id of appliedIds) process.stdout.write(`  dispositioned: ${id}\n`)
     for (const u of unmatched) process.stdout.write(`  no-op (matched nothing): ${u.engine}/${u.ruleId}\n`)
     for (const iv of invalid) process.stdout.write(`  REJECTED entry #${iv.index}: ${iv.errors.join('; ')}\n`)

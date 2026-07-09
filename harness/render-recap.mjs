@@ -13,9 +13,13 @@
  * Step-6 exec summary), so the headline that gates the run reads the same everywhere.
  *
  * INPUTS — a facts object (the pass stats merge-ledger already computes):
- *   { findings, dimensions:[…], candidates, confirmed, refuted, unverified, pass, tier }
+ *   { findings, dimensions:[…], candidates, confirmed, refuted, unverified, pass, tier,
+ *     dispositions:[…] }
  * `findings` is the merged ledger findings (the cluster + halt verdict derive from it);
- * the counts are this pass's stats. Every field optional — honest fallbacks, never a crash.
+ * the counts are this pass's stats. `dispositions` (A2, optional) is the parsed
+ * deterministic-dispositions.json array — the `--target` path attaches it so the
+ * deterministic-band line can count the rule-wide (as_of_pass) suppressions; when absent
+ * the parenthetical is omitted. Every field optional — honest fallbacks, never a crash.
  *
  * DETERMINISTIC + PURE (CONVENTIONS §7): same facts → byte-identical block. No LLM, no
  * network, no deps, no Date/Math.random (the cluster lead is itself pure).
@@ -112,12 +116,46 @@ export function renderAuditRecap(facts) {
   const det = findings.filter((x) => String(x && x.provenance) === 'deterministic')
   if (det.length) {
     const detOpen = det.filter((x) => ['confirmed', 'regressed'].includes(String(x.status || '').toLowerCase())).length
-    const detDisp = det.filter((x) => typeof x.disposition_reason === 'string' && x.disposition_reason !== '').length
+    const detDispRows = det.filter((x) => typeof x.disposition_reason === 'string' && x.disposition_reason !== '')
+    const detDisp = detDispRows.length
+    // A2 (0.8.103) — pending re-adjudication: findings that MATCH a rule-wide
+    // (`scope.as_of_pass`) adjudication by engine+ruleId but post-date it (or cannot be
+    // dated — fail closed). They stay in the open band; the recap surfaces them so a new
+    // locus under an adjudicated rule is a visible re-adjudication task, never a silent
+    // auto-refute.
+    const detPending = det.filter(
+      (x) => typeof x.pending_readjudication === 'string' && x.pending_readjudication !== ''
+    ).length
+    // A2 — rule-wide accounting: when the dispositions file is readable (facts.dispositions,
+    // attached by the --target path from deterministic-dispositions.json), count how many
+    // of the dispositioned findings were covered by a rule-wide (as_of_pass) entry — the
+    // widest suppressions get the most scrutiny. Without the file the parenthetical is
+    // omitted (unknown is not zero).
+    const disps = Array.isArray(f.dispositions) ? f.dispositions : null
+    let ruleWideNote = ''
+    if (disps) {
+      const ruleWide = disps.filter(
+        (d) =>
+          d && typeof d === 'object' && !Array.isArray(d) &&
+          d.scope && typeof d.scope === 'object' && !Array.isArray(d.scope) &&
+          Number.isInteger(d.scope.as_of_pass)
+      )
+      const nameMatch = (row, d) =>
+        typeof row.engine === 'string' && row.engine === String(d.engine) &&
+        typeof row.ruleId === 'string' && row.ruleId === String(d.ruleId)
+      const matchesRuleWide = (x) =>
+        ruleWide.some(
+          (d) => nameMatch(x, d) || (Array.isArray(x.lenses) && x.lenses.some((l) => l && nameMatch(l, d)))
+        )
+      ruleWideNote = ` (${detDispRows.filter(matchesRuleWide).length} rule-wide)`
+    }
     L.push('')
     L.push(
       `**Deterministic band:** ${det.length} scanner finding(s) — ${detOpen} open · ${detDisp} dispositioned by ` +
-        'adjudication (structured entries in `.security-review/deterministic-dispositions.json` — the same reasons ' +
-        'the FP dossier carries). The drop from the raw scanner band to the open blockers is auditable, never silent.'
+        `adjudication${ruleWideNote} · ${detPending} pending re-adjudication (structured entries in ` +
+        '`.security-review/deterministic-dispositions.json` — the same reasons the FP dossier carries; a pending ' +
+        'row matches a rule-wide adjudication but surfaced at a NEW locus and must be re-adjudicated, never ' +
+        'auto-refuted). The drop from the raw scanner band to the open blockers is auditable, never silent.'
     )
   }
   L.push('')
@@ -197,6 +235,19 @@ function main() {
     let ledger = null
     try { ledger = JSON.parse(readFileSync(join(target, '.security-review', 'audit-ledger.json'), 'utf8')) } catch {}
     facts = factsFromLedger(ledger)
+    // A2 (0.8.103) — also read deterministic-dispositions.json (when present + readable)
+    // so the deterministic-band line can attribute how many dispositioned findings were
+    // covered by a rule-wide (as_of_pass) adjudication. Absent/corrupt file → the
+    // parenthetical is simply omitted (unknown is not zero); never a crash.
+    if (facts) {
+      try {
+        const dj = JSON.parse(
+          readFileSync(join(target, '.security-review', 'deterministic-dispositions.json'), 'utf8')
+        )
+        const list = Array.isArray(dj) ? dj : dj && typeof dj === 'object' && Array.isArray(dj.dispositions) ? dj.dispositions : null
+        if (list) facts.dispositions = list
+      } catch { /* absent or unreadable — omit the rule-wide parenthetical */ }
+    }
   }
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify({ block: renderAuditRecap(facts) }, null, 2) + '\n')

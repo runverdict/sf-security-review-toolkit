@@ -18,7 +18,9 @@
  *        findings are untouchable here.
  *   D3   EXACT match only — an engine mismatch or a ruleId prefix/substring never flips
  *        (no fuzzy over-flip).
- *   D4   scope.files narrows the flip to the named files; no scope → the whole class.
+ *   D4   scope is MANDATORY (A2, 0.8.103) — a scope-less disposition is rejected whole
+ *        (nothing applied); `scope.files` narrows the flip to the named files;
+ *        `scope.as_of_pass` covers the class within its pass bound.
  *   D5   accepted_risk sets status + the REQUIRED accepted_risk_justification
  *        (schema-valid); a disposition WITHOUT the justification is rejected as a whole
  *        (reported invalid, finding untouched — never an invalid ledger entry).
@@ -155,11 +157,15 @@ const llm = (over = {}) => ({
   verdict_reasoning: 'reasoned over the code: user input reaches the query string unescaped',
   ...over,
 })
+// A2 (0.8.103): a scope is now MANDATORY. The default here is the rule-wide-but-bounded
+// form (`as_of_pass: 1` — every fixture finding above is first_seen: 1), which preserves
+// the whole-class flip these checks exercise while staying schema-valid.
 const refuteNoise = (over = {}) => ({
   engine: 'semgrep',
   ruleId: NOISE_RULE,
   disposition: 'refuted',
   reason: 'constant GUC bound at request entry; the flagged predicate is not user-influenced',
+  scope: { as_of_pass: 1 },
   ...over,
 })
 
@@ -220,15 +226,29 @@ check('D3 EXACT engine+ruleId match only — engine mismatch and ruleId prefix/s
   assert.equal(applyDispositions([det], { dispositions: [refuteNoise()] }).applied, 1)
 })
 
-check('D4 scope.files narrows the flip to the named files; no scope → the whole class', () => {
+check('D4 scope is MANDATORY — scope-less rejected whole; scope.files narrows; as_of_pass covers the class within its bound', () => {
   const a = detNoise('app/a.py', 10, 'high')
   const b = detNoise('app/b.py', 20, 'high')
+  // A2 (0.8.103): a scope-less disposition is a HARD validation error, rejected as a
+  // whole — reported by index, NOTHING applied. An unbounded, unbounded-in-time
+  // rule-wide suppression is unexpressible.
+  const bare = { ...refuteNoise() }
+  delete bare.scope
+  const rejected = applyDispositions([a, b], { dispositions: [bare] })
+  assert.equal(rejected.applied, 0, 'a scope-less disposition applies NOTHING')
+  assert.equal(rejected.invalid.length, 1)
+  assert.equal(rejected.invalid[0].index, 0, 'rejected entries are reported by index')
+  assert.match(rejected.invalid[0].errors.join(' '), /scope/, 'the error names the missing scope')
+  assert.ok(rejected.findings.every((f) => f.status === 'confirmed'), 'no finding was touched')
+  // scope.files still narrows the flip to the named loci (semantics unchanged)
   const scoped = applyDispositions([a, b], { dispositions: [refuteNoise({ scope: { files: ['app/a.py'] } })] })
   assert.equal(scoped.applied, 1)
   assert.equal(scoped.findings.find((f) => f.id === a.id).status, 'refuted')
   assert.equal(scoped.findings.find((f) => f.id === b.id).status, 'confirmed', 'out-of-scope file untouched')
-  const whole = applyDispositions([a, b], { dispositions: [refuteNoise()] })
-  assert.equal(whole.applied, 2, 'no scope → the whole engine+ruleId class')
+  // as_of_pass covers the whole class WITHIN its pass bound (both fixtures are
+  // first_seen: 1 <= 1) — the honest replacement for the old unbounded whole-class form.
+  const bounded = applyDispositions([a, b], { dispositions: [refuteNoise()] })
+  assert.equal(bounded.applied, 2, 'as_of_pass covers the engine+ruleId class within its pass bound')
 })
 
 check('D5 accepted_risk sets the REQUIRED justification (schema-valid); without it the entry is rejected whole', () => {
@@ -466,6 +486,10 @@ check('V2 the recap SURFACES the dispositioned count (the drop is visible, never
   node([CLI, '--target', d])
   const after = node([RECAP, '--target', d])
   assert.match(after, /\*\*Deterministic band:\*\* 4 scanner finding\(s\) — 0 open · 4 dispositioned by adjudication/)
+  // A2 (0.8.103): the recap also attributes the rule-wide (as_of_pass) suppressions and
+  // the pending-re-adjudication total — the fixture disposition is rule-wide, so all 4
+  // flips are credited to it, and nothing is pending (every fixture is first_seen: 1).
+  assert.match(after, /dispositioned by adjudication \(4 rule-wide\) · 0 pending re-adjudication/)
   assert.match(after, /deterministic-dispositions\.json/, 'the recap names the single-source adjudication file')
   assert.match(after, /never silent/)
 })

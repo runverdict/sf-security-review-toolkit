@@ -778,11 +778,16 @@ families PENDING until a re-audit.
    adjudications already recorded in
    `<target>/.security-review/deterministic-dispositions.json` (written by the audit
    when it adjudicates a scanner class false-positive/accepted-risk — see
-   audit-codebase Step 6), so a standalone scan pass's band is honest too: a
-   re-ingested finding of an adjudicated class lands `confirmed` and is immediately
-   flipped back to its dispositioned status. Absent file → clean no-op; pure +
-   idempotent; it NEVER flips an `llm-inferred` finding, never moves anything into
-   the open band, never sets `fixed`.
+   audit-codebase Step 6), so a standalone scan pass's band is honest too — and the
+   re-apply is BOUNDED by each adjudication's mandatory scope: a re-ingested
+   finding at a KNOWN locus (named in the adjudication's `scope.files`, or with
+   `first_seen <= scope.as_of_pass` for a rule-wide adjudication) lands `confirmed`
+   and is flipped back to its dispositioned status; a finding of the same rule at
+   a NEW locus is NOT flipped — it stays `confirmed`, gains a
+   `pending_readjudication` note, and surfaces in the recap for re-adjudication
+   (a disposition may never suppress a finding nobody has looked at). Absent
+   file → clean no-op; pure + idempotent; it NEVER flips an `llm-inferred`
+   finding, never moves anything into the open band, never sets `fixed`.
 
 10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at

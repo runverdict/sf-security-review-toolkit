@@ -3304,7 +3304,17 @@ export function ingestAll({ target, pass, dryRun } = {}) {
   let defaultPass = 1
   if (!dryRun) {
     ledger = loadLedger(ledgerPath) // may throw on a corrupted ledger — mainAll surfaces it
-    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) : 1
+    // A2 (0.8.103) — the default pass is the pass IN PROGRESS, not the last completed one.
+    // `ledger.passes` is appended only at the END of a pass (merge-ledger.mjs), and the
+    // skills invoke this ingest bare (no --pass), so during pass N+1 the ledger still shows
+    // `passes: [..N]`. The old `max(passes)` default stamped a brand-new pass-(N+1) finding
+    // `first_seen: N` — which let an `as_of_pass: N` disposition auto-refute a finding nobody
+    // had looked at, broke merge-ledger's `first_seen === PASS` dry-gate (a fresh finding was
+    // never "new"), and corrupted recurrence-confidence bucketing. Last-completed + 1 is the
+    // honest assignment; an explicit `--pass N` still overrides; a fresh ledger is pass 1.
+    // A standalone scan between audit passes stamps N+1 and never appends a pass — that is
+    // conservative (the finding is protected from old rule-wide dispositions, never suppressed).
+    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) + 1 : 1
   }
   const passId = Number.isInteger(pass) && pass >= 1 ? pass : defaultPass
 
@@ -3541,7 +3551,11 @@ function main() {
       console.error(`ingest-scanner-findings: ${e.message}`)
       process.exit(2)
     }
-    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) : 1
+    // A2 (0.8.103) — same rule as ingestAll: the default pass is the pass IN PROGRESS
+    // (last COMPLETED pass + 1; merge-ledger appends to `passes` only at pass end), so a
+    // finding first discovered mid-pass-2 is stamped `first_seen: 2`, not 1. Explicit
+    // `--pass N` overrides; a fresh ledger is pass 1.
+    defaultPass = ledger.passes.length ? Math.max(...ledger.passes.map((p) => p.id || 1)) + 1 : 1
   }
   const pass = Number.isInteger(passArg) && passArg >= 1 ? passArg : defaultPass
 

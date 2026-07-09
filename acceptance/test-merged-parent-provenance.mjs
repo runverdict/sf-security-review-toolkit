@@ -178,11 +178,15 @@ const mergedDetParent = () => {
   assert.ok(Array.isArray(out[0].lenses) && out[0].lenses.length === 2, 'fixture sanity: 2 lenses')
   return out[0]
 }
+// A2 (0.8.103): a scope is now MANDATORY — the rule-wide-but-bounded form (`as_of_pass: 1`;
+// every lens fixture here is first_seen: 1) preserves the whole-class matching these
+// checks exercise.
 const disp = (engine, ruleId, over = {}) => ({
   engine,
   ruleId,
   disposition: 'refuted',
   reason: `${engine} ${ruleId} flags a seeded demo credential; not reachable in production`,
+  scope: { as_of_pass: 1 },
   ...over,
 })
 
@@ -376,7 +380,7 @@ check('MP9 incremental-re-run lock — the merged deterministic parent stays det
   assert.ok(p2.lenses.every((l) => l.provenance === 'deterministic'), 'every lens keeps its provenance through the pass-2 explode')
 
   // and it is still dispositionable — the whole point (the phantom HIGHs can be cleared)
-  const disp = (engine, ruleId) => ({ engine, ruleId, disposition: 'refuted', reason: 'seeded demo credential; not reachable in production' })
+  const disp = (engine, ruleId) => ({ engine, ruleId, disposition: 'refuted', reason: 'seeded demo credential; not reachable in production', scope: { as_of_pass: 1 } })
   const r = applyDispositions(l2.findings, { dispositions: [disp('bandit', 'B105'), disp('detect-secrets', 'Secret Keyword')] })
   assert.equal(r.applied, 1, 'the pass-2 parent is still dispositionable')
   assert.equal(r.findings.find((f) => Array.isArray(f.lenses)).status, 'refuted', 'apply-dispositions clears it out of the open band after pass 2')

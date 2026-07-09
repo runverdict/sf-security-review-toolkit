@@ -365,9 +365,21 @@ regardless of anything this engine produces.
        "disposition": "refuted",
        "reason": "<the same one-line justification the FP dossier row carries>",
        "accepted_risk_justification": "<REQUIRED iff disposition is accepted_risk>",
-       "scope": { "files": ["<optional — omit to disposition the whole engine+ruleId class>"] } }
+       "scope": { "files": ["<the exact loci you read>"] } }
    ] }
    ```
+
+   A `scope` is MANDATORY, in exactly ONE of two forms: `files: [...]` — the loci
+   you actually read and adjudicated (PREFER this whenever you enumerated them,
+   which your `reason` usually proves you did) — or `as_of_pass: <N>` — rule-wide
+   but bounded in time: "I reviewed every instance of this rule present at pass
+   N; they are all false positives", applied only to findings whose `first_seen
+   <= N`. An unbounded (scope-less) refutation is NOT offered, because
+   apply-dispositions re-runs on every pass: it would auto-refute a finding of
+   the same rule first discovered LATER, at a locus nobody has looked at. A
+   finding that matches a rule-wide adjudication but post-dates it stays
+   `confirmed` with a `pending_readjudication` note — re-adjudicate it (add its
+   locus to a `files` scope, or bump `as_of_pass` after actually reviewing it).
 
    Then run `node ${CLAUDE_PLUGIN_ROOT}/harness/apply-dispositions.mjs --target
    <target>`. It flips the matching `provenance:'deterministic'` findings
@@ -386,7 +398,11 @@ regardless of anything this engine produces.
    `reconcile-provenance.mjs` and BEFORE Step 7 re-renders the recap, so the recap
    and the blocker gate read the dispositioned band — the headline counts the REAL
    blockers, and the recap's deterministic-band line surfaces how many findings
-   the adjudication dispositioned (the drop is visible, never a silent shrink).
+   the adjudication dispositioned, how many of those were rule-wide, and how many
+   are pending re-adjudication (the drop is visible, never a silent shrink). The
+   CLI also prints the blast radius per disposition — `<engine>/<ruleId> →
+   refuted: N matched, N flipped, N pending (K files)` — READ those lines: one
+   entry silencing a three-digit count deserves a second look at its scope.
    Do NOT auto-refute a class without a real adjudication: a rule that is usually
    noise can be a real bug in some code — the adjudication is the LLM/human call,
    the application is deterministic.

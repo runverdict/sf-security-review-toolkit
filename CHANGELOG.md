@@ -51,6 +51,103 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.103] — 2026-07-09
+
+**A disposition may never suppress a finding nobody has looked at: every deterministic
+disposition is now bounded by a mandatory scope, a new locus is never auto-refuted, and the
+blast radius is printed per disposition.** A deterministic disposition could omit `scope`,
+matching by `engine`+`ruleId` across the whole repo FOREVER — and `apply-dispositions` re-runs
+on every pass. On the real cold run 18 of 23 dispositions were unscoped, matching 342 of the
+406 deterministic findings (84% of the band: 161 detect-secrets, 101 bandit incl. B608/B105/
+B106, 78 semgrep raw-SQL rows). Their reasons were file-scoped claims ("every flagged site
+interpolates ONLY static tokens") shipped as unbounded, permanent, rule-wide suppressions: a
+genuine SQL injection committed months later, at a file that did not exist when that sentence
+was written, would be ingested `confirmed` and flipped to `refuted` on arrival — and for the
+class-owning engines (detect-secrets/gitleaks → hardcoded-secrets, checkov/trivy →
+iac-misconfig) the co-located LLM sibling is superseded by `reconcile-provenance` FIRST, so
+nothing open survives. This is a BREAKING change to the dispositions contract, deliberately:
+for a security tool, an unbounded, unbounded-in-time suppression must be unexpressible, so
+existing scope-less dispositions are now rejected whole (with an actionable error naming both
+remedies) rather than grandfathered.
+
+### Fixed
+- `harness/ingest-scanner-findings.mjs` — **Requirement 0, the load-bearing fix**: ingest's
+  default pass is now the pass IN PROGRESS (last COMPLETED pass + 1), in BOTH default-pass
+  sites (`ingestAll` and the per-`--scanner` CLI path). `ledger.passes` is appended only at
+  the END of a pass (`merge-ledger.mjs`), and neither skill threads `--pass`, so during pass 2
+  ingest saw `passes: [1]` and stamped a BRAND-NEW finding `first_seen: 1` — the cold-run
+  ledger's degenerate state (all 406 deterministic findings `first_seen: 1`). Without this fix
+  the `as_of_pass` gate below would be decorative: an `as_of_pass: 1` disposition would still
+  auto-refute a pass-2 discovery. Explicit `--pass N` still overrides; a fresh ledger is still
+  pass 1; a standalone scan between audit passes stamps N+1 and never appends a pass — that is
+  conservative (the finding is protected from stale rule-wide dispositions, never suppressed).
+  **The same wrong-assignment bug already broke two shipped behaviours, silently:** (a) the
+  audit loop's **"Dry (no new ≥low confirmed)" stop-gate** — `merge-ledger.mjs`'s
+  `newConfirmedLowPlus` counts `f.first_seen === PASS`, so a genuinely new pass-2 deterministic
+  finding (stamped 1 ≠ 2) was never counted as new and the audit could declare itself dry
+  while fresh findings had just landed; (b) the ledger's **pass-provenance record itself** —
+  a pass-2 discovery claiming `first_seen: 1` fabricates a recurrence history ("present since
+  pass 1") in the very fields cross-pass consumers read, making a fresh finding look like it
+  had recurred in a pass it never appeared in. Both are fixed by the same one-line assignment
+  change, locked end-to-end by BD10 (which drives the REAL ingest CLI on both paths and
+  asserts the engine assigns `first_seen: 2`).
+- `harness/apply-dispositions.mjs` — a rule-wide (`as_of_pass`) disposition never touches a
+  finding it cannot prove was adjudicated: the gate runs on the finding's OWN `first_seen`
+  (valid positive integer `<= N`), and FAILS CLOSED on absent/null/non-integer `first_seen`
+  (a finding we cannot date is a finding we have not adjudicated — never defaulted to 1). The
+  gated finding stays `confirmed` — in the open band, the headline, the blocker count — and
+  gains only an auditable `pending_readjudication` annotation; never a status change, never a
+  severity change. For cross-dimension merged parents the gate runs on EACH LENS's own
+  `first_seen`, NEVER the parent's (`Math.min(... || 1)` — a fail-open minimum: gating on it
+  would let one old lens mask a brand-new lens); a time-excluded or undatable lens is simply
+  unmatched, so A1's every-lens-matched invariant keeps the parent open (BD8 is the regression
+  lock against parent-gating).
+
+### Added
+- **Mandatory scope, exactly one of two forms** (`validateDisposition`): `scope.files` — the
+  loci the adjudicator actually read (semantics unchanged, and deliberately NOT time-gated) —
+  or `scope.as_of_pass: N` — rule-wide but bounded in time, the honest encoding of "I reviewed
+  every instance of this rule present at pass N". Scope-less, both-keys, empty-`files`, and
+  non-positive-integer `as_of_pass` entries are hard validation errors: rejected whole,
+  reported by index with an actionable message, nothing applied.
+- **Per-disposition blast radius**: `applyDispositions` returns `perDisposition` (matched /
+  flipped / left-pending / distinct-file counts per entry; a jointly-flipped merged parent
+  credits EVERY disposition that matched one of its lenses, never just the last to match) and
+  the CLI prints one line per disposition — `detect-secrets/Secret Keyword → refuted: 161
+  matched, 161 flipped, 0 pending (47 files)`. A single line silencing 161 findings is never
+  again silent. `--json` carries the same rows.
+- `harness/render-recap.mjs` — the deterministic-band recap line now reads
+  `N open · M dispositioned by adjudication (K rule-wide) · P pending re-adjudication`; the
+  `--target` path also reads `deterministic-dispositions.json` to attribute the rule-wide
+  count (absent/unreadable file → the parenthetical is omitted; unknown is not zero). No
+  byte-frozen engine touched.
+- `templates/audit-ledger.schema.json` — additive: `$defs/finding` declares the
+  engine-maintained `pending_readjudication` string; no existing ledger invalidated.
+- `skills/audit-codebase/SKILL.md` + `skills/run-scans/SKILL.md` — prose in lockstep (a stale
+  schema block is how the original bug shipped): the dispositions schema block now shows the
+  two mandatory scope forms, tells the adjudicator to PREFER `files` when they enumerated
+  loci, and says why an unbounded refutation is not offered; run-scans' re-apply paragraph now
+  describes the BOUNDED flip-back (known locus / `first_seen <= as_of_pass` re-flips; a NEW
+  locus stays `confirmed` + `pending_readjudication` and surfaces for re-adjudication).
+- `acceptance/test-disposition-blast-radius.mjs` (10 checks, BD1–BD10). BD10 is the
+  end-to-end lock and never fabricates `first_seen`: it drives the REAL
+  `ingest-scanner-findings.mjs` CLI (both `--all` and `--scanner`) over a seeded ledger whose
+  pass 1 is closed, asserts the ENGINE stamps the new finding `first_seen: 2`, then applies an
+  `as_of_pass: 1` disposition through the real CLI and asserts the new finding is still
+  `confirmed` while the pass-1 sibling flips. Suite **72 files / 1130 checks**.
+
+### Changed
+- **BREAKING (deliberate)**: existing scope-less dispositions in
+  `deterministic-dispositions.json` are now rejected as invalid (reported by index, nothing
+  applied) instead of dispositioning the whole engine+ruleId class forever. Correct posture
+  for a security tool: the fix is one line per entry — add the `files` you read, or the
+  `as_of_pass` you reviewed.
+- `acceptance/test-apply-dispositions.mjs` — D4 rewritten to assert the NEW semantics
+  (scope-less → rejected whole; `files` narrows; `as_of_pass` covers the class within its
+  bound); the `refuteNoise`/`disp` fixtures carry `scope: { as_of_pass: 1 }`; V2 additionally
+  asserts the recap's rule-wide + pending totals. `acceptance/test-merged-parent-provenance.mjs`
+  fixtures gain the same scope. No safety assertion weakened.
+
 ## [0.8.102] — 2026-07-09
 
 **Provenance survives the cross-dimension collapse — through incremental re-runs: a merged
