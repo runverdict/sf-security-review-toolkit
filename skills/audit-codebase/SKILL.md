@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -307,7 +307,9 @@ regardless of anything this engine produces.
    deterministic cluster view printed VERBATIM from
    `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target> --headline`
    (the fixed block: raw confirmed counts FIRST, then the clustered distinct-file
-   headline — never hand-rebuilt, reordered, dropped a column, or flipped table↔prose).
+   headline — never hand-rebuilt, reordered, dropped a column, or flipped table↔prose;
+   Step 7's `verify-report-headline.mjs` gate enforces this mechanically, so a skipped
+   or hand-rewritten block HALTS the run instead of shipping).
    This is the SAME block the journey's blocker gate prints, so the failure verdict reads
    identically at both sites, and the per-dimension fan-out re-finding one root cause under
    several lenses is never presented as that many distinct problems; (2) prioritized findings
@@ -421,7 +423,34 @@ regardless of anything this engine produces.
    `disposition_reason`, so both drop out of the open band the headline and
    PROCEED/HALT verdict read — the re-render is what propagates the supersession and
    the dispositions to the operator-facing recap, whose deterministic-band line
-   surfaces the dispositioned count.) Then gate: open
+   surfaces the dispositioned count.)
+
+   **Re-derive the durable run-log the same way.** The recap re-render fixes only
+   the transient stdout block; `.security-review/run-log.md` — the committed,
+   partner-visible record — still carries the pre-disposition
+   `Open confirmed (all passes)` line merge-ledger appended in Step 6. Run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/rerender-runlog.mjs --target <target>`.
+   It recomputes that line from the CURRENT ledger and rewrites ONLY it, ONLY in
+   the final `## Pass N` block (earlier pass blocks are historical record and stay
+   byte-identical; idempotent — a second run is a byte no-op), and prints the
+   correction (`run-log: open confirmed 441 → 86 (…)`) so the fix is visible,
+   never silent. On a missing ledger or a run-log with no `## Pass` block it exits
+   non-zero and touches nothing — it never invents a count.
+
+   **Then verify the report headline against the ledger — a HARD STOP, not a
+   warning.** Run `node ${CLAUDE_PLUGIN_ROOT}/harness/verify-report-headline.mjs
+   --target <target> --report <report-path>`. It recomputes the deterministic
+   cluster block from the ledger (the same `renderClusterHeadline` every other
+   surface prints — imported, never reimplemented) and exits 2 when the report is
+   missing the verbatim block Step 6 mandates, or when a stated critical/high
+   claim contradicts the ledger (e.g. `Blocking items (critical/high): none` over
+   a ledger holding a confirmed critical). Any non-zero exit HALTS the run: fix
+   the report — re-paste the verbatim block, correct the claim — and re-run the
+   check before gating. Exit 0 prints a one-line confirmation. It parses only
+   demonstrable claim shapes and stays silent on anything ambiguous, so
+   legitimate prose never trips it.
+
+   Then gate: open
    `critical`/`high` findings
    halt the journey: fix
    before `/sf-security-review-toolkit:generate-artifacts`, because the
