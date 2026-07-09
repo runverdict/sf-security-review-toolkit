@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -60,6 +60,31 @@ elements, get the requirement list those elements imply.
    | Mobile app | iOS/Android project trees, Mobile SDK dependencies |
    | Async workers | Queue/scheduler config (Celery/Sidekiq/BullMQ/cron) |
    | Identity surface | OAuth/token endpoints, login/reset routes, `/.well-known/*` |
+
+   **Enumerate monorepo app roots — with the deterministic engine, never by
+   prose-grep (WO-108).** A full admin console (`apps/admin`, a second Next.js
+   app on its own port) was ABSENT from a scope manifest and only surfaced
+   during the SCA phase — because multi-app detection was LLM prose, which is
+   exactly how a surface gets missed and why no mechanical test could lock it.
+   Run the engine and fold its output into the element set:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/enumerate-app-roots.mjs --target <target> --json
+   ```
+
+   It scans the conventional app-root containers (`apps/*`, `packages/*`,
+   `services/*`, plus the repo root) for app manifests (`package.json`,
+   `Dockerfile`, `pyproject.toml`, `requirements.txt`, `go.mod`) and emits each
+   root as a CANDIDATE element with its evidence — path, framework signal,
+   declared port. Fold every `candidate: true` root into the detected element
+   set as its own `external-web-app` element (the render synonym map —
+   `ELEMENT_TYPE_SYNONYMS` in `render-detected-elements.mjs` — canonicalizes it
+   to `external-endpoint`), each carrying the engine's evidence string. A
+   `candidate: false` root (a library/tooling package with no app signal) stays
+   out; if you cannot corroborate the engine's classification for a root,
+   resolve it through the `clarify-detection` gate below — never silently omit.
+   A second front-end/admin surface now surfaces deterministically, run after
+   run.
 
    Two failure modes live here, one per direction. An element you fail to
    detect is a dimension that silently never runs — when detection is
@@ -335,7 +360,22 @@ elements, get the requirement list those elements imply.
 5. **Run the partner-program preflight gates — through the pinned gate, one per
    sub-gate.** These are operator questions, not detections (baseline:
    `process-partner-program-prerequisites`) — a submission can be technically
-   perfect and still blocked here. Run each of the SIX sub-gates through
+   perfect and still blocked here.
+
+   **FULL-AUTO deferral — these answers move to compile-submission (WO-108).**
+   When the recorded run-mode is Full-auto (read
+   `.security-review/consent/run-mode.json`; its `answer` names the elected
+   mode), do NOT stop the run here: the partner-program answers are submission
+   logistics — nothing in the audit path reads them, so they cannot gate the
+   audit and they belong where readiness is computed. Leave every unasked key
+   `not-recorded` in `operatorConfirmed` (`render-scope-summary` renders that
+   honestly as `(not recorded)`, never a fabricated ✓) and state in the Step-9
+   summary that `/sf-security-review-toolkit:compile-submission` asks them at
+   its SCI step, where `compute-sci` consumes the answers for the
+   `process-partner-program-prerequisites` requirement. GUIDED mode asks them
+   here, exactly as below.
+
+   Run each of the SIX sub-gates through
    `gate-spec` so the question + option set are FIXED run-to-run, and render each
    option's `label`/`description` VERBATIM (do not improvise the prompt — that
    freehand table-as-prompt drifted run-to-run):
@@ -546,7 +586,26 @@ elements, get the requirement list those elements imply.
    on a missing/unfinalized manifest renders an explicit "scope not finalized" line —
    never a fabricated "ready/confirmed" state.
 
-   Then run the `scope-confirm` CONSENT gate and render its options VERBATIM:
+   **FULL-AUTO — auto-record with the summary as a NOTE (no stop; WO-108).**
+   When the recorded run-mode is Full-auto: nothing `verifyConsent`s the
+   `scope-confirm` gate — it gates no engine — so it is a computed rubber-stamp
+   in an autonomous run. Print the `render-scope-summary` block VERBATIM as a
+   note the operator can act on (the later COMPUTED target map, printed verbatim
+   at audit-codebase Step 3, is the real correction point), record the
+   confirmation without prompting, and proceed:
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scope-confirm \
+     --answer "Confirm scope & proceed (recommended) — auto-recorded: full-auto run, summary emitted as a note" \
+     --decision affirm --question "<the scope-confirm question>" --target <target>
+   ```
+
+   The one scope stop that survives full-auto is a genuine `clarify-detection`
+   ambiguity (step 2) — the audit-blocking carve-out keeps its ask in every
+   mode. GUIDED mode keeps the stop below.
+
+   Otherwise (GUIDED), run the `scope-confirm` CONSENT gate and render its
+   options VERBATIM:
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate scope-confirm

@@ -1,7 +1,7 @@
 ---
 name: compile-submission
 description: Phase 5 of security review prep. Inventories every artifact and evidence file against the baseline, fills the required-artifacts checklist (HAVE only with verified evidence), pre-fills the questionnaire with the hard N/A lint, cross-checks answers against artifacts, compiles the readiness tracker, computes the deterministic Submission Completeness Index (the gated go/no-go), emits an honest readiness verdict + a sequenced path-to-green remediation checklist, and assembles the downloadable submission-package with a wizard-slot INDEX, a PENDING-OWNER-RUN handoff, and step-grouped artifacts. Use as the go/no-go check before paying the review fee — the human submits; this skill makes sure nothing bounces at the materials check.
-allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/compute-sci.mjs *) Bash(node *harness/ledger-staleness.mjs *) Bash(node *harness/render-stability.mjs *) Bash(node *harness/render-readiness-verdict.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/compute-sci.mjs *) Bash(node *harness/ledger-staleness.mjs *) Bash(node *harness/render-stability.mjs *) Bash(node *harness/render-readiness-verdict.mjs *) Bash(node *harness/gate-spec.mjs *) AskUserQuestion
 ---
 
 # Compile Submission
@@ -217,6 +217,33 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    `{{SLOT}}`. Never paraphrase a slot, reorder a section, drop a sub-block, or flip a
    table to prose — fill the slots and print the engine's output verbatim. Build the
    slot values, then fill:
+   - **FIRST — resolve the partner-program answers the journey deferred (the
+     Phase-0 asks land HERE; WO-108).** The SCI's
+     `process-partner-program-prerequisites` requirement (`severity_if_missing:
+     blocker`) is computed by `compute-sci` from the manifest's
+     `operatorConfirmed` block — a full-auto journey run defers those six
+     answers out of scope-submission, so THIS is where they are asked. Read
+     `operatorConfirmed` from the scope manifest; for EVERY key still
+     not-recorded, render the pinned gate and ask via `AskUserQuestion` — the
+     question + option set are FROZEN by `gate-spec`; render each option's
+     `label`/`description` VERBATIM, exactly as scope-submission does:
+
+     ```bash
+     node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate partner-program --sub-gate <agreement|pbo|promoted|namespace|listing|contacts>
+     # add --no-package to the `promoted` sub-gate when the manifest carries no package element
+     ```
+
+     These are ANSWER gates: record each selection into the manifest's
+     `operatorConfirmed.<key>` (`affirm`→`true`, `deny`→`false`; the promoted
+     gate's `N/A — no package in scope` option — detected by LABEL — records the
+     `"n/a"` sentinel, never `false`), NOT through record-consent. Updating
+     `operatorConfirmed` touches neither `elements` nor `applicableBaselineIds`,
+     so the stale-manifest refusal below is unaffected. `compute-sci` reads the
+     answers directly: all six affirmatively confirmed → the requirement is
+     SATISFIED; any `false` or missing → it stays an unsatisfied BLOCKER and the
+     band reports it honestly. An operator who declines to answer leaves the key
+     not-recorded and the SCI reports the requirement MISSING — never fabricate
+     a `true`.
    - **`SCI_BLOCK` — build the evidence index, then compute the Submission
      Completeness Index (the headline gate); paste the block BYTE-FOR-BYTE.** You do
      NOT hand-write the index. Write your evidence MAPPING as DATA —

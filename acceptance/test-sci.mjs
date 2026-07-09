@@ -263,6 +263,97 @@ check('P1d blocker floor: reviewer-reproducible scanner clear of the SAME blocke
 })
 
 // ---------------------------------------------------------------------------
+// PP — the partner-program operatorConfirmed join (WO-108). The
+// process-partner-program-prerequisites requirement is automation:manual_only —
+// the operator's recorded answers in the manifest ARE the evidence, and
+// compute-sci must actually READ them. Before 0.8.108 they were WRITE-ONLY
+// (recorded by scope-submission, rendered by render-scope-summary, consumed by
+// nothing that gates), so a partner who answered "No" could still compile a
+// green SCI. These checks are the load-bearing lock: a compute-sci that
+// ignores operatorConfirmed goes RED here.
+// ---------------------------------------------------------------------------
+const PP_REQ = 'process-partner-program-prerequisites'
+const ppPlugin = synthPlugin([{ id: PP_REQ, sev: 'blocker', verification: 'verified_primary', last_verified: '2026-06-12' }])
+dirs.push(ppPlugin)
+const PP_ALL_CONFIRMED = Object.freeze({
+  partnerAgreementSigned: true, partnerConsoleAccess: true, packagePromoted: true,
+  namespaceRegisteredAndLinked: true, listingCreated: true, reviewContactsDesignated: true,
+})
+function ppFixture(operatorConfirmed, entries = []) {
+  return fixture((dir) => {
+    write(dir, 'scope-manifest.json', {
+      applicableBaselineIds: [PP_REQ], elements: [],
+      ...(operatorConfirmed ? { operatorConfirmed } : {}),
+    })
+    write(dir, 'audit-ledger.json', { findings: [] })
+    mkdirSync(join(dir, '.security-review', 'evidence'), { recursive: true })
+    writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'), JSON.stringify({ entries }))
+  })
+}
+
+check('PP1 all six operatorConfirmed keys true → requirement SATISFIED, blocker floor clear', () => {
+  const d = ppFixture(PP_ALL_CONFIRMED); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', ppPlugin)
+  assert.equal(j.coverage.satisfied, 1, 'a fully-confirmed partner-program block must SATISFY the requirement')
+  assert.equal(j.blocked, false, 'the blocker floor must clear on full confirmation')
+  assert.ok(!j.blocker_requirements.includes(PP_REQ))
+})
+
+check('PP2 partnerAgreementSigned:false (others true) → UNSATISFIED, stays a BLOCKER', () => {
+  const d = ppFixture({ ...PP_ALL_CONFIRMED, partnerAgreementSigned: false }); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', ppPlugin)
+  assert.equal(j.coverage.satisfied, 0, 'an explicit operator "No" must NOT satisfy the requirement')
+  assert.equal(j.blocked, true, 'an unconfirmed program gate keeps the blocker floor')
+  assert.ok(j.blocker_requirements.includes(PP_REQ), 'the blocker names the requirement')
+  assert.equal(j.band, 'BLOCKED')
+})
+
+check('PP3 nothing recorded → MISSING (compile-submission asks the gates there), blocked', () => {
+  const d = ppFixture(null); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', ppPlugin)
+  assert.equal(j.coverage.satisfied, 0)
+  assert.equal(j.coverage.missing, 1, 'not-recorded answers render the requirement MISSING')
+  assert.equal(j.blocked, true)
+})
+
+check('PP4 packagePromoted "n/a" sentinel + others true → SATISFIED (a no-package listing is never a blocker)', () => {
+  const d = ppFixture({ ...PP_ALL_CONFIRMED, packagePromoted: 'n/a' }); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', ppPlugin)
+  assert.equal(j.coverage.satisfied, 1, 'the promoted gate\'s "n/a" sentinel must count as confirmed')
+  assert.equal(j.blocked, false)
+})
+
+check('PP4b the "n/a" sentinel is packagePromoted-ONLY — on any other key it does not confirm', () => {
+  const d = ppFixture({ ...PP_ALL_CONFIRMED, listingCreated: 'n/a' }); dirs.push(d)
+  const j = runSciDate(d, '2026-06-16', ppPlugin)
+  assert.equal(j.coverage.satisfied, 0, '"n/a" on a non-promoted key must NOT satisfy')
+  assert.equal(j.blocked, true)
+})
+
+check('PP5 an evidence-index self-attestation never satisfies the manual-only requirement, and never overrides an operator "No"', () => {
+  const creditable = [{ ref_type: 'requirement', ref_id: PP_REQ, disposition: 'satisfied', verified: { value: true, how: 'asserted' }, reviewer_reproducible: true }]
+  // an operator "No" with a stray creditable index row → still unsatisfied
+  const dNo = ppFixture({ ...PP_ALL_CONFIRMED, partnerAgreementSigned: false }, creditable); dirs.push(dNo)
+  const jNo = runSciDate(dNo, '2026-06-16', ppPlugin)
+  assert.equal(jNo.coverage.satisfied, 0, 'an index row must never override an explicit operator No')
+  assert.equal(jNo.blocked, true)
+  // no answers at all + the index row → still MISSING (the answers are the only evidence)
+  const dNone = ppFixture(null, creditable); dirs.push(dNone)
+  const jNone = runSciDate(dNone, '2026-06-16', ppPlugin)
+  assert.equal(jNone.coverage.satisfied, 0, 'an index row alone must not satisfy the manual-only requirement')
+  assert.equal(jNone.coverage.missing, 1)
+})
+
+check('PP6 wiring: compile-submission carries the deferred asks (gate-spec grant + the pinned sub-gate render + the manifest recording)', () => {
+  const skill = readFileSync(join(PLUGIN, 'skills', 'compile-submission', 'SKILL.md'), 'utf8')
+  assert.match(skill, /Bash\(node \*harness\/gate-spec\.mjs \*\)/, 'compile-submission allowed-tools grants gate-spec')
+  assert.match(skill, /gate-spec\.mjs --gate partner-program --sub-gate/, 'compile-submission renders the pinned partner-program sub-gates')
+  assert.match(skill, /operatorConfirmed/, 'compile-submission records into manifest operatorConfirmed')
+  assert.match(skill, /NOT through record-consent/, 'answer gates are recorded into the manifest, not record-consent')
+  assert.match(skill, /"n\/a"/, 'the promoted N/A sentinel recording is documented')
+})
+
+// ---------------------------------------------------------------------------
 // S — the stale-scope-manifest refusal. `applicableBaselineIds` is a CACHE of
 // scope-submission's computation; a manifest scoped before the applicability
 // gate canonicalized element-type synonyms persists a truncated set, and

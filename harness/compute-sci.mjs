@@ -179,7 +179,49 @@ const isCreditable = (e) =>
 const isStaticClear = (e) =>
   e.disposition === 'statically-cleared' ||
   (e.disposition === 'satisfied' && e.verified && e.verified.value === true && e.reviewer_reproducible !== true)
+
+// THE ONE MANIFEST-JOINED REQUIREMENT (WO-108). process-partner-program-prerequisites
+// is `automation: manual_only` — no scanner, no artifact, no on-disk file can evidence
+// program enrollment; the operator's recorded answers in the scope manifest's
+// `operatorConfirmed` block (written by the pinned partner-program gate in
+// scope-submission step 5, or by compile-submission when a full-auto journey deferred
+// them) ARE the evidence. Before this join the answers were WRITE-ONLY — recorded,
+// rendered by render-scope-summary, consumed by nothing that gates — so a partner who
+// answered "No, the agreement is not signed" could still compile a green SCI. The join
+// is scoped to EXACTLY this id; every other requirement keeps the evidence-index math.
+// Semantics (fail closed, mirroring render-scope-summary's honest three-state render):
+//   all six keys affirmatively confirmed (true; the promoted gate's "n/a" sentinel
+//   counts — a no-package listing has nothing to promote)      → SATISFIED
+//   anything recorded but any key false / missing              → PARTIAL (unsatisfied
+//   — severity_if_missing: blocker keeps it on the floor)
+//   nothing recorded                                           → MISSING (a full-auto
+//   run deferred the asks; compile-submission asks them there)
+// Evidence-index entries for this id are IGNORED: an index row asserting program
+// enrollment is exactly the un-evidencable self-attestation the credit rule forbids,
+// and an operator's explicit "No" must never be overridden by a file.
+const PARTNER_PROGRAM_REQ = 'process-partner-program-prerequisites'
+const PARTNER_PROGRAM_KEYS = Object.freeze([
+  'partnerAgreementSigned', 'partnerConsoleAccess', 'packagePromoted',
+  'namespaceRegisteredAndLinked', 'listingCreated', 'reviewContactsDesignated',
+])
+// The promoted gate's not-applicable sentinel tokens (same set render-scope-summary
+// NA_TOKENS accepts) — legitimate ONLY on packagePromoted, never a blocker.
+const PP_NA_TOKENS = new Set(['n/a', 'na', 'not-applicable', 'not applicable'])
+const operatorConfirmed =
+  manifest.operatorConfirmed && typeof manifest.operatorConfirmed === 'object' && !Array.isArray(manifest.operatorConfirmed)
+    ? manifest.operatorConfirmed
+    : {}
+const ppConfirmed = (key, v) =>
+  v === true ||
+  (key === 'packagePromoted' && typeof v === 'string' && PP_NA_TOKENS.has(v.trim().toLowerCase()))
+function partnerProgramStatus() {
+  if (PARTNER_PROGRAM_KEYS.every((k) => ppConfirmed(k, operatorConfirmed[k]))) return 'SATISFIED'
+  if (PARTNER_PROGRAM_KEYS.some((k) => operatorConfirmed[k] != null)) return 'PARTIAL'
+  return 'MISSING'
+}
+
 function requirementStatus(id) {
+  if (id === PARTNER_PROGRAM_REQ) return partnerProgramStatus()
   const evs = evEntries.filter((e) => e.ref_type === 'requirement' && e.ref_id === id)
   if (!evs.length) return 'MISSING'
   if (evs.some(isCreditable)) return 'SATISFIED'
