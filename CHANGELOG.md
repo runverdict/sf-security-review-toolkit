@@ -51,6 +51,122 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.105] — 2026-07-09
+
+**Deterministic-band precision: availability-only IaC rules band `low` via a sourced,
+lowering-only per-rule floor, and un-indexed evidence fails loud.** Two cold-run defects,
+one changeset. C1: the class-severity adapters discard the scanner's own severity — right
+for the mixed `iac-misconfig` class, but a missing Dockerfile `HEALTHCHECK` (trivy
+`DS-0026` / checkov `CKV_DOCKER_2`) shipped as **`high`** while carrying the literal
+suffix "[Trivy severity LOW, recorded for reference]"; both rows needed hand-written
+`accepted_risk` justifications to clear. C2: `evidence/index.json` is driven by the
+driver-authored evidence-input, not a glob — so a scan could run and ingest (161
+detect-secrets findings on the cold run; the opengrep `.sarif` was the second orphan of
+the same class) yet appear nowhere in the index, and un-indexed evidence earns no
+requirement credit in `compute-sci` / `compile-submission`. The `low` band is a statement
+that the finding is real and non-blocking — never a false positive; the finding stays in
+the ledger and the evidence pack.
+
+### Added
+- `RULE_BAND_FLOOR` in `harness/ingest-scanner-findings.mjs` — a sourced, narrow,
+  LOWERING-ONLY override keyed `engine/ruleId`, applied inside `buildFinding`'s
+  mapped-class branch after the class band resolves. Enforced in code, not by
+  convention: a mapped band at or above the class band is ignored (the class wins);
+  the map can never raise. Seeded with exactly the availability-only HEALTHCHECK
+  rules, each cited to its official documentation: `checkov/CKV_DOCKER_2` (Prisma
+  Cloud policy reference) and `trivy/DS-0026` (+ its `AVD-DS-0026` AVDID alias the
+  adapter prefers when the scanner emits it; avd.aquasec.com/misconfig/ds-0026).
+  Floored findings band `low` with an honest, deterministic note (availability/
+  orchestration hygiene, crosses no trust boundary) — lowered, never dropped;
+  `dimension: 'infrastructure-iac'`, the finding `class`, and every unmapped rule
+  stay byte-identical. `CLASS_DEFS` and every other adapter untouched.
+- `--check` mode on `harness/build-evidence-index.mjs` — the evidence-index
+  completeness lint: enumerates top-level `evidence/*.{json,sarif,txt,html}` scan
+  artifacts, compares against `index.json`, reports every **orphan** by name, exit 2
+  on any (an un-citable scan is a submission gap). READ-ONLY — never mutates the
+  index. Excluded by design (each would false-orphan every run): `index.json` itself,
+  `*.provenance.json` sidecars, and subdirectories (`evidence/dast/`).
+- `acceptance/test-rule-band-floor.mjs` (5 checks, BF1–BF5) — fixture-anchored `low`
+  bands + honesty note + never-dropped for both rules; the in-code lowering-only
+  guard (a raise-attempt and an equal-band no-op); an unmapped `iac-misconfig` rule
+  byte-identical to the pre-change `buildFinding` output; other adapters unchanged.
+- `acceptance/test-evidence-index-completeness.mjs` (5 checks, EI1–EI5) — orphan
+  reported by name with exit 2; clean dir exits 0; `--check` never mutates the index
+  (byte-compare); the exact cold-run orphan pair (detect-secrets report +
+  `opengrep-*.sarif`) both reported; the exclusion lock (an index.json +
+  provenance-sidecar + `dast/`-only dir reports zero orphans).
+
+### Fixed
+- `run-scans` Family 6 now names **detect-secrets** alongside gitleaks (the
+  complementary second-opinion tree pass) and requires every secret-scan output this
+  family produced to be recorded in the evidence-input; Family 7 requires **both**
+  Opengrep surfaces (`opengrep-<date>.json` AND `.sarif`) recorded — the two
+  cold-run orphans the completeness check would otherwise fire on.
+
+### Changed
+- `run-scans` Step 11 runs the completeness check after building the index
+  (`build-evidence-index.mjs --repo <target> --check`; orphans exit 2 → fix the
+  evidence-input and rebuild, never hand-edit `index.json`, never render on a failing
+  check); `Bash(node *harness/build-evidence-index.mjs *)` granted in `allowed-tools`.
+- `acceptance/test-ingest-scanner-findings.mjs` — the CK/TRV anchors updated to the
+  floored `low` band; the two severity-from-class consistency checks re-anchored on
+  floor-unmapped rules (`CKV_DOCKER_3` / `DS-0002`) so the class invariant stays
+  locked. Suite **72 files / 1121 checks**. `reconcile-provenance.mjs` /
+  `merge-ledger.mjs` / `finding-clusters.mjs`, `CLASS_DEFS`, and every other adapter
+  byte-untouched.
+
+## [0.8.104] — 2026-07-09
+
+**The durable artifacts can no longer contradict the ledger: the committed
+run-log's open-confirmed line is re-derived after dispositions, and the report
+headline is verified against the ledger by a deterministic gate.** A real cold
+run committed a `run-log.md` claiming 441 open confirmed / 273 high while the
+post-disposition ledger held 86 / 25, and an audit report headlining "Blocking
+items (critical/high): none this pass" over a ledger holding 2 confirmed
+criticals — two partner-visible surfaces disagreeing by an order of magnitude.
+Root cause: merge-ledger appends the run-log line BEFORE reconcile-provenance /
+apply-dispositions run, and only the transient stdout recap was ever
+re-rendered; the Step-6 verbatim-headline mandate was enforced at prose
+strength, so a driver skipping the block and hand-writing a headline went
+undetected.
+
+### Added
+- `harness/rerender-runlog.mjs` — re-derives the FINAL `## Pass N` block's
+  `- Open confirmed (all passes): …` line in `.security-review/run-log.md` from
+  the CURRENT (post-disposition) ledger. Exact merge-ledger count + severity
+  ordering + formatting, including the `(none above info)` fallback — proven by
+  a LIVE merge-ledger parity run in the standing test, never a lookalike.
+  Rewrites only that one line, only in the final pass block (earlier blocks are
+  historical record, byte-untouched); idempotent; exit-2-and-touch-nothing on a
+  missing ledger / missing run-log / no-`## Pass`-block / dict-shaped `findings`
+  (never a partial write, never an invented count); prints the correction
+  (`run-log: open confirmed 441 → 86 (…)`) so the fix is visible, never silent.
+  `merge-ledger.mjs` stays byte-frozen — the separate helper is the narrower fix.
+- `harness/verify-report-headline.mjs` — turns the Step-6 verbatim-headline
+  mandate into an exit code: exit 2 when the report lacks the verbatim cluster
+  block recomputed from the CURRENT ledger (headline logic IMPORTED from
+  `finding-clusters.mjs` — `renderClusterHeadline` + `clusterOrNullFromFindings` —
+  never reimplemented, so checker and headline cannot drift), or when a stated
+  critical/high claim demonstrably contradicts the ledger. Conservative by
+  design: only the labelled `Blocking items (critical/high): none|N` shape and
+  same-line `N critical` / `N high` counts inside the headline region (the
+  block's own bytes excised; segments scanned separately; "3 high-priority"
+  never matches; a count matching EITHER the raw open count OR the distinct-file
+  count passes) are parsed — anything ambiguous is ignored, because a checker
+  that fires on legitimate prose gets disabled and is worse than none. An
+  unreadable ledger or report fails closed (exit 2), never open.
+- `acceptance/test-rerender-runlog.mjs` (RL1–RL6, 10 checks) and
+  `acceptance/test-verify-report-headline.mjs` (VH1–VH6, 9 checks) — the
+  standing suite is now **72 files / 1130 checks** (counts synced in
+  CONVENTIONS.md + acceptance/README.md).
+
+### Fixed
+- `skills/audit-codebase/SKILL.md` — Step 7 now re-derives the durable run-log
+  alongside the recap re-render (after apply-dispositions) and runs the
+  report-headline gate as a HARD STOP (any non-zero exit halts the run, not a
+  warning); both engines granted in `allowed-tools` (an ungranted auto-run
+  prompts for permission and the gate gets skipped in practice); the Step-6
+  verbatim-headline mandate now names its mechanical enforcement.
 ## [0.8.103] — 2026-07-09
 
 **A disposition may never suppress a finding nobody has looked at: every deterministic
@@ -213,121 +329,6 @@ phantom HIGHs on the next re-run.
   pass 2. Suite **71 files / 1120 checks**. Byte-frozen `reconcile-provenance.mjs` untouched;
   `merge-ledger.mjs`'s line-222 absence-guard untouched too (it still serves pre-provenance-era
   ledger rows — it just can no longer catch a parent).
-## [0.8.104] — 2026-07-09
-
-**The durable artifacts can no longer contradict the ledger: the committed
-run-log's open-confirmed line is re-derived after dispositions, and the report
-headline is verified against the ledger by a deterministic gate.** A real cold
-run committed a `run-log.md` claiming 441 open confirmed / 273 high while the
-post-disposition ledger held 86 / 25, and an audit report headlining "Blocking
-items (critical/high): none this pass" over a ledger holding 2 confirmed
-criticals — two partner-visible surfaces disagreeing by an order of magnitude.
-Root cause: merge-ledger appends the run-log line BEFORE reconcile-provenance /
-apply-dispositions run, and only the transient stdout recap was ever
-re-rendered; the Step-6 verbatim-headline mandate was enforced at prose
-strength, so a driver skipping the block and hand-writing a headline went
-undetected.
-
-### Added
-- `harness/rerender-runlog.mjs` — re-derives the FINAL `## Pass N` block's
-  `- Open confirmed (all passes): …` line in `.security-review/run-log.md` from
-  the CURRENT (post-disposition) ledger. Exact merge-ledger count + severity
-  ordering + formatting, including the `(none above info)` fallback — proven by
-  a LIVE merge-ledger parity run in the standing test, never a lookalike.
-  Rewrites only that one line, only in the final pass block (earlier blocks are
-  historical record, byte-untouched); idempotent; exit-2-and-touch-nothing on a
-  missing ledger / missing run-log / no-`## Pass`-block / dict-shaped `findings`
-  (never a partial write, never an invented count); prints the correction
-  (`run-log: open confirmed 441 → 86 (…)`) so the fix is visible, never silent.
-  `merge-ledger.mjs` stays byte-frozen — the separate helper is the narrower fix.
-- `harness/verify-report-headline.mjs` — turns the Step-6 verbatim-headline
-  mandate into an exit code: exit 2 when the report lacks the verbatim cluster
-  block recomputed from the CURRENT ledger (headline logic IMPORTED from
-  `finding-clusters.mjs` — `renderClusterHeadline` + `clusterOrNullFromFindings` —
-  never reimplemented, so checker and headline cannot drift), or when a stated
-  critical/high claim demonstrably contradicts the ledger. Conservative by
-  design: only the labelled `Blocking items (critical/high): none|N` shape and
-  same-line `N critical` / `N high` counts inside the headline region (the
-  block's own bytes excised; segments scanned separately; "3 high-priority"
-  never matches; a count matching EITHER the raw open count OR the distinct-file
-  count passes) are parsed — anything ambiguous is ignored, because a checker
-  that fires on legitimate prose gets disabled and is worse than none. An
-  unreadable ledger or report fails closed (exit 2), never open.
-- `acceptance/test-rerender-runlog.mjs` (RL1–RL6, 10 checks) and
-  `acceptance/test-verify-report-headline.mjs` (VH1–VH6, 9 checks) — the
-  standing suite is now **72 files / 1130 checks** (counts synced in
-  CONVENTIONS.md + acceptance/README.md).
-
-### Fixed
-- `skills/audit-codebase/SKILL.md` — Step 7 now re-derives the durable run-log
-  alongside the recap re-render (after apply-dispositions) and runs the
-  report-headline gate as a HARD STOP (any non-zero exit halts the run, not a
-  warning); both engines granted in `allowed-tools` (an ungranted auto-run
-  prompts for permission and the gate gets skipped in practice); the Step-6
-  verbatim-headline mandate now names its mechanical enforcement.
-## [0.8.105] — 2026-07-09
-
-**Deterministic-band precision: availability-only IaC rules band `low` via a sourced,
-lowering-only per-rule floor, and un-indexed evidence fails loud.** Two cold-run defects,
-one changeset. C1: the class-severity adapters discard the scanner's own severity — right
-for the mixed `iac-misconfig` class, but a missing Dockerfile `HEALTHCHECK` (trivy
-`DS-0026` / checkov `CKV_DOCKER_2`) shipped as **`high`** while carrying the literal
-suffix "[Trivy severity LOW, recorded for reference]"; both rows needed hand-written
-`accepted_risk` justifications to clear. C2: `evidence/index.json` is driven by the
-driver-authored evidence-input, not a glob — so a scan could run and ingest (161
-detect-secrets findings on the cold run; the opengrep `.sarif` was the second orphan of
-the same class) yet appear nowhere in the index, and un-indexed evidence earns no
-requirement credit in `compute-sci` / `compile-submission`. The `low` band is a statement
-that the finding is real and non-blocking — never a false positive; the finding stays in
-the ledger and the evidence pack.
-
-### Added
-- `RULE_BAND_FLOOR` in `harness/ingest-scanner-findings.mjs` — a sourced, narrow,
-  LOWERING-ONLY override keyed `engine/ruleId`, applied inside `buildFinding`'s
-  mapped-class branch after the class band resolves. Enforced in code, not by
-  convention: a mapped band at or above the class band is ignored (the class wins);
-  the map can never raise. Seeded with exactly the availability-only HEALTHCHECK
-  rules, each cited to its official documentation: `checkov/CKV_DOCKER_2` (Prisma
-  Cloud policy reference) and `trivy/DS-0026` (+ its `AVD-DS-0026` AVDID alias the
-  adapter prefers when the scanner emits it; avd.aquasec.com/misconfig/ds-0026).
-  Floored findings band `low` with an honest, deterministic note (availability/
-  orchestration hygiene, crosses no trust boundary) — lowered, never dropped;
-  `dimension: 'infrastructure-iac'`, the finding `class`, and every unmapped rule
-  stay byte-identical. `CLASS_DEFS` and every other adapter untouched.
-- `--check` mode on `harness/build-evidence-index.mjs` — the evidence-index
-  completeness lint: enumerates top-level `evidence/*.{json,sarif,txt,html}` scan
-  artifacts, compares against `index.json`, reports every **orphan** by name, exit 2
-  on any (an un-citable scan is a submission gap). READ-ONLY — never mutates the
-  index. Excluded by design (each would false-orphan every run): `index.json` itself,
-  `*.provenance.json` sidecars, and subdirectories (`evidence/dast/`).
-- `acceptance/test-rule-band-floor.mjs` (5 checks, BF1–BF5) — fixture-anchored `low`
-  bands + honesty note + never-dropped for both rules; the in-code lowering-only
-  guard (a raise-attempt and an equal-band no-op); an unmapped `iac-misconfig` rule
-  byte-identical to the pre-change `buildFinding` output; other adapters unchanged.
-- `acceptance/test-evidence-index-completeness.mjs` (5 checks, EI1–EI5) — orphan
-  reported by name with exit 2; clean dir exits 0; `--check` never mutates the index
-  (byte-compare); the exact cold-run orphan pair (detect-secrets report +
-  `opengrep-*.sarif`) both reported; the exclusion lock (an index.json +
-  provenance-sidecar + `dast/`-only dir reports zero orphans).
-
-### Fixed
-- `run-scans` Family 6 now names **detect-secrets** alongside gitleaks (the
-  complementary second-opinion tree pass) and requires every secret-scan output this
-  family produced to be recorded in the evidence-input; Family 7 requires **both**
-  Opengrep surfaces (`opengrep-<date>.json` AND `.sarif`) recorded — the two
-  cold-run orphans the completeness check would otherwise fire on.
-
-### Changed
-- `run-scans` Step 11 runs the completeness check after building the index
-  (`build-evidence-index.mjs --repo <target> --check`; orphans exit 2 → fix the
-  evidence-input and rebuild, never hand-edit `index.json`, never render on a failing
-  check); `Bash(node *harness/build-evidence-index.mjs *)` granted in `allowed-tools`.
-- `acceptance/test-ingest-scanner-findings.mjs` — the CK/TRV anchors updated to the
-  floored `low` band; the two severity-from-class consistency checks re-anchored on
-  floor-unmapped rules (`CKV_DOCKER_3` / `DS-0002`) so the class invariant stays
-  locked. Suite **72 files / 1121 checks**. `reconcile-provenance.mjs` /
-  `merge-ledger.mjs` / `finding-clusters.mjs`, `CLASS_DEFS`, and every other adapter
-  byte-untouched.
 
 ## [0.8.101] — 2026-07-07
 

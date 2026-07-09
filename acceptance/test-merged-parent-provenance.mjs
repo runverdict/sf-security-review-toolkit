@@ -123,7 +123,7 @@ function validateFinding(f) {
 // bandit B105 is a tool→band finding (owns no class, dimension external-sast);
 // detect-secrets "Secret Keyword" is a class-severity finding (class hardcoded-secrets,
 // dimension secrets-credentials). Same file:line → same locus, different dimensions.
-const LOCUS_FILE = 'apps/api/app/core/config.py'
+const LOCUS_FILE = 'service/api/core/settings.py'
 const LOCUS_LINE = 41
 const banditB105 = () =>
   buildFinding({

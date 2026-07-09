@@ -6,13 +6,13 @@
       "title": "B105: hardcoded password string",
       "severity": "high",
       "adjusted_severity": "high",
-      "file": "apps/api/app/core/config.py:41",
+      "file": "service/api/core/settings.py:41",
       "status": "confirmed",
       "first_seen": 1,
       "last_seen": 1,
       "verdict": "confirmed_real",
-      "verdict_reasoning": "BANDIT rule B105 deterministically flagged this at apps/api/app/core/config.py:41.",
-      "evidence": "apps/api/app/core/config.py:41 — hardcoded password string",
+      "verdict_reasoning": "BANDIT rule B105 deterministically flagged this at service/api/core/settings.py:41.",
+      "evidence": "service/api/core/settings.py:41 — hardcoded password string",
       "provenance": "deterministic",
       "engine": "bandit",
       "ruleId": "B105"
@@ -23,13 +23,13 @@
       "title": "Secret Keyword: secret detected",
       "severity": "high",
       "adjusted_severity": "high",
-      "file": "apps/api/app/services/webhook_service.py:12",
+      "file": "service/api/handlers/webhook_handler.py:12",
       "status": "confirmed",
       "first_seen": 1,
       "last_seen": 1,
       "verdict": "confirmed_real",
-      "verdict_reasoning": "DETECT-SECRETS rule Secret Keyword deterministically flagged this at apps/api/app/services/webhook_service.py:12.",
-      "evidence": "apps/api/app/services/webhook_service.py:12 — secret detected",
+      "verdict_reasoning": "DETECT-SECRETS rule Secret Keyword deterministically flagged this at service/api/handlers/webhook_handler.py:12.",
+      "evidence": "service/api/handlers/webhook_handler.py:12 — secret detected",
       "provenance": "deterministic",
       "engine": "detect-secrets",
       "ruleId": "Secret Keyword",
@@ -41,7 +41,7 @@
       "title": "SOQL injection reachable from the public endpoint",
       "severity": "critical",
       "adjusted_severity": "critical",
-      "file": "apps/api/app/core/config.py:200-210",
+      "file": "service/api/core/settings.py:200-210",
       "status": "confirmed",
       "first_seen": 1,
       "last_seen": 1,
@@ -55,7 +55,7 @@
       "title": "A refuted finding",
       "severity": "low",
       "adjusted_severity": "low",
-      "file": "apps/web/lib/x.ts:3",
+      "file": "client/lib/x.ts:3",
       "status": "refuted",
       "first_seen": 1,
       "last_seen": 1,
@@ -68,12 +68,12 @@
       "title": "Missing org filter (lens one)",
       "severity": "high",
       "adjusted_severity": "high",
-      "file": "apps/api/app/services/forecast_service.py:88-92",
+      "file": "service/api/handlers/report_handler.py:88-92",
       "status": "confirmed",
       "first_seen": 1,
       "last_seen": 1,
       "verdict": "confirmed_real",
-      "verdict_reasoning": "no org_id predicate"
+      "verdict_reasoning": "no tenant predicate"
     },
     {
       "id": "ffff000011112222",
@@ -81,7 +81,7 @@
       "title": "Missing org filter (lens two)",
       "severity": "medium",
       "adjusted_severity": "medium",
-      "file": "apps/api/app/services/forecast_service.py:90",
+      "file": "service/api/handlers/report_handler.py:90",
       "status": "confirmed",
       "first_seen": 1,
       "last_seen": 1,
@@ -89,5 +89,5 @@
       "verdict_reasoning": "raw session query"
     }
   ],
-  "expected": "[{\"id\":\"aaaa000011112222\",\"dimension\":\"external-sast\",\"title\":\"B105: hardcoded password string\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"apps/api/app/core/config.py:41\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"BANDIT rule B105 deterministically flagged this at apps/api/app/core/config.py:41.\",\"evidence\":\"apps/api/app/core/config.py:41 — hardcoded password string\",\"provenance\":\"deterministic\",\"engine\":\"bandit\",\"ruleId\":\"B105\"},{\"id\":\"cccc000011112222\",\"dimension\":\"apex-exposed-surface\",\"title\":\"SOQL injection reachable from the public endpoint\",\"severity\":\"critical\",\"adjusted_severity\":\"critical\",\"file\":\"apps/api/app/core/config.py:200-210\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"user input reaches the query string unescaped\",\"evidence\":\"the concatenation at :204\"},{\"id\":\"eeee000011112222\",\"dimension\":\"tenant-isolation\",\"title\":\"Missing org filter (lens one)\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"apps/api/app/services/forecast_service.py:88-92\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"no org_id predicate\"},{\"id\":\"ffff000011112222\",\"dimension\":\"tenant-isolation\",\"title\":\"Missing org filter (lens two)\",\"severity\":\"medium\",\"adjusted_severity\":\"medium\",\"file\":\"apps/api/app/services/forecast_service.py:90\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"raw session query\"},{\"id\":\"bbbb000011112222\",\"dimension\":\"secrets-credentials\",\"title\":\"Secret Keyword: secret detected\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"apps/api/app/services/webhook_service.py:12\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"DETECT-SECRETS rule Secret Keyword deterministically flagged this at apps/api/app/services/webhook_service.py:12.\",\"evidence\":\"apps/api/app/services/webhook_service.py:12 — secret detected\",\"provenance\":\"deterministic\",\"engine\":\"detect-secrets\",\"ruleId\":\"Secret Keyword\",\"class\":\"hardcoded-secrets\"},{\"id\":\"dddd000011112222\",\"dimension\":\"web-client\",\"title\":\"A refuted finding\",\"severity\":\"low\",\"adjusted_severity\":\"low\",\"file\":\"apps/web/lib/x.ts:3\",\"status\":\"refuted\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"false_positive\",\"verdict_reasoning\":\"not reachable\"}]"
+  "expected": "[{\"id\":\"dddd000011112222\",\"dimension\":\"web-client\",\"title\":\"A refuted finding\",\"severity\":\"low\",\"adjusted_severity\":\"low\",\"file\":\"client/lib/x.ts:3\",\"status\":\"refuted\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"false_positive\",\"verdict_reasoning\":\"not reachable\"},{\"id\":\"aaaa000011112222\",\"dimension\":\"external-sast\",\"title\":\"B105: hardcoded password string\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"service/api/core/settings.py:41\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"BANDIT rule B105 deterministically flagged this at service/api/core/settings.py:41.\",\"evidence\":\"service/api/core/settings.py:41 — hardcoded password string\",\"provenance\":\"deterministic\",\"engine\":\"bandit\",\"ruleId\":\"B105\"},{\"id\":\"cccc000011112222\",\"dimension\":\"apex-exposed-surface\",\"title\":\"SOQL injection reachable from the public endpoint\",\"severity\":\"critical\",\"adjusted_severity\":\"critical\",\"file\":\"service/api/core/settings.py:200-210\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"user input reaches the query string unescaped\",\"evidence\":\"the concatenation at :204\"},{\"id\":\"eeee000011112222\",\"dimension\":\"tenant-isolation\",\"title\":\"Missing org filter (lens one)\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"service/api/handlers/report_handler.py:88-92\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"no tenant predicate\"},{\"id\":\"ffff000011112222\",\"dimension\":\"tenant-isolation\",\"title\":\"Missing org filter (lens two)\",\"severity\":\"medium\",\"adjusted_severity\":\"medium\",\"file\":\"service/api/handlers/report_handler.py:90\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"raw session query\"},{\"id\":\"bbbb000011112222\",\"dimension\":\"secrets-credentials\",\"title\":\"Secret Keyword: secret detected\",\"severity\":\"high\",\"adjusted_severity\":\"high\",\"file\":\"service/api/handlers/webhook_handler.py:12\",\"status\":\"confirmed\",\"first_seen\":1,\"last_seen\":1,\"verdict\":\"confirmed_real\",\"verdict_reasoning\":\"DETECT-SECRETS rule Secret Keyword deterministically flagged this at service/api/handlers/webhook_handler.py:12.\",\"evidence\":\"service/api/handlers/webhook_handler.py:12 — secret detected\",\"provenance\":\"deterministic\",\"engine\":\"detect-secrets\",\"ruleId\":\"Secret Keyword\",\"class\":\"hardcoded-secrets\"}]"
 }
