@@ -42,6 +42,13 @@
  * authenticates and sets `sfAutoResolved:false` when no hub is authed — there is
  * no `sf-deep-audit-ops` gate here, and the sf-ops-gate-hook is untouched.
  *
+ * THREE STATUSES, ALL HONEST: `resolved` (≥1 non-`unknown` resolvable row;
+ * `sfAutoResolved:true` — a partial resolve with some rows degraded stays
+ * `resolved`), `degraded` (the queries ran but EVERY row came back `unknown` —
+ * nothing was actually resolved, so `sfAutoResolved:false` and the operator
+ * resolves manually; the nested-repo cold-run defect where all-unknown reported
+ * `resolved`), and `no-devhub` (`sfAutoResolved:false`, no query spawned).
+ *
  * NAMES/CONFIG ONLY (CONVENTIONS §6): rows are assembled field-by-field from named
  * scalar values (version parts, booleans, a coverage LABEL) — raw `sf` output is
  * NEVER spread into the manifest. The package/version JSON carries no auth token
@@ -312,7 +319,9 @@ function writeAutoResolve(outputPath, ar) {
  * in its own try/catch (one failed query degrades ITS OWN row(s); the rest still
  * run and the manifest flag still writes — the describe-first "degrade per-field"
  * doctrine). NO consent gate (read-only Tooling). When no DevHub is authed it sets
- * `sfAutoResolved:false` and returns WITHOUT spawning. The `runner` spawn seam is
+ * `sfAutoResolved:false` and returns WITHOUT spawning. When every row degrades to
+ * `unknown` the status is `degraded` + `sfAutoResolved:false` (see THREE STATUSES
+ * above) — `resolved` requires ≥1 non-`unknown` row. The `runner` spawn seam is
  * injectable so the standing test proves every path offline.
  *   opts: { target, devhub, generated(date string), runner }
  */
@@ -381,6 +390,30 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
   const ar = { generated: stamp, rows, endpoints: [], permissions: [], conflicts: [] }
   if (dh) ar.devhub = dh
   writeAutoResolve(outputPath, ar)
+  // HONEST STATUS (the nested-repo cold-run defect): `resolved` requires ≥1
+  // non-`unknown` resolvable row. When EVERY row degraded to `unknown` (the `sf`
+  // queries ran but returned nothing usable — e.g. a layout the hub's package
+  // inventory can't answer for), a consumer reading "resolved"/`sfAutoResolved:true`
+  // would trust an artifact that carries nothing. Mirror the no-devhub degrade:
+  // `degraded` + `sfAutoResolved:false` + the manifest flag false, so the render's
+  // existing gate shows the honest skipped line and the operator resolves manually.
+  // A PARTIAL resolve (some rows real, some unknown) stays `resolved` — per-step
+  // degradation is the designed behavior, not a failure. A row value is "unknown"
+  // when it is the literal string or an `unknown — …` label (real values are
+  // booleans, dotted versions, reviewed/not-reviewed, or a `NN% — …` coverage).
+  const isUnknownValue = (v) => typeof v === 'string' && v.startsWith('unknown')
+  if (rows.every((r) => isUnknownValue(r.value))) {
+    setManifestFlag(manifestPath, false)
+    return {
+      status: 'degraded',
+      reason: 'every resolvable row came back unknown — nothing was actually resolved; resolve the values manually (operator-asked / code-inferred) and let them stand',
+      sfAutoResolved: false,
+      outputPath,
+      manifestPath,
+      rows,
+      steps: stepLog,
+    }
+  }
   setManifestFlag(manifestPath, true)
   return { status: 'resolved', sfAutoResolved: true, outputPath, manifestPath, rows, steps: stepLog }
 }
@@ -423,6 +456,8 @@ function main() {
   }
   process.stdout.write(
     `## sf-autoresolve — ${res.status} (sfAutoResolved:${res.sfAutoResolved})\n` +
+      // the honest all-unknown headline: degraded — resolve manually, never "resolved"
+      (res.status === 'degraded' ? `resolve manually: ${res.reason}\n` : '') +
       `rows: ${res.rows.length}   output: ${res.outputPath}\n` +
       `render: node harness/render-sf-autoresolve.mjs --target <repo>\n`
   )

@@ -10,13 +10,16 @@
  * Two independent guards, both stdlib-only (zero imports so any caller can use
  * this without a dependency):
  *
- *   • `sfEnv()` builds a child-process env with the auto-update disabled, so the
- *     banner never prints in the first place. BOTH flags are set on purpose:
- *     older `sf` reads `SF_AUTOUPDATE_DISABLE`, newer reads
- *     `SF_DISABLE_AUTOUPDATE`. It spreads `...process.env` FIRST so `PATH`
- *     (and everything else the CLI needs — HOME, the sf config dirs) is
+ *   • `sfEnv()` builds a child-process env with the banner suppressed at the
+ *     source. ALL THREE flags are set on purpose: `SF_AUTOUPDATE_DISABLE`
+ *     (older `sf`) and `SF_DISABLE_AUTOUPDATE` (newer `sf`) turn off the
+ *     auto-UPDATE itself, but neither silences the update-availability BANNER —
+ *     that is a different oclif control, `SF_SKIP_NEW_VERSION_CHECK` (proven
+ *     off disk: with only the two autoupdate flags the banner still prints;
+ *     adding the third suppresses it). It spreads `...process.env` FIRST so
+ *     `PATH` (and everything else the CLI needs — HOME, the sf config dirs) is
  *     preserved: `execFileSync('sf', …)` resolves the binary via `PATH`, and an
- *     env of only the two flags would make `sf` unfindable and break every call.
+ *     env of only the flags would make `sf` unfindable and break every call.
  *
  *   • `parseSfJson()` is defence in depth: even with the banner suppressed, any
  *     stray leading line (a deprecation notice, a shell rc echo) is tolerated by
@@ -24,12 +27,22 @@
  *     unchanged.
  */
 
-/** The two auto-update-off flags (older `sf` reads one, newer the other). */
-export const SF_AUTOUPDATE_OFF = { SF_AUTOUPDATE_DISABLE: 'true', SF_DISABLE_AUTOUPDATE: 'true' }
+/**
+ * The banner-off flags: the two auto-update-off flags (older `sf` reads one,
+ * newer the other) PLUS `SF_SKIP_NEW_VERSION_CHECK`, the oclif control that
+ * actually silences the `› Warning: @salesforce/cli update available…` banner
+ * (the autoupdate flags alone do NOT — only `parseSfJson`'s banner-tolerance
+ * had been saving every `sf --json` call).
+ */
+export const SF_AUTOUPDATE_OFF = {
+  SF_AUTOUPDATE_DISABLE: 'true',
+  SF_DISABLE_AUTOUPDATE: 'true',
+  SF_SKIP_NEW_VERSION_CHECK: 'true',
+}
 
 /**
  * A child-process env for `sf`: the full parent env (so `PATH` resolves the
- * binary) plus optional `extra`, with the auto-update flags forced ON LAST so a
+ * binary) plus optional `extra`, with the banner-off flags forced ON LAST so a
  * caller can never accidentally clobber them.
  */
 export const sfEnv = (extra) => ({ ...process.env, ...extra, ...SF_AUTOUPDATE_OFF })

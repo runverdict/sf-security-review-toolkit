@@ -18,13 +18,24 @@
  * NO namespace-corruption risk exists either way: a build USES a registered namespace, it
  * never registers/hijacks one, and it operates on the package's OWN declared namespace.
  *
- * Pure `classifyNamespace` + impure `namespaceStatus`. USAGE: node namespace-check.mjs --target <repo> [--json]
+ * NESTED LAYOUTS (0.8.107): the namespace read goes through `discoverPackages` —
+ * a repo with NO root sfdx-project.json but nested package dirs (e.g.
+ * `salesforce/` + `salesforce-mcp/`, both declaring a namespace) used to read
+ * `pkgNamespace=''` from the root-only probe and FAIL OPEN into the
+ * "no namespace declared → buildable" branch. This 0.7.2 gate exists to err
+ * CONSERVATIVE: `collectDeclaredNamespaces` gathers every declared namespace
+ * across the nested layout, and if ANY package declares one it must be confirmed
+ * against an authed org — never silently `buildable:true`.
+ *
+ * Pure `classifyNamespace` + pure (read-only-fs) `collectDeclaredNamespaces` +
+ * impure `namespaceStatus`. USAGE: node namespace-check.mjs --target <repo> [--json]
  */
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { sfEnv, parseSfJson } from './sf-env.mjs'
+import { discoverPackages } from './package-readiness.mjs'
 
 /** PURE: from the package namespace + the authed-org facts, classify build-feasibility. */
 export function classifyNamespace({ pkgNamespace, authedNamespaces = [], hasDevHub = false } = {}) {
@@ -46,10 +57,29 @@ export function classifyNamespace({ pkgNamespace, authedNamespaces = [], hasDevH
   }
 }
 
-/** IMPURE: read the package namespace from sfdx-project.json + the authed orgs from sf. */
+/**
+ * PURE (read-only fs, deterministic, no `sf`): the SET of namespaces declared by
+ * EVERY sfdx-project.json under `target` — root AND nested (via `discoverPackages`,
+ * bounded depth). A root-only read fails OPEN on nested layouts: no root
+ * sfdx-project.json → `''` → the "no namespace declared → buildable" branch, even
+ * though the nested packages DO declare one. `discoverPackages` returns readiness,
+ * not the declared namespace, so each hit's sfdx-project.json is re-read here.
+ * Empty/absent/unreadable `namespace` contributes nothing (declares no namespace).
+ */
+export function collectDeclaredNamespaces(target = process.cwd()) {
+  const namespaces = new Set()
+  for (const pkg of discoverPackages(target)) {
+    try {
+      const ns = (JSON.parse(readFileSync(join(pkg.dir, 'sfdx-project.json'), 'utf8')).namespace || '').trim()
+      if (ns) namespaces.add(ns)
+    } catch { /* unreadable project file → declares no namespace */ }
+  }
+  return namespaces
+}
+
+/** IMPURE: the declared namespaces (root + nested) + the authed orgs from sf. */
 export function namespaceStatus(target = process.cwd()) {
-  let pkgNamespace = ''
-  try { pkgNamespace = (JSON.parse(readFileSync(join(target, 'sfdx-project.json'), 'utf8')).namespace || '').trim() } catch {}
+  const declared = [...collectDeclaredNamespaces(target)]
   let authedNamespaces = []
   let hasDevHub = false
   try {
@@ -58,7 +88,17 @@ export function namespaceStatus(target = process.cwd()) {
     authedNamespaces = [...new Set(orgs.map((o) => o && o.namespacePrefix).filter(Boolean))]
     hasDevHub = orgs.some((o) => o && o.isDevHub)
   } catch { /* no sf / not authed → hasDevHub stays false */ }
-  return classifyNamespace({ pkgNamespace, authedNamespaces, hasDevHub })
+  // No namespace declared anywhere (root or nested) → the genuine no-namespace branch.
+  if (!declared.length) return classifyNamespace({ pkgNamespace: '', authedNamespaces, hasDevHub })
+  // Conservative across a nested layout: EVERY declared namespace must classify
+  // buildable; the first unconfirmed one decides (never silently buildable:true).
+  let last = null
+  for (const ns of declared) {
+    const r = classifyNamespace({ pkgNamespace: ns, authedNamespaces, hasDevHub })
+    if (!r.buildable) return r
+    last = r
+  }
+  return last
 }
 
 function main() {

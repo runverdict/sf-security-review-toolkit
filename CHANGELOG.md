@@ -51,6 +51,60 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.107] — 2026-07-09
+
+**sf-engine correctness three-pack from a real nested-two-package cold run: the update banner is
+now actually suppressed at the source, an all-unknown auto-resolve reports `degraded` instead of
+`resolved`, and the namespace gate no longer fails OPEN on nested layouts.** All three defects
+surfaced on one cold run against a repo whose two packages live in subdirectories with no root
+`sfdx-project.json`.
+
+### Fixed
+- `harness/sf-env.mjs`: `SF_AUTOUPDATE_OFF` now carries **`SF_SKIP_NEW_VERSION_CHECK: 'true'`**.
+  The two existing flags (`SF_AUTOUPDATE_DISABLE` / `SF_DISABLE_AUTOUPDATE`) disable the
+  auto-*update* itself but do NOT silence the `› Warning: @salesforce/cli update available…`
+  banner — that is a different oclif control (proven off disk: with only the two flags the banner
+  still prints; adding the third suppresses it). Only `parseSfJson`'s banner-tolerance had been
+  saving every `sf --json` call; it stays as defence-in-depth.
+- `harness/sf-autoresolve.mjs`: honest **`degraded`** status (new, alongside `resolved` /
+  `no-devhub`). The nested-repo run reported `status:'resolved'` + `sfAutoResolved:true` over SIX
+  all-`unknown` rows — a consumer reads "resolved" and receives nothing. `resolved` now requires
+  ≥1 non-`unknown` resolvable row; when EVERY row degraded to `unknown` the engine returns
+  `degraded` + `sfAutoResolved:false`, flips the scope-manifest flag to `false` (so the frozen
+  render's existing gate shows the honest skipped line — `render-sf-autoresolve.mjs` untouched),
+  and the CLI headline says degraded + "resolve manually", never "resolved". A PARTIAL resolve
+  (some rows real, some unknown) stays `resolved`/`true` — per-step degradation is designed
+  behavior, not a failure. (Root cause was NOT `sfdx-project.json` probing — the engine never
+  reads that file; the queries ran and returned nothing usable for this layout.)
+- `harness/namespace-check.mjs`: the namespace read no longer fails OPEN on nested layouts. The
+  root-only `<target>/sfdx-project.json` probe read `pkgNamespace=''` on a repo whose packages
+  (both declaring a namespace) live in subdirectories → `classifyNamespace` took the
+  "no namespace declared → buildable" branch — backwards for a 0.7.2 gate that exists to err
+  CONSERVATIVE. New pure exported helper **`collectDeclaredNamespaces(target)`** walks every
+  `sfdx-project.json` via the already-exported `discoverPackages` (`package-readiness.mjs`) and
+  collects the declared-namespace set; `namespaceStatus` classifies EVERY declared namespace and
+  the first unconfirmed one decides (`buildable:false`, the existing unregistered branch) — never
+  silently `buildable:true`. `classifyNamespace`'s pure contract is unchanged.
+
+### Added
+- `acceptance/test-sf-env.mjs` — SE1/SE2 extended: the exported `SF_AUTOUPDATE_OFF` deepEqual is
+  now the three-key object, `sfEnv()` carries `SF_SKIP_NEW_VERSION_CHECK`, and a colliding extra
+  cannot clobber it.
+- `acceptance/test-sf-banner-guard.mjs` — CHECK C: `SF_AUTOUPDATE_OFF` carries
+  `SF_SKIP_NEW_VERSION_CHECK` (the banner control itself, not just the update switch). Hermetic —
+  asserts on the exported object, no live `sf`.
+- `acceptance/test-sf-autoresolve.mjs` — A11 honest degrade: all-unknown rows → `degraded` +
+  `sfAutoResolved:false` + manifest flag `false` + the artifact still written with no `undefined`
+  token; A12 the resolved threshold: ONE non-unknown row keeps `resolved`/`true` (the partial-
+  resolve boundary, locked from both sides with A6). Both drive the executor through the injected
+  runner seam — hermetic, no live `sf`.
+- `acceptance/test-namespace-check.mjs` — N4: `collectDeclaredNamespaces` on a nested two-package
+  fixture (no root `sfdx-project.json`, both subdir projects declaring the same namespace, plus a
+  namespace-less sibling) returns exactly the declared set — the root-only read that failed OPEN
+  returns `{}` and goes RED. Deliberately locks the PURE helper, not the impure `namespaceStatus`
+  (which needs a live Dev Hub and short-circuits to `buildable:false` without one — a hermetic
+  assertion through it would be vacuous).
+
 ## [0.8.106] — 2026-07-09
 
 **The dispositions CLI fails closed: an invalid entry rejects the whole file — exit 2,

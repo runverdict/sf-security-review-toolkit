@@ -29,6 +29,13 @@
  *   A9  wiring: scope-submission frontmatter GRANTS `sf-autoresolve.mjs` and Step 4
  *       invokes the producer BEFORE the render (render block byte-unchanged)
  *   A10 CLI dry-run purity: --dry-run prints the sequence and writes nothing
+ *   A11 honest degrade (the nested-repo cold-run defect): EVERY row unknown →
+ *       status `degraded` + `sfAutoResolved:false` + manifest flag false — a
+ *       consumer must never read "resolved" over an artifact that carries nothing
+ *   A12 the `resolved` threshold: ONE non-unknown resolvable row is enough —
+ *       a partial resolve stays `resolved` / `sfAutoResolved:true` (per-step
+ *       degradation is designed behavior, not a failure; A6 locks the same
+ *       boundary from the per-step side)
  *
  * Dependency-free: `node acceptance/test-sf-autoresolve.mjs` (exit 0 = pass).
  */
@@ -249,6 +256,48 @@ check('A10 CLI dry-run purity: --dry-run prints the sequence and writes nothing'
   assert.equal(j.status, 'planned')
   assert.deepEqual(j.plan.steps.map((s) => s.key), ['resolvePackage', 'resolveVersion', 'versionReport', 'subscriberVersion'])
   assert.ok(!existsSync(join(b, '.security-review', 'sf-autoresolve.json')), 'dry-run performs no live op — nothing written')
+})
+
+check('A11 honest degrade: EVERY row unknown → degraded + sfAutoResolved:false + manifest flag false', () => {
+  const b = box()
+  const plan = planSfAutoResolve({ versionId: '04t000000000009', devhub: 'acme' }) // [versionReport, subscriberVersion]
+  const runner = (cmd, args) => {
+    if (args[0] === 'org' && args[1] === 'list') return JSON.stringify({ status: 0, result: { devHubs: [{ alias: 'acme' }] } })
+    // the nested-repo cold run: the queries ran but returned nothing usable
+    throw Object.assign(new Error('sf step failed'), { status: 1 })
+  }
+  const res = runSfAutoResolve(plan, { target: b, devhub: 'acme', generated: '2026-07-09', runner })
+  // the defect: this used to report status:'resolved' + sfAutoResolved:true over six unknown rows
+  assert.equal(res.status, 'degraded', 'all-unknown rows must NOT report "resolved"')
+  assert.equal(res.sfAutoResolved, false, 'a consumer must not trust an artifact that carries nothing')
+  assert.match(res.reason, /unknown/, 'the reason states nothing was resolved')
+  assert.match(res.reason, /manually/, 'the reason points at the manual path')
+  assert.ok(res.rows.length >= 1 && res.rows.every((r) => typeof r.value === 'string' && r.value.startsWith('unknown')), 'the trigger really is every-row-unknown')
+  // the manifest flag flips false — the frozen render's gate shows the honest skipped line
+  const m = JSON.parse(readFileSync(join(b, '.security-review', 'scope-manifest.json'), 'utf8'))
+  assert.equal(m.sfAutoResolved, false, 'manifest flag is false on a degraded resolve')
+  // the artifact still writes (an honest all-unknown trail), and no token "undefined"
+  const ar = JSON.parse(readFileSync(join(b, '.security-review', 'sf-autoresolve.json'), 'utf8'))
+  assert.ok(!JSON.stringify(ar).includes('undefined'), 'no row value contains the token "undefined"')
+})
+
+check('A12 resolved threshold: ONE non-unknown row keeps resolved/sfAutoResolved:true (partial resolve)', () => {
+  const b = box()
+  const plan = planSfAutoResolve({ versionId: '04t000000000009', devhub: 'acme' })
+  const runner = (cmd, args) => {
+    if (args[0] === 'org' && args[1] === 'list') return JSON.stringify({ status: 0, result: { devHubs: [{ alias: 'acme' }] } })
+    // the report resolves exactly ONE real field; the keystone fails entirely
+    if (args.includes('report')) return JSON.stringify({ status: 0, result: { IsReleased: true } })
+    throw Object.assign(new Error('sf step failed'), { status: 1 })
+  }
+  const res = runSfAutoResolve(plan, { target: b, devhub: 'acme', generated: '2026-07-09', runner })
+  assert.equal(res.status, 'resolved', '≥1 non-unknown resolvable row is the resolved threshold')
+  assert.equal(res.sfAutoResolved, true, 'a partial resolve is still a resolve')
+  const byKey = Object.fromEntries(res.rows.map((r) => [r.key, r.value]))
+  assert.equal(byKey.isReleased, true, 'the one real row survived')
+  assert.equal(byKey.version, 'unknown', 'the failed keystone still degraded honestly')
+  const m = JSON.parse(readFileSync(join(b, '.security-review', 'scope-manifest.json'), 'utf8'))
+  assert.equal(m.sfAutoResolved, true)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

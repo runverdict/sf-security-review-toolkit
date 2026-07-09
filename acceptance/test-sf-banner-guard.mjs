@@ -12,7 +12,7 @@
  *   export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
  *   sf <command> --json …
  *
- * Two checks over every `skills/<name>/SKILL.md`:
+ * Two checks over every `skills/<name>/SKILL.md`, plus one on the harness constant:
  *
  *   CHECK A — the broken "disable the … banner once for the session" phrasing is
  *       gone everywhere (proves the six prose paragraphs were REWRITTEN, not merely
@@ -23,14 +23,20 @@
  *       (the fences in these skills are indented 2–5 spaces), and the check asserts a
  *       NONZERO FLOOR of sf-bearing fences so a parser that silently matches nothing
  *       fails CLOSED rather than passing vacuously.
+ *   CHECK C — `SF_AUTOUPDATE_OFF` (the constant every harness `sf` spawn threads via
+ *       `sfEnv()`) carries `SF_SKIP_NEW_VERSION_CHECK`. The two autoupdate flags
+ *       disable the auto-UPDATE; they do NOT silence the update-availability banner —
+ *       that is a different oclif control (proven off disk: with only the two flags
+ *       the banner still prints). Hermetic: asserts on the exported object, no live `sf`.
  *
- * Pure filesystem grep — no network, no `sf`, no org. Dependency-free:
- * `node acceptance/test-sf-banner-guard.mjs`.
+ * Pure filesystem grep + one exported-constant assert — no network, no `sf`, no org.
+ * Dependency-free: `node acceptance/test-sf-banner-guard.mjs`.
  */
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SF_AUTOUPDATE_OFF } from '../harness/sf-env.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -107,6 +113,16 @@ check('CHECK B: every sf-bearing bash fence carries the SF_AUTOUPDATE_DISABLE gu
     [],
     `sf fence(s) missing the ${GUARD_TOKEN} guard at the fence top ` +
       `(the export MUST be in the SAME fence as \`sf\`, not a separate adjacent one):\n    ${unguarded.join('\n    ')}`,
+  )
+})
+
+// CHECK C — the harness constant actually suppresses the banner, not just the update.
+check('CHECK C: SF_AUTOUPDATE_OFF carries SF_SKIP_NEW_VERSION_CHECK (the banner control itself)', () => {
+  assert.equal(
+    SF_AUTOUPDATE_OFF.SF_SKIP_NEW_VERSION_CHECK,
+    'true',
+    'the autoupdate flags alone do NOT silence the update-availability banner — ' +
+      'SF_SKIP_NEW_VERSION_CHECK is the oclif control that does',
   )
 })
 

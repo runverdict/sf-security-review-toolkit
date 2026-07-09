@@ -4,8 +4,10 @@
  * invocation JSON-safe (the auto-update banner corrupts `--json` reads).
  *
  *   SE1  sfEnv() carries the parent env (PATH must survive — the binary is
- *        resolved via PATH) AND sets both auto-update-off flags
- *   SE2  sfEnv({X:'y'}) merges extra keys; the two flags are forced last and
+ *        resolved via PATH) AND sets all three banner-off flags — the two
+ *        auto-update-off flags plus SF_SKIP_NEW_VERSION_CHECK, the oclif
+ *        control that actually silences the update-availability banner
+ *   SE2  sfEnv({X:'y'}) merges extra keys; the flags are forced last and
  *        cannot be clobbered by an extra of the same name
  *   SE3  parseSfJson strips a leading banner line before parsing; clean JSON
  *        (object or array) parses unchanged; non-JSON throws
@@ -20,15 +22,23 @@ const check = (name, fn) => { try { fn(); pass++; console.log(`  ✓ ${name}`) }
 
 console.log('sf-env standing test')
 
-check('SE1 sfEnv() carries PATH from process.env and both auto-update flags', () => {
+check('SE1 sfEnv() carries PATH from process.env and all three banner-off flags', () => {
   const env = sfEnv()
   // PATH must survive — execFileSync resolves `sf` via PATH; an env of only the
-  // two flags would make the binary unfindable and break every call
+  // flags would make the binary unfindable and break every call
   assert.equal(env.PATH, process.env.PATH, 'PATH is carried through unchanged')
   assert.equal(env.SF_AUTOUPDATE_DISABLE, 'true', 'older sf reads SF_AUTOUPDATE_DISABLE')
   assert.equal(env.SF_DISABLE_AUTOUPDATE, 'true', 'newer sf reads SF_DISABLE_AUTOUPDATE')
-  // both keys are the constant the module exports
-  assert.deepEqual(SF_AUTOUPDATE_OFF, { SF_AUTOUPDATE_DISABLE: 'true', SF_DISABLE_AUTOUPDATE: 'true' })
+  // the autoupdate flags do NOT silence the update-availability banner — that is a
+  // different oclif control (proven off disk: with only the two flags the banner
+  // still prints; SF_SKIP_NEW_VERSION_CHECK suppresses it)
+  assert.equal(env.SF_SKIP_NEW_VERSION_CHECK, 'true', 'the banner itself needs SF_SKIP_NEW_VERSION_CHECK')
+  // all three keys are the constant the module exports — nothing more, nothing less
+  assert.deepEqual(SF_AUTOUPDATE_OFF, {
+    SF_AUTOUPDATE_DISABLE: 'true',
+    SF_DISABLE_AUTOUPDATE: 'true',
+    SF_SKIP_NEW_VERSION_CHECK: 'true',
+  })
 })
 
 check('SE2 sfEnv(extra) merges extra keys; the flags win over a colliding extra', () => {
@@ -36,9 +46,10 @@ check('SE2 sfEnv(extra) merges extra keys; the flags win over a colliding extra'
   assert.equal(env.MY_TOKEN, 'y', 'extra key is merged in')
   assert.equal(env.PATH, process.env.PATH, 'PATH still carried through with extra present')
   // a caller can never accidentally re-enable the banner: the flags spread LAST
-  const forced = sfEnv({ SF_AUTOUPDATE_DISABLE: 'false', SF_DISABLE_AUTOUPDATE: 'false' })
+  const forced = sfEnv({ SF_AUTOUPDATE_DISABLE: 'false', SF_DISABLE_AUTOUPDATE: 'false', SF_SKIP_NEW_VERSION_CHECK: 'false' })
   assert.equal(forced.SF_AUTOUPDATE_DISABLE, 'true', 'extra cannot clobber the disable flag')
   assert.equal(forced.SF_DISABLE_AUTOUPDATE, 'true', 'extra cannot clobber the disable flag')
+  assert.equal(forced.SF_SKIP_NEW_VERSION_CHECK, 'true', 'extra cannot clobber the banner-skip flag')
 })
 
 check('SE3 parseSfJson strips a leading banner then parses; clean JSON unchanged', () => {
