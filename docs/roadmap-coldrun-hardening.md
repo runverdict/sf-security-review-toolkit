@@ -28,8 +28,8 @@
   `trivy config -f json <compose-dir>` invocation + the compose→trivy-NOT-checkov routing rule [checkov has no
   `docker_compose` framework — the cold-run driver improvised it into an empty scan]; test-backed by the
   F8-compose-iac prose guard in test-ci-hygiene [bogus-flag literal forbidden + trivy route required]; +1 check,
-  mutation-proven). **ALL 4 COLD-RUN QUICK-WIN SLICES SHIPPED + GRADED PASS off disk (2026-07-05).** Branch commits carry
-  `Co-Authored-By: Claude Fable 5` trailers (SRT identity-discipline violation) — scrub before merge. **The full
+  mutation-proven). **ALL 4 COLD-RUN QUICK-WIN SLICES SHIPPED + GRADED PASS off disk (2026-07-05).** Branch commits carried
+  authorship trailers (an identity-discipline violation) — scrubbed before merge. **The full
   go-forward plan is the ★ POST-MIDPOINT-COLD-RUN PLAN section below.**
   CIRCULATION TRACK: items 1–6 + E0.1d-EXPAND-2/3/4 + item 7 SHIPPED & GRADED PASS (E0.1f · `endpoint-https-only`
   seam · determinism proof · single-shape registry · supply-chain README+`SC-*` · E0.1d-EXPAND
@@ -88,7 +88,7 @@ The run also re-confirmed, on the pre-fix baseline, the exact defects the branch
 correctness/quality defects that GATE the tag. **Two work-orders close them; neither belongs in the
 other (disjoint subsystems, disjoint files → parallelizable as two builder sessions).**
 
-### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). **SHIPPED on the branch (A3 0.8.92 → A1 0.8.93 → A4 0.8.94, one slice per commit; off-disk grade pending)** → `srt-wo-a-audit-honesty-prompt.md`; scope **A1 + A3 + A4**.
+### WORK-ORDER A — audit-pipeline HONESTY/QUALITY POLISH (NOT a correctness gate). **SHIPPED on the branch (A3 0.8.92 → A1 0.8.93 → A4 0.8.94, one slice per commit; off-disk grade pending)** Scope **A1 + A3 + A4**.
 Subsystem: `merge-ledger.mjs` / `write-drafted-content.mjs` + `artifact-workflow-template.mjs` / `generate-artifacts` SKILL.
 **Grounding CORRECTED the cold-run premise (verified off disk — reconcile re-run WITH and WITHOUT the label):**
 the blocker count is ALREADY honest (the final count is correct; a transient higher count before the run's
@@ -117,7 +117,7 @@ and the counters are provenance-blind. So none of A1/A2 is a correctness/tag gat
   DEFERRED debt (Phase-2b §10 ext #3), not a WO-A slice.
 - NOT toolkit (driver/env — do not build): shell-quoting fragility + sleep-polling.
 
-### WORK-ORDER B — throwaway-DAST enablement (partner-general). File `srt-dast-builder-prompt.md` (v2, audit-hardened + Fable-safe). **DONE — graded PASS off disk (7 slices, 0.8.85–0.8.91, identity-clean, suite 1043/0; real-target `composeWebTier`→api:8000; keystone G provenance sidecar; 4 loopback layers byte-frozen).**
+### WORK-ORDER B — throwaway-DAST enablement (partner-general). Work order authored and audited before dispatch. **DONE — graded PASS off disk (7 slices, 0.8.85–0.8.91, identity-clean, suite 1043/0; real-target `composeWebTier`→api:8000; keystone G provenance sidecar; 4 loopback layers byte-frozen).**
 Slices **A** (compose web-tier selection) · **B1** (3-state health honesty) · **G** (run-dast honesty
 consumption + machine-readable provenance — the keystone) · **C** (spec-path + capture-only
 provenance) · **B2** (migration detection) · **D** (base-url pointer + run-id integrity +
@@ -130,7 +130,7 @@ honesty gate** (any alone still permits a clean-looking wrong-tier / unhealthy r
   don't-over-claim; C + G close the adjacency); compiled-stack breadth JVM/Ruby/Go/.NET (an honest
   framework-named `needs-recipe` is the floor).
 
-### COLD-RUN BUNDLE (0.8.95) — consent/env/webport/devcve. **SHIPPED — graded PASS off disk** (branch `fix/coldrun-bundle-consent-env-devcve-webport`, 4 slices + count-sync, suite **64 files / 1064 checks / 0 failed**, identity-clean, the 3 byte-frozen files `run-dast`/`capture-openapi`/`reconcile-provenance` untouched) → `srt-bundle-builder-prompt.md`.
+### COLD-RUN BUNDLE (0.8.95) — consent/env/webport/devcve. **SHIPPED — graded PASS off disk** (branch `fix/coldrun-bundle-consent-env-devcve-webport`, 4 slices + count-sync, suite **64 files / 1064 checks / 0 failed**, identity-clean, the 3 byte-frozen files `run-dast`/`capture-openapi`/`reconcile-provenance` untouched) 
 The 0.8.94 cold run confirmed WO-B's `composeWebTier`→api:8000 landed, but the throwaway-DAST still could not stand up: on a host already running the app (a busy web-tier port — e.g. a live stack holding 8000) the standup published to the SAME fixed host port and collided. A grounding + adversarial contract-guard fan-out re-scoped an original 6 candidates to 4 (two would have touched a byte-frozen invariant or shipped an under-decided design):
 - ✅ **wo-c-standup — host-port-agnostic throwaway** (the tag blocker): decouple the HOST published port from the container/compose-selector port; publish on an EPHEMERAL `127.0.0.1:0:<target>` (docker assigns only FREE ports) and read the assigned port back after start (`docker port` / `docker compose port`), on BOTH the single-container and compose executors. `baseUrl` stays loopback (the loopback layers + `--network host` byte-frozen); `scannedPort === new URL(baseUrl).port` on every path (no `dastDegrade` false-flag). Planners stay pure (discovery is executor-only). Hermetic planner + dastDegrade proofs.
 - ✅ **gate-catalog — pin the two live-op consents**: `throwaway-dast` + `sf-deep-audit-ops` added to the frozen `GATE_CATALOG` (own selector branch + `LOAD_CHECK_FACTS` + stale-comment fix), mirroring `scanner-install` (single affirm in `base`, force-injected `safeDefault` deny). Purely additive to the render path — the string-keyed enforcement is unchanged.
@@ -592,10 +592,10 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
      `apex-exposed-surface`, a row proven build-breaking via `SESS-disjoint` in mutation 2); `AvoidLwcBubblesComposedTrue`
      SKIP. SESS-disjoint value set unchanged (no new dimension); engine + all 3 prior fixtures byte-frozen;
      defer-locks retargeted to the SKIP + NO-OP reps; the EXPAND-3 DEFERRED-comment nit fixed (Apex rules now
-     framed as NO-OP). The **light prompt + one Fable verify pass** flow worked cleanly (Fable caught the
-     `LoadCSSApexStylesheet`-in-EXP3-defer coupling pre-dispatch). Historical Fable-research grounding for this
+     framed as NO-OP). The **light prompt + one read-only verification pass** flow worked cleanly (it caught the
+     `LoadCSSApexStylesheet`-in-EXP3-defer coupling pre-dispatch). Historical research grounding for this
      slice retained below:
-   - **(E0.1d-EXPAND-4 grounding record, retained):** A read-only Fable research pass
+   - **(E0.1d-EXPAND-4 grounding record, retained):** A read-only research pass
      enumerated the live catalog (37 pmd rules, all Security-tagged) and dispositioned every remaining rule off
      the methodology docs' SPECIFIC class sections + the live rule messages. It CORRECTED four of my initial
      leans — recorded honestly below so they don't recur.
@@ -645,7 +645,7 @@ cold run). Each item is slice-sized and honors the fixture-proven floor.
    fixture can't false-fire, comparing against `PINNED_TOOL_VERSIONS.opengrep` (derived from `BINARY_PINS`,
    single-source-locked). Notes-only: `buildFinding`/schema/ledger/`reconcile-provenance.mjs`/findings-bytes all
    byte-frozen; harness change pure additive (+99/−0); both markers mutation-proven (283/2, 281/4). The three
-   pre-dispatch Fable-caught defects (opengrep hook inheritance, SARIF Semgrep-OSS false-fire, `BINARY_PINS` export)
+   defects caught pre-dispatch (opengrep hook inheritance, SARIF Semgrep-OSS false-fire, `BINARY_PINS` export)
    were all applied correctly. Nit (non-blocking): the semgrep substrate note reads `v unknown` (semgrepAdapter has
    no `recordedVersion`) though `raw.version` is present — optional future polish. Closes the silent-degradation
    channel that was operator-prose only (`skills/run-scans/SKILL.md` prose updated to match).
