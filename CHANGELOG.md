@@ -104,6 +104,83 @@ surfaced on one cold run against a repo whose two packages live in subdirectorie
   returns `{}` and goes RED. Deliberately locks the PURE helper, not the impure `namespaceStatus`
   (which needs a live Dev Hub and short-circuits to `buildable:false` without one — a hermetic
   assertion through it would be vacuous).
+## [0.8.108] — 2026-07-09
+
+**The prompt diet: 13 full-auto stops → 2 screens, + deterministic monorepo scope breadth.**
+A full-auto cold run stopped the operator 13 times across 6 screens, though only 5 gates feed
+a fail-closed engine (`audit-tier`+`audit-targetmap` via `build-audit-engine`, `scanner-install`,
+`throwaway-dast`, `sf-deep-audit-ops`). The other 8 stops were one redundant re-ask, deferrable
+submission-logistics answers, computed rubber-stamps, and one invented prompt. Full-auto now asks
+everything on exactly TWO screens — the run-mode election, then ONE batched consent screen that
+records all five fail-closed tokens per gate via `record-consent --decision affirm` (full
+invocation; `--answer` required) — and proceeds uninterrupted. The consent-coupling safety is
+unchanged: every engine still verifies its recorded token and fails closed without it; batching
+consolidates the SCREENS, it never skips an ask or infers a yes. GUIDED keeps every per-gate stop.
+The same run surfaced a scope-breadth defect: a second Next.js admin console (`apps/admin`, its
+own port) was absent from the scope manifest because multi-app detection was LLM prose — now a
+deterministic engine.
+
+### Added
+- `harness/enumerate-app-roots.mjs` — the pure, deterministic monorepo app-root enumerator:
+  scans the conventional containers (`apps/*`, `packages/*`, `services/*`, plus the repo root)
+  for app manifests and emits each root as a candidate element with its evidence (path,
+  framework signal, declared port). App-signal classification (framework dep/config, Dockerfile,
+  start script) splits deployable apps from library packages, with the reason reported — never a
+  silent drop. `scope-submission` step 2 runs it and folds every `candidate: true` root into the
+  element set as `external-web-app` (canonicalized to `external-endpoint` by the existing render
+  synonym map); ambiguous roots route through the `clarify-detection` gate. Replaces the
+  prose-strength grep that missed the admin console, with a fixture test that can actually lock it.
+- `acceptance/test-enumerate-app-roots.mjs` — the standing lock: `apps/web` + `apps/admin` BOTH
+  emitted (a first-app-only regression goes red), library negative control, byte-determinism,
+  python-service detection, synonym-map fold-through, skill wiring.
+- `acceptance/test-prompt-diet.mjs` — prose-presence flow lock (the journey is a SKILL, not an
+  engine): the batched screen records all five tokens; run-mode is recorded; version-to-install
+  is deterministic with no invented gate; audit-codebase Steps 2/3 gate on
+  full-auto && token-recorded; the scope deferrals; the frozen-catalog value-lock cross-check.
+
+### Changed
+- `skills/security-review-journey/SKILL.md` — the full-auto consent flow is now two screens:
+  Screen 1 elects run-mode + tier (BOTH recorded — `record-consent --gate run-mode` is new, so
+  downstream skills read the elected mode from `.security-review/consent/run-mode.json`);
+  Screen 2 (full-auto only) is the ONE batched consent screen — Q1 "Launch the audit (tier +
+  target map)" records `audit-tier` AND `audit-targetmap` (the map is COMPUTED by
+  `render-target-map.mjs`, so its approval rides the launch authorization; the resolved map is
+  still printed verbatim as a correctable note before the fan-out), Q2 scanner-install, Q3 the
+  `sf-deep-audit-ops` umbrella + the `throwaway-dast` rider, Q4 the pinned `mcp-probe`
+  staging/production gate when a live URL exists. The version-to-install is NEVER a question:
+  no version gate exists in the catalog; resolve deterministically to the highest released
+  `04t` from `sf package version list` and surface it as a note.
+- `skills/audit-codebase/SKILL.md` — Step 2 (launch) and Step 3 (target map) gain the FULL-AUTO
+  fast-path: when the recorded run-mode is Full-auto AND the token from the batched journey
+  screen verifies (`record-consent --verify`), the stop is skipped and the
+  confirmation/approval is recorded via `record-consent --decision affirm` instead of prompting
+  — the map is still rendered verbatim as a note. GUIDED, or any missing/negative token, keeps
+  both mandatory `AskUserQuestion` stops; `build-audit-engine` still fails closed without the
+  tokens.
+- `skills/scope-submission/SKILL.md` — step 2 runs the new app-root enumerator (allowed-tools
+  grant added); step 5's six partner-program answers DEFER to compile-submission in full-auto
+  (left `not-recorded`, rendered honestly by `render-scope-summary`; guided asks them here,
+  unchanged); step 9's `scope-confirm` auto-records in full-auto with the summary emitted
+  verbatim as a note (nothing `verifyConsent`s that gate; the computed target map is the real
+  correction point) — the `clarify-detection` audit-blocking carve-out keeps its ask in every
+  mode.
+- `skills/compile-submission/SKILL.md` — step 8 now asks any not-recorded partner-program
+  answer THERE, rendering the pinned `gate-spec --gate partner-program --sub-gate <x>` options
+  verbatim (allowed-tools now grants `gate-spec.mjs`), recording into the manifest's
+  `operatorConfirmed` (the promoted gate's `"n/a"` sentinel preserved; never through
+  record-consent; never touching `elements`/`applicableBaselineIds`, so the stale-manifest
+  refusal is unaffected).
+- `harness/compute-sci.mjs` — the `process-partner-program-prerequisites` requirement
+  (`severity_if_missing: blocker`, `automation: manual_only`) is now computed from the
+  manifest's `operatorConfirmed` block: all six keys affirmatively confirmed (incl. the
+  promoted `"n/a"` sentinel) → SATISFIED; any `false`/missing → PARTIAL/MISSING and the
+  blocker floor holds. The answers were write-only before — recorded, rendered, consumed by
+  nothing that gates — so an explicit operator "No" could not block a green SCI. Scoped to
+  exactly this one requirement; every other requirement keeps the evidence-index math, and
+  evidence-index rows for this id are ignored (an index row asserting program enrollment is
+  un-evidencable self-attestation, and an operator's "No" is never overridden by a file).
+  Locked by the new `PP*` checks in `acceptance/test-sci.mjs` (+ `C8b` in
+  `acceptance/test-record-consent.mjs` for the audit-codebase stop duality).
 
 ## [0.8.106] — 2026-07-09
 

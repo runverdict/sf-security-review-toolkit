@@ -70,7 +70,19 @@ regardless of anything this engine produces.
    re-walk code that is about to change. Field sequence that works: `standard`
    → fix → re-run (step 8) → `exhaustive` once the ledger is quiet.
 
-   **This is a MANDATORY `AskUserQuestion` stop — not a printed line, and never a
+   **FULL-AUTO fast-path — the journey's batched consent screen already asked this;
+   do NOT stop (WO-108).** When BOTH hold — the recorded run-mode is Full-auto (read
+   `.security-review/consent/run-mode.json`; its `answer` names the elected mode) AND
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --verify --gate audit-tier --target <target>`
+   exits 0 (the launch authorization token from the journey's batched screen is
+   recorded) — this stop is already satisfied: skip the `AskUserQuestion`, state the
+   locked tier in the run output, record the confirmation instead of prompting —
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the launch confirm question>" --answer "Authorize the <tier> launch — auto-recorded: full-auto run, token recorded at the journey batched consent screen" --target <target>`
+   — and proceed to Step 3. GUIDED mode, or ANY missing/negative token, keeps the
+   mandatory stop below: the batching changed how many screens ask, never whether the
+   token is recorded, and `build-audit-engine.mjs` still fails closed without it.
+
+   **Otherwise this is a MANDATORY `AskUserQuestion` stop — not a printed line, and never a
    silence-is-yes inference. The option set is PINNED by `gate-spec.mjs`; render its
    `options[].label/description` VERBATIM and pipe the chosen option's `decision` straight
    to `record-consent` — never improvise the option set (the engine owns it).** Get the
@@ -112,21 +124,34 @@ regardless of anything this engine produces.
    against the real repo and write
    `<target>/.security-review/target-map.json`. Three rules with teeth:
 
-   - **Show the map to the user BEFORE any agent launches — a MANDATORY
-     `AskUserQuestion` stop.** This is the one cheap moment to correct course — let
-     them edit paths, add the module the heuristics missed, or veto a dimension. A
-     wrong target map silently audits the wrong code for the entire run. Render the
-     resolved map with `node ${CLAUDE_PLUGIN_ROOT}/harness/render-target-map.mjs --target
-     <target>` and show its stdout VERBATIM inside the `AskUserQuestion` — the fixed
+   - **Show the map to the user BEFORE any agent launches.** This is the one cheap
+     moment to correct course — let them edit paths, add the module the heuristics
+     missed, or veto a dimension. A wrong target map silently audits the wrong code for
+     the entire run. Render the resolved map with
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/render-target-map.mjs --target
+     <target>` and show its stdout VERBATIM — the fixed
      `{dimension | applicable | targets | why | confidence | unresolved}` table, applicable
      rows first, with UNRESOLVED dimensions flagged. Never hand-rebuild, reorder, drop a
-     column, or flip it to prose. Ask for approval/corrections via `AskUserQuestion`;
-     on approval, RECORD it — the operator's SELECTION of the approve option IS the consent
-     (do NOT rely on the label containing "yes"); use `--decision deny` if they declined:
+     column, or flip it to prose.
+
+     **FULL-AUTO fast-path — no stop (WO-108).** When the recorded run-mode is
+     Full-auto AND
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --verify --gate audit-targetmap --target <target>`
+     exits 0 (the map approval rode the launch authorization on the journey's batched
+     consent screen — the map is COMPUTED, not authored), print the rendered map
+     VERBATIM as a NOTE the operator can interrupt to correct, record the approval
+     instead of prompting —
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<the show-map approval question>" --answer "Approve the computed target map — auto-recorded: full-auto run, token recorded at the journey batched consent screen" --target <target>`
+     — and continue. GUIDED mode, or ANY missing/negative token, keeps the MANDATORY
+     `AskUserQuestion` stop: show the map INSIDE the `AskUserQuestion`, ask for
+     approval/corrections, and on approval RECORD it — the operator's SELECTION of the
+     approve option IS the consent (do NOT rely on the label containing "yes"); use
+     `--decision deny` if they declined:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<the show-map approval question>" --answer "<the option they picked>" --target <target>`.
      `build-audit-engine.mjs` verifies BOTH `audit-tier` and `audit-targetmap` before it
      will assemble the engine — a skipped show-map physically cannot fan out (it is not a
-     silence-is-yes input; the architecture was detected, but the MAP is a stop you record).
+     silence-is-yes input; the architecture was detected, but the MAP is an approval you
+     record — asked at the batched screen in full-auto, asked HERE in guided).
    - **`applicable: true` with no targets = `unresolved: true`**, surfaced as
      "couldn't map dimension X — point me at the code or confirm N/A." A
      skipped dimension is false coverage, worse than no audit.

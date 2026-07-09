@@ -111,6 +111,19 @@ check('C8 GATE SHAPE: journey + audit-codebase use AskUserQuestion + record-cons
   assert.match(a, /record-consent\.mjs --gate audit-targetmap/, 'Step 3 records audit-targetmap')
 })
 
+check('C8b WO-108 STOP DUALITY: audit Step 2/3 mandatory in GUIDED, auto-recorded (no stop) in full-auto-with-token', () => {
+  const a = readFileSync(join(PLUGIN, 'skills', 'audit-codebase', 'SKILL.md'), 'utf8')
+  // the fast-path exists and is gated on BOTH the recorded run-mode AND the recorded token
+  assert.match(a, /FULL-AUTO fast-path/, 'the full-auto fast-path directive is present')
+  assert.match(a, /consent\/run-mode\.json/, 'the fast-path reads the recorded run-mode')
+  assert.match(a, /record-consent\.mjs --verify --gate audit-tier/, 'Step 2 verifies the recorded audit-tier token before skipping the stop')
+  assert.match(a, /record-consent\.mjs --verify --gate audit-targetmap/, 'Step 3 verifies the recorded audit-targetmap token before skipping the stop')
+  // the fast-path RECORDS instead of prompting — never a silent skip
+  assert.match(a, /record the confirmation instead of prompting|record the approval\s+instead of prompting/i, 'the fast-path records via record-consent instead of prompting')
+  // and guided (or a missing token) keeps the mandatory stop — the duality, both directions
+  assert.match(a, /GUIDED mode, or ANY missing\/negative token, keeps the/i, 'guided/missing-token keeps the mandatory stop')
+})
+
 check('C9 DENY precedence: natural declines (bare "not" + n\'t contractions) fail closed', () => {
   const declines = [
     'no, do not proceed', 'do not allow', 'I do not consent', "please don't go ahead", 'no, go ahead',

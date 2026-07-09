@@ -319,9 +319,13 @@ missing or a key piece of the architecture was misread.
 
    ── CONSENT GATES — MANDATORY `AskUserQuestion` calls, recorded, NEVER inferred ──
    These are NOT report lines to print and skim past. After emitting the report above,
-   for each consent that applies you MUST call **`AskUserQuestion`** and, on an
-   affirmative answer, RECORD it — the downstream engine verifies the recorded token
-   and a skipped ask physically cannot proceed (the launch path fails closed on it):
+   every consent that applies is asked via **`AskUserQuestion`** and RECORDED — the
+   downstream engine verifies the recorded token and a skipped ask physically cannot
+   proceed (the launch path fails closed on it). **A full-auto run collects them on
+   exactly TWO screens — the run-mode election, then ONE batched consent screen — and
+   then proceeds uninterrupted.** A cold full-auto run stopped the operator 13 times
+   across 6 screens; only the recorded tokens gate anything, so the asks batch — the
+   batching changes HOW MANY SCREENS ask, never WHETHER a token is recorded.
 
    **Every gate's option set is PINNED by `gate-spec.mjs` — render its
    `options[].label/description` VERBATIM, never improvise the set (the engine owns
@@ -329,46 +333,97 @@ missing or a key piece of the architecture was misread.
    `record-consent`). This kills the run-to-run drift a cold campaign caught (the
    same depth gate offered a different option set each run).**
 
-   - **(1) Run-mode + tier** — render BOTH gates in ONE `AskUserQuestion` call (its
-     `questions` array carries both):
+   - **SCREEN 1 — Run-mode + tier** — render BOTH gates in ONE `AskUserQuestion` call
+     (its `questions` array carries both):
      `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate run-mode` (full-auto vs
      guided — sets ask-tolerance) and
      `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate audit-tier` (the pinned tier
      menu — `standard` default, `exhaustive` offered but **never pre-selected**, `quick`
-     triage; identical every run). Render each gate's options VERBATIM. The tier election
-     is RECORDED here with the controlled `decision` token from the chosen option, so
-     audit-codebase Step 2 CONFIRMS it instead of re-asking (WI-02):
+     triage; identical every run). Render each gate's options VERBATIM. RECORD BOTH with
+     the controlled `decision` token from the chosen option — the tier so audit-codebase
+     Step 2 CONFIRMS it instead of re-asking (WI-02), and the run-mode so downstream
+     skills can gate their full-auto fast-paths on the recorded mode:
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision <affirm|deny> --question "<the tier question>" --answer "<the option they picked>" --target <target>`
-     (`affirm` for a chosen tier, `deny` for the Cancel option). run-mode sets how much you
-     ASK during the run; it does NOT authorize the per-action consents (2)/(3).
-   - **(2) Scan-tool install (network fetch)** — only if `tool-detect` reported ≥1
-     installable scanner. Render the gate from `gate-spec.mjs` — its install-option
-     description is the VERBATIM sha256 / tmp-removed / evidence-kept / "this yes also
-     covers RUNNING them, which fetches rules" disclosure; only the count + the
-     `name(method)` list are filled, from the `tool-detect` installable set:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate scanner-install --scanners "<name:method,… from tool-detect installable_missing>"`
-     `AskUserQuestion` with those options VERBATIM. On the operator's SELECTION of the
-     install option (the selection IS the consent — do NOT rely on the label containing
-     "yes"; use `--decision deny` if they declined), record then install:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --decision affirm --question "<the install-to-tmp question>" --answer "<the option they picked>" --target <target>`
-     → `install-scanners.mjs --consent` (which now ALSO verifies the recorded token; the
-     flag alone no longer installs).
-   - **(3) Throwaway DAST (live op)** — only if stack-detect=runnable AND docker=available.
-     `AskUserQuestion`: stand up an isolated throwaway, active-scan it, then destroy it?
-     On the operator's SELECTION of the stand-up option (the selection IS the consent — do NOT
-     rely on the label containing "yes"; use `--decision deny` if they declined), record then run:
-     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --decision affirm --question "<the throwaway-DAST question>" --answer "<the option they picked>" --target <target>`
-     → `standup-stack.mjs --consent` → `capture-openapi.mjs --consent` →
-     `run-dast.mjs --consent` (all three verify the token).
+     (`affirm` for a chosen tier, `deny` for the Cancel option), then
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate run-mode --decision affirm --question "<the run-mode question>" --answer "<Full-auto | Guided — the option they picked>" --target <target>`
+     (both run-mode options proceed — the ANSWER text carries the elected mode;
+     `.security-review/consent/run-mode.json` is what audit-codebase / scope-submission /
+     compile-submission read to decide full-auto vs guided behavior). run-mode sets how
+     much you ASK during the run; it does NOT authorize the per-action consents below —
+     each of those still requires its own recorded token.
+
+   - **SCREEN 2 (FULL-AUTO ONLY) — the ONE batched consent screen.** When the operator
+     elected **Full-auto**, ask every remaining applicable consent in ONE
+     `AskUserQuestion` call (its `questions` array carries up to four), then record EVERY
+     token via `record-consent` — full invocation form, never abbreviated (`--answer` is
+     REQUIRED; `record-consent` exits 2 without it). After this screen the run proceeds
+     uninterrupted to the finished package (audit-codebase Steps 2/3 auto-record on the
+     recorded tokens instead of stopping; scope-confirm auto-records with the summary as
+     a note; the partner-program answers defer to compile-submission):
+     - **Q1 — "Launch the audit (tier + target map)"**: render
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate audit-tier --target <target>`
+       — Screen 1 already recorded the tier, so this emits the WI-02 CONFIRM-and-authorize
+       variant, whose pinned question already states it authorizes the launch (the fan-out
+       token spend) AND the target-map approval that follows. On **Authorize**, record BOTH
+       tokens (the target map is COMPUTED by `render-target-map.mjs`, never authored, so it
+       rides this authorization — audit-codebase still prints the resolved map VERBATIM as
+       a correctable note before the fan-out):
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the launch confirm question>" --answer "<the Authorize option>" --target <target>`
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-targetmap --decision affirm --question "<the launch confirm question — the map approval rides the launch authorization>" --answer "<the Authorize option>" --target <target>`
+       On **Cancel**, the same two calls with `--decision deny` — the fan-out fails closed.
+     - **Q2 — "Install scanners (network fetch to a per-run temp dir)"**: only if
+       `tool-detect` reported ≥1 installable scanner. Render
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate scanner-install --scanners "<name:method,… from tool-detect installable_missing>"`
+       VERBATIM (the sha256 / tmp-removed / evidence-kept / "this yes also covers RUNNING
+       them, which fetches rules" disclosure is the pinned option text). Record the
+       selection (the selection IS the consent — `--decision deny` if declined):
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate scanner-install --decision affirm --question "<the install-to-tmp question>" --answer "<the option they picked>" --target <target>`
+     - **Q3 — "Live & outbound ops (deep-audit org ops + throwaway DAST)"**: only if the
+       deployed-org deep audit is offerable (`sf` authed + `package-readiness`) and/or the
+       throwaway DAST is runnable (`stack-detect` = `runnable` AND `docker-check` =
+       `available`). Render the pinned umbrella
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate sf-deep-audit-ops`
+       VERBATIM, stating in the question text which of the two live tracks apply on this
+       run. On the affirm selection, record EACH applicable token:
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate sf-deep-audit-ops --decision affirm --question "<the live-ops question>" --answer "<the option they picked>" --target <target>`
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate throwaway-dast --decision affirm --question "<the live-ops question — throwaway DAST rider>" --answer "<the option they picked>" --target <target>`
+       (`--decision deny` for each on decline; omit the `throwaway-dast` record entirely
+       when the stack is not runnable — never record a consent for an op that cannot run).
+     - **Q4 — read-only live probe (staging/production label)**: only if a live endpoint
+       URL was detected. Render
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate mcp-probe --url "<URL>"`
+       VERBATIM — the operator's staging-vs-production selection IS the environment label,
+       so a production endpoint is never probed silently. Record it:
+       `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate mcp-probe --decision <affirm|deny> --question "<the probe question>" --answer "<the option they picked — carries the STAGING/PRODUCTION label>" --target <target>`
+
+   - **GUIDED — per-gate stops at their phase (unchanged).** When the operator elected
+     **Guided**, there is NO batched screen: each consent below is a MANDATORY
+     `AskUserQuestion` at its own step, recorded the same way —
+     - **Scan-tool install (network fetch)**: render `gate-spec.mjs --gate scanner-install`
+       with the `tool-detect` installable set as above; record via
+       `record-consent.mjs --gate scanner-install` with the chosen option's decision →
+       `install-scanners.mjs --consent` (which ALSO verifies the recorded token; the flag
+       alone no longer installs).
+     - **Throwaway DAST (live op)**: only if stack-detect=runnable AND docker=available;
+       ask, then record via
+       `record-consent.mjs --gate throwaway-dast --decision <affirm|deny> --question "<the throwaway-DAST question>" --answer "<the option they picked>" --target <target>`
+       → `standup-stack.mjs --consent` → `capture-openapi.mjs --consent` →
+       `run-dast.mjs --consent` (all three verify the token).
+     - **Deep-audit live ops / read-only probe**: asked at their phase through the same
+       pinned gates (`sf-deep-audit-ops`, `mcp-probe`), recorded per gate.
+     - audit-codebase **Step 2** (launch confirm) and **Step 3** (show the target map)
+       remain mandatory stops in guided mode.
 
    **`silence-is-yes` IS HARD-BOUND — read this exactly.** It authorizes ONLY the
    DETECTED-ARCHITECTURE inputs the preflight already sensed — the elements, endpoints,
    package facts, and resume state ("don't re-confirm what I detected"). It NEVER
-   authorizes the consent gates (1)/(2)/(3), and it NEVER authorizes the audit-phase stops
-   (audit-codebase **Step 2** tier go-ahead + **Step 3** show-the-target-map). Those are
-   always ASKED via `AskUserQuestion` and RECORDED — in full-auto and guided alike.
-   Full-auto does NOT collapse any gate or audit stop into a skip-the-ask shortcut: each
-   one is asked and recorded on every run, and the engines fail closed without the token.
+   authorizes the consent gates, and it NEVER authorizes the audit-phase stops
+   (audit-codebase **Step 2** launch go-ahead + **Step 3** show-the-target-map). Every one
+   of those proceeds ONLY on a RECORDED affirmative token from a real `AskUserQuestion` —
+   in full-auto the tokens are all collected up front on the batched consent screen
+   (asked once, recorded per gate via `record-consent`); in guided each is asked at its
+   own step. Either way the engines verify each token and fail closed without it —
+   batching consolidates the SCREENS, it never skips an ask or infers a yes.
 
    - **If ⚠ NEED-FROM-YOU is empty** and the request was run-shaped: proceed with the
      DETECTED inputs under silence-is-yes — but STILL ask + record gate (1) before the
@@ -394,7 +449,16 @@ pass the detected-state summary forward so no phase re-detects from scratch.
 1. **Scope** → `/sf-security-review-toolkit:scope-submission`. Skip only if a
    non-drifted manifest already exists (Step 0.3). It writes
    `scope-manifest.json` (+ `sf-autoresolve.json` when the DevHub power-up was
-   accepted). Re-run it whenever Step 0 flagged drift.
+   accepted). Re-run it whenever Step 0 flagged drift. **In FULL-AUTO the scope
+   phase runs without stops** (scope-submission reads the recorded run-mode):
+   the six partner-program answers are DEFERRED to compile-submission (left
+   `not-recorded`, rendered honestly in the summary — they are submission
+   logistics that cannot gate the audit, so they belong where readiness is
+   computed), and the final `scope-confirm` is AUTO-RECORDED with the
+   `render-scope-summary` block emitted VERBATIM as a note the operator can act
+   on (the later COMPUTED target map is the real correction point). The one
+   scope stop that survives full-auto is a genuine `clarify-detection`
+   ambiguity — the audit-blocking carve-out.
 
 2. **Static scans (the static-scan substrate)** → `/sf-security-review-toolkit:run-scans`,
    invoked in **static-substrate mode** — state the mode explicitly in the invocation
@@ -617,7 +681,12 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    `/sf-security-review-toolkit:build-managed-package` (skip if a released
    version exists) → `/sf-security-review-toolkit:install-and-verify-package`
    (contamination check, permission-chain / UEC grant-drop verification, smoke
-   test) → `/sf-security-review-toolkit:audit-deployed-package` (the security
+   test — **the version to install is NEVER a question**: there is NO version
+   gate in `gate-spec.mjs`'s catalog and none may be improvised; resolve it
+   DETERMINISTICALLY to the highest released `04t` from the
+   `sf package version list` output the run already gathered, and surface the
+   chosen version as a note) →
+   `/sf-security-review-toolkit:audit-deployed-package` (the security
    pass over the installed artifact) → `/sf-security-review-toolkit:teardown-mcp-registration`
    (zero-residue removal). The scratch-org create/delete inside those steps is
    ENGINE-RUN, never hand-scripted: `harness/standup-org.mjs` creates the
@@ -670,7 +739,10 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 
 - **Full-auto** — default for "just do it" / "run the whole thing": on a YELLOW
   ambiguity, make the best call and **flag it** in the run log and verdict; stop
-  on RED (a NEED-FROM-YOU audit-blocker) and at live-probe / scratch-org consent.
+  ONLY on RED (a NEED-FROM-YOU audit-blocker) — every consent (live probe,
+  scratch org, scanner install, throwaway DAST, the audit launch + target map)
+  was already asked and recorded on the up-front batched consent screen, so no
+  further stop exists between the batched screen and the finished package.
   An open critical/high does NOT stop the run — it auto-proceeds to the full
   NOT-READY report (the toolkit audits and reports; it never pauses to fix). This
   is the path that gets a complete package with everything uncertain honestly
@@ -681,8 +753,11 @@ Inferred from the trigger phrasing; the operator rarely sets it explicitly.
 - Either way, the explicit-consent points — a read-only live probe; standing up a
   scratch org; **installing the missing scanners to a tmp dir (a network fetch)**;
   **standing up a throwaway backend + active-scanning it (a live op)** — are always
-  honored. Those touch something live or mutate the host / egress to the network, so the
-  run pauses for them regardless of tolerance; full-auto / silence-is-yes never covers them.
+  honored: each proceeds ONLY on its own recorded token, and silence-is-yes never covers
+  them. What differs by mode is WHERE the ask happens, never whether it does: full-auto
+  collects every applicable consent up front on the ONE batched consent screen (Step 0.6)
+  and then runs uninterrupted; guided asks each at its phase. The engines verify the
+  recorded token either way and fail closed without it.
 
 ## Automated vs. manual recap
 
