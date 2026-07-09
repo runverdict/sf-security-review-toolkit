@@ -803,6 +803,15 @@ families PENDING until a re-audit.
    file → clean no-op; pure + idempotent; it NEVER flips an `llm-inferred`
    finding, never moves anything into the open band, never sets `fixed`.
 
+   **A non-zero exit from `apply-dispositions.mjs` is a HARD STOP.** The engine
+   is all-or-nothing at the file level: ANY invalid entry rejects the WHOLE
+   dispositions file — every offender is printed (`REJECTED entry #N: …`),
+   NOTHING is applied, and the ledger is left unchanged, so the band you are
+   about to report is NOT the adjudicated one. The remedy is to add the
+   mandatory `scope.files` or `scope.as_of_pass` to the NAMED entries and
+   re-run ONCE. NEVER hand-edit `audit-ledger.json`, NEVER proceed past the
+   failure, and NEVER loop re-running an unchanged file.
+
 10. **Fold everything into one dossier.** Instantiate
    `${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl` at
    `<target>/docs/security-review/fp-dossier.md` (or update it

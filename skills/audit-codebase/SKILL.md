@@ -384,7 +384,15 @@ regardless of anything this engine produces.
    locus to a `files` scope, or bump `as_of_pass` after actually reviewing it).
 
    Then run `node ${CLAUDE_PLUGIN_ROOT}/harness/apply-dispositions.mjs --target
-   <target>`. It flips the matching `provenance:'deterministic'` findings
+   <target>`. **A non-zero exit is a HARD STOP.** The engine is all-or-nothing at
+   the file level: ANY invalid entry rejects the WHOLE dispositions file — it
+   prints every offender (`REJECTED entry #N: …`), applies NOTHING, and leaves the
+   ledger unchanged, so the adjudication you just wrote has NOT happened. The
+   remedy is to add the mandatory `scope.files` or `scope.as_of_pass` to the
+   NAMED entries and re-run ONCE. NEVER hand-edit `audit-ledger.json` to apply a
+   rejected adjudication, NEVER proceed past the failure (the recap and the
+   blocker gate would read an un-adjudicated band), and NEVER loop re-running an
+   unchanged file. On exit 0 it flips the matching `provenance:'deterministic'` findings
    `confirmed → refuted` (or `accepted_risk`, carrying the required justification)
    with an auditable `disposition_reason`, KEEPING provenance/engine/ruleId/class/
    severity intact — the flip is a lifecycle layer on top, never a rewrite, so the

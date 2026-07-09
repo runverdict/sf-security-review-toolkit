@@ -51,6 +51,53 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.106] — 2026-07-09
+
+**The dispositions CLI fails closed: an invalid entry rejects the whole file — exit 2,
+nothing applied, ledger unchanged.** A reproduced cold-run defect: `apply-dispositions.mjs`
+rejected an invalid disposition entry (e.g. the now-mandatory `scope` missing), applied
+nothing from it — and exited **0**. The safety property held (the finding stayed
+`confirmed`; nothing was suppressed), but an automated driver that checks exit codes saw
+success and walked past a silently-skipped adjudication: the FP dossier said "refuted"
+while the ledger said "confirmed", and the run proceeded on a partially-adjudicated
+ledger. Every sibling refusal already exits non-zero (`build-audit-engine` missing-consent
+exit 3; `build-evidence-index --check` orphan exit 2; this same CLI's corrupted-ledger and
+unparseable-dispositions exits 2) — the invalid-entry exit 0 was the outlier.
+
+### Fixed
+- `harness/apply-dispositions.mjs` CLI: ANY invalid disposition entry now rejects the
+  WHOLE file — ALL-OR-NOTHING at the file level. Every offender is printed
+  (`REJECTED entry #N: <reasons>`), one summary line states the consequence (NOTHING was
+  applied, the ledger is unchanged, fix the file and re-run), nothing is written, and the
+  process exits **2**. The valid subset is deliberately NOT applied alongside the
+  rejection: a dispositions file is one human adjudication artifact, and applying half of
+  it would leave a partially-adjudicated ledger behind an exit code that lies. `--dry-run`
+  with an invalid entry exits 2 the same way (it writes nothing regardless — the exit code
+  is the signal). The pre-existing exit-2 paths (corrupted ledger; unparseable /
+  wrong-shape dispositions file) keep their behaviour and precedence. THE BOUNDARY: the
+  pure `applyDispositions()` function's semantics are byte-unchanged (skip-invalid,
+  apply-valid, report `invalid` — every standing test of the function stays valid); the
+  all-or-nothing gate lives only in the CLI, the function's only caller in the skills.
+
+### Changed
+- `skills/audit-codebase/SKILL.md` (Step 6) + `skills/run-scans/SKILL.md` (Step 9b tail):
+  a non-zero `apply-dispositions.mjs` exit is a **HARD STOP** — the remedy is to add the
+  mandatory `scope.files` or `scope.as_of_pass` to the NAMED entries and re-run ONCE;
+  NEVER hand-edit `audit-ledger.json`, NEVER proceed past the failure, NEVER loop
+  re-running an unchanged file.
+
+### Added
+- `acceptance/test-dispositions-fail-closed.mjs` (6 checks, BR1–BR6) — drives the REAL
+  CLI (the defect was in the CLI, so a pure-function test would be vacuous): invalid
+  entry → exit 2 + every offender named + ledger byte-identical (BR1); all-valid
+  regression — exit 0 and the flips land exactly as the pure engine computes them (BR2);
+  `--dry-run` + invalid → exit 2, nothing written (BR3); THE ALL-OR-NOTHING LOCK — one
+  valid + one invalid entry → exit 2 AND the valid entry's finding still `confirmed`,
+  asserted on the ledger bytes (BR4); the pre-existing exit-2 refusals hold (BR5); both
+  skills state the hard stop + remedy (BR6). Mutation-proven: restoring exit 0 on invalid
+  entries turns BR1/BR3/BR4 red; writing the valid subset alongside the exit-2 rejection
+  turns BR4 red. Suite **77 files / 1165 checks**.
+
 ## [0.8.105] — 2026-07-09
 
 **Deterministic-band precision: availability-only IaC rules band `low` via a sourced,

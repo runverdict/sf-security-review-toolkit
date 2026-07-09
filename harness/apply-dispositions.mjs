@@ -95,11 +95,26 @@
  * applyDispositions(applyDispositions(x).findings, d) flips 0 the second time (a finding
  * already at the target status — or protected — is skipped).
  *
+ * FAIL CLOSED AT THE CLI (0.8.106) — ALL-OR-NOTHING AT THE FILE LEVEL. The dispositions
+ * file is ONE human adjudication artifact, so the CLI treats ANY invalid entry as a
+ * rejection of the WHOLE file: it names every offender (`REJECTED entry #N: …`), applies
+ * NOTHING, leaves the ledger byte-unchanged, and exits 2 — the operator fixes the file
+ * and re-runs. Applying the valid subset while dropping the invalid entries would leave a
+ * partially-adjudicated ledger behind an exit code that says success (the FP dossier says
+ * "refuted" while the ledger says "confirmed", and an automated driver walks right past
+ * it). THE BOUNDARY: the pure applyDispositions() function below keeps its
+ * skip-invalid-apply-valid semantics (it reports `invalid` alongside the applied result,
+ * so every standing test of the function's semantics stays valid); the all-or-nothing
+ * gate lives ONLY in this CLI, which is the function's only caller in the skills.
+ *
  * Read-only on partner source except the ledger it dispositions
  * (<target>/.security-review/audit-ledger.json).
  *
  * Usage:
  *   node apply-dispositions.mjs --target <repo> [--json] [--dry-run]
+ * Exit: 0 clean apply / clean no-op; 2 corrupted ledger, unparseable or wrong-shape
+ * dispositions file, or ANY invalid disposition entry — nothing written in every
+ * exit-2 case.
  */
 import { writeFileSync, mkdirSync, readFileSync, existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -448,6 +463,28 @@ function main() {
     ledger.findings,
     dispositions
   )
+
+  // FAIL CLOSED (0.8.106) — all-or-nothing at the file level. ANY invalid entry rejects
+  // the WHOLE dispositions file: every offender is named, NOTHING is applied, the ledger
+  // is left byte-unchanged, and the exit code (2) is the hard stop an automated driver
+  // can see. Applying the valid subset here would leave a partially-adjudicated ledger
+  // behind a success exit — the FP dossier saying "refuted" while the ledger says
+  // "confirmed", and the run walking on as if the adjudication happened. The pure
+  // applyDispositions() above keeps its skip-invalid semantics; this gate is the CLI's
+  // contract. --dry-run takes the same exit (it writes nothing regardless — the exit
+  // code IS the signal). The corrupted-ledger / unparseable-file exits above keep
+  // their precedence.
+  if (invalid.length > 0) {
+    for (const iv of invalid) {
+      console.error(`apply-dispositions: REJECTED entry #${iv.index}: ${iv.errors.join('; ')}`)
+    }
+    console.error(
+      `apply-dispositions: ${invalid.length} invalid disposition entr${invalid.length === 1 ? 'y' : 'ies'} — ` +
+        `NOTHING was applied and the ledger is unchanged; fix ${dispPath} and re-run`
+    )
+    process.exit(2)
+  }
+
   ledger.findings = findings
 
   if (!dryRun) {
@@ -484,7 +521,8 @@ function main() {
     }
     for (const id of appliedIds) process.stdout.write(`  dispositioned: ${id}\n`)
     for (const u of unmatched) process.stdout.write(`  no-op (matched nothing): ${u.engine}/${u.ruleId}\n`)
-    for (const iv of invalid) process.stdout.write(`  REJECTED entry #${iv.index}: ${iv.errors.join('; ')}\n`)
+    // no REJECTED lines here — an invalid entry never reaches this point (the
+    // fail-closed gate above exits 2 before anything is written or reported as applied)
   }
 }
 
