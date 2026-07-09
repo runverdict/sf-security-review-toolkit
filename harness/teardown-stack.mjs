@@ -76,6 +76,22 @@ export function planTeardown(manifest) {
 }
 
 const quiet = (cmd, args) => { try { execFileSync(cmd, args, { stdio: 'ignore' }); return true } catch { return false } }
+
+/**
+ * PURE (0.8.109). The same-run compose `down` argv. `--rmi local` removes images the project
+ * BUILT this run — the locally-built, project-tagged `<project>-<svc>` images a
+ * build-succeeds/health-fails run leaves on disk until a later `--sweep`. `local` (NOT `all`)
+ * is deliberate: a PREBUILT image the partner shipped (`verdict-api:latest` — a custom registry
+ * tag) is NOT locally built, so `--rmi local` leaves it untouched (we never remove a partner
+ * artifact). `composeFile`/`overridePath` are passed already existence-checked by the caller.
+ */
+export function composeDownArgs(project, { composeFile = null, overridePath = null } = {}) {
+  const args = ['compose', '-p', project]
+  if (composeFile) args.push('-f', composeFile)
+  if (overridePath) args.push('-f', overridePath)
+  args.push('down', '-v', '--rmi', 'local', '--remove-orphans')
+  return args
+}
 const exists = (kind, name) => { try { execFileSync('docker', kind === 'image' ? ['image', 'inspect', name] : kind === 'network' ? ['network', 'inspect', name] : ['inspect', name], { stdio: 'ignore' }); return true } catch { return false } }
 
 /** Resolve the manifest from --target pointer / --manifest / --run-id. */
@@ -138,11 +154,12 @@ function teardownCompose(plan, src) {
   const nets = runOut('docker', ['network', 'ls', '-q', '--filter', label]).split('\n').filter(Boolean)
   const vols = runOut('docker', ['volume', 'ls', '-q', '--filter', label]).split('\n').filter(Boolean)
   // `down` works from the project label even if the compose files are gone — pass the
-  // files when they still exist (exact reconstruction), fall back to `-p` alone otherwise
-  const args = ['compose', '-p', plan.project]
-  if (plan.composeFile && existsSync(plan.composeFile)) args.push('-f', plan.composeFile)
-  if (plan.overridePath && existsSync(plan.overridePath)) args.push('-f', plan.overridePath)
-  quiet('docker', [...args, 'down', '-v', '--remove-orphans'])
+  // files when they still exist (exact reconstruction), fall back to `-p` alone otherwise.
+  // `--rmi local` (via the pure composeDownArgs helper) removes the same-run built image so a
+  // build-succeeds/health-fails run doesn't strand a `<project>-*` image until a later `--sweep`.
+  const composeFile = (plan.composeFile && existsSync(plan.composeFile)) ? plan.composeFile : null
+  const overridePath = (plan.overridePath && existsSync(plan.overridePath)) ? plan.overridePath : null
+  quiet('docker', composeDownArgs(plan.project, { composeFile, overridePath }))
   if (ctrs.length || nets.length || vols.length) removed.push(`compose-project:${plan.project} (${ctrs.length} containers, ${nets.length} networks, ${vols.length} volumes)`)
   if (plan.tmpRoot && existsSync(plan.tmpRoot)) { rmSync(plan.tmpRoot, { recursive: true, force: true }); removed.push(`tmp:${plan.tmpRoot}`) }
   markCleaned(src.pointerDir, removed)

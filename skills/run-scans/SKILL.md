@@ -376,7 +376,47 @@ families PENDING until a re-audit.
 
 4. **Family 3 — Authenticated DAST: the agent generates the plan; the owner
    executes the scan against production — OR the toolkit runs it against a
-   throwaway.** *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
+   throwaway.**
+
+   **THE FIRES-PATH LADDER — DAST must FIRE regardless of app size (0.8.109).** The
+   throwaway DAST is a flagship feature, not a nice-to-have: it must land real evidence
+   in the common case, degrading only when every rung genuinely fails. A real cold run's
+   throwaway DAST did NOT fire — the standup got a port and then the api **image build**
+   lost the last cores to the audit fan-out (resource contention, NOT a broken build:
+   the same Dockerfile builds fine standalone in ~240s, and the sandbox is not
+   network-blocked). Try the rungs IN ORDER; drop to the next only when the current one
+   is unavailable:
+   1. **Already-running loopback instance — ZERO build, ZERO stand-up.** If a target app
+      is reachable on `127.0.0.1:<port>`, prefer
+      `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --base-url http://127.0.0.1:<port> --target <repo> --consent`.
+      Explicit `--base-url` ALWAYS wins in the engine (`run-dast.mjs` `resolveBaseUrl`,
+      source `explicit`) — it fires even when the stand-up pointer is torn-down, because
+      a live app needs neither. This is the cheapest, most size-independent rung and the
+      first thing to reach for; the engine re-asserts loopback on the explicit URL, so it
+      can still only ever hit a local throwaway.
+   2. **Prebuilt-image compose — no source build.** `stack-detect` PREFERS a
+      `docker-compose.prod.yml` / `*.prod.yml` whose web/api tier ships an `image:` (not a
+      `build:`) over the build-from-source dev compose, recording
+      `recipe.buildsFromSource:false`. Standing that up pulls/uses the prebuilt image
+      instead of compiling from source — no heavy build competes with anything. This is
+      automatic in recipe selection; nothing to pass.
+   3. **Build from source (the current path) — but SERIALIZED, never concurrent with the
+      audit fan-out.** When only a build-from-source recipe exists, the throwaway
+      stand-up/build MUST run **BEFORE or AFTER the audit fan-out, never DURING it** — the
+      cold-run failure was the heavy image build competing with the fan-out for the last
+      cores (the build succeeds fine standalone). `standupStack` is a single-shot executor
+      and cannot know about the fan-out, so this is a SEQUENCING RULE on the driver, not a
+      flag: do not kick off the throwaway build while an audit fan-out is saturating the
+      box. On a journey run, stand the throwaway up in the live/conditional tail (after the
+      audit), or explicitly ahead of it — just not overlapping.
+   4. **Honest-degrade — the genuine LAST resort, not the expected outcome.** Only when all
+      three rungs fail: write the evidence-of-absence stub
+      (`run-dast.mjs --absent --reason <why>`), tear the stack down cleanly, and hand the
+      owner the ZAP plan to run themselves. Keep this branch exactly as-is; it is the floor,
+      not the target. The tag gate is met by DAST **firing** in the common case — fire
+      first, degrade last.
+
+   *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
    was given, the toolkit stands the backend up as a disposable mirror and runs a
    digest-pinned ZAP against THAT
    (`harness/{standup-stack,capture-openapi,run-dast,teardown-stack}.mjs`),
@@ -691,16 +731,21 @@ families PENDING until a re-audit.
    ```
 
    regexploit emits TEXT only (no JSON output exists in the tool), so the evidence
-   file is its VERBATIM stdout — and because the `--all` ingest enumerates
-   `evidence/*.json` + `evidence/*.sarif`, the ReDoS TEXT evidence is NOT
-   auto-recognized there; ingest it with the explicit scanner form (see step 9b):
+   file is its VERBATIM stdout — and because the `--all` ingest enumerates only
+   `evidence/*.{json,sarif}`, the ReDoS TEXT evidence is NOT auto-recognized there.
+   **AUTO-run the explicit-scanner ingest form immediately after the redos scan** (do
+   NOT defer it to a manual re-run — a real cold run left the `.txt` un-ingested exactly
+   because it waited for step 9b's `--all` to notice a file `--all` structurally cannot
+   see):
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs \
      --scanner regexploit --input evidence/redos-<date>.txt --target <target>
    ```
 
-   The JS/TS parser needs a one-time `npm install` inside the regexploit package —
+   This is the same explicit form step 9b names — running it HERE, right after the scan,
+   is what makes the ReDoS finding land in the band without a second pass. The JS/TS
+   parser needs a one-time `npm install` inside the regexploit package —
    the tool prints the exact command when the modules are missing; `regexploit-py`
    needs nothing extra. Exit code is 0 whether or not vulnerable patterns are
    found. *Gate:* `resource-consumption-abuse` (major). *Honest note:* the scanner
@@ -730,6 +775,37 @@ families PENDING until a re-audit.
    framework value and got an empty/errored scan; never pass it — route compose files
    to Trivy as above). Both the checkov and trivy ingest adapters already file
    `iac-misconfig` at class severity, so the ingest is unchanged either way.
+
+   **Lockfile-less Python SCA — `pyproject.toml`/`requirements.txt` with unpinned
+   RANGES and no lockfile (0.8.109).** OSV-Scanner **cannot resolve version ranges** —
+   it needs pinned versions (a lockfile or `==`-pinned requirements). A Python source
+   root that ships only a `pyproject.toml` (or a range-only `requirements.txt`) with no
+   `poetry.lock` / `pdm.lock` / pinned `requirements.txt` therefore goes **un-SCA'd by
+   OSV** — a real cold run left the entire FastAPI backend dep tree (including the
+   unmaintained `python-jose`) unscanned this exact way. When that shape is present, run
+   **`pip-audit`** (it RESOLVES the range set and audits the resolved tree in one step):
+
+   ```bash
+   pip-audit -r <server-root>/requirements.txt -f json -o evidence/pip-audit-<date>.json   # requirements
+   pip-audit --project-path <server-root> -f json -o evidence/pip-audit-<date>.json         # pyproject
+   ```
+
+   Alternatively, generate a lock first (`pip install --dry-run` resolution → a pinned
+   set) and feed OSV the pinned versions. `pip-audit` is **agent-run when present,
+   `PENDING-OWNER-RUN` when absent** — exactly the hard-boundary posture the Family
+   already applies to any tool that may not be in the auto-install set (emit the exact
+   install + run command; never self-install). Do NOT edit `install-scanners.mjs` to add
+   it — the run-scans Family carries the tool the same way it carries Nuclei/Schemathesis.
+
+   **Fail loud on any dependency manifest no scanner covered — never a silent pass.** A
+   dependency manifest (`pyproject.toml`, `requirements.txt`, `package-lock.json`,
+   `go.sum`, `Gemfile.lock`, …) that NO scanner in this run actually audited MUST surface
+   as a **coverage gap** in the scan-status render — an explicit `PENDING-OWNER-RUN` /
+   uncovered-manifest row, exactly like an absent tool — and MUST NOT read as a clean
+   `scan-external-sca` pass. A manifest OSV skipped for lack of pins, with no `pip-audit`
+   fallback run, is the silent-un-SCA'd class this rule kills: the un-audited manifest is
+   the bounce, not the finding. Cross-check the manifests you resolved against the ones on
+   disk before stating Family 8 DONE.
 
    *Agent runs:* both passes, parsing, the SBOM / component-version table for the
    security-program element-4 slot (reuse the OSV output), dossier rows. *Owner

@@ -49,7 +49,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
-  classifyEnvName, classifyStack, composeWebTier, detectMigration, resolvePythonRun,
+  classifyEnvName, classifyStack, composeWebTier, composeWebTierImage, detectMigration, resolvePythonRun,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned,
 } from '../harness/stack-detect.mjs'
 
@@ -476,6 +476,112 @@ check('E2 CLI: compose-less FastAPI (module-scope ctor, no __main__) → recipe.
   assert.ok(out.recipe.run && out.recipe.run.server === 'uvicorn', `recipe.run resolved: ${JSON.stringify(out.recipe.run)}`)
   assert.equal(out.recipe.run.module, 'main')
   assert.equal(out.recipe.run.var, 'app')
+})
+
+// ── Fires-path ladder rung 2 (0.8.109): a prebuilt-image *.prod.yml is PREFERRED over a
+//    build-from-source dev compose, so the throwaway stands up with no heavy image build. ──
+
+// A build-from-source dev compose (self-contained env so it classifies runnable on its own).
+const DEV_BUILD_COMPOSE = [
+  'services:',
+  '  api:',
+  '    build: ./api',
+  '    ports:',
+  '      - "8000:8000"',
+  '    environment:',
+  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
+  '    depends_on:',
+  '      - postgres',
+  '  postgres:',
+  '    image: postgres:16',
+  '    environment:',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  'volumes:',
+  '  postgres_data:',
+  '',
+].join('\n')
+
+// The prod compose: the web/api tier ships a PREBUILT `image:` (no build:), plus a prebuilt web SPA.
+const PROD_IMAGE_COMPOSE = [
+  'services:',
+  '  api:',
+  '    image: verdict-api:latest',
+  '    ports:',
+  '      - "8000:8000"',
+  '    environment:',
+  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
+  '    depends_on:',
+  '      - postgres',
+  '  web:',
+  '    image: verdict-web:latest',
+  '    ports:',
+  '      - "3000:3000"',
+  '    depends_on:',
+  '      - api',
+  '  postgres:',
+  '    image: postgres:16',
+  '    environment:',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  'volumes:',
+  '  postgres_data:',
+  '',
+].join('\n')
+
+check('C1 composeWebTierImage: prebuilt web tier → prebuilt:true; a build-from-source tier → prebuilt:false', () => {
+  const prebuilt = composeWebTierImage(PROD_IMAGE_COMPOSE)
+  // MUTATION: dropping svcImage() on the picked tier → prebuilt:false → the preference pass never fires (red)
+  assert.equal(prebuilt.prebuilt, true, 'a prod compose whose api tier ships image: is prebuilt')
+  assert.equal(prebuilt.service, 'api')          // the scored web/api tier, not web:3000 or postgres
+  assert.equal(prebuilt.image, 'verdict-api:latest')
+  // two-sided: a build-from-source dev compose's picked tier is NOT prebuilt
+  const built = composeWebTierImage(DEV_BUILD_COMPOSE)
+  assert.equal(built.prebuilt, false, 'a build: tier resolves no image: → not prebuilt')
+  assert.equal(built.service, 'api')
+  assert.equal(built.image, null)
+})
+
+check('C2 CLI: BOTH a build dev compose AND a prebuilt-image *.prod.yml → prod PREFERRED, buildsFromSource:false', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', DEV_BUILD_COMPOSE)
+  w(r, 'docker-compose.prod.yml', PROD_IMAGE_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.equal(out.recipe.kind, 'compose')
+  // MUTATION: reverting gatherRecipe to a dev-compose-only search → the prebuilt path is missed →
+  // recipe.file is docker-compose.yml and buildsFromSource is true/undefined (RED on both asserts).
+  assert.equal(out.recipe.file, 'docker-compose.prod.yml', 'the prebuilt-image prod compose must be preferred')
+  assert.equal(out.recipe.buildsFromSource, false, 'the prebuilt path records buildsFromSource:false')
+  assert.equal(out.recipe.prebuiltImage, 'verdict-api:latest')
+  assert.equal(out.webTier.port, 8000)
+  assert.equal(out.webTier.service, 'api')
+})
+
+check('C3 CLI: a dev compose alone → dev path, buildsFromSource:true (two-sided, no prod compose)', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', DEV_BUILD_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.equal(out.recipe.file, 'docker-compose.yml')
+  assert.equal(out.recipe.buildsFromSource, true, 'the build-from-source dev path is not prebuilt')
+})
+
+check('C4 CLI: a *.prod.yml whose web tier STILL builds from source → falls through to the dev compose', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', DEV_BUILD_COMPOSE)
+  // a prod compose that does NOT ship a prebuilt image (api still build:) → NOT preferred
+  w(r, 'docker-compose.prod.yml', DEV_BUILD_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.equal(out.recipe.file, 'docker-compose.yml', 'a build-only prod compose does not win the preference')
+  assert.equal(out.recipe.buildsFromSource, true)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

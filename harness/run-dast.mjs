@@ -68,6 +68,12 @@ export function readStandupPointer(target) {
  * baseUrl + sets status 'torn-down'), and `up`/`unhealthy` (the SCANNABLE gate — `unhealthy`
  * is reachable-but-degraded, Slice G's label covers it). Every URL — explicit or pointer — is
  * re-asserted loopback, so a tampered pointer can never smuggle a non-loopback target.
+ *
+ * FIRES-PATH LADDER rung 1 (0.8.109): explicit `--base-url` winning IS the "scan an
+ * already-running loopback instance" primitive — point it at a live 127.0.0.1:<port> and DAST
+ * fires with ZERO build and ZERO stand-up, independent of app size. It wins even over a
+ * torn-down pointer (the early return never consults the pointer's status), so a running app
+ * is always the cheapest rung. run-scans surfaces this as the ladder's first-class first option.
  */
 export function resolveBaseUrl(explicitBaseUrl, pointer) {
   if (explicitBaseUrl) {

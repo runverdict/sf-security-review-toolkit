@@ -188,5 +188,23 @@ check('D5 resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/
   assert.throws(() => resolveBaseUrl('http://evil.com', null), /non-loopback/)
 })
 
+// ── Fires-path ladder rung 1 (0.8.109): an explicit --base-url is the "scan an already-running
+//    loopback instance" primitive — ZERO build, ZERO stand-up, and it wins even over a
+//    torn-down pointer (the cheapest, most size-independent rung). ──
+
+check('L1 rung 1: explicit --base-url ALWAYS wins and fires even over a TORN-DOWN pointer (no stand-up needed)', () => {
+  // a torn-down pointer alone would refuse (rung 3/4), but an explicit loopback --base-url resolves it
+  const tornDown = { schema: 'sf-srt-stack/1', runId: 'l1', baseUrl: null, status: 'torn-down' }
+  // MUTATION: removing resolveBaseUrl's explicit-wins early return → the torn-down pointer throws (red)
+  const resolved = resolveBaseUrl('http://127.0.0.1:8000', tornDown)
+  assert.equal(resolved.baseUrl, 'http://127.0.0.1:8000')
+  assert.equal(resolved.source, 'explicit', 'an explicit base-url resolves as source=explicit, never the pointer')
+  // the pointer alone (no --base-url) still refuses a torn-down throwaway — the two-sided proof
+  assert.throws(() => resolveBaseUrl(null, tornDown), /torn-down/)
+  // rung 1 still plans a real scan from the explicit URL (loopback re-asserted), no pointer involved
+  const p = planDast('http://127.0.0.1:8000', { target: '/repo', runId: 'l1', tmpRoot: join(tmpdir(), 'sf-srt-dast', 'l1') })
+  assert.ok(p.dockerArgs.includes('http://127.0.0.1:8000'))
+})
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
