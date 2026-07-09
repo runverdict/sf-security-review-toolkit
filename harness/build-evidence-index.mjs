@@ -26,6 +26,22 @@
  *
  * Usage:
  *   node build-evidence-index.mjs --repo <target> --date YYYY-MM-DD --input <evidence-input.json>
+ *   node build-evidence-index.mjs --repo <target> --check
+ *
+ * --check (0.8.105 — the evidence-index COMPLETENESS lint; READ-ONLY, never writes): the index
+ * is driven by the driver-authored evidence-input, NOT a glob over evidence/ — which is exactly
+ * how a scan gets run, ingested, and never cited (a real cold run ingested 161 detect-secrets
+ * findings whose evidence file appeared nowhere in index.json; opengrep's .sarif was the second
+ * orphan). Evidence that is not indexed does not count toward requirement satisfaction in
+ * compute-sci / compile-submission, so an orphan is a submission gap and must fail LOUD:
+ * `--check` enumerates the TOP-LEVEL evidence/*.{json,sarif,txt,html} scan artifacts, compares
+ * against index.json's entry locations, reports every orphan by name, and exits 2 on any.
+ * Excluded BY DESIGN (each would otherwise false-orphan on every run):
+ *   - `index.json` itself — written into the directory it indexes and never listed in it;
+ *   - `*.provenance.json` sidecars (capture-openapi / capture-org-mcp metadata riding another
+ *     artifact, never independent scan evidence);
+ *   - subdirectories (`evidence/dast/` holds owner-run plans indexed as pending rows, not
+ *     top-level scan reports) — top-level files only, no recursion.
  *
  * evidence-input.json (every section optional; see acceptance/test-build-evidence-index.mjs):
  *   {
@@ -38,7 +54,7 @@
  *     "na":        [{ "req": "scan-iac-misconfig", "how": "no IaC in repo (find confirmed)", "loc": ".security-review/run-log.md" }]
  *   }
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
@@ -53,6 +69,57 @@ const INPUT = arg('--input', join(REPO, '.security-review', 'evidence-input.json
 function readJSON(p, def) {
   try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return def }
 }
+
+// The evidence-directory prefix every scanner artifact lives under (also the provenance
+// discriminator's anchor below).
+const EVIDENCE_DIR = '.security-review/evidence/'
+
+// --- --check: the completeness lint (see the header). READ-ONLY — never mutates index.json. ---
+if (process.argv.includes('--check')) {
+  const dir = join(REPO, '.security-review', 'evidence')
+  const CHECK_EXTS = ['.json', '.sarif', '.txt', '.html']
+  let onDiskNames = []
+  try {
+    onDiskNames = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile()) // top-level files ONLY — evidence/dast/ etc. never enumerate
+      .map((e) => e.name)
+      .filter((n) => CHECK_EXTS.some((ext) => n.endsWith(ext)))
+      .filter((n) => n !== 'index.json') // the index never lists itself
+      .filter((n) => !n.endsWith('.provenance.json')) // capture-* sidecars ride their artifact
+      .sort()
+  } catch {
+    console.log('evidence-index check: no evidence directory on disk — nothing to index (clean)')
+    process.exit(0)
+  }
+  const idx = readJSON(join(dir, 'index.json'), null)
+  if (!idx || !Array.isArray(idx.entries)) {
+    if (!onDiskNames.length) {
+      console.log('evidence-index check: no index.json and no top-level evidence files (clean)')
+      process.exit(0)
+    }
+    console.error(`evidence-index check: ${onDiskNames.length} evidence file(s) on disk but NO readable evidence/index.json — build the index first (--input <evidence-input.json>). Unindexed:`)
+    for (const n of onDiskNames) console.error(`  ORPHAN ${n}`)
+    process.exit(2)
+  }
+  // The indexed top-level names: every entry location under the evidence dir, basename only
+  // (a location with a further `/` — e.g. dast/zap-plan.yaml — is a subdirectory row, out of scope).
+  const indexed = new Set()
+  for (const e of idx.entries) {
+    const rel = String(e && e.location ? e.location : '').replace(/^\/+/, '')
+    if (!rel.startsWith(EVIDENCE_DIR)) continue
+    const rest = rel.slice(EVIDENCE_DIR.length)
+    if (rest && !rest.includes('/')) indexed.add(rest)
+  }
+  const orphans = onDiskNames.filter((n) => !indexed.has(n))
+  if (orphans.length) {
+    console.error(`evidence-index check: ${orphans.length} evidence file(s) on disk but NOT in evidence/index.json — a scan that ran but cannot be cited is a submission gap. Record each in the evidence-input and rebuild the index (never hand-edit index.json):`)
+    for (const n of orphans) console.error(`  ORPHAN ${n}`)
+    process.exit(2)
+  }
+  console.log(`evidence-index check: ${onDiskNames.length} top-level evidence file(s), all indexed (clean)`)
+  process.exit(0)
+}
+
 const input = readJSON(INPUT, null)
 if (!input) {
   console.error(`build-evidence-index: no evidence-input at ${INPUT} — the driver must write the evidence mapping first.`)
@@ -64,9 +131,9 @@ const onDisk = (rel) => rel && existsSync(abs(rel))
 const sha = (rel) => { try { return createHash('sha256').update(readFileSync(abs(rel))).digest('hex') } catch { return undefined } }
 
 // --- the provenance discriminator: is this a reviewer-reproducible scanner file? ---
-// A scanner artifact lives under .security-review/evidence/ AND exists on disk. The
-// audit report lives under docs/security-review/ — never reproducible scanner evidence.
-const EVIDENCE_DIR = '.security-review/evidence/'
+// A scanner artifact lives under .security-review/evidence/ (EVIDENCE_DIR above) AND
+// exists on disk. The audit report lives under docs/security-review/ — never
+// reproducible scanner evidence.
 const isScannerEvidence = (loc) => {
   const rel = String(loc || '').replace(/^\/+/, '')
   return rel.startsWith(EVIDENCE_DIR) && onDisk(rel)

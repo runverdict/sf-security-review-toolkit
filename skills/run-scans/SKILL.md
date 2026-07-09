@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(sf code-analyzer *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(sf code-analyzer *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -125,7 +125,7 @@ external endpoints"). All Family 7/8 tools are free/OSS, no paid tier.
 | 3. Authenticated DAST (+ Nuclei templates, Schemathesis OpenAPI fuzz) | external-endpoint / mcp-server | owner executes; agent generates the plan + runs what it can | `dast/dast-report.{html,json}`, `dast/dast-url-proof.png`, `dast/nuclei-<date>.json`, `dast/schemathesis-<date>.json`, `dast/run-notes.md` | `dast-self-run-required`, `dast-authenticated-scans` (blockers) |
 | 4. TLS grade (SSL Labs **or** local testssl.sh/sslyze) | external-endpoint / mcp-server | agent | `ssllabs-<host>.json` **or** `tls-<host>-<date>.json` + capture | `endpoint-ssl-labs-a-grade` (qualitative bar; local TLS evidence satisfies it deterministically) |
 | 5. Dependency audit | always | agent | `deps-<ecosystem>-<date>.json` + the register | `scan-dependency-vulnerabilities` (major) |
-| 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) | `fail-hardcoded-secrets` (blocker) |
+| 6. Secret scan (tree + full git history) | always | agent | `secret-scan-<date>.json` (redacted) (+ `detect-secrets-<date>.json` when the complementary pass ran) | `fail-hardcoded-secrets` (blocker) |
 | 7. External SAST | external-endpoint with source (Python/Node/Java/Go) | agent | `semgrep-<date>.json`/`.sarif` + `opengrep-<date>.json`/`.sarif` (the reachability leg) (+ `bandit`/`njsscan`/`gosec`-<date>.json per language, + `redos-<date>.txt` — the regexploit ReDoS leg, verbatim text) | `scan-external-sast` (major; blocker on a confirmed critical in reviewer-reachable code); ReDoS leg → `resource-consumption-abuse` (major) |
 | 8. External SCA + IaC | any lockfile / Dockerfile / IaC under a non-package source root | agent | `osv-<date>.json`, `iac-<date>.json` | `scan-external-sca` (major), `scan-iac-misconfig` (major) |
 
@@ -532,7 +532,11 @@ families PENDING until a re-audit.
    complement to the `secrets-credentials` dimension's LLM finder, never its
    replacement.
    *Tool:* **gitleaks** (preferred — native full-history mode + deleted-blob
-   surfacing); trufflehog / detect-secrets are substitutes. *Two passes, both
+   surfacing) **plus detect-secrets as the complementary second-opinion tree pass
+   when available** (`detect-secrets scan --all-files` — a different ruleset
+   catches what one engine's misses; its output ingests via the `detect-secrets`
+   adapter, engine-labelled honestly); trufflehog is a substitute when gitleaks
+   is unavailable. *Two passes, both
    mandatory:* (1) **working-tree** over every resolved source root including IaC
    paths (Dockerfile `ENV`/`ARG`, terraform `*.tf`/`*.tfvars`/`*.tfstate`,
    CloudFormation/Ansible) — catches a secret in the submittable surface a
@@ -542,7 +546,12 @@ families PENDING until a re-audit.
    heuristic — a tool invocation, not an LLM spot-check). *Agent runs:* both
    passes, parsing, dossier rows. *Owner runs:* the **rotation** of every
    confirmed live secret — the agent cannot certify a credential dead.
-   *Evidence:* `evidence/secret-scan-<date>.json` (redacted). *Gate:*
+   *Evidence:* `evidence/secret-scan-<date>.json` (redacted), plus
+   `evidence/detect-secrets-<date>.json` when the complementary pass ran —
+   **record EVERY secret-scan output file this family produced in the
+   evidence-input** (tree, history, AND detect-secrets); an output that ingested
+   but never reached `evidence/index.json` is a scan the submission cannot cite,
+   and Step 11's completeness check fails loud on it. *Gate:*
    `fail-hardcoded-secrets` (blocker); it also **backs**
    `artifact-credential-storage-attestation`. *Disposition — keep the per-finding
    distinction:* a secret in the partner's **private repo history** is rotate-now
@@ -659,7 +668,12 @@ families PENDING until a re-audit.
    against the audit ledger (the `injection-xss`/`oauth-identity` dimensions may
    already have flagged the same sink — cross-reference, don't double-report),
    dossier rows. *Owner runs:* the code fixes. *Evidence:*
-   `evidence/semgrep-<date>.json` (+ per-language files). *Gate:*
+   `evidence/semgrep-<date>.json` (+ per-language files) — and when the Opengrep
+   leg ran, **record BOTH of its captured surfaces in the evidence-input**,
+   `opengrep-<date>.json` AND `opengrep-<date>.sarif` (the SARIF is the
+   version-portable codeFlows surface, not a disposable duplicate; an output
+   left out of `evidence/index.json` is a scan the submission cannot cite, and
+   Step 11's completeness check fails loud on it). *Gate:*
    `scan-external-sast` (major; a confirmed critical in reviewer-reachable server
    code — an injection, an auth bypass, an SSRF — is a blocker, because the
    reviewer's pen test reaches it). *Honest ceiling:* SAST has a false-negative
@@ -821,7 +835,17 @@ families PENDING until a re-audit.
    is PENDING owner-run). **Then render the scan-status summary and print it
    VERBATIM** — assemble this run's evidence mapping and build the index
    (`node ${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs --repo <target>
-   --date <date> --input <evidence-input.json>`), then render
+   --date <date> --input <evidence-input.json>`). **Then run the completeness
+   check:**
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/build-evidence-index.mjs --repo <target> --check`
+   — it enumerates the top-level `evidence/*.{json,sarif,txt,html}` scan
+   artifacts (excluding `index.json` itself, `*.provenance.json` sidecars, and
+   subdirectories like `dast/`) and exits 2 naming every **orphan**: a file on
+   disk that the index never cites. An orphan means a scan ran but the
+   evidence-input omitted it (the exact bug class: a detect-secrets report and
+   an opengrep `.sarif` each ingested on a real run yet uncited) — add the
+   missing file to the evidence-input and REBUILD the index; never hand-edit
+   `index.json`, and never proceed to render on a failing check. Then render
    `node ${CLAUDE_PLUGIN_ROOT}/harness/render-scan-status.mjs --target <target>
    --commit <repo HEAD> --tools "<tool versions>"`. It emits the FIXED 8-row Family
    table in canonical Family 1–8 order with locked columns `Family | Applies | Runner |

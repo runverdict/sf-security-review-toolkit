@@ -1368,7 +1368,7 @@ check('CK-determinism: ingest the real Checkov fixture twice → byte-identical 
   assert.equal(JSON.stringify(a), JSON.stringify(b))
 })
 
-check('CK-anchor: CKV_DOCKER_2 → one deterministic iac-misconfig finding (checkov/high/Dockerfile:1, guideline in reasoning)', () => {
+check('CK-anchor: CKV_DOCKER_2 → one deterministic iac-misconfig finding (checkov/low via the sourced RULE_BAND_FLOOR — availability-only HEALTHCHECK, 0.8.105 — Dockerfile:1, guideline in reasoning)', () => {
   const raw = readJSON(CHECKOV)
   const guideline = raw.results.failed_checks[0].guideline
   const { findings } = ingestCheckov(raw)
@@ -1379,7 +1379,8 @@ check('CK-anchor: CKV_DOCKER_2 → one deterministic iac-misconfig finding (chec
   assert.equal(f.ruleId, 'CKV_DOCKER_2')
   assert.equal(f.class, 'iac-misconfig')
   assert.equal(f.dimension, 'infrastructure-iac')
-  assert.equal(f.adjusted_severity, 'high') // from the iac-misconfig class (scan-iac-misconfig=major→high)
+  assert.equal(f.adjusted_severity, 'low') // the sourced availability-only band floor (checkov/CKV_DOCKER_2) lowers the class high → low
+  assert.match(f.verdict_reasoning, /banded low by the sourced rule-band floor for checkov\/CKV_DOCKER_2/)
   assert.ok(f.file.endsWith('Dockerfile:1'), `file was ${f.file}`)
   assert.equal(f.status, 'confirmed')
   assert.match(f.id, /^[0-9a-f]{16}$/)
@@ -1393,13 +1394,13 @@ check('CK-failed-only: the 24 passed_checks produce 0 findings (only the 1 faile
   assert.equal(ingestCheckov(raw).findings.length, 1)
 })
 
-check('CK-severity-from-class: a failed check carrying enterprise severity:LOW is STILL high (class, not tool)', () => {
+check('CK-severity-from-class: a failed check carrying enterprise severity:LOW is STILL high (class, not tool) — on a floor-UNMAPPED rule (CKV_DOCKER_3; CKV_DOCKER_2 now rides RULE_BAND_FLOOR, see test-rule-band-floor.mjs)', () => {
   const synthetic = {
     check_type: 'dockerfile',
     results: {
       passed_checks: [],
       failed_checks: [
-        { check_id: 'CKV_DOCKER_2', check_name: 'Healthcheck', file_path: 'Dockerfile', file_line_range: [1, 7], severity: 'LOW', guideline: 'https://example.test/g' },
+        { check_id: 'CKV_DOCKER_3', check_name: 'Ensure that a user for the container has been created', file_path: 'Dockerfile', file_line_range: [1, 7], severity: 'LOW', guideline: 'https://example.test/g' },
       ],
       skipped_checks: [],
       parsing_errors: [],
@@ -1423,7 +1424,10 @@ check('CK-array-shape: an ARRAY of two framework result objects → two distinct
   const { findings } = ingest(arr, checkovAdapter, { repoRoot: '', pass: 1 })
   assert.equal(findings.length, 2)
   assert.notEqual(findings[0].id, findings[1].id)
-  assert.ok(findings.every((f) => f.class === 'iac-misconfig' && f.adjusted_severity === 'high' && f.engine === 'checkov'))
+  assert.ok(findings.every((f) => f.class === 'iac-misconfig' && f.engine === 'checkov'))
+  // the floor-unmapped terraform rule keeps the class high; CKV_DOCKER_2 rides the sourced band floor → low
+  assert.equal(findings.find((f) => f.ruleId === 'CKV_AWS_18').adjusted_severity, 'high')
+  assert.equal(findings.find((f) => f.ruleId === 'CKV_DOCKER_2').adjusted_severity, 'low')
   assert.deepEqual(findings.map((f) => f.ruleId).sort(), ['CKV_AWS_18', 'CKV_DOCKER_2'])
 })
 
@@ -1532,7 +1536,7 @@ check('CK-CLI-merge: --scanner checkov writes the deterministic finding to the t
   const ck1 = l1.findings.filter((f) => f.engine === 'checkov')
   assert.equal(ck1.length, 1)
   assert.equal(ck1[0].ruleId, 'CKV_DOCKER_2')
-  assert.equal(ck1[0].adjusted_severity, 'high')
+  assert.equal(ck1[0].adjusted_severity, 'low') // the sourced availability-only band floor (0.8.105)
   execFileSync('node', [CLI, '--scanner', 'checkov', '--input', CHECKOV, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
   assert.equal(l2.findings.filter((f) => f.engine === 'checkov').length, 1) // idempotent — no duplicate
@@ -5051,7 +5055,7 @@ check('TRV-determinism: ingest the real Trivy fixture twice → byte-identical f
   assert.equal(JSON.stringify(a), JSON.stringify(b))
 })
 
-check('TRV-anchor: DS-0026 → one deterministic iac-misconfig finding (trivy/high/Dockerfile, PrimaryURL in reasoning, Trivy severity noted for reference, class-severity not LOW)', () => {
+check('TRV-anchor: DS-0026 → one deterministic iac-misconfig finding (trivy/low via the sourced RULE_BAND_FLOOR — availability-only HEALTHCHECK, 0.8.105 — Dockerfile, PrimaryURL in reasoning, Trivy severity noted for reference)', () => {
   const raw = readJSON(TRIVY)
   const url = raw.Results[0].Misconfigurations[0].PrimaryURL
   const { findings } = ingestTrivy(raw)
@@ -5062,7 +5066,8 @@ check('TRV-anchor: DS-0026 → one deterministic iac-misconfig finding (trivy/hi
   assert.equal(f.ruleId, 'DS-0026') // the real misconfig carries no AVDID → falls back to ID
   assert.equal(f.class, 'iac-misconfig') // REUSES checkov's class
   assert.equal(f.dimension, 'infrastructure-iac')
-  assert.equal(f.adjusted_severity, 'high') // from the iac-misconfig class (scan-iac-misconfig=major→high), NOT Trivy's LOW
+  assert.equal(f.adjusted_severity, 'low') // the sourced availability-only band floor (trivy/DS-0026) lowers the class high → low
+  assert.match(f.verdict_reasoning, /banded low by the sourced rule-band floor for trivy\/DS-0026/)
   // the real DS-0026 (a file-level "No HEALTHCHECK") carries NO CauseMetadata.StartLine → the locus is the bare Target
   // (the `:StartLine` path is exercised by TRV-class-dispatch's synthetic, which DOES carry a StartLine)
   assert.equal(f.file, 'Dockerfile')
@@ -5071,11 +5076,12 @@ check('TRV-anchor: DS-0026 → one deterministic iac-misconfig finding (trivy/hi
   assert.match(f.id, /^[0-9a-f]{16}$/)
   assert.ok(url && f.verdict_reasoning.includes(url), 'the Trivy PrimaryURL must appear in verdict_reasoning')
   assert.ok(f.verdict_reasoning.includes('[Trivy severity LOW, recorded for reference]'), 'Trivy tool severity is recorded for reference')
-  assert.match(f.verdict_reasoning, /severity fixed from the iac-misconfig class/) // class-severity, not the tool
+  assert.match(f.verdict_reasoning, /severity fixed from the iac-misconfig class/) // class-severity first, then the sourced floor
 })
 
-check('TRV-severity-from-class (the consistency invariant): mutating the misconfig Severity LOW→CRITICAL leaves the band high (class-severity, matching Checkov; the tool number never moves it)', () => {
+check('TRV-severity-from-class (the consistency invariant): mutating the misconfig Severity LOW→CRITICAL leaves the band high (class-severity, matching Checkov; the tool number never moves it) — on a floor-UNMAPPED rule (DS-0002; DS-0026 now rides RULE_BAND_FLOOR, see test-rule-band-floor.mjs)', () => {
   const raw = clone(readJSON(TRIVY))
+  raw.Results[0].Misconfigurations[0].ID = 'DS-0002' // root-user rule — class-mapped, floor-unmapped
   raw.Results[0].Misconfigurations[0].Severity = 'CRITICAL'
   const { findings } = ingestTrivy(raw)
   assert.equal(findings.length, 1)
@@ -5199,7 +5205,7 @@ check('TRV-CLI: --scanner trivy --input <fixture> --json --dry-run prints valid 
   assert.equal(parsed.merged, null) // dry-run
   assert.equal(parsed.findings.length, 1)
   assert.ok(
-    parsed.findings.some((f) => f.ruleId === 'DS-0026' && f.adjusted_severity === 'high' && f.class === 'iac-misconfig' && f.file === 'Dockerfile')
+    parsed.findings.some((f) => f.ruleId === 'DS-0026' && f.adjusted_severity === 'low' && f.class === 'iac-misconfig' && f.file === 'Dockerfile')
   )
 })
 
@@ -5212,7 +5218,7 @@ check('TRV-CLI-merge: --scanner trivy writes the deterministic finding to the ta
   const t1 = l1.findings.filter((f) => f.engine === 'trivy')
   assert.equal(t1.length, 1)
   assert.equal(t1[0].ruleId, 'DS-0026')
-  assert.equal(t1[0].adjusted_severity, 'high')
+  assert.equal(t1[0].adjusted_severity, 'low') // the sourced availability-only band floor (0.8.105)
   assert.equal(t1[0].class, 'iac-misconfig')
   execFileSync('node', [CLI, '--scanner', 'trivy', '--input', TRIVY, '--target', d], { encoding: 'utf8' })
   const l2 = readJSON(lp)
