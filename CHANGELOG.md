@@ -51,6 +51,38 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.111] — 2026-07-10
+
+**DAST rung 1 (scan an already-running loopback instance) gets its own honest consent — no more
+active-scanning a live app under the throwaway consent.** The fires-path ladder's cheapest rung
+points `run-dast --base-url` at an instance the operator already has running, but the engine
+verified `throwaway-dast` for it — a gate whose text promises "nothing touches your real
+deployment." Pointing it at a live stack active-scans real data under a consent that says the
+opposite.
+
+### Added
+- `harness/gate-spec.mjs` — a distinct `live-instance-dast` consent gate (modeled on
+  `throwaway-dast`): the affirm option states plainly it scans the operator's ALREADY-RUNNING
+  instance and the live data behind it, with a force-injected decline (→ PENDING-OWNER-RUN).
+  `LOAD_CHECK_FACTS` + the selector branch are wired so `assertCatalogWellFormed` exercises it.
+
+### Changed
+- `harness/run-dast.mjs` — the live-op consent gate is selected by `resolveBaseUrl`'s `source`: an
+  explicit `--base-url` (an already-running instance) verifies `live-instance-dast`; a
+  `--from-standup` throwaway pointer verifies `throwaway-dast` (unchanged). Loopback-only
+  enforcement and fail-closed behavior are preserved (the explicit URL is resolved — and loopback
+  re-asserted — before any consent is looked up).
+- `skills/run-scans/SKILL.md` — rung 1 names the distinct gate and adds a detect-and-offer step:
+  probe `127.0.0.1:<webPort>`, and if something answers, OFFER the scan behind its own consent —
+  never auto-chain probe→scan (a loopback port may be an unrelated service, and it is real data).
+
+### Tests
+- `acceptance/test-run-dast.mjs` +3 (explicit path verifies `live-instance-dast` and fails closed
+  even with a recorded `throwaway-dast` token; standup path still verifies `throwaway-dast`;
+  loopback enforcement survives the explicit path); `acceptance/test-gate-spec.mjs` +1 golden
+  snapshot + the G4 `reps` entry; `acceptance/test-run-scans-fires-path.mjs` +1 prose guard. Suite
+  1208 → 1213 checks across 80 files.
+
 ## [0.8.110] — 2026-07-10
 
 **`sf-autoresolve` no longer silently no-ops on a multi-package Dev Hub — it disambiguates by
