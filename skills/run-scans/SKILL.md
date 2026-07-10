@@ -1,7 +1,7 @@
 ---
 name: run-scans
 description: Phase 3 of security review prep. Orchestrates every scan family the review consumes — Code Analyzer (package SAST), the Partner Security Portal scanner check, authenticated DAST (+ Nuclei/Schemathesis) plan generation, TLS grading (SSL Labs or local testssl/sslyze), dependency audits, secret scan, and the external-endpoint OSS scanners (Semgrep SAST, OSV-Scanner SCA, Checkov IaC) — runs what an agent can run, hands the owner exactly what it cannot, and folds every finding into a dispositioned false-positive dossier. On a journey run it enters twice — the early host-independent static substrate (before the audit, needing only the scope manifest) and the late live/conditional tail (after artifacts exist); standalone it is the full sweep. The scan evidence is what the submission attaches.
-allowed-tools: Read Grep Glob Write Edit Bash Bash(sf code-analyzer *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash Bash(sf code-analyzer *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/capture-openapi.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Run Scans
@@ -831,6 +831,7 @@ families PENDING until a re-audit.
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/harness/ingest-scanner-findings.mjs --all --target <target>
    node ${CLAUDE_PLUGIN_ROOT}/harness/reconcile-provenance.mjs --target <target>
+   node ${CLAUDE_PLUGIN_ROOT}/harness/seed-auto-dispositions.mjs --target <target>
    node ${CLAUDE_PLUGIN_ROOT}/harness/apply-dispositions.mjs --target <target>
    ```
 
@@ -864,11 +865,35 @@ families PENDING until a re-audit.
    `--all` + reconcile at the substrate tail, again at the live tail, and again at
    audit Step 4 / Step 6 is safe — the band is byte-stable run-to-run.
 
+   `seed-auto-dispositions.mjs` runs BETWEEN reconcile and apply: it pre-clears the
+   exact known-safe scanner-noise shapes as an OVERRIDABLE PRIOR, so the raw band —
+   dominated by mechanical false positives — is not wrong-by-default until a human
+   hand-clears it. It EMITS entries into the SAME
+   `<target>/.security-review/deterministic-dispositions.json` the audit uses, each
+   marked `disposition_source:'heuristic'` and carrying its `heuristic_id` + concrete
+   `evidence`, and lets `apply-dispositions.mjs` apply them — it invents no parallel
+   path and flips no status itself. Three CONSERVATIVE heuristics, precision over
+   coverage (when in doubt it leaves a finding OPEN): (1) MIGRATION-DDL — a semgrep
+   `avoid-sqlalchemy-text` / bandit `B608` hit under a migration directory (`alembic`,
+   `migrations`, `versions` segment) is server-authored schema SQL, not user input; a
+   text()/B608 OUTSIDE a migration dir is NOT cleared (a possible real injection). (2)
+   DEV-ONLY-DEP — an npm CVE for a package present ONLY in the adjacent package.json's
+   `devDependencies` is not in the deployed surface; a production or transitive dep is
+   NOT cleared. (3) HISTORY-ONLY SECRET — a gitleaks hit whose file is absent from the
+   current git HEAD is rotation debt, not a shipped artifact; a secret IN HEAD is NOT
+   cleared. The merge is ADDITIVE and NON-CLOBBERING: a hand-written adjudication for
+   the same engine+ruleId wins, and a re-run adds nothing (idempotent). Because these
+   are marked heuristic PRIORS the later audit reviews — and because
+   `apply-dispositions.mjs` structurally never touches an `llm-inferred` finding, so a
+   real issue the audit independently confirms at a cleared locus surfaces as the
+   audit's OWN untouchable finding — the seeder can never silently hide a blocker.
+
    `apply-dispositions.mjs` then RE-APPLIES any structured deterministic-class
    adjudications already recorded in
-   `<target>/.security-review/deterministic-dispositions.json` (written by the audit
-   when it adjudicates a scanner class false-positive/accepted-risk — see
-   audit-codebase Step 6), so a standalone scan pass's band is honest too — and the
+   `<target>/.security-review/deterministic-dispositions.json` (the heuristic priors
+   just seeded, plus anything the audit wrote when it adjudicates a scanner class
+   false-positive/accepted-risk — see audit-codebase Step 6), so a standalone scan
+   pass's band is honest too — and the
    re-apply is BOUNDED by each adjudication's mandatory scope: a re-ingested
    finding at a KNOWN locus (named in the adjudication's `scope.files`, or with
    `first_seen <= scope.as_of_pass` for a rule-wide adjudication) lands `confirmed`
