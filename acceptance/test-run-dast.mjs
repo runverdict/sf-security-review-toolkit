@@ -13,17 +13,25 @@
  *   G3  dastDegrade: non-up health OR scored-port mismatch degrades; matching port + up → clean
  *   G4  absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a clean result
  *   D5  resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw
+ *   L1  rung 1: explicit --base-url wins + fires even over a torn-down pointer (no stand-up)
+ *   L2  rung 1 consent gate is SOURCE-selected: explicit --base-url verifies live-instance-dast
+ *       (NOT throwaway-dast) + fails closed without the token; standup verifies throwaway-dast;
+ *       loopback-only enforcement survives the explicit path
  *
  * Dependency-free: `node acceptance/test-run-dast.mjs` (exit 0 = pass).
  */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import {
   planDast, summarizeZap, runDast, ZAP_IMAGE, ZAP_DIGEST,
   dastDisclaimer, buildDastProvenance, absentCorroborationStub, dastDegrade, DAST_PROVENANCE_SCHEMA,
   resolveBaseUrl,
 } from '../harness/run-dast.mjs'
+import { recordConsent } from '../harness/record-consent.mjs'
 
 let pass = 0, fail = 0
 const check = (name, fn) => { try { fn(); pass++; console.log(`  ✓ ${name}`) } catch (e) { fail++; console.log(`  ✗ ${name}\n    ${String(e.message).split('\n').join('\n    ')}`) } }
@@ -205,6 +213,64 @@ check('L1 rung 1: explicit --base-url ALWAYS wins and fires even over a TORN-DOW
   const p = planDast('http://127.0.0.1:8000', { target: '/repo', runId: 'l1', tmpRoot: join(tmpdir(), 'sf-srt-dast', 'l1') })
   assert.ok(p.dockerArgs.includes('http://127.0.0.1:8000'))
 })
+
+// ── Rung-1 consent gate is SELECTED BY SOURCE (the distinct live-instance-dast gate). An explicit
+//    --base-url active-scans the operator's OWN running app — real data — so it verifies
+//    'live-instance-dast', NOT the throwaway's 'throwaway-dast' consent (which promises the scan
+//    touches only a disposable throwaway). Driven through the CLI so the whole main() path is
+//    exercised. Fail-closed and loopback-only enforcement must survive on every path. ──
+
+const DAST_CLI = fileURLToPath(new URL('../harness/run-dast.mjs', import.meta.url))
+const cliDirs = []
+const mkTarget = () => { const d = mkdtempSync(join(tmpdir(), 'run-dast-cli-')); cliDirs.push(d); return d }
+const runCli = (args) => {
+  try { return { stdout: execFileSync('node', [DAST_CLI, ...args], { encoding: 'utf8' }), status: 0 } }
+  catch (e) { return { stdout: String(e.stdout || ''), status: e.status == null ? -1 : e.status } }
+}
+
+check('L2 explicit --base-url verifies live-instance-dast (NOT throwaway-dast) and fails closed without the token', () => {
+  const d = mkTarget()
+  // no consent recorded at all → the explicit path fails closed naming the live-instance-dast gate
+  const a = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
+  assert.equal(a.status, 3, 'no recorded token → fail closed with exit 3')
+  assert.match(a.stdout, /NOT RUN \(no consent\)/)
+  assert.match(a.stdout, /gate 'live-instance-dast'/, 'the explicit path names the live-instance-dast gate')
+  assert.ok(!/gate 'throwaway-dast'/.test(a.stdout), 'the explicit path must NOT name throwaway-dast')
+
+  // MUTATION BITE: record ONLY the throwaway-dast consent. If run-dast reverted to always verifying
+  // 'throwaway-dast' on every path, THIS token would let the explicit path proceed. With the
+  // source-selected gate it STILL fails closed — the explicit already-running scan does not read
+  // the throwaway's consent. (Reverting consentGate to a constant 'throwaway-dast' turns this red.)
+  recordConsent('throwaway-dast', 'yes', { target: d, decision: 'affirm' })
+  const b = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
+  assert.equal(b.status, 3, 'a recorded throwaway-dast token must NOT authorize the already-running scan')
+  assert.match(b.stdout, /NOT RUN \(no consent\)/)
+  assert.match(b.stdout, /gate 'live-instance-dast'/)
+})
+
+check('L2b the standup pointer path still verifies throwaway-dast (unchanged)', () => {
+  const d = mkTarget()
+  mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'stack-standup.json'),
+    JSON.stringify({ schema: 'sf-srt-stack/1', runId: 't1', baseUrl: 'http://127.0.0.1:8080', status: 'up', createdAt: '2026-07-10' }))
+  // a stood-up throwaway (source 'standup'), no consent recorded → fail closed naming throwaway-dast
+  const r = runCli(['--from-standup', '--target', d, '--consent'])
+  assert.equal(r.status, 3)
+  assert.match(r.stdout, /NOT RUN \(no consent\)/)
+  assert.match(r.stdout, /gate 'throwaway-dast'/, 'the standup path still names throwaway-dast')
+  assert.ok(!/gate 'live-instance-dast'/.test(r.stdout), 'the standup path must NOT name live-instance-dast')
+})
+
+check('L2c loopback-only enforcement survives on the explicit path (non-loopback host refused)', () => {
+  const d = mkTarget()
+  // even with a recorded live-instance-dast token, a non-loopback host is refused before any scan
+  recordConsent('live-instance-dast', 'yes', { target: d, decision: 'affirm' })
+  const r = runCli(['--base-url', 'http://evil.example.com:8080', '--target', d, '--consent'])
+  assert.equal(r.status, 3, 'a non-loopback explicit target must be refused')
+  assert.match(r.stdout, /non-loopback/, 'the refusal cites the loopback-only invariant')
+})
+
+for (const d of cliDirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

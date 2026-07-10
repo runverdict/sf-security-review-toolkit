@@ -14,6 +14,8 @@
  *   F4  SCA Family names `pip-audit` for lockfile-less Python + agent-run-present/owner-run-absent
  *   F5  fail-loud on any dependency manifest no scanner covered → coverage gap, never a silent pass
  *   F6  ReDoS `.txt` ingest AUTO-runs after the redos scan (regexploit explicit-scanner form)
+ *   F7  rung 1 names its DISTINCT `live-instance-dast` consent gate + the detect-and-offer /
+ *       never-auto-scan rule (a found loopback listener is a reason to ASK, not permission to scan)
  *
  * Dependency-free: `node acceptance/test-run-scans-fires-path.mjs` (exit 0 = pass).
  */
@@ -88,6 +90,23 @@ check('F6 ReDoS `.txt` ingest AUTO-runs after the redos scan (not deferred to a 
     'the explicit regexploit ingest form must be shown in the Family 7 flow')
   assert.match(skill, /do\s+NOT defer it to a manual re-run/i,
     'the prose must forbid deferring the .txt ingest (the cold-run miss)')
+})
+
+check('F7 rung 1 names the DISTINCT live-instance-dast gate + the detect-and-offer / never-auto-scan rule', () => {
+  // MUTATION: dropping the distinct-gate naming or the detect-and-offer safety rule → red
+  // the explicit already-running path is gated by live-instance-dast, NOT throwaway-dast
+  assert.match(skill, /live-instance-dast/, 'rung 1 must name the distinct live-instance-dast consent gate')
+  assert.match(skill, /`live-instance-dast`, NOT `throwaway-dast`/,
+    'rung 1 must state the gate is live-instance-dast, NOT throwaway-dast')
+  // detect-and-offer, never auto-chain probe → scan
+  assert.match(skill, /Detect-and-offer, never auto-scan/i, 'the detect-and-offer rule must be titled')
+  assert.match(skill, /never auto-chain probe\s*→\s*scan/i, 'the never-auto-chain rule must be present')
+  assert.match(skill, /reason to\s+ASK, not permission to scan/i,
+    'a found loopback listener is a reason to ASK, not permission to scan')
+  // WHY: an arbitrary loopback port may be an unrelated service; the responder is not verified
+  assert.match(skill, /UNRELATED\s+service/i, 'the rule must state an arbitrary loopback port may be an unrelated service')
+  assert.match(skill, /does NOT verify the responder is the app you intend to scan/i,
+    'run-dast re-asserts loopback but does NOT verify the responder identity')
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

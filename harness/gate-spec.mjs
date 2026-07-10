@@ -65,9 +65,9 @@ const VALID_DECISIONS = new Set(['affirm', 'deny'])
 //
 // The catalog registers every gate the journey renders: the run/tier/scanner
 // election + consent gates, the scope-submission answer + consent gates, and the
-// two live-op consents (throwaway-dast, sf-deep-audit-ops). The engine THROWS on
-// any unregistered id (fail-closed), so a driver that improvises a gate id can
-// never reach a live render.
+// three live-op consents (throwaway-dast, live-instance-dast, sf-deep-audit-ops).
+// The engine THROWS on any unregistered id (fail-closed), so a driver that
+// improvises a gate id can never reach a live render.
 const GATE_CATALOG = Object.freeze({
   // run-mode — an ELECTION (ask-tolerance), not a consent. Both options proceed;
   // there is no decline, so NO safe-default is injected. Pinned 2-option set.
@@ -341,10 +341,11 @@ const GATE_CATALOG = Object.freeze({
   }),
 
   // ── Live-op consents — the "reach outside read-only-local" gates ───────────────
-  // The two highest-stakes CONSENT gates in the toolkit: they authorize actions
-  // that LEAVE the read-only, local-only posture — standing up a throwaway and
-  // active-scanning it (throwaway-dast), and mutating a live org through the
-  // deployed-package deep audit (sf-deep-audit-ops). Both are CONSENT gates: a
+  // The highest-stakes CONSENT gates in the toolkit: they authorize actions that
+  // LEAVE the read-only, local-only posture — standing up a throwaway and active-
+  // scanning it (throwaway-dast), active-scanning an ALREADY-RUNNING instance the
+  // operator started (live-instance-dast), and mutating a live org through the
+  // deployed-package deep audit (sf-deep-audit-ops). All are CONSENT gates: a
   // single affirm option in `base`, the decline FORCE-INJECTED from safeDefault.
   // Enforcement already keys off the gate-name STRING (record-consent, verifyConsent,
   // the sf-ops hook, the --consent verifiers), so pinning here is purely additive to
@@ -375,6 +376,40 @@ const GATE_CATALOG = Object.freeze({
       description:
         'Do not stand anything up and run no active scan. The DAST families fall to PENDING-OWNER-RUN for ' +
         'you to run yourself against your own environment; nothing is stood up and nothing is scanned.',
+      decision: 'deny',
+    }),
+  }),
+
+  // live-instance-dast — CONSENT to active-scan an ALREADY-RUNNING instance the operator started
+  // themselves (fires-path ladder rung 1). DISTINCT from throwaway-dast: there is NO isolated
+  // throwaway here — the affirm points the digest-pinned ZAP straight at the operator's OWN running
+  // app on the loopback host:port they gave, so the active scan hits a LIVE process and its REAL
+  // data, not a disposable mirror. That is exactly why it cannot ride throwaway-dast's consent:
+  // throwaway-dast's affirm promises "nothing touches your real deployment", the OPPOSITE of what
+  // this authorizes — reusing it here would be a consent MISLABEL. Deny → no live-instance scan;
+  // the DAST families fall to PENDING-OWNER-RUN, the same floor throwaway-dast's decline lands on.
+  'live-instance-dast': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Live-instance DAST',
+    question: 'Active-scan the app you ALREADY have running on this loopback host:port for this run?',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Scan my already-running instance',
+        description:
+          'Point the digest-pinned ZAP baseline at the app YOU already have running on the given ' +
+          'loopback host:port and active-scan it in place. This is NOT an isolated throwaway — the scan ' +
+          'hits your REAL running instance and the live data behind it, so authorize it only for an ' +
+          'instance you are fine having actively scanned. Nothing is stood up or torn down; the scan ' +
+          'reaches only that loopback address and never leaves the local host.',
+        decision: 'affirm',
+      }),
+    ]),
+    safeDefault: Object.freeze({
+      label: 'Skip — do not scan the running instance',
+      description:
+        'Do not active-scan the running instance. The DAST families fall to PENDING-OWNER-RUN for you to ' +
+        'run yourself against your own environment; nothing on your running app is scanned.',
       decision: 'deny',
     }),
   }),
@@ -635,8 +670,8 @@ export function gateOptions(gateId, facts = {}) {
     ]
   } else if (gateId === 'listing-type' || gateId === 'tenancy') {
     options = spec.base.map(pickOption)
-  } else if (gateId === 'throwaway-dast' || gateId === 'sf-deep-audit-ops') {
-    // The two live-op consents — a single static affirm in `base`; the decline is
+  } else if (gateId === 'throwaway-dast' || gateId === 'live-instance-dast' || gateId === 'sf-deep-audit-ops') {
+    // The live-op consents — a single static affirm in `base`; the decline is
     // FORCE-INJECTED from safeDefault by the consent-gate block below.
     options = spec.base.map(pickOption)
   } else {
@@ -683,6 +718,7 @@ const LOAD_CHECK_FACTS = Object.freeze({
   'listing-type': [{}],
   'tenancy': [{}],
   'throwaway-dast': [{}],
+  'live-instance-dast': [{}],
   'sf-deep-audit-ops': [{}],
 })
 

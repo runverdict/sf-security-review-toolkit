@@ -303,17 +303,30 @@ function main() {
 
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(3).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-dast', runId))
-  // --consent alone is insufficient: a recorded affirmative 'throwaway-dast' consent
-  // (the journey's third gate, asked via AskUserQuestion) is also required.
+  // The recorded live-op consent is selected by SOURCE below (once resolveBaseUrl has told us
+  // whether this is an already-running instance or a stood-up throwaway); --consent alone is never
+  // enough. Read the CLI flag here; pair it with the source-matched recorded token further down.
   const consentFlag = argv.includes('--consent')
-  const consentRecorded = verifyConsent('throwaway-dast', { target })
-  const consent = consentFlag && consentRecorded
   // honesty inputs from the stand-up manifest (Slice B1 wrote them; the journey threads them)
   let health = arg('--health', 'unverified')
   let migration = arg('--migration', null)
   let service = arg('--service', null)
   let scoredPort = arg('--scored-port', arg('--port', null))
   let guarded = argv.includes('--guarded')
+
+  // The scan SOURCE selects which live-op consent gate authorizes this run — resolveBaseUrl is the
+  // single arbiter of `source`. An explicit --base-url is an ALREADY-RUNNING instance the operator
+  // started (source 'explicit' → the live-instance-dast gate, which active-scans their own live app
+  // and its real data); a --from-standup pointer is a disposable throwaway (source 'standup' →
+  // throwaway-dast). Resolving the explicit URL HERE also re-asserts loopback before any consent is
+  // even looked up, so the loopback-only invariant holds on the already-running path too.
+  let scanSource = null
+  if (baseUrl) {
+    let resolved
+    try { resolved = resolveBaseUrl(baseUrl, null) }
+    catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
+    scanSource = resolved.source // 'explicit'
+  }
 
   // --from-standup (Slice D): resolve the base URL + honesty flags from the stand-up pointer,
   // removing the hand-copy foot-gun. Explicit --base-url still wins; the resolver re-asserts
@@ -327,6 +340,7 @@ function main() {
       process.stdout.write(`## run-dast — the stand-up pointer references a manifest that no longer exists (${pointer.manifestPath}) — the throwaway is gone; stand up again\n`); process.exitCode = 3; return
     }
     baseUrl = resolved.baseUrl
+    scanSource = resolved.source // 'standup'
     if (health === 'unverified') health = resolved.status || 'unverified'
     if (!migration && pointer.migration) migration = pointer.migration.tool || pointer.migration
     if (!service && pointer.scannedService) service = pointer.scannedService
@@ -335,12 +349,22 @@ function main() {
     if (!asJson) process.stdout.write(`## run-dast — resolved from stand-up ${pointer.runId} (created ${pointer.createdAt}), status ${resolved.status}\n`)
   }
 
+  // --consent alone is insufficient: the recorded live-op consent for THIS scan's source is also
+  // required. An already-running instance (source 'explicit') verifies 'live-instance-dast' — it
+  // active-scans the operator's REAL app; a stood-up throwaway (source 'standup') verifies
+  // 'throwaway-dast'. Fail closed when the source-matched token is missing — the flag never
+  // authorizes a live op on its own. (No source resolved → default to throwaway-dast; planDast
+  // rejects the null base url below before the consent check is reached anyway.)
+  const consentGate = scanSource === 'explicit' ? 'live-instance-dast' : 'throwaway-dast'
+  const consentRecorded = verifyConsent(consentGate, { target })
+  const consent = consentFlag && consentRecorded
+
   let plan
   try { plan = planDast(baseUrl, { target, runId, tmpRoot, health, migration, guarded, service, scoredPort }) }
   catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
   if (!consent) {
     const why = consentFlag && !consentRecorded
-      ? `--consent is set but no affirmative consent is recorded for gate 'throwaway-dast' (the flag alone is not enough). Ask + record it first via record-consent.mjs.`
+      ? `--consent is set but no affirmative consent is recorded for gate '${consentGate}' (the flag alone is not enough). Ask + record it first via record-consent.mjs.`
       : `re-run with --consent (and the recorded consent).`
     process.stdout.write(`## run-dast — NOT RUN (no consent)\nWould run digest-pinned ZAP (${plan.image}) against ${plan.baseUrl} → ${plan.evidencePath}\n${why}\n`); process.exitCode = 3; return
   }

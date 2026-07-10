@@ -386,14 +386,37 @@ families PENDING until a re-audit.
    the same Dockerfile builds fine standalone in ~240s, and the sandbox is not
    network-blocked). Try the rungs IN ORDER; drop to the next only when the current one
    is unavailable:
-   1. **Already-running loopback instance — ZERO build, ZERO stand-up.** If a target app
-      is reachable on `127.0.0.1:<port>`, prefer
+   1. **Already-running loopback instance — ZERO build, ZERO stand-up.** If your app
+      is already reachable on `127.0.0.1:<port>`, prefer
       `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --base-url http://127.0.0.1:<port> --target <repo> --consent`.
       Explicit `--base-url` ALWAYS wins in the engine (`run-dast.mjs` `resolveBaseUrl`,
       source `explicit`) — it fires even when the stand-up pointer is torn-down, because
       a live app needs neither. This is the cheapest, most size-independent rung and the
       first thing to reach for; the engine re-asserts loopback on the explicit URL, so it
-      can still only ever hit a local throwaway.
+      can still only ever hit a local (loopback) address.
+
+      *Its own consent gate — `live-instance-dast`, NOT `throwaway-dast`.* This rung
+      active-scans YOUR OWN running app and the real data behind it, not an isolated
+      disposable mirror, so it carries a DISTINCT consent gate: `live-instance-dast`
+      (record it with `record-consent.mjs --gate live-instance-dast --decision affirm`).
+      run-dast picks that gate automatically from the resolved source (`explicit` →
+      `live-instance-dast`; a stood-up throwaway → `throwaway-dast`) and fails closed
+      without the matching recorded token. The throwaway's consent must never stand in
+      for it: `throwaway-dast`'s affirmative promises the scan touches only a disposable
+      throwaway — the OPPOSITE of scanning a live instance — so reusing it here would
+      mislabel what the operator agreed to.
+
+      *Detect-and-offer, never auto-scan.* When `stack-detect` has scored a web tier,
+      probe `127.0.0.1:<detected webPort>` (a single connect / HTTP HEAD is enough); if
+      something answers, OFFER the live-instance scan as the cheapest rung, behind its own
+      `live-instance-dast` consent, and wait for the operator to confirm. **CRITICAL:
+      never auto-chain probe → scan — a probe that finds a listener requires a FRESH
+      affirmative before any scan runs.** An arbitrary loopback port may be an UNRELATED
+      service (another project's dev server, a local database admin UI); run-dast
+      re-asserts loopback but does NOT verify the responder is the app you intend to scan,
+      and an active scan hits the operator's REAL data. A found listener is a reason to
+      ASK, not permission to scan — detect, offer, and record the explicit
+      `live-instance-dast` go-ahead every time.
    2. **Prebuilt-image compose — no source build.** `stack-detect` PREFERS a
       `docker-compose.prod.yml` / `*.prod.yml` whose web/api tier ships an `image:` (not a
       `build:`) over the build-from-source dev compose, recording
