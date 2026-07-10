@@ -334,11 +334,25 @@ elements, get the requirement list those elements imply.
    readout in the render's exact contract, with both keystone guarantees locked in
    code (never an `undefined…` version string, `IsSecurityReviewed` fail-closed to
    `unknown`). It degrades honestly to `"sfAutoResolved": false` when no DevHub is
-   authed and NEVER authenticates:
+   authed and NEVER authenticates.
+
+   **Thread `--package-name` — a multi-package DevHub cannot be auto-disambiguated.**
+   A Dev Hub commonly hosts several 2GP packages (dev / rehearsal / prod), so a bare
+   `sf package list` returns >1 row and the producer degrades to all-unknown (it
+   refuses to guess which package is yours). Pass the package name `package-readiness`
+   already resolved from `sfdx-project.json` (its top-level `.package` field — the
+   roll-up representative). `--package-name` is a harmless no-op on a single-package
+   hub, so always thread it:
 
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/harness/sf-autoresolve.mjs --target <target>
+   PKG=$(node ${CLAUDE_PLUGIN_ROOT}/harness/package-readiness.mjs --target <target> --json \
+     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).package||"")}catch{}})')
+   node ${CLAUDE_PLUGIN_ROOT}/harness/sf-autoresolve.mjs --target <target> ${PKG:+--package-name "$PKG"}
    ```
+
+   If it still degrades, the readout now NAMES the packages it found on the hub — pass
+   the exact `--package-name` for the one you are submitting (and delete stale
+   rehearsal packages from the Dev Hub so they stop shadowing the real one).
 
    **Render the auto-resolution readout — VERBATIM.** After writing
    `sf-autoresolve.json`, surface it by printing the render's stdout byte-for-byte

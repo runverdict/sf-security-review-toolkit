@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.110] — 2026-07-10
+
+**`sf-autoresolve` no longer silently no-ops on a multi-package Dev Hub — it disambiguates by
+package name, degrades LOUDLY, and never resolves the wrong package.** A cold run's Dev Hub
+power-up returned all-unknown (`sfAutoResolved:false`) against a working hub: the hub carried
+two packages sharing a namespace, so a bare `sf package list` could not pick among them,
+`pickPackageId` returned null, and the `04t` cascaded to a placeholder — the keystone
+`SubscriberPackageVersion` query hit a literal `<04t>` and every row degraded to unknown.
+Root-caused off the live hub (the manual `sf package version list` worked because it never
+resolves a specific `0Ho`).
+
+### Fixed
+- `harness/sf-autoresolve.mjs` — `pickPackageId` is now fail-closed on ambiguity. `Name`/`Alias`
+  are unique package keys and win outright; `NamespacePrefix` is NOT unique (one namespace hosts
+  many 2GP packages), so a namespace match counts only when unique across the roster — an
+  ambiguous match returns `null` instead of resolving the FIRST (wrong) package. Exported (with
+  `packageRoster`) for direct unit coverage.
+- `harness/sf-autoresolve.mjs` — the all-unknown degrade is now LOUD: a >1-package hub with no
+  unambiguous match NAMES the roster it found and states the fix (`pass --package-name`), instead
+  of the generic "resolve manually" that hid the real cause.
+
+### Changed
+- `skills/scope-submission/SKILL.md` — the producer invocation threads `--package-name` from the
+  name `package-readiness` already resolves out of `sfdx-project.json` (its top-level `.package`),
+  so a multi-package hub resolves by default; a single-package hub is unaffected (no-op flag).
+
+### Tests
+- `acceptance/test-sf-autoresolve.mjs` +3 (A13 unique-key vs shared-namespace disambiguation; A14
+  the loud multi-package degrade names the roster; A15 `--package-name` resolves the correct `0Ho`
+  on a namespace-colliding hub). Suite 1205 → 1208 checks across 80 files.
+
 ## [0.8.109] — 2026-07-09
 
 **The throwaway DAST FIRES regardless of app size — a fires-path ladder, plus lockfile-less

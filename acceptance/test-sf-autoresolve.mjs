@@ -51,6 +51,8 @@ import {
   normalizeSecurityReviewed,
   normalizeVersionReport,
   runSfAutoResolve,
+  pickPackageId,
+  packageRoster,
   PLACEHOLDER_PACKAGE_ID,
   PLACEHOLDER_VERSION_ID,
   AUTORESOLVE_SCHEMA,
@@ -298,6 +300,73 @@ check('A12 resolved threshold: ONE non-unknown row keeps resolved/sfAutoResolved
   assert.equal(byKey.version, 'unknown', 'the failed keystone still degraded honestly')
   const m = JSON.parse(readFileSync(join(b, '.security-review', 'scope-manifest.json'), 'utf8'))
   assert.equal(m.sfAutoResolved, true)
+})
+
+// ── A13/A14/A15 — package disambiguation (the all-unknown degrade root cause) ──
+// A Dev Hub often carries two packages that SHARE a namespace (a rehearsal/dev
+// package alongside the real one); with no --package-name the producer cannot pick
+// and degraded EVERY row to unknown. These lock the fix: Name/Alias are unique keys,
+// NamespacePrefix is not, and an ambiguous hub degrades LOUDLY (names the roster).
+const twoNsPkgs = {
+  status: 0,
+  result: [
+    { Id: '0Ho000000000RHR', Name: 'Meridian Rehearsal', NamespacePrefix: 'meridian', Alias: '' },
+    { Id: '0Ho000000000REL', Name: 'Meridian Agent', NamespacePrefix: 'meridian', Alias: '' },
+  ],
+}
+
+check('A13 pickPackageId: unique Name wins even when the namespace collides; ambiguous → null (never first-match)', () => {
+  // exact Name disambiguates two packages that SHARE a namespace
+  assert.equal(pickPackageId(twoNsPkgs, 'Meridian Agent'), '0Ho000000000REL')
+  assert.equal(pickPackageId(twoNsPkgs, 'Meridian Rehearsal'), '0Ho000000000RHR')
+  // the shared namespace is NOT a unique key → must NOT resolve to the first row
+  assert.equal(pickPackageId(twoNsPkgs, 'meridian'), null, 'a namespace shared by >1 package is ambiguous — never guess')
+  // no name + >1 package → degrade, never pick arbitrarily
+  assert.equal(pickPackageId(twoNsPkgs, null), null)
+  // a lone package with no name is still unambiguous
+  assert.equal(pickPackageId({ status: 0, result: [{ Id: '0Ho000000000ONE', Name: 'Solo', NamespacePrefix: 'solo' }] }, null), '0Ho000000000ONE')
+  // the roster surfaces the human-readable names for the loud degrade
+  assert.deepEqual(packageRoster(twoNsPkgs), ['Meridian Rehearsal', 'Meridian Agent'])
+})
+
+check('A14 executor: a multi-package hub + no --package-name degrades LOUDLY, naming the roster (not a silent all-unknown)', () => {
+  const b = box()
+  const plan = planSfAutoResolve({ devhub: 'acme' }) // no packageName → the degrade-triggering invocation
+  const runner = (cmd, args) => {
+    if (args[0] === 'org' && args[1] === 'list') return JSON.stringify({ status: 0, result: { devHubs: [{ alias: 'acme' }] } })
+    if (args[0] === 'package' && args[1] === 'list') return JSON.stringify(twoNsPkgs)
+    throw Object.assign(new Error('no 04t to query'), { status: 1 }) // downstream steps have no version id
+  }
+  const res = runSfAutoResolve(plan, { target: b, devhub: 'acme', generated: '2026-07-10', runner })
+  assert.equal(res.status, 'degraded', 'ambiguous package list must degrade, not resolve')
+  assert.match(res.reason, /2 packages on the DevHub/, 'the reason states the ambiguity, not a generic hint')
+  assert.match(res.reason, /Meridian Rehearsal/, 'the reason NAMES the packages found')
+  assert.match(res.reason, /Meridian Agent/)
+  assert.match(res.reason, /--package-name/, 'the reason states the exact fix')
+  const pkgStep = res.steps.find((s) => s.step === 'resolvePackage')
+  assert.equal(pkgStep.ok, false)
+  assert.deepEqual(pkgStep.roster, ['Meridian Rehearsal', 'Meridian Agent'], 'the roster is carried in the step log')
+})
+
+check('A15 executor: --package-name resolves the right package on a namespace-colliding hub', () => {
+  const b = box()
+  const plan = planSfAutoResolve({ packageName: 'Meridian Agent', devhub: 'acme' })
+  let queriedVersionsFor = null
+  const runner = (cmd, args) => {
+    if (args[0] === 'org' && args[1] === 'list') return JSON.stringify({ status: 0, result: { devHubs: [{ alias: 'acme' }] } })
+    if (args[0] === 'package' && args[1] === 'list') return JSON.stringify(twoNsPkgs)
+    if (args[0] === 'package' && args[1] === 'version' && args[2] === 'list') {
+      queriedVersionsFor = args[args.indexOf('--packages') + 1]
+      return JSON.stringify({ status: 0, result: [{ SubscriberPackageVersionId: '04t000000000REL', IsReleased: true, MajorVersion: 1, MinorVersion: 0, PatchVersion: 0, BuildNumber: 1 }] })
+    }
+    if (args.includes('report')) return JSON.stringify({ status: 0, result: { IsReleased: true } })
+    if (args.includes('--use-tooling-api')) return JSON.stringify({ status: 0, result: { records: [{ IsSecurityReviewed: false, MajorVersion: 1, MinorVersion: 0, PatchVersion: 0, BuildNumber: 1 }] } })
+    throw Object.assign(new Error('unexpected'), { status: 1 })
+  }
+  const res = runSfAutoResolve(plan, { target: b, devhub: 'acme', generated: '2026-07-10', runner })
+  assert.equal(queriedVersionsFor, '0Ho000000000REL', 'version list must query the CORRECT (Meridian Agent) 0Ho, not the rehearsal package')
+  assert.equal(res.status, 'resolved')
+  assert.equal(res.sfAutoResolved, true)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

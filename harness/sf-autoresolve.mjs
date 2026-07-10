@@ -240,15 +240,38 @@ function reportRows(norm) {
 const reportRowsUnknown = () => reportRows(normalizeVersionReport(null))
 
 // ── id pickers (executor helpers, tolerant of the two `sf` result shapes) ───
-function pickPackageId(j, packageName) {
-  const arr = Array.isArray(j && j.result) ? j.result : Array.isArray(j && j.result && j.result.records) ? j.result.records : []
+const packageRows = (j) =>
+  Array.isArray(j && j.result) ? j.result : Array.isArray(j && j.result && j.result.records) ? j.result.records : []
+
+/** PURE. The display roster of package Names (falling back to namespace / id) for the
+ *  honest degrade message when disambiguation fails — NEVER a silent all-unknown. */
+export function packageRoster(j) {
+  return packageRows(j).map((p) => (p && (p.Name || p.NamespacePrefix || p.Id || p.Package2Id)) || '(unnamed)').filter(Boolean)
+}
+
+/**
+ * PURE. Resolve the `0Ho` package id from `sf package list`, FAIL-CLOSED on ambiguity.
+ * `Name` and `Alias` are UNIQUE package keys; `NamespacePrefix` is NOT — a single
+ * namespace can host many 2GP packages (a Dev Hub often carries a rehearsal/dev
+ * package alongside the real one, sharing the namespace), so a namespace match counts
+ * ONLY when it is unique across the roster. Anything ambiguous (a name matching >1
+ * package, a shared namespace, or >1 package with no name to disambiguate) returns
+ * `null` — the executor then degrades LOUDLY (naming the roster) rather than silently
+ * resolving the WRONG package.
+ */
+export function pickPackageId(j, packageName) {
+  const arr = packageRows(j)
   if (!arr.length) return null
+  const idOf = (p) => (p ? p.Id || p.Package2Id || null : null)
   if (packageName) {
-    const m = arr.find((p) => p && (p.Name === packageName || p.NamespacePrefix === packageName || p.Alias === packageName))
-    return m ? m.Id || m.Package2Id || null : null
+    const exact = arr.filter((p) => p && (p.Name === packageName || p.Alias === packageName))
+    if (exact.length === 1) return idOf(exact[0]) // unique Name/Alias key
+    if (exact.length > 1) return null // ambiguous exact match — never guess
+    const ns = arr.filter((p) => p && p.NamespacePrefix === packageName)
+    return ns.length === 1 ? idOf(ns[0]) : null // a namespace disambiguates only when unique
   }
   // no name given but exactly one package → unambiguous, pick it; else degrade honestly
-  return arr.length === 1 ? arr[0].Id || arr[0].Package2Id || null : null
+  return arr.length === 1 ? idOf(arr[0]) : null
 }
 
 const verKey = (v) =>
@@ -345,8 +368,20 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
   for (const step of plan.steps) {
     try {
       if (step.key === 'resolvePackage') {
-        resolvedPackageId = pickPackageId(parseSfJson(runner('sf', packageListArgv(dh))), plan.packageName)
-        stepLog.push({ step: step.key, ok: !!resolvedPackageId })
+        const listJson = parseSfJson(runner('sf', packageListArgv(dh)))
+        resolvedPackageId = pickPackageId(listJson, plan.packageName)
+        if (resolvedPackageId) {
+          stepLog.push({ step: step.key, ok: true })
+        } else {
+          // LOUD degrade, never silent: a >1-package hub with no unambiguous match is a
+          // real failure mode (e.g. two packages sharing a namespace, no --package-name) —
+          // name the roster + the fix so the operator/driver can re-run disambiguated.
+          const roster = packageRoster(listJson)
+          stepLog.push({ step: step.key, ok: false, roster,
+            reason: roster.length > 1
+              ? `${roster.length} packages on the DevHub (${roster.join(', ')}) and no unambiguous match${plan.packageName ? ` for '${plan.packageName}'` : ' (no --package-name given)'} — pass --package-name to disambiguate`
+              : 'no package resolved from `sf package list`' })
+        }
       } else if (step.key === 'resolveVersion') {
         const pid = resolvedPackageId || plan.packageId
         if (!pid) {
@@ -404,9 +439,14 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
   const isUnknownValue = (v) => typeof v === 'string' && v.startsWith('unknown')
   if (rows.every((r) => isUnknownValue(r.value))) {
     setManifestFlag(manifestPath, false)
+    // Prefer the specific root cause when it is package-list ambiguity (the cold-run
+    // all-unknown mode) — a named roster + the disambiguation fix, not a generic hint.
+    const pkgAmbiguity = stepLog.find((s) => s.step === 'resolvePackage' && s.ok === false && s.reason && /packages on the DevHub/.test(s.reason))
     return {
       status: 'degraded',
-      reason: 'every resolvable row came back unknown — nothing was actually resolved; resolve the values manually (operator-asked / code-inferred) and let them stand',
+      reason: pkgAmbiguity
+        ? pkgAmbiguity.reason
+        : 'every resolvable row came back unknown — nothing was actually resolved; resolve the values manually (operator-asked / code-inferred) and let them stand',
       sfAutoResolved: false,
       outputPath,
       manifestPath,
