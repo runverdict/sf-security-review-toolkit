@@ -51,6 +51,39 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.112] — 2026-07-10
+
+**The deterministic band no longer ships ~85% scanner noise by default — a conservative
+auto-disposition seeder pre-clears the obvious false positives as an overridable prior, so the
+readiness headline is honest without a driver hand-adjudicating.** A cold run's raw band was 3
+critical / 121 high; the true 1 critical / 34 high only emerged after a human hand-wrote 155
+dispositions. The seeder clears the unambiguous noise deterministically, and the audit can still
+re-open any of it.
+
+### Added
+- `harness/seed-auto-dispositions.mjs` — emits `disposition_source:'heuristic'` priors (with
+  per-entry evidence) into the same `deterministic-dispositions.json` the existing
+  `apply-dispositions.mjs` consumes (no parallel apply). Three CONSERVATIVE, file-scoped
+  heuristics: (1) `avoid-sqlalchemy-text` / `B608` under a migration dir (`alembic`/`migrations`/
+  `versions`, path-segment match) = server-authored DDL; (2) an `osv`/`npm-audit` CVE for a
+  package present ONLY in `devDependencies` = not in the deployed surface; (3) a `gitleaks` hit
+  whose file is absent from `git HEAD` = history rotation-debt, not a package-review gate. It is an
+  OVERRIDABLE PRIOR — `apply-dispositions` never touches an `llm-inferred` finding, so the audit
+  independently re-raises anything real at a cleared locus. Additive/non-clobbering + idempotent.
+
+### Changed
+- `skills/run-scans/SKILL.md` (step 9b) and `skills/audit-codebase/SKILL.md` (step 6) — run the
+  seeder between `reconcile-provenance` and `apply-dispositions`, so the audit sees a
+  pre-adjudicated band it can override.
+
+### Tests
+- `acceptance/test-seed-auto-dispositions.mjs` (new, +16 across a new 81st file) — each heuristic
+  clears its exact shape and NOT the adjacent one (non-migration text()/B608, prod-dep CVE, in-HEAD
+  secret all stay open), entries carry source + evidence, idempotent, and a self-guarding in-process
+  mutation check. Verified against the real cold-run ledger: clears 41 findings (35 migration
+  DDL + the dev-only critical + 5 history secrets), sparing the deterministic critical and every
+  production dep-CVE high. Suite 1213 → 1229 checks across 81 files.
+
 ## [0.8.111] — 2026-07-10
 
 **DAST rung 1 (scan an already-running loopback instance) gets its own honest consent — no more
