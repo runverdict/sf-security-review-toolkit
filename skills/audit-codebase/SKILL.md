@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -380,11 +380,36 @@ regardless of anything this engine produces.
    `merge-ledger.mjs` already printed its operator recap BEFORE this supersession,
    Step 7 RE-RENDERS the recap so the headline + band reflect the reconciled state.
 
+   **Then SEED the heuristic priors — the overridable pre-adjudication you review.**
+   Run `node ${CLAUDE_PLUGIN_ROOT}/harness/seed-auto-dispositions.mjs --target
+   <target>` (on a journey run the early run-scans substrate already ran it; running
+   it here is a pure + idempotent no-op that re-seeds nothing already present). It
+   pre-clears the exact known-safe scanner-noise shapes — a migration-directory
+   `avoid-sqlalchemy-text`/`B608` (server-authored schema SQL), an npm CVE for a
+   package present ONLY in the adjacent package.json's `devDependencies`, and a
+   `gitleaks` hit whose file is absent from git HEAD (rotation debt, not a shipped
+   artifact) — as entries in
+   `<target>/.security-review/deterministic-dispositions.json`, each marked
+   `disposition_source:'heuristic'` with its `heuristic_id` + concrete `evidence`.
+   These are an OVERRIDABLE PRIOR, not a verdict: **review each `heuristic` entry.**
+   You override it TWO ways — (1) if your dimension analysis finds a REAL issue at a
+   heuristic-cleared locus (e.g. injection-xss finds user interpolation at a migration
+   file), raise your OWN `llm-inferred` confirmed finding there; apply-dispositions
+   structurally NEVER touches an llm-inferred finding, so your confirmation is
+   immune to the prior — that is the durable re-open; (2) strike or replace the
+   `heuristic` entry in the file before apply runs. The seeder is CONSERVATIVE by
+   design (a text()/B608 outside a migration dir, a production/transitive dep CVE, and
+   a secret present in HEAD are all left OPEN for you) — it clears the mechanical
+   noise so the headline is honest by default, and leaves the code-analysis calls (a
+   bound-parameter false positive in an admin route, say) to you.
+
    **Then apply deterministic-band dispositions — the NEXT deterministic ledger
    step.** When this pass's verification ADJUDICATES a whole deterministic scanner
    class as a false positive (or an accepted risk) — the same reasoning it writes
-   into the FP dossier — record that adjudication as STRUCTURED data in
-   `<target>/.security-review/deterministic-dispositions.json`:
+   into the FP dossier — record that adjudication as STRUCTURED data in the SAME
+   `<target>/.security-review/deterministic-dispositions.json` (APPEND to the
+   heuristic priors already seeded there — keep the ones you agree with, do not blindly
+   overwrite the file):
 
    ```json
    { "dispositions": [
