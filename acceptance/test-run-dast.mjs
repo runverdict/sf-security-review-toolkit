@@ -12,11 +12,14 @@
  *   G2  buildDastProvenance: field set, authenticated:false + specFedScan:false, PENDING prod-equivalence
  *   G3  dastDegrade: non-up health OR scored-port mismatch degrades; matching port + up → clean
  *   G4  absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a clean result
- *   D5  resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw
- *   L1  rung 1: explicit --base-url wins + fires even over a torn-down pointer (no stand-up)
- *   L2  rung 1 consent gate is SOURCE-selected: explicit --base-url verifies live-instance-dast
- *       (NOT throwaway-dast) + fails closed without the token; standup verifies throwaway-dast;
- *       loopback-only enforcement survives the explicit path
+ *   D5  resolveBaseUrl: pointer-only — an explicit base url THROWS (retired); up/unhealthy
+ *       resolve; torn-down/failed/foreign/non-loopback throw
+ *   L1  the explicit path is RETIRED at the resolver layer: any explicit url throws, even
+ *       loopback, even alongside a valid pointer — the pointer is the ONLY source
+ *   L2  MIRROR-ONLY refusal (the mutation-proof): an explicit --base-url through the CLI is
+ *       REFUSED (exit 3, honest message, no scan) even WITH --consent and recorded consent
+ *       tokens; --from-standup is the only scan path and verifies throwaway-dast — the ONLY
+ *       DAST consent; the loopback guard stays on the pointer path (defense in depth)
  *
  * Dependency-free: `node acceptance/test-run-dast.mjs` (exit 0 = pass).
  */
@@ -169,17 +172,16 @@ check('G4 absentCorroborationStub: NOT-ATTEMPTED evidence-of-absence, never a cl
   assert.ok(!/\bclean\b|\bhealthy\b/i.test(JSON.stringify(s)))
 })
 
-// ── Base-url pointer resolution (Slice D) — explicit wins; the {up,unhealthy} status gate; the
+// ── Base-url pointer resolution (Slice D) — pointer-only; the {up,unhealthy} status gate; the
 //    additive 5th loopback layer re-asserts on the resolved URL. Pure resolver, hermetic. ──
 
-check('D5 resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw', () => {
+check('D5 resolveBaseUrl: pointer-only; explicit THROWS (retired); up/unhealthy resolve; torn-down/failed/foreign/non-loopback throw', () => {
   const P = (over) => ({ schema: 'sf-srt-stack/1', runId: 'r', baseUrl: 'http://127.0.0.1:8000', status: 'up', ...over })
-  // explicit --base-url ALWAYS wins, even with a pointer present
-  const ex = resolveBaseUrl('http://127.0.0.1:9000', P({ baseUrl: 'http://127.0.0.1:8000' }))
-  assert.equal(ex.baseUrl, 'http://127.0.0.1:9000')
-  assert.equal(ex.source, 'explicit')
+  // an explicit base url is RETIRED — it throws even with a valid pointer present
+  assert.throws(() => resolveBaseUrl('http://127.0.0.1:9000', P({})), /retired/)
   // up + unhealthy resolve from the pointer (unhealthy is reachable-but-degraded)
   assert.equal(resolveBaseUrl(null, P({ status: 'up' })).baseUrl, 'http://127.0.0.1:8000')
+  assert.equal(resolveBaseUrl(null, P({ status: 'up' })).source, 'standup', 'the pointer is the ONLY source')
   assert.equal(resolveBaseUrl(null, P({ status: 'unhealthy' })).status, 'unhealthy')
   // MUTATION: widening SCANNABLE to include failed/unknown would let a dead throwaway resolve (red)
   assert.throws(() => resolveBaseUrl(null, P({ status: 'failed' })), /not scannable/)
@@ -191,34 +193,29 @@ check('D5 resolveBaseUrl: explicit wins; up/unhealthy resolve; torn-down/failed/
   assert.throws(() => resolveBaseUrl(null, P({ schema: 'other/1' })), /foreign pointer schema/)
   // a tampered pointer with a non-loopback baseUrl → refuse (the additive 5th loopback layer)
   assert.throws(() => resolveBaseUrl(null, P({ baseUrl: 'http://evil.com:8000' })), /non-loopback/)
-  // no --base-url and no pointer → honest error; an explicit non-loopback is still refused
-  assert.throws(() => resolveBaseUrl(null, null), /no --base-url and no stand-up pointer/)
-  assert.throws(() => resolveBaseUrl('http://evil.com', null), /non-loopback/)
+  // no pointer → honest error naming the stand-up path
+  assert.throws(() => resolveBaseUrl(null, null), /no stand-up pointer/)
 })
 
-// ── Fires-path ladder rung 1 (0.8.109): an explicit --base-url is the "scan an already-running
-//    loopback instance" primitive — ZERO build, ZERO stand-up, and it wins even over a
-//    torn-down pointer (the cheapest, most size-independent rung). ──
+// ── The explicit path is RETIRED (mirror-only). A pre-existing/running instance could be a
+//    partner's real product and real data; the resolver refuses ANY explicit url — loopback or
+//    not — so the stand-up pointer is the only way a scan target can ever be produced. ──
 
-check('L1 rung 1: explicit --base-url ALWAYS wins and fires even over a TORN-DOWN pointer (no stand-up needed)', () => {
-  // a torn-down pointer alone would refuse (rung 3/4), but an explicit loopback --base-url resolves it
+check('L1 the explicit path is RETIRED at the resolver layer: any explicit url throws, loopback included', () => {
   const tornDown = { schema: 'sf-srt-stack/1', runId: 'l1', baseUrl: null, status: 'torn-down' }
-  // MUTATION: removing resolveBaseUrl's explicit-wins early return → the torn-down pointer throws (red)
-  const resolved = resolveBaseUrl('http://127.0.0.1:8000', tornDown)
-  assert.equal(resolved.baseUrl, 'http://127.0.0.1:8000')
-  assert.equal(resolved.source, 'explicit', 'an explicit base-url resolves as source=explicit, never the pointer')
-  // the pointer alone (no --base-url) still refuses a torn-down throwaway — the two-sided proof
+  // MUTATION: restoring the explicit-wins early return makes these resolve instead of throw (red)
+  assert.throws(() => resolveBaseUrl('http://127.0.0.1:8000', tornDown), /retired/, 'loopback does not exempt an explicit url')
+  assert.throws(() => resolveBaseUrl('http://127.0.0.1:8000', null), /retired/)
+  assert.throws(() => resolveBaseUrl('http://evil.com', null), /retired/)
+  // the pointer alone still refuses a torn-down throwaway — nothing to scan means no scan
   assert.throws(() => resolveBaseUrl(null, tornDown), /torn-down/)
-  // rung 1 still plans a real scan from the explicit URL (loopback re-asserted), no pointer involved
-  const p = planDast('http://127.0.0.1:8000', { target: '/repo', runId: 'l1', tmpRoot: join(tmpdir(), 'sf-srt-dast', 'l1') })
-  assert.ok(p.dockerArgs.includes('http://127.0.0.1:8000'))
 })
 
-// ── Rung-1 consent gate is SELECTED BY SOURCE (the distinct live-instance-dast gate). An explicit
-//    --base-url active-scans the operator's OWN running app — real data — so it verifies
-//    'live-instance-dast', NOT the throwaway's 'throwaway-dast' consent (which promises the scan
-//    touches only a disposable throwaway). Driven through the CLI so the whole main() path is
-//    exercised. Fail-closed and loopback-only enforcement must survive on every path. ──
+// ── MIRROR-ONLY through the CLI (the core mutation-proof). An explicit --base-url could point
+//    at a pre-existing/running instance — someone's real product and real data — so main()
+//    REFUSES it outright, before any consent is even looked up. No recorded token unlocks it.
+//    --from-standup (the toolkit-built disposable throwaway) is the ONLY scan path, and it
+//    verifies 'throwaway-dast' — the ONLY DAST consent. ──
 
 const DAST_CLI = fileURLToPath(new URL('../harness/run-dast.mjs', import.meta.url))
 const cliDirs = []
@@ -228,45 +225,52 @@ const runCli = (args) => {
   catch (e) { return { stdout: String(e.stdout || ''), status: e.status == null ? -1 : e.status } }
 }
 
-check('L2 explicit --base-url verifies live-instance-dast (NOT throwaway-dast) and fails closed without the token', () => {
+check('L2 refuses explicit target: an explicit --base-url is REFUSED (exit 3, honest message, NO scan) — no recorded token unlocks it', () => {
   const d = mkTarget()
-  // no consent recorded at all → the explicit path fails closed naming the live-instance-dast gate
-  const a = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
-  assert.equal(a.status, 3, 'no recorded token → fail closed with exit 3')
-  assert.match(a.stdout, /NOT RUN \(no consent\)/)
-  assert.match(a.stdout, /gate 'live-instance-dast'/, 'the explicit path names the live-instance-dast gate')
-  assert.ok(!/gate 'throwaway-dast'/.test(a.stdout), 'the explicit path must NOT name throwaway-dast')
-
-  // MUTATION BITE: record ONLY the throwaway-dast consent. If run-dast reverted to always verifying
-  // 'throwaway-dast' on every path, THIS token would let the explicit path proceed. With the
-  // source-selected gate it STILL fails closed — the explicit already-running scan does not read
-  // the throwaway's consent. (Reverting consentGate to a constant 'throwaway-dast' turns this red.)
+  // MUTATION-PROOF: record the throwaway-dast consent BEFORE the attempt. If the refusal were
+  // reverted (explicit re-allowed), this recorded token plus --consent would let the run
+  // proceed to the executor (a scanning/no-docker record, exit != 3, no refusal text) — turning
+  // every assertion below RED. With the refusal in place, the run never reaches a consent
+  // lookup, never plans, never scans.
   recordConsent('throwaway-dast', 'yes', { target: d, decision: 'affirm' })
-  const b = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
-  assert.equal(b.status, 3, 'a recorded throwaway-dast token must NOT authorize the already-running scan')
-  assert.match(b.stdout, /NOT RUN \(no consent\)/)
-  assert.match(b.stdout, /gate 'live-instance-dast'/)
+  const a = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
+  assert.equal(a.status, 3, 'explicit --base-url must exit 3, even with --consent + a recorded token')
+  assert.match(a.stdout, /REFUSED/, 'the refusal is explicit, not a silent skip')
+  assert.match(a.stdout, /NEVER scan a pre-existing/, 'the message states the invariant honestly')
+  assert.match(a.stdout, /--from-standup/, 'the message points at the only supported path')
+  assert.match(a.stdout, /PENDING-OWNER-RUN/, 'the message names the honest fallback')
+  assert.ok(!/Would run|scanning|no-docker|evidence:/.test(a.stdout), 'nothing was planned or scanned')
+  assert.ok(!/NOT RUN \(no consent\)/.test(a.stdout), 'this is a refusal, not a consent prompt — consent is never consulted')
+
+  // and without any --base-url or --from-standup: an honest nothing-to-scan message, exit 3
+  const b = runCli(['--target', d, '--consent'])
+  assert.equal(b.status, 3)
+  assert.match(b.stdout, /--from-standup/)
+  assert.match(b.stdout, /never scans a pre-existing instance/)
 })
 
-check('L2b the standup pointer path still verifies throwaway-dast (unchanged)', () => {
+check('L2b the standup pointer path verifies throwaway-dast — the ONLY DAST consent', () => {
   const d = mkTarget()
   mkdirSync(join(d, '.security-review'), { recursive: true })
   writeFileSync(join(d, '.security-review', 'stack-standup.json'),
     JSON.stringify({ schema: 'sf-srt-stack/1', runId: 't1', baseUrl: 'http://127.0.0.1:8080', status: 'up', createdAt: '2026-07-10' }))
-  // a stood-up throwaway (source 'standup'), no consent recorded → fail closed naming throwaway-dast
+  // a stood-up throwaway, no consent recorded → fail closed naming throwaway-dast
   const r = runCli(['--from-standup', '--target', d, '--consent'])
   assert.equal(r.status, 3)
   assert.match(r.stdout, /NOT RUN \(no consent\)/)
-  assert.match(r.stdout, /gate 'throwaway-dast'/, 'the standup path still names throwaway-dast')
-  assert.ok(!/gate 'live-instance-dast'/.test(r.stdout), 'the standup path must NOT name live-instance-dast')
+  assert.match(r.stdout, /gate 'throwaway-dast'/, 'the standup path names throwaway-dast')
+  assert.ok(!/live-instance-dast/.test(r.stdout), 'no other DAST gate exists to name')
 })
 
-check('L2c loopback-only enforcement survives on the explicit path (non-loopback host refused)', () => {
+check('L2c loopback stays enforced on the pointer path (defense in depth) — a tampered non-loopback pointer is refused', () => {
   const d = mkTarget()
-  // even with a recorded live-instance-dast token, a non-loopback host is refused before any scan
-  recordConsent('live-instance-dast', 'yes', { target: d, decision: 'affirm' })
-  const r = runCli(['--base-url', 'http://evil.example.com:8080', '--target', d, '--consent'])
-  assert.equal(r.status, 3, 'a non-loopback explicit target must be refused')
+  recordConsent('throwaway-dast', 'yes', { target: d, decision: 'affirm' })
+  mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'stack-standup.json'),
+    JSON.stringify({ schema: 'sf-srt-stack/1', runId: 't2', baseUrl: 'http://evil.example.com:8080', status: 'up', createdAt: '2026-07-10' }))
+  // even with the recorded throwaway-dast token, a tampered pointer cannot smuggle a remote host
+  const r = runCli(['--from-standup', '--target', d, '--consent'])
+  assert.equal(r.status, 3, 'a non-loopback pointer target must be refused')
   assert.match(r.stdout, /non-loopback/, 'the refusal cites the loopback-only invariant')
 })
 

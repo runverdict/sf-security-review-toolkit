@@ -21,7 +21,14 @@
  * authenticated, endpoint-fed AF-plan pass (using a token minted from the throwaway's
  * own synthesized secret) is the depth refinement (slice 5b).
  *
- * USAGE: node run-dast.mjs --base-url <url> --target <repo> --consent [--run-id <id>] [--json]
+ * MIRROR-ONLY: the active scan targets ONLY the disposable throwaway the toolkit itself
+ * stood up (`--from-standup`). An explicit `--base-url` is REFUSED outright — a
+ * pre-existing/running instance could be a partner's real product and real data, and no
+ * consent wording makes that safe to active-scan. Loopback-only stays as defense in depth,
+ * but loopback alone is NOT sufficient (a real instance is also on loopback) — the
+ * stand-up pointer requirement is the real guard.
+ *
+ * USAGE: node run-dast.mjs --from-standup --target <repo> --consent [--run-id <id>] [--json]
  */
 import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -63,25 +70,20 @@ export function readStandupPointer(target) {
 }
 
 /**
- * PURE. Resolve the scan base URL. Explicit `--base-url` ALWAYS wins (source 'explicit');
- * otherwise the stand-up pointer must be `sf-srt-stack/1`, not torn-down (teardown nulls the
- * baseUrl + sets status 'torn-down'), and `up`/`unhealthy` (the SCANNABLE gate — `unhealthy`
- * is reachable-but-degraded, Slice G's label covers it). Every URL — explicit or pointer — is
- * re-asserted loopback, so a tampered pointer can never smuggle a non-loopback target.
- *
- * FIRES-PATH LADDER rung 1 (0.8.109): explicit `--base-url` winning IS the "scan an
- * already-running loopback instance" primitive — point it at a live 127.0.0.1:<port> and DAST
- * fires with ZERO build and ZERO stand-up, independent of app size. It wins even over a
- * torn-down pointer (the early return never consults the pointer's status), so a running app
- * is always the cheapest rung. run-scans surfaces this as the ladder's first-class first option.
+ * PURE. Resolve the scan base URL from the stand-up pointer — the ONLY source. An explicit
+ * base URL is RETIRED and throws unconditionally: the active scan may target only the
+ * disposable throwaway the toolkit itself stood up, never a pre-existing/running instance
+ * (that could be a partner's real product and real data). The pointer must be
+ * `sf-srt-stack/1`, not torn-down (teardown nulls the baseUrl + sets status 'torn-down'),
+ * and `up`/`unhealthy` (the SCANNABLE gate — `unhealthy` is reachable-but-degraded,
+ * Slice G's label covers it). The pointer URL is re-asserted loopback, so a tampered
+ * pointer can never smuggle a non-loopback target.
  */
 export function resolveBaseUrl(explicitBaseUrl, pointer) {
   if (explicitBaseUrl) {
-    if (!URL_OK.test(String(explicitBaseUrl))) throw new Error(`resolveBaseUrl: invalid base url '${explicitBaseUrl}'`)
-    assertLoopbackHost(explicitBaseUrl)
-    return { baseUrl: explicitBaseUrl, source: 'explicit', runId: (pointer && pointer.runId) || null, status: (pointer && pointer.status) || null }
+    throw new Error('resolveBaseUrl: explicit base urls are retired — the active scan/capture targets ONLY the disposable throwaway the stand-up pointer names, never a pre-existing instance')
   }
-  if (!pointer || typeof pointer !== 'object') throw new Error('resolveBaseUrl: no --base-url and no stand-up pointer — stand up first, or pass --base-url')
+  if (!pointer || typeof pointer !== 'object') throw new Error('resolveBaseUrl: no stand-up pointer — stand up the throwaway mirror first (standup-stack.mjs)')
   if (pointer.schema !== 'sf-srt-stack/1') throw new Error(`resolveBaseUrl: refusing a foreign pointer schema '${pointer.schema}'`)
   if (pointer.status === 'torn-down' || pointer.baseUrl == null) throw new Error('resolveBaseUrl: the stand-up pointer is torn-down (no live throwaway) — stand up again')
   const SCANNABLE = new Set(['up', 'unhealthy'])
@@ -303,9 +305,7 @@ function main() {
 
   const runId = arg('--run-id', `${Date.now().toString(36)}-${process.pid}-${randomBytes(3).toString('hex')}`)
   const tmpRoot = arg('--tmp-root', join(tmpdir(), 'sf-srt-dast', runId))
-  // The recorded live-op consent is selected by SOURCE below (once resolveBaseUrl has told us
-  // whether this is an already-running instance or a stood-up throwaway); --consent alone is never
-  // enough. Read the CLI flag here; pair it with the source-matched recorded token further down.
+  // --consent alone is never enough: the recorded throwaway-dast token is also required (below).
   const consentFlag = argv.includes('--consent')
   // honesty inputs from the stand-up manifest (Slice B1 wrote them; the journey threads them)
   let health = arg('--health', 'unverified')
@@ -314,24 +314,24 @@ function main() {
   let scoredPort = arg('--scored-port', arg('--port', null))
   let guarded = argv.includes('--guarded')
 
-  // The scan SOURCE selects which live-op consent gate authorizes this run — resolveBaseUrl is the
-  // single arbiter of `source`. An explicit --base-url is an ALREADY-RUNNING instance the operator
-  // started (source 'explicit' → the live-instance-dast gate, which active-scans their own live app
-  // and its real data); a --from-standup pointer is a disposable throwaway (source 'standup' →
-  // throwaway-dast). Resolving the explicit URL HERE also re-asserts loopback before any consent is
-  // even looked up, so the loopback-only invariant holds on the already-running path too.
-  let scanSource = null
+  // MIRROR-ONLY REFUSAL: an explicit --base-url is retired, unconditionally. A pre-existing/
+  // running instance could be a partner's real product and real data; no recorded consent
+  // unlocks this path — the refusal fires BEFORE any consent is even looked up. Loopback
+  // stays enforced on the pointer path as defense in depth, but loopback alone is NOT
+  // sufficient (a real instance is also on loopback) — the stand-up pointer IS the guard.
   if (baseUrl) {
-    let resolved
-    try { resolved = resolveBaseUrl(baseUrl, null) }
-    catch (e) { process.stdout.write(`## run-dast — ${e.message}\n`); process.exitCode = 3; return }
-    scanSource = resolved.source // 'explicit'
+    process.stdout.write('## run-dast — REFUSED: run-dast active-scans ONLY a disposable mirror the toolkit built (`--from-standup`); it will NEVER scan a pre-existing `--base-url` instance — that could be a partner\'s real product/data. Stand up the mirror, or DAST stays PENDING-OWNER-RUN.\n')
+    process.exitCode = 3; return
+  }
+  if (!argv.includes('--from-standup')) {
+    process.stdout.write('## run-dast — nothing to scan: pass --from-standup (the stand-up pointer to the disposable mirror the toolkit built). run-dast never scans a pre-existing instance; without a stood-up mirror, DAST stays PENDING-OWNER-RUN.\n')
+    process.exitCode = 3; return
   }
 
   // --from-standup (Slice D): resolve the base URL + honesty flags from the stand-up pointer,
-  // removing the hand-copy foot-gun. Explicit --base-url still wins; the resolver re-asserts
-  // loopback + the {up,unhealthy} status gate; the staleness guard catches a swept manifest.
-  if (argv.includes('--from-standup') && !baseUrl) {
+  // removing the hand-copy foot-gun. The resolver re-asserts loopback + the {up,unhealthy}
+  // status gate; the staleness guard catches a swept manifest.
+  {
     const pointer = readStandupPointer(target)
     let resolved
     try { resolved = resolveBaseUrl(null, pointer) }
@@ -340,7 +340,6 @@ function main() {
       process.stdout.write(`## run-dast — the stand-up pointer references a manifest that no longer exists (${pointer.manifestPath}) — the throwaway is gone; stand up again\n`); process.exitCode = 3; return
     }
     baseUrl = resolved.baseUrl
-    scanSource = resolved.source // 'standup'
     if (health === 'unverified') health = resolved.status || 'unverified'
     if (!migration && pointer.migration) migration = pointer.migration.tool || pointer.migration
     if (!service && pointer.scannedService) service = pointer.scannedService
@@ -349,13 +348,10 @@ function main() {
     if (!asJson) process.stdout.write(`## run-dast — resolved from stand-up ${pointer.runId} (created ${pointer.createdAt}), status ${resolved.status}\n`)
   }
 
-  // --consent alone is insufficient: the recorded live-op consent for THIS scan's source is also
-  // required. An already-running instance (source 'explicit') verifies 'live-instance-dast' — it
-  // active-scans the operator's REAL app; a stood-up throwaway (source 'standup') verifies
-  // 'throwaway-dast'. Fail closed when the source-matched token is missing — the flag never
-  // authorizes a live op on its own. (No source resolved → default to throwaway-dast; planDast
-  // rejects the null base url below before the consent check is reached anyway.)
-  const consentGate = scanSource === 'explicit' ? 'live-instance-dast' : 'throwaway-dast'
+  // --consent alone is insufficient: the recorded 'throwaway-dast' consent — the ONLY DAST
+  // consent, the one that stood the mirror up — is also required. Fail closed when the
+  // recorded token is missing; the flag never authorizes a live op on its own.
+  const consentGate = 'throwaway-dast'
   const consentRecorded = verifyConsent(consentGate, { target })
   const consent = consentFlag && consentRecorded
 
