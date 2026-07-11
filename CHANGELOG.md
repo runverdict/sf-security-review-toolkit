@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.115] — 2026-07-11
+
+**Two tag-gating checks now lock the two ways the readiness result could be untrustworthy: that
+DAST actually FIRED (a real ZAP report + honest provenance, not a degrade), and that the readiness
+headline counts the ADJUDICATED band, not the raw scanner noise.**
+
+### Added
+- `harness/verify-dast-fired.mjs` — the deterministic DAST-fired tag gate. A real fire is a
+  `zap-throwaway-local-*.json` report on disk AND a `dast-provenance.json` with `scanKind ≠ not-run`
+  (not the `--absent` degrade stub). Pure `dastFired` predicate + a fail-closed CLI (exit 0 = fired,
+  exit 2 = degraded / absent). The fire itself needs live docker, so the CLI is the cold-run runbook
+  step; the predicate is hermetically tested.
+
+### Tests
+- `acceptance/test-verify-dast-fired.mjs` (new, +8) — the predicate + CLI: a fire → exit 0; a
+  not-run degrade (even with a stale report on disk — the provenance is authoritative), a real
+  scanKind with no report, a `zap-baseline-*.json` (the ZAP SCRIPT name, never an evidence file), a
+  missing / scanKind-less provenance → not fired / exit 2 (fail closed).
+- `acceptance/test-readiness-headline-integrity.mjs` (new, +5) — drives the real
+  apply-dispositions → render-recap chain over a raw 3-critical / 120-high band adjudicated down to
+  1 / 33, and asserts the emitted `report-headline.md` shows the ADJUDICATED counts (never the raw
+  band), byte-identical to the block over the post-disposition ledger, and that
+  verify-report-headline halts a report parroting the raw band count.
+
+### Changed
+- `skills/run-scans/SKILL.md` (DAST section) — corrects the throwaway evidence filename to
+  `zap-throwaway-local-*.json` (the `zap-baseline` token is the ZAP SCRIPT name, never an evidence
+  file) and adds the `verify-dast-fired.mjs` tag-gate step the 0.9.0 cold run gates on.
+
+Suite 83 files / 1251 checks / 0 failed (+2 files, +13 checks).
+
 ## [0.8.114] — 2026-07-11
 
 **The throwaway-mirror DAST (rung 2/3) is hardened against a real prod compose: the loopback

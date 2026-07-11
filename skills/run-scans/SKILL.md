@@ -443,14 +443,19 @@ families PENDING until a re-audit.
    was given, the toolkit stands the backend up as a disposable mirror and runs a
    digest-pinned ZAP against THAT
    (`harness/{standup-stack,capture-openapi,run-dast,teardown-stack}.mjs`),
-   landing real evidence in `evidence/dast/zap-baseline-*.json` — **labelled
+   landing real evidence in `evidence/dast/zap-throwaway-local-*.json` — **labelled
    local-throwaway**: it's corroborating DAST + a de-risking dry run, NOT the
    production-equivalent submission scan (the active scan only ever hits a mirror the
    toolkit built, never live prod / Salesforce infra / a third party). While the mirror
    is up, `capture-openapi.mjs` also GETs the framework's own spec (read-only,
    loopback-only, riding the same recorded consent) into `evidence/openapi-<date>.json` —
    that is what upgrades the api-endpoints artifact `generate-artifacts` emits from
-   code-derived to mirror-captured, with prod-equivalence PENDING owner attestation. *Requires (the
+   code-derived to mirror-captured, with prod-equivalence PENDING owner attestation. Then the
+   tag-gate DAST-fired check `node ${CLAUDE_PLUGIN_ROOT}/harness/verify-dast-fired.mjs --target
+   <repo>` confirms a real fire actually LANDED — a `zap-throwaway-local-*.json` report AND an
+   honest `dast-provenance.json` (`scanKind ≠ not-run`, i.e. not the `--absent` degrade stub):
+   exit 0 = fired, exit 2 = degraded/absent (re-run run-dast against the throwaway, or point it at
+   a rung-1 already-running instance). The 0.9.0 cold-run tag gate requires that exit 0. *Requires (the
    submission scan):* partner-run DAST of every external
    endpoint with an industry tool — there is no hosted alternative (baseline:
    `dast-self-run-required`); the scan must be **authenticated** (baseline:
