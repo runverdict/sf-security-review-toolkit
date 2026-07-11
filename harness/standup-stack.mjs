@@ -275,6 +275,10 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile, host
     const synthNames = (stack.env && stack.env.synthesizable) || []
     return {
       schema: STACK_SCHEMA, runId, kind: 'compose', needsConfigResolution: true,
+      // rung 2: the stack-detect recipe's buildsFromSource flows through planCompose's
+      // spread into the full plan, so the executor's `up` omits --build on a genuinely
+      // prebuilt recipe (composeUpArgs) instead of forcing the heavy source build
+      buildsFromSource: recipe.buildsFromSource,
       // the compose PROJECT carries the toolkit run-name (the stackNames convention), so
       // every project resource (containers <project>-<svc>-N, network <project>_default,
       // volumes <project>_*) is name-scoped for the project-scoped teardown + sweep
@@ -369,19 +373,59 @@ export function planCompose(config, prePlan) {
   // CONCATENATES with the base file's list, which would leave the original 0.0.0.0
   // publish alive next to ours — the exact isolation failure this override exists to
   // prevent. The tags REPLACE (Compose V2 merge semantics, verified empirically).
+  // `volumes: !reset []` on EVERY service (web tier included): a prod compose's host bind
+  // mounts must never survive into the scanned throwaway — a `~/.config/gcloud` bind would
+  // mount the operator's REAL durable credentials into the ZAP-scanned container, and a
+  // `./data` bind would docker-create a root-owned dir in the partner working tree. The
+  // reset also drops any host CONFIG bind (e.g. an nginx.conf) — a prebuilt prod image
+  // carries its config baked in, and a stand-up that needed the dropped bind degrades
+  // HONESTLY (failed/unknown status) rather than silently mounting the operator's real
+  // credentials: the deliberate security-over-convenience tradeoff. Named data volumes are
+  // dropped harmlessly (the throwaway is disposable by definition).
   const overrideContent = [
     '# generated loopback override — the throwaway publishes ONLY the web tier, ONLY on',
     '# 127.0.0.1; every other service loses its host ports (services still reach each',
-    '# other over the compose network).',
+    '# other over the compose network), and every service loses its volumes (no host',
+    '# bind mount survives into the scanned throwaway).',
     'services:',
     `  ${webService}:`,
     '    ports: !override',
     `      - "127.0.0.1:${hostPub}:${targetPort}"`,
-    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []']),
+    '    volumes: !reset []',
+    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []']),
   ].join('\n') + '\n'
   const { needsConfigResolution, ...plan } = prePlan
   // targetPort is the container-side port the executor reads the assigned host port back on
   return { ...plan, webService, targetPort, overrideContent }
+}
+
+/**
+ * PURE. The compose `up` argv for a plan. A genuinely prebuilt recipe (stack-detect
+ * `buildsFromSource:false` — rung 2 of the fires-path ladder) must NOT force `--build`:
+ * that re-runs the heavy source build the rung exists to avoid. The flag is OMITTED, not
+ * replaced with `--no-build` — a clean box has no cached image, and omitting lets compose
+ * build-if-missing while REUSING a present prebuilt image. Anything else (true, undefined —
+ * a build-from-source or legacy plan) keeps the explicit `--build`.
+ */
+export function composeUpArgs({ buildsFromSource } = {}) {
+  return buildsFromSource === false ? ['up', '-d'] : ['up', '-d', '--build']
+}
+
+/**
+ * PURE. Classify a failed `docker compose config` stderr → a short surfaceable message,
+ * or null. ONLY known-safe STRUCTURAL shapes are surfaced — a missing env_file names a
+ * FILENAME, never a value. Anything else (notably interpolation errors, which echo the
+ * offending VALUE — a `postgres://user:pass@host` — into stderr) returns null and the
+ * caller keeps the generic no-capture message: a secret-bearing line must never persist
+ * into the manifest/CLI. undefined/'' (e.g. a JSON.parse failure with no .stderr) → null.
+ */
+export function safeComposeConfigError(stderr) {
+  const s = String(stderr || '')
+  // `env file /x/.env not found` (compose v2) | `open /x/.env: no such file or directory`
+  const m = s.match(/env file ([^\s]+) not found/i)
+    || s.match(/open ([^\s:]+\.env[^\s:]*): no such file or directory/i)
+  if (m) return `docker compose config failed: env file '${m[1]}' not found — provide it (or scaffold-env) and re-run`
+  return null
 }
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -643,9 +687,14 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
     // host port; the real port is read back after `up`. planCompose's baseUrl is unaffected
     // (it inherits plan.baseUrl), so only the override host slot carries the `0`.
     full = planCompose(config, { ...plan, hostPort: 0 })
-  } catch {
+  } catch (e) {
     rec.status = 'failed'
     rec.log = 'compose stand-up failed: `docker compose config` could not resolve the compose file (run it yourself for the parser error — the toolkit does not capture command output, to avoid persisting secret-bearing interpolations)'
+    // Surface ONLY a known-safe STRUCTURAL cause (a filename, never a value) — the cold-run
+    // driver was left guessing when the real cause was a missing env_file. Anything the
+    // classifier does not recognize keeps the generic no-capture message above.
+    const safe = safeComposeConfigError(e && e.stderr)
+    if (safe) rec.log += `; ${safe}`
     return writeManifest(plan, rec, target)
   }
   if (full.unsupported) return { status: 'unsupported', reason: full.reason, resources: { container: plan.container, image: null, network: null }, baseUrl: plan.baseUrl, synthEnvNames: plan.synthEnvNames }
@@ -675,7 +724,9 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   // (hostPort == web port), so a crashed `up` still writes a coherent stub.
   let live = full
   try {
-    run('docker', [...composeArgs, 'up', '-d', '--build'])
+    // composeUpArgs omits --build on a rung-2 prebuilt recipe (buildsFromSource:false) —
+    // compose still builds-if-missing, but a present prebuilt image is REUSED, not rebuilt
+    run('docker', [...composeArgs, ...composeUpArgs(full)])
     // Read the assigned ephemeral host port back off the web tier (127.0.0.1:0:<targetPort>) —
     // done AFTER `up` so the mapping is live; avoids the find-a-free-port-then-bind race.
     const hostPort = parseHostPort(run('docker', [...composeArgs, 'port', full.webService, String(full.targetPort)]), `${full.webService}:${full.targetPort}`)
