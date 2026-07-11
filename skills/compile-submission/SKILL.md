@@ -1,7 +1,7 @@
 ---
 name: compile-submission
 description: Phase 5 of security review prep. Inventories every artifact and evidence file against the baseline, fills the required-artifacts checklist (HAVE only with verified evidence), pre-fills the questionnaire with the hard N/A lint, cross-checks answers against artifacts, compiles the readiness tracker, computes the deterministic Submission Completeness Index (the gated go/no-go), emits an honest readiness verdict + a sequenced path-to-green remediation checklist, and assembles the downloadable submission-package with a wizard-slot INDEX, a PENDING-OWNER-RUN handoff, and step-grouped artifacts. Use as the go/no-go check before paying the review fee — the human submits; this skill makes sure nothing bounces at the materials check.
-allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/compute-sci.mjs *) Bash(node *harness/ledger-staleness.mjs *) Bash(node *harness/render-stability.mjs *) Bash(node *harness/render-readiness-verdict.mjs *) Bash(node *harness/gate-spec.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Edit Bash(ls *) Bash(find *) Bash(cat *) Bash(curl *) Bash(git log *) Bash(git rev-parse *) Bash(mkdir *) Bash(cp *) Bash(tar *) Bash(node *harness/build-evidence-index.mjs *) Bash(node *harness/compute-sci.mjs *) Bash(node *harness/ledger-staleness.mjs *) Bash(node *harness/render-stability.mjs *) Bash(node *harness/render-readiness-verdict.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/assemble-submission-package.mjs *) AskUserQuestion
 ---
 
 # Compile Submission
@@ -400,117 +400,95 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
      before resubmitting; the re-compile is what proves the remediation
      didn't break a different row.
 
-10. **Assemble the downloadable submission package.** Everything before this
-    step produced scattered artifacts and a verdict; this step gathers them
-    into one self-describing directory so the Partner Console session is
-    *transcription, not composition*. Build
-    `<target>/docs/security-review/submission-package/` and populate it with
-    `INDEX.md`, `PENDING-OWNER-RUN.md`, `readiness-verdict.md` (copied in from
-    step 8), and the artifacts/evidence **grouped by the wizard step that
-    consumes them**, not by where they happened to live in `docs/` and
-    `.security-review/evidence/`. Copy artifacts into step-named
-    subdirectories (`step2-technical/`, `step3-docs/`, `step3-scans/`,
-    `step4-environments/`); never move the originals — `audit-codebase` and a
-    re-compile still read from the canonical paths, and a moved original is
-    how step 2's link-verification starts 404ing on the next run. The
-    assembler runs from the manifest and the same inventory step 2 already
-    built — it does not re-classify; a file that step 2 demoted to PARTIAL or
-    TODO is copied with that status, never silently upgraded by being placed
-    in a slot.
+10. **Assemble the downloadable submission package — run the engine, paste
+    its summary verbatim.** Everything before this step produced scattered
+    artifacts and a verdict; this step gathers them into one self-describing
+    directory so the Partner Console session is *transcription, not
+    composition*. The assembly is ENGINE-owned (CONVENTIONS §7 — two operators
+    hand-building the deliverable produced two different packages); you never
+    hand-build the directory, the index, or the runbook. Run the shipped
+    assembler and paste its summary output verbatim:
 
-    **`INDEX.md` is the canonical artifact→wizard-slot map**, and it is the
-    one file the operator reads top-to-bottom in front of the live wizard. The Security Review Wizard has **five steps** (baseline:
-    `process-submission-wizard`): (1) Add Contacts, (2) Add Technical Details,
-    (3) Upload Documentation — the artifact-heavy step, with named upload
-    slots: *Architecture & Usage Documentation*, *API Callouts documentation*,
-    *Security scanner reports*, *False-positives documentation*, *Other
-    documentation*; (4) Provide Environments — credential sub-blocks split by
-    access path: *Username/Password Authentication*, *API/OAuth/SAML Access*,
-    *Desktop Clients*, *Mobile Apps*, *Other Test Environment Information*; (5)
-    Review & Submit. Tag **every** file in the index with its exact step, its
-    exact upload slot, and a provenance marker:
-    - `[A]` — toolkit-generated outright (e.g. the SSL Labs JSON, the Code
-      Analyzer HTML).
-    - `[A/h]` — toolkit-drafted, owner-run or owner-confirms before it ships
-      (e.g. the questionnaire pre-fill whose certification answers only the
-      owner can make; the DAST report the owner must actually run; the
-      access-control matrix from the permission inventory, which depends on the
-      optional owner-consented SF-CLI auto-resolution to populate).
-    - `[M]` — manual: the toolkit supplies a runbook only, no artifact it can
-      generate (e.g. the contacts block, the ISMS policy suite, the per-attempt
-      review fee — baseline: `process-review-fee`, read it at run time).
-    A file is **HAVE in the index only when step 2 verified its evidence** —
-    the index inherits step 2's status verbatim. A drafted-but-unconfirmed
-    `[A/h]` artifact is **PARTIAL, never HAVE**: "the agent wrote a draft" is
-    not "the owner ran the scan." Never write or imply "will pass" anywhere in
-    the index — the strongest status a row carries is HAVE-with-verified-
-    evidence, and even a full sheet of HAVE rows means "no known blockers in
-    what this toolkit can verify," not a prediction (CONVENTIONS §2).
+    ```bash
+    node ${CLAUDE_PLUGIN_ROOT}/harness/assemble-submission-package.mjs --target <target> --plugin ${CLAUDE_PLUGIN_ROOT} --date <runDate>
+    ```
 
-    **Conditional suppression — the operator must never face an empty slot
-    (P-1).** Emit a slot **only when the artifact's baseline id is in the
-    manifest's `applicableBaselineIds`** (the same list step 2 read). A
-    managed-package-only listing has no MCP-server-details artifact and no
-    API/OAuth slot; an external-server-only listing has no Code Analyzer /
-    Checkmarx package leg.
-    For Step 4 specifically, **auto-suppress the Desktop Clients and Mobile
-    Apps sub-blocks when the manifest carries no desktop-client or mobile
-    element** — render them as a one-line "not applicable: no <element> in
-    scope" note in the index's audit trail rather than as an empty upload
-    block the operator would otherwise stare at and wonder what they forgot.
-    Render the surviving conditional sub-blocks from the **detected** elements,
-    not a fixed list: a Username/Password block appears because a Trialforce /
-    test-org credential runbook exists; an API/OAuth/SAML block appears because
-    the manifest shows an external endpoint or MCP server. Wherever a rule in
-    this block genuinely branches on element TYPES, match the type through its
-    canonical form — synonyms per `harness/render-detected-elements.mjs`'s
-    `ELEMENT_TYPE_SYNONYMS` (e.g. `external-web-app` ≡ `external-endpoint`) —
-    never the raw manifest string. The index closes
-    with a short "suppressed (not applicable)" list so the omission is visibly
-    deliberate — a reviewer (and a future re-compile) sees that Desktop was
-    *decided* out, not *forgotten*.
-
-    **`PENDING-OWNER-RUN.md` is the human tail** — the precise, ordered
-    runbook for everything the toolkit cannot do, each item with the exact
-    command or click-path and its blocking prerequisite, because the toolkit
-    **stops at Step 5 and the human submits** — a hard boundary of this toolkit.
-    Read the perishable specifics (commands, fee, windows) from the baseline
-    at assembly time, not from this skill's prose. Each item names its owner
-    and its gate:
-    - **Run the authenticated DAST** against the live identity + MCP/endpoint
-      surface, using the ZAP plan generated under
-      `${CLAUDE_PLUGIN_ROOT}/harness/zap/` — capture the report HTML plus a
-      scanned-URL screenshot into `step3-scans/`; the `[A/h]` row in the index
-      stays PARTIAL until that evidence exists.
-    - **Run the Checkmarx portal scan** via the Partner Security Portal —
-      **prerequisite: the listing must be linked first** (baseline:
-      `scan-checkmarx-partner-portal`); package leg only, not the API/MCP leg; 3
-      runs/version are included in the fee.
-    - **Enter the test-environment credentials** into the wizard Step-4 slots —
-      they are *supplied separately through the submission channel*, never
-      written into any package file (CONVENTIONS §6); the package carries only
-      the runbook that says which persona goes in which slot.
-    - **Open the reviewer-IP allowlist window** — a temporary firewall
-      exception scoped to the reviewer source IPs for the review window, with
-      an explicit revert step after approval. The package gives the runbook
-      and the revert checklist; the operator fills in the current reviewer IPs
-      from the live wizard (they are not hardcoded here — they change, and
-      they are environment-specific).
-    - **Pay the review fee** in the Partner Console and **click Submit** — read
-      the per-attempt review fee from baseline `process-review-fee` and confirm
-      it live; state the **free-retry semantics** (Returned submissions and
-      false-positive-only responses resubmit **free**; only a code change is a
-      new paid attempt — **never** treat every resubmission as a fresh paid
-      attempt). The cost-of-failure note in the verdict uses these same
-      free-retry lanes.
+    It builds `<target>/docs/security-review/submission-package/` —
+    `INDEX.md`, `PENDING-OWNER-RUN.md`, `readiness-verdict.md` (copied in
+    from step 8; an honest TODO placeholder when step 8 hasn't run), and the
+    artifacts/evidence COPIED into the step-named subdirectories
+    (`step2-technical/`, `step3-docs/`, `step3-scans/`,
+    `step4-environments/`) **grouped by the wizard step that consumes them**.
+    Copies, never moves — `audit-codebase` and a re-compile still read from
+    the canonical paths, and a moved original is how step 2's
+    link-verification starts 404ing on the next run. What the engine
+    enforces, so prose no longer has to:
+    - **The wizard-slot map is a FROZEN CONSTANT** (`WIZARD_STEPS`,
+      `STEP3_UPLOAD_SLOTS`, `STEP4_CREDENTIAL_SUBBLOCKS`, and the
+      baseline-id-keyed `SLOT_MAP` in the harness, guarded by its standing
+      test): the five wizard steps (baseline: `process-submission-wizard`),
+      the Step-3 upload slots (*Architecture & Usage Documentation*, *API
+      Callouts documentation*, *Security scanner reports*, *False-positives
+      documentation*, *Other documentation*), and the Step-4 credential
+      sub-blocks (*Username/Password Authentication*, *API/OAuth/SAML
+      Access*, *Desktop Clients*, *Mobile Apps*, *Other Test Environment
+      Information*). Every `INDEX.md` row carries its exact step, exact slot,
+      a `[A]`/`[A/h]`/`[M]` provenance marker, and a status **inherited from
+      the evidence-index disposition** — the engine never re-classifies:
+      reviewer-reproducible satisfied evidence → HAVE; a draft → PARTIAL,
+      never HAVE; pending-owner → TODO (its prepared plan still ships, with
+      that status); statically-cleared → surfaced as its own status, never
+      HAVE. Never write or imply "will pass" anywhere around the index — the
+      strongest row is HAVE-with-verified-evidence, and even a full sheet of
+      HAVE rows means "no known blockers in what this toolkit can verify,"
+      not a prediction (CONVENTIONS §2).
+    - **Conditional suppression (P-1) is engine-computed**: a slot is emitted
+      only when its baseline id is in the manifest's `applicableBaselineIds`
+      (read verbatim — the same list steps 1–2 read), and the Desktop
+      Clients / Mobile Apps sub-blocks auto-suppress when the manifest
+      carries no desktop-client or mobile element. Element-type rules match
+      through the canonical form — synonyms per
+      `harness/render-detected-elements.mjs`'s `ELEMENT_TYPE_SYNONYMS` (e.g.
+      `external-web-app` ≡ `external-endpoint`) — never the raw manifest
+      string. The index closes with a "suppressed (not applicable)" list so
+      the omission is visibly deliberate: Desktop was *decided* out, not
+      *forgotten*.
+    - **`PENDING-OWNER-RUN.md` is the human tail** — the toolkit stops at
+      Step 5 and the human submits, a hard boundary. The engine unions (a)
+      every `pending-owner` evidence-index row (the DAST the owner runs from
+      the plan under `${CLAUDE_PLUGIN_ROOT}/harness/zap/`, the withheld
+      artifacts — each with its prepared location and note) with (b) the
+      fixed owner tail — the wizard walk, the Checkmarx portal scan (package
+      leg only), the review fee + Submit — whose **perishable text (fee
+      amount, portal run budget, wizard mechanics) is parsed from the
+      baseline entries (`process-review-fee`,
+      `scan-checkmarx-partner-portal`, `process-submission-wizard`) at
+      assembly time**, never hardcoded in the engine and never quoted from
+      this skill's prose. Free-retry semantics ride the quoted fee entry;
+      test-environment credentials are *supplied separately through the
+      submission channel*, never written into any package file
+      (CONVENTIONS §6). Two owner items the engine cannot derive stay with
+      you to append context for in the wizard session: the reviewer-IP
+      allowlist window (open it for the review window with an explicit
+      revert step after approval; the current reviewer IPs come from the
+      live wizard — they change and are environment-specific) and the
+      contacts block (step 9).
+    - **Fail-closed gates**: the engine re-runs `compute-sci.mjs` first and
+      inherits its `STALE SCOPE MANIFEST` refusal (exit 2 → nothing
+      assembled; re-run scope-submission, never hand-edit the manifest); an
+      unreadable manifest or evidence index aborts; and a CREDENTIAL-REFUSAL
+      scan runs over everything that would land in the package **before any
+      copy** — credential-shaped content anywhere means nothing is written
+      and the operator is pointed at the env-var / vault location instead
+      (CONVENTIONS §6). `--date` is required: the package is date-pinned and
+      byte-identical on re-run, never wall-clock.
 
     **Optionally `tar` the package** (`tar -czf submission-package.tgz -C
     <target>/docs/security-review submission-package`) for a single
-    downloadable handoff — but only after a final refusal check: if any file
-    under the package tree looks like captured credential material, **do not
-    tar it and do not write it** — point the operator at the env-var / vault
-    location instead (CONVENTIONS §6). The tarball is a convenience over the
-    directory, not a substitute for the `INDEX.md` the operator reads live.
+    downloadable handoff — only after the engine ran clean, since the
+    engine's credential refusal is what makes the tree safe to bundle. The
+    tarball is a convenience over the directory, not a substitute for the
+    `INDEX.md` the operator reads live.
 
 ## Automated vs. manual recap
 
