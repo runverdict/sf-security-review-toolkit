@@ -51,6 +51,37 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.113] — 2026-07-11
+
+**The mandated verbatim cluster-headline block is now emitted deterministically to
+`report-headline.md` — recomputed from the ledger and refreshed post-disposition — so the audit
+report can no longer omit it or contradict the adjudicated band.** On a cold run the synthesis agent
+skipped the block and wrote "no critical findings" over a ledger holding a deterministic critical,
+tripping the `verify-report-headline` hard stop and needing a hand-rescue. The block is now a ready
+on-disk artifact, byte-identical to what the gate recomputes.
+
+### Added
+- `harness/merge-ledger.mjs` — after writing the ledger, emits the verbatim cluster-headline block
+  (`renderClusterHeadline(clusterOrNullFromFindings(findings))`, composed from the byte-frozen
+  `finding-clusters.mjs` exports) to `<target>/.security-review/report-headline.md`, so the exec
+  summary includes it verbatim instead of hand-running `finding-clusters --headline`.
+
+### Changed
+- `harness/render-recap.mjs` — the Step-7 `--target` re-render now also REFRESHES
+  `report-headline.md` to the POST-disposition block (after reconcile + apply-dispositions), so the
+  report headline reflects the adjudicated band rather than the raw pre-disposition counts. Guarded
+  on a readable ledger; a missing/unreadable ledger writes nothing and never crashes.
+- `skills/audit-codebase/SKILL.md` (Step 6 + Step 7) — the report's exec-summary headline is taken
+  from the deterministic `report-headline.md` sidecar, finalized post-disposition before
+  `verify-report-headline.mjs` runs (additive edits; the pinned `finding-clusters --headline`
+  reference and the reconcile → apply → render-recap ordering are preserved).
+
+### Tests
+- `acceptance/test-merge-ledger.mjs` (M18), `acceptance/test-render-recap.mjs` (RC12/RC12b),
+  `acceptance/test-verify-report-headline.mjs` (VH7 round-trip lock) — the sidecar is byte-identical
+  to the cluster block, refreshes post-disposition (refuted/superseded drop out, byte-deterministic),
+  and matches the gate's expected block. Suite 81 files / 1233 checks / 0 failed (+4).
+
 ## [0.8.112] — 2026-07-10
 
 **The deterministic band no longer ships ~85% scanner noise by default — a conservative
