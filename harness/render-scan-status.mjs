@@ -72,7 +72,7 @@ export const SCAN_FAMILIES = Object.freeze([
     evidence_re: /(?:^|\/)(?:semgrep|bandit|njsscan|gosec)-/, next: 'run-scans Family 7 (agent: Semgrep + per-language SAST over the server tree)' },
   { n: 8, name: 'External SCA + IaC', applies: 'lockfile / Dockerfile / IaC', applies_elements: ['external-endpoint'],
     runner: 'agent', gate: 'scan-external-sca, scan-iac-misconfig (major)', gate_ids: ['scan-external-sca', 'scan-iac-misconfig'],
-    evidence_re: /(?:^|\/)(?:osv|iac)-/, next: 'run-scans Family 8 (agent: OSV-Scanner + Checkov over lockfiles/Dockerfiles/IaC)' },
+    evidence_re: /(?:^|\/)(?:osv|iac|pip-audit)-/, next: 'run-scans Family 8 (agent: OSV-Scanner + Checkov over lockfiles/Dockerfiles/IaC; pip-audit for lockfile-less Python)' },
 ])
 
 // The fixed Status enum (the legend pins the meanings).

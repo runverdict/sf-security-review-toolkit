@@ -1,0 +1,47 @@
+{
+  "dependencies": [
+    {
+      "name": "fastapi",
+      "version": "0.111.0",
+      "vulns": []
+    },
+    {
+      "name": "python-jose",
+      "version": "3.3.0",
+      "vulns": [
+        {
+          "id": "PYSEC-2024-232",
+          "fix_versions": [
+            "3.4.0"
+          ],
+          "aliases": [
+            "CVE-2024-33663",
+            "GHSA-cjwg-qfpm-7377"
+          ],
+          "description": "python-jose through 3.3.0 has algorithm confusion with OpenSSH ECDSA keys and other key formats. This is similar to CVE-2022-29217."
+        },
+        {
+          "id": "PYSEC-2024-233",
+          "fix_versions": [
+            "3.4.0"
+          ],
+          "aliases": [
+            "CVE-2024-33664",
+            "GHSA-6c5p-j8vq-pqhj"
+          ],
+          "description": "python-jose through 3.3.0 allows attackers to cause a denial of service (resource consumption) during a decode via a crafted JSON Web Encryption (JWE) token with a high compression ratio, aka a JWT bomb. This is similar to CVE-2024-21319."
+        }
+      ]
+    },
+    {
+      "name": "internal-api",
+      "skip_reason": "Dependency not found on PyPI and could not be audited: internal-api (0.1.0)"
+    },
+    {
+      "name": "starlette",
+      "version": "0.37.2",
+      "vulns": []
+    }
+  ],
+  "fixes": []
+}

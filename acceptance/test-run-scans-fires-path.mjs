@@ -11,7 +11,8 @@
  *       rung 2 prebuilt *.prod.yml → rung 3 build SERIALIZED never-during → rung 4 honest-degrade)
  *   F2  rung 1 surfaces `--base-url` as the first-class "scan an already-running instance" option
  *   F3  rung 3 serialize rule: build BEFORE or AFTER the audit fan-out, never DURING
- *   F4  SCA Family names `pip-audit` for lockfile-less Python + agent-run-present/owner-run-absent
+ *   F4  SCA Family carries `pip-audit` as a FIRST-CLASS installed scanner for lockfile-less Python
+ *       (consented install set + evidence name + adapter + gate; PENDING-OWNER-RUN only absent consent)
  *   F5  fail-loud on any dependency manifest no scanner covered → coverage gap, never a silent pass
  *   F6  ReDoS `.txt` ingest AUTO-runs after the redos scan (regexploit explicit-scanner form)
  *   F7  rung 1 names its DISTINCT `live-instance-dast` consent gate + the detect-and-offer /
@@ -63,15 +64,29 @@ check('F3 rung 3 serialize rule: build BEFORE or AFTER the audit fan-out, never 
     'the rule must state WHY (resource contention with the fan-out, not a broken build)')
 })
 
-check('F4 SCA Family names pip-audit for lockfile-less Python (agent-run present / owner-run absent)', () => {
-  // MUTATION: removing the pip-audit fallback prose → red
+check('F4 SCA Family carries pip-audit as a FIRST-CLASS installed scanner for lockfile-less Python (the coldrun-#4 doctrine reversal)', () => {
+  // MUTATION: dropping the pip-audit rule — or reverting it to the OLD never-install posture — → red
   assert.match(skill, /Lockfile-less Python SCA/i, 'the lockfile-less Python SCA rule must be titled in the SCA family')
-  assert.match(skill, /pip-audit/, 'pip-audit must be named as the resolver-and-auditor fallback')
   assert.match(skill, /OSV-Scanner \*\*cannot resolve version ranges\*\*|cannot resolve version ranges/i,
     'the rule must state WHY OSV misses lockfile-less pyproject/requirements (it needs pins)')
-  assert.match(skill, /agent-run when present,\s*`?PENDING-OWNER-RUN`? when absent/i,
-    'pip-audit must follow the present→agent / absent→owner-run posture, not a new install path')
-  assert.match(skill, /Do NOT edit `install-scanners\.mjs`/, 'the rule must not route through an install-scanners change')
+  // scope the doctrine assertions to the lockfile-less section so an unrelated mention can never satisfy them
+  const section = skill.split(/\*\*Lockfile-less Python SCA/)[1].split(/\*\*Fail loud on any dependency manifest/)[0]
+  assert.match(section, /first-class INSTALLED scanner/i,
+    'pip-audit is a first-class installed scanner, not a hard-boundary carve-out')
+  assert.match(section, /consented tmp\s+install set|`install-scanners\.mjs` `PIP_TOOLS`/,
+    'pip-audit rides the consented install set (install-scanners PIP_TOOLS)')
+  assert.match(section, /evidence\/pip-audit-<date>\.json/, 'the documented evidence name (the scan-status Family-8 row credits pip-audit-*)')
+  assert.match(section, /`pip-audit` adapter/, 'the pip-audit ingest adapter is named')
+  assert.match(section, /scan-external-sca/, 'the dep-CVE gate is named')
+  assert.match(section, /no CVSS/i, 'the unscored-band honesty rule (pip-audit emits no CVSS → medium) must be stated')
+  assert.match(section, /network I\/O|standard-fetch doctrine/,
+    'absent consent the standard-fetch doctrine holds — the scan is network I/O')
+  assert.match(section, /PENDING-OWNER-RUN/, 'absent the install consent pip-audit still stays PENDING-OWNER-RUN')
+  // the OLD doctrine is GONE — these two literals were the never-install posture this slice reverses
+  assert.doesNotMatch(skill, /agent-run when present,\s*`?PENDING-OWNER-RUN`? when absent/i,
+    'the old present→agent / absent→owner-run posture must not survive')
+  assert.doesNotMatch(skill, /Do NOT edit `install-scanners\.mjs`/,
+    'the old never-touch-install-scanners instruction must not survive')
 })
 
 check('F5 fail-loud on any dependency manifest no scanner covered → coverage gap, never a silent pass', () => {

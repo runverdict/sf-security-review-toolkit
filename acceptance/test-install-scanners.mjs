@@ -106,6 +106,24 @@ check('P1b regexploit (0.8.56 — the Family-7 ReDoS leg) is PIP_TOOLS-known: pl
   assert.ok(p2.skipped.some((s) => s.name === 'madeup-pip-tool' && /unknown pip tool/.test(s.reason)))
 })
 
+check('P1c pip-audit (coldrun #4 — the lockfile-less Python SCA leg) is PIP_TOOLS-known: plans as a pip venv whose verified bin is `pip-audit`; an unknown pip tool still skips', () => {
+  const p = planInstalls([{ name: 'pip-audit', family: 'external-sca-iac', install: 'pip' }], { runId: 'r', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' })
+  assert.equal(p.skipped.length, 0, 'pip-audit is a known pip tool (membership only — no executor change)')
+  const pa = p.installs.find((i) => i.name === 'pip-audit')
+  assert.ok(pa, 'pip-audit planned')
+  assert.equal(pa.method, 'pip')
+  // the pip contract (token = tool name, produced bin = tool name) holds: pip install pip-audit
+  // ships a bin literally named `pip-audit` — floating-latest by the pip-tools doctrine, so there
+  // is deliberately NO BINARY_PINS / PINNED_TOOL_VERSIONS entry to drift from
+  assert.equal(pa.expectedBin, join(ROOT0, 'pip-audit', 'venv', 'bin', 'pip-audit'))
+  assert.equal(pa.binDir, join(ROOT0, 'pip-audit', 'venv', 'bin'))
+  assert.equal(pa.source, 'pypi:pip-audit')
+  // the membership gate still rejects an unknown pip tool (pip-audit joined the set, it didn't open it)
+  const p2 = planInstalls([{ name: 'another-madeup-pip-tool', family: 'external-sca-iac', install: 'pip' }], { runId: 'r', tmpRoot: ROOT0, platform: 'linux', arch: 'x64' })
+  assert.equal(p2.installs.length, 0)
+  assert.ok(p2.skipped.some((s) => s.name === 'another-madeup-pip-tool' && /unknown pip tool/.test(s.reason)))
+})
+
 check('P2 determinism: same inputs → byte-identical plan', () => {
   assert.equal(JSON.stringify(planFixed()), JSON.stringify(planFixed()))
 })

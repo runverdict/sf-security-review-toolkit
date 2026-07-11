@@ -160,7 +160,7 @@ export const PINNED_TOOL_VERSIONS = { opengrep: BINARY_PINS.opengrep.version }
 // the tool name (semgrep→venv/bin/semgrep, …). Floating-latest is intentional —
 // the tmp install is ephemeral + removed at cleanup, and PyPI-over-TLS is the
 // integrity layer for the package path (the sha256 pin is for raw binaries).
-const PIP_TOOLS = new Set(['semgrep', 'checkov', 'detect-secrets', 'bandit', 'njsscan', 'sslyze', 'schemathesis', 'regexploit'])
+const PIP_TOOLS = new Set(['semgrep', 'checkov', 'detect-secrets', 'bandit', 'njsscan', 'sslyze', 'schemathesis', 'regexploit', 'pip-audit'])
 // npm tools: `npm i --prefix <dir> <pkg>` → <dir>/node_modules/.bin/<bin>
 const NPM_TOOLS = { retire: { pkg: 'retire', bin: 'retire' } }
 // git tools: shallow clone; the runnable lives at <clone>/<bin>

@@ -192,6 +192,7 @@ import {
   gitleaksAdapter,
   detectSecretsAdapter,
   osvAdapter,
+  pipAuditAdapter,
   npmAuditAdapter,
   trivyAdapter,
   regexploitAdapter,
@@ -240,6 +241,7 @@ const NJSSCAN = join(FIX, 'njsscan-solano.json') // 2 nodejs findings: node_secr
 const GITLEAKS = join(FIX, 'gitleaks-coldstart-full.json') // 3× generic-api-key (anchor mcp/server.py:27 + 2× ops/deploy-notes.md)
 const DETECT_SECRETS = join(FIX, 'detect-secrets-solano.json') // genuine detect-secrets 1.5.0: 24 occ across 6 files, 3 types (anchor .security-review/audit-engine.mjs:181 Secret Keyword)
 const OSV = join(FIX, 'osv-coldstart-full.json') // genuine OSV-Scanner: 1 source (mcp/requirements.txt), 3 PyPI pkgs, 11 vulns (1 critical h11 / 3 high / 6 medium / 1 low starlette)
+const PIP_AUDIT = join(FIX, 'pip-audit-coldstart.json') // genuine-SHAPED `pip-audit -f json` v2 capture (coldrun #4): 4 deps — python-jose@3.3.0 with 2 vulns (PYSEC-2024-232/-233, CVE aliases + fix 3.4.0), fastapi + starlette clean, internal-api skip_reason (the un-audited coverage-gap anchor); NO CVSS anywhere (pip-audit emits none)
 const NPM_AUDIT = join(FIX, 'npm-audit-solano.json') // genuine `npm audit --json` v2: 4 vulnerable pkgs (body-parser/express/path-to-regexp/qs), moderate×2 + high×2
 const TRIVY = join(FIX, 'trivy-dockerfile-solano.json') // genuine Trivy 0.71.2 filesystem scan: 1 Class:'config' Result, 1 FAIL misconfig (DS-0026 No HEALTHCHECK, Severity LOW, no StartLine — the IaC anchor, class-severity high)
 const REDOS = join(FIX, 'regexploit-seeded.txt') // genuine regexploit 1.0.0 VERBATIM stdout (format C — text, not JSON) over seeded vulnerable py/js: 4 blocks — (a+)+$ exp @server.py:3 + (.*)*x exp @:4 + a*a*a*$ cubic @:5 (Context lines) + (x+)+y(z+)+w exp @validate.js:1 (JS: no Context, TWO Redos records in ONE block), with a mid-file "Processed N regexes" trailer between the two tools' outputs
@@ -1210,8 +1212,8 @@ check('SC4 schema declares provenance (default llm-inferred) + engine + ruleId, 
 })
 
 // ─────────────────────────────────────────────────── pluggable adapter seam
-check('AD1 registry has 18 adapters (admin-privilege-grant added), both KINDS, each {name,kind,collect,parse,classify}', () => {
-  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['admin-privilege-grant', 'bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'regexploit', 'remote-site-protocol-security', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
+check('AD1 registry has 19 adapters (pip-audit added), both KINDS, each {name,kind,collect,parse,classify}', () => {
+  assert.deepEqual(Object.keys(ADAPTERS).sort(), ['admin-privilege-grant', 'bandit', 'checkov', 'code-analyzer', 'detect-secrets', 'egress-plain-http', 'gitleaks', 'metadata-viewall', 'njsscan', 'npm-audit', 'opengrep', 'osv', 'pip-audit', 'regexploit', 'remote-site-protocol-security', 'sarif', 'semgrep', 'trivy', 'view-modify-all-data'])
   assert.equal(ADAPTERS['code-analyzer'].kind, 'file-parser')
   assert.equal(ADAPTERS['metadata-viewall'].kind, 'source-scanner')
   assert.equal(ADAPTERS['egress-plain-http'].kind, 'source-scanner')
@@ -1225,6 +1227,7 @@ check('AD1 registry has 18 adapters (admin-privilege-grant added), both KINDS, e
   assert.equal(ADAPTERS['gitleaks'].kind, 'file-parser')
   assert.equal(ADAPTERS['detect-secrets'].kind, 'file-parser')
   assert.equal(ADAPTERS['osv'].kind, 'file-parser')
+  assert.equal(ADAPTERS['pip-audit'].kind, 'file-parser')
   assert.equal(ADAPTERS['npm-audit'].kind, 'file-parser')
   assert.equal(ADAPTERS['trivy'].kind, 'file-parser')
   assert.equal(ADAPTERS['regexploit'].kind, 'file-parser')
@@ -1306,7 +1309,7 @@ check('SS-registry-==-owned: SINGLE_SHAPE equals the ACTUAL currently-owned set 
 })
 
 check('SS-null-adapters: the CWE-routing / dependency / ReDoS adapters own NO class — classify() → null on every probe (the multi-shape posture cannot quietly claim a routing dimension)', () => {
-  for (const name of ['semgrep', 'opengrep', 'bandit', 'njsscan', 'sarif', 'osv', 'npm-audit', 'regexploit']) {
+  for (const name of ['semgrep', 'opengrep', 'bandit', 'njsscan', 'sarif', 'osv', 'pip-audit', 'npm-audit', 'regexploit']) {
     for (const probe of CLASSIFY_PROBES) {
       assert.equal(ADAPTERS[name].classify(probe), null, `${name}.classify(${JSON.stringify(probe)}) must stay null`)
     }
@@ -4702,6 +4705,194 @@ check('GATE-LABEL regression (the buildFinding tweak): an OSV finding says "gate
   assert.match(noGate.verdict_reasoning, /gated by scan-external-sast \(major\)/) // default preserved when gateLabel omitted
 })
 
+// ─────────────────────────────── pip-audit (coldrun #4 — the range-resolving Python dependency-CVE leg)
+// pip-audit is the lockfile-less Python SCA scanner (run-scans Family 8, alongside OSV): OSV-Scanner needs
+// pinned versions, so a pyproject.toml / range-only requirements.txt with no lockfile goes un-SCA'd by OSV —
+// pip-audit RESOLVES the range set and audits the resolved tree in one step. The adapter mirrors osvAdapter
+// (bandFromTool path, gateLabel scan-external-sca, dimension dependency-cve, classify()→null) with TWO twists:
+// pip-audit output carries NO CVSS and no label, so EVERY hit takes the unscored-known-CVE band 'medium'
+// (a critical advisory reads medium until the audit escalates — the stated honest ceiling); and a `skip_reason`
+// dependency yields NO finding but a coverage-gap NOTE (un-audited is never clean). The fixture is a
+// genuine-SHAPED pip-audit v2 capture: python-jose@3.3.0 (2 vulns), fastapi + starlette clean, internal-api skipped.
+// MUTATION: nulling pipAuditAdapter.detect or .parse turns the PA-* checks (and RC-each's pip-audit row) red.
+const ingestPip = (raw) => ingest(raw === undefined ? readJSON(PIP_AUDIT) : raw, pipAuditAdapter, { repoRoot: '', pass: 1 })
+const PA_ANCHOR = 'PYSEC-2024-232' // python-jose@3.3.0 algorithm confusion (alias CVE-2024-33663, fix 3.4.0)
+
+check('PA-determinism: ingest the pip-audit fixture twice → byte-identical findings', () => {
+  const a = ingestPip().findings
+  const b = ingestPip().findings
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+})
+
+check('PA-count: the fixture → exactly 2 findings (one per vuln; clean + skipped deps yield none), distinct ids, all pip-audit/dependency-cve/no-class, BOTH medium (unscored)', () => {
+  const { findings } = ingestPip()
+  assert.equal(findings.length, 2) // one finding per vulnerability — python-jose's two advisories
+  assert.equal(new Set(findings.map((f) => f.id)).size, 2)
+  assert.ok(findings.every((f) => f.engine === 'pip-audit' && f.provenance === 'deterministic'))
+  assert.ok(findings.every((f) => f.dimension === 'dependency-cve'))
+  assert.ok(findings.every((f) => !('class' in f))) // pip-audit owns no toolkit class
+  assert.ok(findings.every((f) => f.adjusted_severity === 'medium')) // NO CVSS in pip-audit output → the unscored middle
+  assert.ok(!findings.some((f) => /fastapi|starlette|internal-api/.test(f.file)), 'clean + skipped deps produce no finding')
+})
+
+check('PA-anchor: PYSEC-2024-232 → deterministic/pip-audit/dependency-cve/no-class/MEDIUM; file PyPI:python-jose (no source path, no :line); aliases + fix version in the evidence', () => {
+  const { findings } = ingestPip()
+  const f = findById(findings, (x) => x.ruleId === PA_ANCHOR)
+  assert.ok(f, 'the PYSEC-2024-232 anchor is not present')
+  assert.equal(f.provenance, 'deterministic')
+  assert.equal(f.engine, 'pip-audit')
+  assert.equal(f.dimension, 'dependency-cve')
+  assert.equal(f.class, undefined) // classify()→null
+  assert.equal(f.adjusted_severity, 'medium')
+  assert.equal(f.severity, 'medium')
+  assert.equal(f.status, 'confirmed')
+  assert.match(f.id, /^[0-9a-f]{16}$/)
+  assert.equal(f.file, 'PyPI:python-jose') // pip-audit has NO source path — always the ecosystem:name locus
+  assert.ok(!/:\d+$/.test(f.file), 'a dep-CVE finding must have NO :line')
+  assert.ok(f.title.includes('python-jose@3.3.0 (PyPI)'), 'package@version + ecosystem in the title')
+  assert.ok(f.evidence.includes('CVE-2024-33663'), 'the CVE alias rides the evidence')
+  assert.ok(f.evidence.includes('fix: 3.4.0'), 'the fix version rides the evidence')
+  assert.match(f.verdict_reasoning, /advisory severity unscored \(pip-audit emits no CVSS\) → medium/)
+  assert.match(f.verdict_reasoning, /gated by scan-external-sca \(major\)/)
+  assert.doesNotMatch(f.verdict_reasoning, /scan-external-sast/) // the dep-CVE gate, never the SAST gate
+})
+
+check('PA-unscored-doctrine: every hit severityNum:null + bandFromTool medium — pip-audit emits NO CVSS, so a critical advisory reads medium until the audit (or OSV on the same advisory) escalates', () => {
+  const hits = pipAuditAdapter.parse(readJSON(PIP_AUDIT))
+  assert.equal(hits.length, 2)
+  assert.ok(hits.every((h) => h.severityNum === null))
+  assert.ok(hits.every((h) => h.bandFromTool === 'medium'))
+  assert.ok(hits.every((h) => /unscored/.test(h.toolSevLabel)))
+})
+
+check('PA-skip-coverage-gap: the skip_reason dep yields NO finding but ONE honest coverage-gap note (un-audited is never a clean pass); clean deps yield neither', () => {
+  const { findings, notes } = ingestPip()
+  assert.ok(!findings.some((f) => f.file.includes('internal-api')), 'a skip_reason dep is never a finding')
+  const gap = notes.filter((n) => /internal-api/.test(n))
+  assert.equal(gap.length, 1, `expected exactly one coverage-gap note, got ${JSON.stringify(notes)}`)
+  assert.match(gap[0], /NOT audited/)
+  assert.match(gap[0], /coverage gap, never a clean pass/)
+  assert.ok(!notes.some((n) => /fastapi|starlette/.test(n)), 'a cleanly-audited dep needs no note')
+  // the hook is fail-safe + additive: no skips → no notes; a throw → no notes, never a crash
+  assert.deepEqual(pipAuditAdapter.coverageNotes({ dependencies: [{ name: 'fastapi', version: '1', vulns: [] }] }), [])
+  assert.deepEqual(pipAuditAdapter.coverageNotes(null), [])
+})
+
+check('PA-detect: the v2 OBJECT shape ({dependencies:[…]}) only — a BARE ARRAY (pip-audit 1.x) is REJECTED (it would collide with gitleaks/checkov); recognizeScanner routes the fixture to pip-audit', () => {
+  assert.equal(pipAuditAdapter.detect(readJSON(PIP_AUDIT)), true)
+  assert.equal(pipAuditAdapter.detect({ dependencies: [] }), true) // a clean v2 run is still pip-audit (honest accounting)
+  assert.equal(pipAuditAdapter.detect([{ name: 'p', version: '1', vulns: [] }]), false) // 1.x bare array → rejected
+  assert.equal(pipAuditAdapter.detect([]), false) // an empty array is gitleaks' proven predicate, never pip-audit
+  assert.equal(pipAuditAdapter.detect({}), false)
+  assert.equal(pipAuditAdapter.detect(null), false)
+  assert.equal(pipAuditAdapter.detect({ dependencies: null }), false)
+  // provably disjoint from the other committed fixtures (the RC-each lock covers the full matrix)
+  for (const path of [GITLEAKS, CHECKOV, OSV, NPM_AUDIT, TRIVY]) {
+    assert.equal(pipAuditAdapter.detect(readJSON(path)), false, `${path} must not detect as pip-audit`)
+  }
+  assert.equal(recognizeScanner(readJSON(PIP_AUDIT)), 'pip-audit')
+})
+
+check('PA-classify/no-class: pipAuditAdapter.classify() is constant null; hits carry gateLabel scan-external-sca + dimensionHint dependency-cve; no securityRelevant; findings carry no class', () => {
+  assert.equal(pipAuditAdapter.classify('PYSEC-2024-232'), null)
+  assert.equal(pipAuditAdapter.classify('anything'), null)
+  assert.equal(pipAuditAdapter.securityRelevant, undefined) // every pip-audit hit is a known advisory — no tag filter
+  const hits = pipAuditAdapter.parse(readJSON(PIP_AUDIT))
+  assert.ok(hits.every((h) => h.gateLabel === 'scan-external-sca' && h.dimensionHint === 'dependency-cve'))
+  assert.ok(ingestPip().findings.every((f) => !('class' in f)))
+})
+
+check('PA-fail-safe: collect() missing → null; parse(null/{}/{dependencies:null}/{dependencies:[]}/no-vulns/no-id) → []/skip; no name → PyPI:dependency; no fix_versions → honest "no fix version listed"; ingest(null) → 0 + note', () => {
+  assert.equal(pipAuditAdapter.collect({ input: join(tmpdir(), 'definitely-not-here-pip-audit.json') }), null)
+  assert.deepEqual(pipAuditAdapter.parse(null), [])
+  assert.deepEqual(pipAuditAdapter.parse({}), [])
+  assert.deepEqual(pipAuditAdapter.parse({ dependencies: null }), [])
+  assert.deepEqual(pipAuditAdapter.parse({ dependencies: [] }), [])
+  assert.deepEqual(pipAuditAdapter.parse({ dependencies: [{ name: 'p', version: '1' }] }), []) // a dep with no vulns key
+  assert.deepEqual(pipAuditAdapter.parse({ dependencies: [{ name: 'p', version: '1', vulns: [{ description: 'no id' }, null] }] }), []) // vuln with no id / null vuln → skipped
+  assert.deepEqual(pipAuditAdapter.parse({ dependencies: [null, 'x'] }), []) // malformed dep entries → skipped, no throw
+  // a vuln on a NAMELESS dep → the honest fallback locus; a vuln with no fix_versions states it
+  const hits = pipAuditAdapter.parse({ dependencies: [{ version: '1', vulns: [{ id: 'X' }] }] })
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].file, 'PyPI:dependency')
+  assert.ok(hits[0].message.includes('no fix version listed'))
+  assert.equal(hits[0].startLine, null)
+  const { findings, notes } = ingestPip(null)
+  assert.equal(findings.length, 0)
+  assert.ok(notes.some((n) => /no input collected/.test(n)))
+})
+
+check('PA-schema: every pip-audit finding (no class, dimension dependency-cve) validates against $defs/finding', () => {
+  for (const f of ingestPip().findings) assert.deepEqual(validateFinding(f), [])
+})
+
+check('PA-osv-coexist: OSV + pip-audit flagging the SAME advisory → distinct ids, coexisting rows (cross-engine dedup is DEFERRED, never invented here)', () => {
+  const advisory = 'GHSA-cjwg-qfpm-7377'
+  const osvRaw = { results: [{ source: { path: 'r.txt' }, packages: [{ package: { name: 'python-jose', version: '3.3.0', ecosystem: 'PyPI' }, vulnerabilities: [{ id: advisory, summary: 'algorithm confusion' }] }] }] }
+  const pipRaw = { dependencies: [{ name: 'python-jose', version: '3.3.0', vulns: [{ id: advisory, description: 'algorithm confusion', fix_versions: ['3.4.0'], aliases: ['CVE-2024-33663'] }] }] }
+  const o = ingest(osvRaw, osvAdapter, { repoRoot: '', pass: 1 }).findings
+  const q = ingestPip(pipRaw).findings
+  assert.equal(o.length, 1)
+  assert.equal(q.length, 1)
+  assert.equal(o[0].ruleId, q[0].ruleId)
+  assert.notEqual(o[0].id, q[0].id) // distinct engine → distinct id hash — both rows stand
+})
+
+check('PA-merge-idempotent: ingest the fixture twice into a ledger → no dupes; a pre-existing llm finding survives', () => {
+  const llm = {
+    id: '6'.repeat(16),
+    dimension: 'oauth-identity',
+    title: 'pre-existing llm-inferred finding',
+    severity: 'high',
+    adjusted_severity: 'high',
+    file: 'server/index.js:5',
+    status: 'confirmed',
+    first_seen: 1,
+    last_seen: 1,
+    verdict: 'confirmed_real',
+    verdict_reasoning: 'reasoned over the code',
+  }
+  const ledger = { schema_version: '1', findings: [llm], passes: [] }
+  const pa = ingestPip().findings
+  const r1 = mergeFindings(ledger, pa, 1)
+  assert.equal(r1.added, 2)
+  assert.equal(ledger.findings.length, 3) // 1 llm + 2 pip-audit
+  const r2 = mergeFindings(ledger, pa, 1)
+  assert.equal(r2.added, 0)
+  assert.equal(ledger.findings.length, 3) // idempotent — no dupes
+  assert.ok(ledger.findings.some((f) => f.id === '6'.repeat(16) && !('provenance' in f)))
+})
+
+check('PA-CLI: --scanner pip-audit --input <fixture> --json --dry-run prints valid JSON with the anchor; exit 0', () => {
+  const out = execFileSync(
+    'node',
+    [CLI, '--scanner', 'pip-audit', '--input', PIP_AUDIT, '--target', join(tmpdir(), 'nope-pip-audit'), '--dry-run', '--json'],
+    { encoding: 'utf8' }
+  )
+  const parsed = JSON.parse(out)
+  assert.equal(parsed.scanner, 'pip-audit')
+  assert.equal(parsed.kind, 'file-parser')
+  assert.equal(parsed.merged, null) // dry-run
+  assert.equal(parsed.findings.length, 2)
+  assert.ok(
+    parsed.findings.some((f) => f.ruleId === PA_ANCHOR && f.adjusted_severity === 'medium' && f.dimension === 'dependency-cve' && !('class' in f))
+  )
+})
+
+check('PA-CLI-merge: --scanner pip-audit writes the deterministic findings to the target ledger + is idempotent', () => {
+  const d = mkdtempSync(join(tmpdir(), 'ingest-cli-pip-audit-'))
+  dirs.push(d)
+  const lp = join(d, '.security-review', 'audit-ledger.json')
+  execFileSync('node', [CLI, '--scanner', 'pip-audit', '--input', PIP_AUDIT, '--target', d], { encoding: 'utf8' })
+  const l1 = readJSON(lp)
+  const p1 = l1.findings.filter((f) => f.engine === 'pip-audit')
+  assert.equal(p1.length, 2)
+  assert.ok(p1.every((f) => f.provenance === 'deterministic' && f.dimension === 'dependency-cve'))
+  execFileSync('node', [CLI, '--scanner', 'pip-audit', '--input', PIP_AUDIT, '--target', d], { encoding: 'utf8' })
+  const l2 = readJSON(lp)
+  assert.equal(l2.findings.filter((f) => f.engine === 'pip-audit').length, 2) // idempotent — no dupes
+})
+
 // ─────────────────────────────── npm-audit (Phase 2 · 2a #8 — Node dependency CVEs, Extension-A REUSE: label-only band)
 // npm audit is the Node-ecosystem dependency-CVE scanner (run-scans Family 8, alongside OSV). It is the EASY
 // Extension-A REUSE: `npm audit --json` (auditReportVersion 2) gives a DIRECT severity LABEL per vulnerable package
@@ -5439,6 +5630,7 @@ const RC_FIXMAP = {
   'gitleaks': GITLEAKS,
   'detect-secrets': DETECT_SECRETS,
   'osv': OSV,
+  'pip-audit': PIP_AUDIT,
   'npm-audit': NPM_AUDIT,
   'trivy': TRIVY,
 }
@@ -5539,6 +5731,7 @@ function setupAllTarget({ withCodeAnalyzer = true } = {}) {
   cp(GITLEAKS, 'secret-scan-history-2026-06-30.json') // gitleaks under the secret-scan-* prefix
   cp(DETECT_SECRETS, 'secret-scan-detect-secrets-2026-06-30.json') // collides with gitleaks' prefix — disambiguated by shape
   cp(OSV, 'osv-2026-06-30.json')
+  cp(PIP_AUDIT, 'pip-audit-2026-06-30.json') // the range-resolving Python SCA leg (coldrun #4)
   cp(NPM_AUDIT, 'deps-npm-2026-06-30.json') // the real npm audit output under the deps-npm-* name (NOT the wrapper)
   cp(BANDIT, 'bandit-2026-06-30.json')
   cp(NJSSCAN, 'njsscan-2026-06-30.json')
@@ -5553,7 +5746,7 @@ const runAll = (T) => JSON.parse(execFileSync('node', [CLI, '--all', '--target',
 check('ALL1 --all recognizes + ingests every renamed scanner output by content shape; each engine lands deterministic', () => {
   const out = runAll(setupAllTarget())
   const engines = new Set(out.findings.map((f) => f.engine))
-  for (const e of ['metadata', 'pmd', 'sfge', 'checkov', 'semgrep', 'gitleaks', 'detect-secrets', 'osv', 'npm-audit', 'bandit', 'njsscan', 'trivy']) {
+  for (const e of ['metadata', 'pmd', 'sfge', 'checkov', 'semgrep', 'gitleaks', 'detect-secrets', 'osv', 'pip-audit', 'npm-audit', 'bandit', 'njsscan', 'trivy']) {
     assert.ok(engines.has(e), `engine ${e} present in the --all band`)
   }
   assert.ok(out.findings.length >= 12, 'a full band across all families')

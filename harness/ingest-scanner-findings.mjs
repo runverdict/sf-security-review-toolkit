@@ -1057,6 +1057,24 @@ export function ingest(raw, adapter, opts = {}) {
     }
   }
 
+  // Un-audited-dependency honesty marker (coldrun #4 — pip-audit `skip_reason`): an OPTIONAL
+  // adapter hook, guarded exactly like `recordedVersion` above — only an adapter that defines
+  // `coverageNotes(raw)` participates (pip-audit ONLY today); every other adapter is untouched
+  // byte-for-byte. NOTES, never findings: a dependency the scanner could not resolve/audit is a
+  // visible coverage gap (the Family-8 fail-loud doctrine — never a silent clean pass), but it is
+  // not a vulnerability. Fail-safe on throw / non-array, like every other optional hook.
+  if (typeof adapter.coverageNotes === 'function') {
+    let gaps = []
+    try {
+      gaps = adapter.coverageNotes(raw)
+    } catch {
+      gaps = []
+    }
+    if (Array.isArray(gaps)) {
+      for (const g of gaps) if (typeof g === 'string' && g) notes.push(g)
+    }
+  }
+
   const findings = []
   // B5 · item 7: ingested hits from a TOOLKIT taint rule (adapter.expectsTrace — the one rule
   // set whose taint mode is knowable from output) that carry NO dataflow trace. Aggregated
@@ -3226,6 +3244,106 @@ export const sarifAdapter = {
   },
 }
 
+// ----------------------------------------------------------------------------
+// ADAPTER #19 — pip-audit (file-parser, coldrun-hardening #4): parses captured `pip-audit -f json`
+// (v2) output. pip-audit is the RANGE-RESOLVING Python dependency-CVE leg of run-scans Family 8:
+// OSV-Scanner needs PINNED versions (a lockfile or `==`-pinned requirements), so a `pyproject.toml` /
+// range-only `requirements.txt` with no lockfile goes un-SCA'd by OSV — a real cold run left an entire
+// FastAPI backend dep tree (the unmaintained `python-jose` included) unscanned exactly this way.
+// pip-audit RESOLVES the range set and audits the resolved tree in one step. Mirrors osvAdapter:
+// buildFinding's `bandFromTool` path, gateLabel 'scan-external-sca', dimension 'dependency-cve',
+// NO securityRelevant (every hit is a known advisory — security-by-construction), and
+// classify() → constant null: dependency-cve is MULTI-SHAPE, so owning a class here would let a
+// relayed dep-CVE wrongly supersede a co-located LLM finding; owning no class, it supersedes nothing.
+//
+// JUDGMENT CALLS (documented here, mirroring the osv adapter's doc block):
+//   1. **pip-audit output carries NO CVSS and no severity label** (unlike OSV's group max_severity /
+//      database_specific.severity), so EVERY hit takes the unscored-known-CVE rule: band 'medium' —
+//      meaning A CRITICAL CVE READS medium UNTIL THE AUDIT (or the same advisory seen through OSV,
+//      which does carry the CVSS) ESCALATES IT. The conservative middle is the honest call for an
+//      unknown-severity advisory; the ceiling is stated, not hidden.
+//   2. No file:line and no source path AT ALL — pip-audit audits a RESOLVED environment, not a
+//      manifest file, so `file` is always the OSV ecosystem:name fallback shape `PyPI:<package>`
+//      (startLine:null). Aliases (CVE ids) + fix_versions ride the message, so the CVE and the
+//      remediation version survive into title/evidence/reasoning.
+//   3. A `skip_reason` entry is an UN-AUDITED dependency — no hit (nothing was found wrong, and
+//      nothing was proven clean) but surfaced as a coverage-gap NOTE via the `coverageNotes` hook:
+//      an un-audited dependency must never read as a clean pass (the Family-8 fail-loud doctrine).
+//   4. OSV and pip-audit may flag the SAME advisory (different engine → distinct id hash →
+//      coexisting rows); cross-engine dedup is the deferred §10 extension #3, NOT this slice.
+//
+// detect: the pip-audit v2 OBJECT shape (`{dependencies:[…]}`). A BARE ARRAY is pip-audit 1.x
+// output and is REJECTED deliberately — it would collide with gitleaks' ([] / RuleID) and checkov's
+// (check_type[]) top-level-array detects; the 1.x shape stays a --scanner-explicit concern if it
+// ever matters. No other adapter keys on a top-level `dependencies`, so the shape is disjoint.
+export const pipAuditAdapter = {
+  name: 'pip-audit',
+  kind: 'file-parser',
+  detect: (r) => !!(_isObj(r) && Array.isArray(r.dependencies)),
+  collect({ input } = {}) {
+    if (!input) return null
+    try {
+      const txt = readFileSync(input, 'utf8')
+      if (!txt.trim()) return null
+      return JSON.parse(txt)
+    } catch {
+      return null
+    }
+  },
+  parse(raw) {
+    const deps = _isObj(raw) && Array.isArray(raw.dependencies) ? raw.dependencies : null
+    if (!deps) return []
+    const hits = []
+    for (const d of deps) {
+      if (!_isObj(d)) continue
+      if (d.skip_reason != null) continue // un-audited dep → a coverageNotes gap, never a hit
+      const vulns = Array.isArray(d.vulns) ? d.vulns : []
+      for (const v of vulns) {
+        if (!v || v.id == null) continue // need an advisory id (PYSEC/GHSA/CVE)
+        const aliases = Array.isArray(v.aliases) ? v.aliases.filter((a) => typeof a === 'string' && a) : []
+        const fixes = Array.isArray(v.fix_versions) ? v.fix_versions.filter((x) => typeof x === 'string' && x) : []
+        const aliasStr = aliases.length ? ` [aliases: ${aliases.join(', ')}]` : ''
+        const fixStr = fixes.length ? ` — fix: ${fixes.join(', ')}` : ' — no fix version listed'
+        hits.push({
+          engine: 'pip-audit',
+          ruleId: String(v.id), // PYSEC-… / GHSA-… / CVE-…
+          severityNum: null,
+          file: `PyPI:${d.name || 'dependency'}`, // pip-audit output has NO source path (judgment call #2)
+          startLine: null, // dep-CVEs have no file:line — they locate to the package
+          message: `${d.name || 'dependency'}@${d.version || '?'} (PyPI): ${v.description || v.id}${aliasStr}${fixStr}`,
+          resources: [],
+          bandFromTool: 'medium', // NO CVSS anywhere in pip-audit output → the unscored-known-CVE middle (judgment call #1)
+          toolSevLabel: 'advisory severity unscored (pip-audit emits no CVSS)',
+          gateLabel: 'scan-external-sca', // the dep-CVE gate (NOT scan-external-sast)
+          dimensionHint: 'dependency-cve', // deterministic-only grouping label (no LLM dep finder)
+          tags: [],
+        })
+      }
+    }
+    return hits
+  },
+  // Constant null: a pip-audit finding owns NO toolkit class (see the doc block — dependency-cve is
+  // multi-shape). Owning no class, it supersedes nothing; the SS-null-adapters lock enforces this.
+  classify() {
+    return null
+  },
+  // NO securityRelevant — security-by-construction (every pip-audit hit is a known advisory).
+  // Coverage-gap honesty (judgment call #3): one note per `skip_reason` dependency — the dep was
+  // NOT audited (pip-audit could not resolve/fetch it), which is a visible gap, never a clean pass.
+  coverageNotes(raw) {
+    const deps = _isObj(raw) && Array.isArray(raw.dependencies) ? raw.dependencies : []
+    const notes = []
+    for (const d of deps) {
+      if (!_isObj(d) || d.skip_reason == null) continue
+      notes.push(
+        `pip-audit: dependency ${d.name || '(unnamed)'} was NOT audited (${oneLine(String(d.skip_reason), 160)}) — ` +
+          'an un-audited dependency is a coverage gap, never a clean pass'
+      )
+    }
+    return notes
+  },
+}
+
 export const ADAPTERS = {
   'code-analyzer': codeAnalyzerAdapter,
   'metadata-viewall': metadataViewAllAdapter,
@@ -3241,6 +3359,7 @@ export const ADAPTERS = {
   'gitleaks': gitleaksAdapter,
   'detect-secrets': detectSecretsAdapter,
   'osv': osvAdapter,
+  'pip-audit': pipAuditAdapter,
   'npm-audit': npmAuditAdapter,
   'trivy': trivyAdapter,
   'regexploit': regexploitAdapter,
