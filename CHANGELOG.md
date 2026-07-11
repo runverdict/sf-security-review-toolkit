@@ -51,6 +51,35 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.117] — 2026-07-11
+
+**Four quick cold-run polish fixes: detect-secrets no longer times out; a subscriber-built
+`agentscript.yaml` agent is now an Agentforce detection signal; the consent double-gate message is
+unmistakable; and drafting agents are told code truth overrides the facts block.**
+
+### Fixed
+- `skills/run-scans/SKILL.md` — the detect-secrets tree pass now bakes in `--exclude-files`
+  (node_modules/.git/dist/build/venv/…) + a hard `timeout`; bare `--all-files` walked node_modules
+  and timed out on every real repo, so a complementary pass never completed.
+- `skills/scope-submission/SKILL.md` — the Agentforce detection self-check now also detects a
+  SUBSCRIBER-BUILT agent (`agent/*.agentscript.yaml` or an ESR-registered agent-action), not only
+  packaged Bot/GenAiPlanner metadata — the exact cold-run miss that nearly dropped the entire
+  AgentExchange track for an MCP listing whose agent is subscriber-built.
+- `harness/{standup-org,teardown-org,capture-org-mcp,agent-trace-probe}.mjs` — the "no consent"
+  message now distinguishes the two cases: consent ALREADY recorded → "just add --consent to this
+  command"; nothing recorded → "record AND pass --consent". The double-gate (a recorded token PLUS
+  the per-command flag) is now unmistakable, ending the wasted re-run round-trips.
+- `skills/generate-artifacts/SKILL.md` — the shared `facts` block is now labelled an
+  operator-assembled INPUT that CODE TRUTH OVERRIDES: every drafting agent verifies each fact
+  against the code (provider/dispatcher/storage) and the code wins on conflict (the way the
+  data-flow agent already behaves), so a facts-block error (e.g. "OpenAI" vs Vertex/Gemini) never
+  propagates into data-sensitivity/retention/authn-authz.
+
+### Tests
+- `acceptance/test-render-scope-summary.mjs` (SS6, +1) — locks that the Agentforce detection
+  self-check names the `agentscript.yaml` signal, so the subscriber-built track cannot silently
+  drop again. Suite 84 files / 1259 checks / 0 failed.
+
 ## [0.8.116] — 2026-07-11
 
 **The mandated report-headline block is now INJECTED into the audit report deterministically — its

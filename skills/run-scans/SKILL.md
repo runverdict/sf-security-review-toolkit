@@ -601,9 +601,14 @@ families PENDING until a re-audit.
    replacement.
    *Tool:* **gitleaks** (preferred — native full-history mode + deleted-blob
    surfacing) **plus detect-secrets as the complementary second-opinion tree pass
-   when available** (`detect-secrets scan --all-files` — a different ruleset
-   catches what one engine's misses; its output ingests via the `detect-secrets`
-   adapter, engine-labelled honestly); trufflehog is a substitute when gitleaks
+   when available** (`timeout 120 detect-secrets scan --all-files --exclude-files
+   '(^|/)(node_modules|\.git|dist|build|\.?venv|__pycache__|vendor|\.next|coverage)(/|$)'`
+   — a different ruleset catches what one engine's misses; its output ingests via the
+   `detect-secrets` adapter, engine-labelled honestly. The `--exclude-files` regex and the
+   hard `timeout` are MANDATORY, not optional: bare `--all-files` walks `node_modules` and
+   times out on every real repo — a complementary pass that never completes is dead weight.
+   If the `timeout` trips anyway, record the partial/absent output honestly and lean on
+   gitleaks, never a silent skip); trufflehog is a substitute when gitleaks
    is unavailable. *Two passes, both
    mandatory:* (1) **working-tree** over every resolved source root including IaC
    paths (Dockerfile `ENV`/`ARG`, terraform `*.tf`/`*.tfvars`/`*.tfstate`,

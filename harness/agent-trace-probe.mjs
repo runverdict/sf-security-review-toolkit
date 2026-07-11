@@ -481,7 +481,9 @@ function main() {
   if (!consent) {
     const why = consentFlag && !consentRecorded
       ? `--consent is set but no affirmative consent is recorded for gate 'sf-deep-audit-ops' (the flag alone is not enough). Ask + record it first via record-consent.mjs.`
-      : `re-run with --consent (and the recorded consent).`
+      : consentRecorded
+        ? `consent for gate 'sf-deep-audit-ops' is ALREADY recorded — add the --consent flag to THIS command to run it (--consent is required on EVERY live-op invocation, on top of the one-time recorded consent; a recorded token alone never runs it).`
+        : `a live op needs BOTH — record consent first (record-consent.mjs), THEN re-run with --consent on the command.`
     process.stdout.write(`## agent-trace-probe — NOT STARTED (no consent)\nWould drive ${plan.utterances.length} scripted utterance(s) against agent ${plan.apiName || plan.authoringBundle} in org ${plan.orgAlias}.\n${why}\n`)
     process.exitCode = 3; return
   }

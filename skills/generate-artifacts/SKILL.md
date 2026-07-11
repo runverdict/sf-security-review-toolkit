@@ -244,7 +244,7 @@ longer hand-coded into a script.
   ```json
   {
     "runDate": "<YYYY-MM-DD>",
-    "facts": "<the shared authoritative facts — tool inventory + reconciliation (step 4), controls narrative (step 5), the settled org-level identity model + session-ID posture (step 6), hosts/regions + data classes (steps 7-8); the single source of truth every artifact reconciles to>",
+    "facts": "<the shared authoritative facts — tool inventory + reconciliation (step 4), controls narrative (step 5), the settled org-level identity model + session-ID posture (step 6), hosts/regions + data classes (steps 7-8); the single source of truth every artifact reconciles to. CODE TRUTH OVERRIDES THIS BLOCK: it is an operator-assembled input and can carry a driver error (a cold run wrote 'OpenAI' as the LLM when the code truth was Vertex/Gemini). Every drafting agent VERIFIES each fact it relies on against the actual code/config — the provider/dispatcher, credential storage, egress — and where the code contradicts a fact here, the CODE WINS (the way the data-flow agent already behaves), so a facts-block error never propagates into data-sensitivity/data-retention/authn-authz>",
     "gate": "<paste the step-1b artifact-gate.mjs --json result verbatim>",
     "artifacts": [
       { "key": "authn-authz-flow", "tmpl": "authn-authz-flow.md.tmpl", "out": "docs/security-review/authn-authz-flow.md", "focus": "<the step-6 content contract>" },

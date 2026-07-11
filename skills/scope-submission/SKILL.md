@@ -124,6 +124,14 @@ elements, get the requirement list those elements imply.
    `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
    metadata (e.g. `grep -rlE '<(Bot|GenAiPlugin|GenAiPlanner|GenAiFunction)' --include='*.xml' . --exclude-dir=node_modules`
    plus `find . -path '*/node_modules/*' -prune -o \( -name '*.genAiPlugin-meta.xml' -o -name '*.bot-meta.xml' \) -print`).
+   **ALSO detect a SUBSCRIBER-BUILT agent**, whose declarative definition ships OUTSIDE
+   packaged Bot/GenAiPlanner metadata: an `*.agentscript.yaml` (typically under an `agent/`
+   path), or an ESR-registered tool-action wired as an agent action (the AgentExchange-MCP
+   shape) — e.g. `find . -path '*/node_modules/*' -prune -o -name '*.agentscript.yaml' -print`.
+   This is the exact cold-run miss: the agent was defined via `agent/*.agentscript.yaml` + an
+   MCP tool as an agent action, so the XML grep found nothing and the whole AgentExchange
+   track nearly dropped. A match on EITHER shape — packaged Bot/GenAiPlanner metadata OR an
+   `agentscript.yaml` / ESR-registered agent-action — is an `agentforce` signal.
    If any matches but no `agentforce` element was emitted, that is a detection
    miss — emit the element. (This is the inverse of the MCP-client trap above:
    there, over-detection drags in a track; here, under-detection drops one.)

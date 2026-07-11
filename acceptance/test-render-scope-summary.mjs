@@ -185,6 +185,15 @@ check('SS5 wiring: scope-submission Step 9 grants + references the harness + sta
   assert.match(skill, /BYTE-FOR-BYTE|VERBATIM/, 'states the verbatim contract')
 })
 
+check('SS6 agentforce detection includes the subscriber-built agentscript.yaml signal (cold-run miss)', () => {
+  const skill = readFileSync(join(PLUGIN, 'skills', 'scope-submission', 'SKILL.md'), 'utf8')
+  // The detection self-check must name the subscriber-built shape (an agentscript.yaml agent / ESR
+  // tool-action), not only packaged Bot/GenAiPlanner metadata — else an AgentExchange MCP listing
+  // whose agent is subscriber-built silently drops the entire agentforce track.
+  assert.match(skill, /agentscript\.yaml/, 'names the agentscript.yaml signal')
+  assert.match(skill, /GenAiPlanner/, 'still names the packaged-metadata signal')
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
