@@ -51,6 +51,51 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.118] — 2026-07-11
+
+**Four cold-run "moat" fixes make the autonomous run rescue-free end-to-end for an
+AgentExchange/FastAPI partner: the Python dependency tree is SCA'd, three MCP artifacts are
+templated, the submission package is assembled deterministically, and the OpenAPI capture falls back
+to an already-running instance.**
+
+### Added
+- `harness/assemble-submission-package.mjs` (#7) — a DETERMINISTIC submission-package assembler:
+  copies verified artifacts into step-named dirs (never moves) and generates INDEX.md (a wizard-slot
+  map with pinned Step-3/Step-4 slots + element-gated suppression) + PENDING-OWNER-RUN.md
+  (evidence-index pending-owner rows + the owner-tail parsed from the baseline at assembly time).
+  Status inherited from evidence-index dispositions (HAVE only with a reviewer-reproducible flag);
+  inherits compute-sci's stale-manifest exit-2 abort; a credential-refusal scan before any copy;
+  `--date`-deterministic (byte-identical re-runs). Replaces the hand-built final deliverable.
+- **pip-audit** as a first-class installed SCA scanner (#4) — `harness/ingest-scanner-findings.mjs`
+  (new `pipAuditAdapter`, adapter #19) + `install-scanners.mjs`/`tool-detect.mjs`/`render-scan-status.mjs`.
+  pip-audit resolves pyproject/requirements version RANGES (which OSV-Scanner cannot) and audits
+  them, so the FastAPI dependency tree (python-jose et al.) is SCA'd deterministically. Dimension
+  `dependency-cve`, gate `scan-external-sca`, NO owned class (supersedes nothing); a guarded
+  `coverageNotes` hook surfaces `skip_reason` un-audited deps as a visible coverage gap; no-CVSS
+  findings band `medium` until the audit escalates.
+- `templates/{exposed-tools-list,mcp-server-details,api-endpoints-spec}.md.tmpl` (#6) — the three
+  AgentExchange artifacts are now first-class TEMPLATED artifacts (were hand-spawned). exposed-tools
+  structurally forces the three-count reconciliation (code-registry / client-ESR / org-active) so a
+  refresh can't draft the client subset as the registry; api-endpoints WRAPS the capture evidence
+  pair (never regenerates it); credential cells stay owner-run, `serverUrlHost` host-only.
+
+### Changed
+- `harness/capture-openapi.mjs` (#8) — a rung-1 fallback: an explicit `--base-url` at an
+  already-running loopback instance captures the OpenAPI spec with NO throwaway stand-up, gated by
+  `live-instance-dast` (not `throwaway-dast`) with source-aware provenance; loopback is enforced on
+  the fallback. Mirrors the DAST rung-1 pattern.
+- `skills/{run-scans,generate-artifacts,compile-submission,security-review-journey}/SKILL.md` +
+  `docs/roadmap-coldrun-hardening.md` — wired the four engines in; pip-audit's doctrine reversed
+  from "PENDING-OWNER-RUN / do not install" to first-class, and the roadmap DROP reversed with the
+  range-resolution rationale.
+
+### Tests
+- `acceptance/test-assemble-submission-package.mjs` (new file) + additions across
+  test-ingest-scanner-findings (PA-* suite, F4 rewrite, AD1 19-adapter + SS-null locks),
+  test-install-scanners, test-build-artifact-engine (AE10–12), test-capture-openapi (O13/O6b/O7b),
+  test-render-scope-summary (SS6). Suite 85 files / 1292 checks / 0 failed (+1 file, +33 checks
+  over 0.8.117).
+
 ## [0.8.117] — 2026-07-11
 
 **Four quick cold-run polish fixes: detect-secrets no longer times out; a subscriber-built
