@@ -76,6 +76,7 @@ const FAMILIES = [
     tools: [
       { name: 'osv-scanner', bins: ['osv-scanner'], install: 'binary', hint: 'download the osv-scanner release binary' },
       { name: 'checkov', bins: ['checkov'], install: 'pip', hint: 'pip install checkov' },
+      { name: 'pip-audit', bins: ['pip-audit'], install: 'pip', hint: 'pip install pip-audit (resolves pyproject/requirements ranges + audits — the lockfile-less Python SCA leg)' },
       { name: 'trivy', bins: ['trivy'], install: 'binary', hint: 'download the trivy release binary' },
     ],
   },

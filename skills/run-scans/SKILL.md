@@ -791,10 +791,11 @@ families PENDING until a re-audit.
    IaC file exists under a non-package source root — the supply-chain + infra
    surface the reviewer treats as in-scope when data flows through it. *Tools:*
    **OSV-Scanner** (Google, OSS — multi-ecosystem, queries the OSV DB; leaner +
-   lower-noise than a per-ecosystem `npm/pip audit`) for SCA; **Checkov** (OSS) for
-   IaC misconfig (Terraform/CloudFormation/Kubernetes/Dockerfile); **Trivy** (OSS)
-   is an acceptable one-tool substitute covering container image + deps +
-   Dockerfile + secrets together. *Invocations:*
+   lower-noise than a per-ecosystem `npm/pip audit`) for SCA; **pip-audit** (PyPA,
+   OSS — the range-resolving Python SCA leg, see the lockfile-less rule below);
+   **Checkov** (OSS) for IaC misconfig (Terraform/CloudFormation/Kubernetes/
+   Dockerfile); **Trivy** (OSS) is an acceptable one-tool substitute covering
+   container image + deps + Dockerfile + secrets together. *Invocations:*
 
    ```bash
    osv-scanner -r <server-root> --format json > evidence/osv-<date>.json
@@ -810,7 +811,8 @@ families PENDING until a re-audit.
    `iac-misconfig` at class severity, so the ingest is unchanged either way.
 
    **Lockfile-less Python SCA — `pyproject.toml`/`requirements.txt` with unpinned
-   RANGES and no lockfile (0.8.109).** OSV-Scanner **cannot resolve version ranges** —
+   RANGES and no lockfile (0.8.109; first-class installed since coldrun #4).**
+   OSV-Scanner **cannot resolve version ranges** —
    it needs pinned versions (a lockfile or `==`-pinned requirements). A Python source
    root that ships only a `pyproject.toml` (or a range-only `requirements.txt`) with no
    `poetry.lock` / `pdm.lock` / pinned `requirements.txt` therefore goes **un-SCA'd by
@@ -823,12 +825,25 @@ families PENDING until a re-audit.
    pip-audit --project-path <server-root> -f json -o evidence/pip-audit-<date>.json         # pyproject
    ```
 
-   Alternatively, generate a lock first (`pip install --dry-run` resolution → a pinned
-   set) and feed OSV the pinned versions. `pip-audit` is **agent-run when present,
-   `PENDING-OWNER-RUN` when absent** — exactly the hard-boundary posture the Family
-   already applies to any tool that may not be in the auto-install set (emit the exact
-   install + run command; never self-install). Do NOT edit `install-scanners.mjs` to add
-   it — the run-scans Family carries the tool the same way it carries Nuclei/Schemathesis.
+   `pip-audit` is a **first-class INSTALLED scanner**: it rides the consented tmp
+   install set (`install-scanners.mjs` `PIP_TOOLS` — a pip venv, floating-latest like
+   semgrep/checkov, bin name == package name) and `tool-detect.mjs` lists it in the
+   Family-8 `external-sca-iac` family, so a consented run finds it on the prepended
+   PATH like any other scanner. Evidence is `evidence/pip-audit-<date>.json` (the
+   scan-status Family-8 row credits the `pip-audit-*` evidence prefix), and the output
+   ingests via the **`pip-audit` adapter** (`--scanner pip-audit`, or content-shape
+   recognition under `--all`) at gate **`scan-external-sca`**, dimension
+   `dependency-cve`. Two honesty rules carry over from the adapter: pip-audit output
+   has **no CVSS**, so every hit lands at the unscored-known-CVE band `medium` until
+   the audit (or the same advisory seen through OSV, which does carry the CVSS)
+   escalates it; and a `skip_reason` dependency surfaces as a coverage-gap NOTE —
+   un-audited is never clean. Absent the install consent, the hard boundary above
+   holds in full: resolving ranges and querying the vulnerability service is
+   **network I/O** — the same standard-fetch doctrine that covers Semgrep registry
+   rules and the OSV DB — so with no consented install present `pip-audit` stays
+   **`PENDING-OWNER-RUN`** (emit the exact install + run command and move on).
+   Alternatively, generate a lock first (`pip install --dry-run` resolution → a
+   pinned set) and feed OSV the pinned versions.
 
    **Fail loud on any dependency manifest no scanner covered — never a silent pass.** A
    dependency manifest (`pyproject.toml`, `requirements.txt`, `package-lock.json`,
@@ -843,7 +858,7 @@ families PENDING until a re-audit.
    *Agent runs:* both passes, parsing, the SBOM / component-version table for the
    security-program element-4 slot (reuse the OSV output), dossier rows. *Owner
    runs:* dependency bumps + infra fixes. *Evidence:* `evidence/osv-<date>.json`,
-   `evidence/iac-*-<date>.json`. *Gate:* `scan-external-sca` (major — a known-CVE
+   `evidence/pip-audit-<date>.json`, `evidence/iac-*-<date>.json`. *Gate:* `scan-external-sca` (major — a known-CVE
    dependency reachable in the deployed server), `scan-iac-misconfig` (major — an
    open security group, a public bucket, a hardcoded image secret). A secret in a
    Dockerfile `ENV`/`ARG` is ALSO a Family-6 `fail-hardcoded-secrets` hit —

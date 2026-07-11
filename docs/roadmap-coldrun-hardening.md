@@ -1153,7 +1153,7 @@ deterministic substrate maximized + a labelled semantic residual, NOT literal 10
   ledger gets noisy).
 
 #### Explicitly DROP / do not add (hygiene)
-tfsec (deprecated — *is* trivy-config now), terrascan (archived Nov 2025), grype/pip-audit/cargo-audit/
+tfsec (deprecated — *is* trivy-config now), terrascan (archived Nov 2025), grype/cargo-audit/
 KICS (redundant with osv-scanner V2 SCALIBR + checkov + trivy — marginal substrate, multiplies dedup
 burden), **CodeQL — excluded entirely** (the CLI/engine is free-for-OSS-ONLY; its license forbids
 scanning a closed partner package outside GitHub Advanced Security, which is our users' exact case, so it
@@ -1162,6 +1162,20 @@ that substrate; Opengrep is the free-for-commercial taint engine the toolkit use
 adapter the toolkit cannot install, run, or validate for its own users is pure liability, so CodeQL is
 not offered in any form), Snyk Code (commercial + ML-nondeterministic — violates the determinism
 contract), promptmap (GPL-3.0 — never vendor).
+
+**pip-audit — REVERSED out of the DROP list (2026-07-11, coldrun #4).** The original drop call
+("redundant with osv-scanner") was wrong on one load-bearing substrate: **OSV-Scanner cannot resolve
+version RANGES** — it needs pinned versions (a lockfile or `==`-pinned requirements) — and a real cold
+run proved the consequence: an entire FastAPI backend dep tree declared as `pyproject.toml` ranges with
+no lockfile (the unmaintained `python-jose` included) went **completely un-SCA'd**. pip-audit resolves
+the range set and audits the resolved tree in one step, so it is NOT marginal substrate there — it is
+the only deterministic SCA leg that surface has. Now first-class: `install-scanners.mjs` `PIP_TOOLS`
+(pip venv, floating-latest, bin == package name — zero executor change), `tool-detect.mjs` Family-8
+`external-sca-iac`, the `pip-audit` ingest adapter (gate `scan-external-sca`, dimension `dependency-cve`,
+unscored-advisory band `medium` — pip-audit emits no CVSS — and `skip_reason` deps surfaced as
+coverage-gap notes), and the scan-status Family-8 row credits `pip-audit-*` evidence. The dedup-burden
+half of the original call still stands and stays DEFERRED: OSV + pip-audit may flag the same advisory as
+two coexisting rows (distinct engine → distinct id hash) until cross-engine dedup (§10 extension #3).
 
 #### Recommended sequence (each slice one-at-a-time, test-backed) — REORDERED 2026-07-03 (outside review)
 0. ~~**E0.2a — wire `--dataflow-traces` into run-scans Family 7**~~ **DONE (0.8.60).** Flag added to the
