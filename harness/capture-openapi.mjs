@@ -10,20 +10,32 @@
  * that stays PENDING is the prod-equivalence attestation (the spec came from the isolated
  * mirror — only the owner can attest production matches it).
  *
+ * RUNG-1 FALLBACK (fires-path ladder, mirrors run-dast): when the throwaway mirror never
+ * stood up, an explicit `--base-url` pointed at an ALREADY-RUNNING loopback instance the
+ * operator started captures the same spec with ZERO build and ZERO stand-up — the same
+ * read-only GET, the same loopback-only invariant, a source-matched consent gate (see
+ * below), and provenance that names the live instance instead of the mirror.
+ *
  * LOOPBACK-ONLY IS THE HARD SECURITY INVARIANT: `planCapture` shares run-dast's exact
  * URL pre-filter + LOOPBACK host set and REFUSES any non-loopback base URL, and the
  * executor re-asserts the same check on the plan it actually runs — the capture may only
- * ever read the local throwaway the toolkit built, never prod, a remote host, or
- * Salesforce infra.
+ * ever read a loopback instance (the local throwaway the toolkit built, or the operator's
+ * own already-running local app), never prod, a remote host, or Salesforce infra.
  *
  * READ-ONLY: HTTP GET only, short timeout — the capture observes the mirror, it does not
  * exercise it. Nothing is persisted except the VALIDATED spec (re-serialized from its own
  * parse) and the provenance sidecar — raw response bodies/headers are never written, so a
  * synth-token echo can't land on disk.
  *
- * NO NEW CONSENT: the mirror only exists after the recorded `throwaway-dast` consent stood
- * it up, so this capture rides on that gate — the CLI verifies the same recorded token the
- * same way run-dast does, and the executor FAILS CLOSED without consent.
+ * CONSENT IS SOURCE-SELECTED, NO NEW GATE (exactly run-dast's rung-1 pattern): the spec's
+ * source picks which RECORDED live-op consent authorizes the read. A toolkit-built mirror
+ * (`--from-standup`, source 'standup') rides the same recorded `throwaway-dast` token that
+ * stood it up; an ALREADY-RUNNING loopback instance the operator started (explicit
+ * `--base-url`, source 'explicit') rides the recorded `live-instance-dast` token instead —
+ * there is no mirror on that path and the instance holds the operator's own (possibly
+ * real) credentials, so the throwaway's consent must never stand in for it. Both gates
+ * already exist in gate-spec; the CLI verifies the source-matched token the way run-dast
+ * selects its gate, and the executor FAILS CLOSED without consent.
  *
  * Pure `planCapture` + pure `validateSpec` + pure `buildProvenance` + an impure executor.
  * The live GETs are operator-cold-validated (they need a running mirror), like run-dast's
@@ -71,7 +83,7 @@ function assertLoopback(baseUrl, who) {
   let host
   try { host = new URL(baseUrl).hostname } catch { throw new Error(`${who}: unparseable base url '${baseUrl}'`) }
   if (!LOOPBACK.has(host) && !/^127\./.test(host)) {
-    throw new Error(`capture-openapi: refusing to capture from a non-loopback host '${host}' — the capture may only read the local throwaway mirror, never a live/remote target. (got ${baseUrl})`)
+    throw new Error(`capture-openapi: refusing to capture from a non-loopback host '${host}' — the capture may only read a loopback instance (the local throwaway mirror, or an already-running local app via an explicit --base-url), never a remote target. (got ${baseUrl})`)
   }
 }
 
@@ -89,8 +101,11 @@ export function normalizeRootPath(rootPath) {
   return rp
 }
 
-/** PURE. Compute the capture plan. Deterministic given (baseUrl, target, date, rootPath). */
-export function planCapture(baseUrl, { target, date, rootPath } = {}) {
+/** PURE. Compute the capture plan. Deterministic given (baseUrl, target, date, rootPath,
+ *  source). `source` is 'explicit' (rung 1: an already-running loopback instance the operator
+ *  started) or anything else → 'standup' (the toolkit-built throwaway mirror) — the default
+ *  keeps every pre-rung-1 caller's plan and provenance unchanged. */
+export function planCapture(baseUrl, { target, date, rootPath, source } = {}) {
   if (!URL_OK.test(String(baseUrl || ''))) throw new Error(`planCapture: invalid base url '${baseUrl}'`)
   // HARD: the capture must target the LOOPBACK throwaway mirror only (audit: loopback enforcement).
   assertLoopback(baseUrl, 'planCapture')
@@ -104,6 +119,7 @@ export function planCapture(baseUrl, { target, date, rootPath } = {}) {
   const candidatePaths = rp ? [...new Set([`${rp}/openapi.json`, ...CANDIDATE_SPEC_PATHS])] : [...CANDIDATE_SPEC_PATHS]
   return {
     schema: CAPTURE_SCHEMA, baseUrl, date,
+    source: source === 'explicit' ? 'explicit' : 'standup',
     candidatePaths,
     evidenceDir,
     evidencePath: join(evidenceDir, `openapi-${date}.json`),
@@ -131,26 +147,35 @@ export function validateSpec(body) {
 }
 
 /**
- * PURE. The provenance sidecar: says exactly where the spec came from (the isolated
- * mirror), and keeps prod-equivalence PENDING owner attestation — never asserted.
+ * PURE. The provenance sidecar: says exactly where the spec came from — SOURCE-CONDITIONAL
+ * (plan.source 'explicit' → an already-running loopback instance the operator started; a
+ * rung-1 capture has no container-isolated mirror and no toolkit-generated synthetic-secret
+ * set, so the envelope must claim neither; the standup branch stays byte-identical to the
+ * pre-rung-1 envelope) — and keeps prod-equivalence PENDING owner attestation on BOTH
+ * branches, never asserted (a local dev instance is still not production).
  */
 export function buildProvenance(plan, { capturedFrom, kind, version, pathCount, runId } = {}) {
+  const explicit = plan.source === 'explicit'
   return {
     schema: plan.schema,
     artifact: 'artifact-api-endpoints-spec',
-    source: 'container-isolated-throwaway-mirror',
+    source: explicit ? 'already-running-loopback-instance' : 'container-isolated-throwaway-mirror',
     baseUrl: plan.baseUrl,
     capturedFrom,
     capturedAt: plan.date,
     runId: runId || null,
     spec: { kind, version, pathCount },
-    secrets: 'The mirror ran on synthetic secrets the toolkit generated at stand-up — no production credential was present in the container, and the spec body is public API shape only.',
+    secrets: explicit
+      ? "The spec was read from an already-running loopback instance the operator started — NOT a toolkit-built mirror, so the toolkit makes no claim about the credentials that instance holds (they are the operator's own, and may be real). The spec body is public API shape only; nothing beyond the validated spec is persisted."
+      : 'The mirror ran on synthetic secrets the toolkit generated at stand-up — no production credential was present in the container, and the spec body is public API shape only.',
     // capture-only honesty: the spec was READ, not SCANNED. Closes the adjacency over-claim
     // where an openapi-*.json sitting beside a zap-throwaway-local-*.json implies the DAST
     // exercised those endpoints — it does not (the baseline is an unauthenticated spider from /).
     scanCoverage: 'CAPTURE-ONLY. This spec was read for the api-endpoints artifact; the throwaway DAST is an unauthenticated loopback spider that does NOT consume it, so these endpoints were not necessarily exercised. Authenticated / prod-equivalent endpoint testing remains owner-run.',
     singleSpec: 'first-match single-spec capture — a gateway/multi-service partner may expose additional specs not enumerated here.',
-    prodEquivalence: 'PENDING owner attestation — this spec was captured from the container-isolated throwaway mirror the toolkit stood up, NOT from production. Only the owner can attest that production serves an equivalent spec.',
+    prodEquivalence: explicit
+      ? 'PENDING owner attestation — this spec was captured from an already-running loopback instance the operator started, NOT from production. Only the owner can attest that production serves an equivalent spec.'
+      : 'PENDING owner attestation — this spec was captured from the container-isolated throwaway mirror the toolkit stood up, NOT from production. Only the owner can attest that production serves an equivalent spec.',
   }
 }
 
@@ -161,7 +186,13 @@ export function buildProvenance(plan, { capturedFrom, kind, version, pathCount, 
  * fabrication). FAILS CLOSED without consent.
  */
 export function captureOpenapi(plan, { consent = false, runId = null, timeoutSec = 5 } = {}) {
-  if (consent !== true) throw new Error('capture-openapi: refusing to read a stood-up mirror without explicit consent (part of the throwaway-dast live op). Pass --consent.')
+  if (consent !== true) {
+    // Name the SOURCE-matched gate (run-dast's rung-1 pattern): an explicit already-running
+    // instance is authorized by live-instance-dast, the stood-up mirror by throwaway-dast.
+    const gate = plan && plan.source === 'explicit' ? 'live-instance-dast' : 'throwaway-dast'
+    const what = plan && plan.source === 'explicit' ? 'an already-running instance' : 'a stood-up mirror'
+    throw new Error(`capture-openapi: refusing to read ${what} without explicit consent (part of the ${gate} live op). Pass --consent.`)
+  }
   // Belt-and-suspenders: re-assert the planner's loopback invariant on the plan actually
   // executed — a hand-built plan must not smuggle a remote URL past the pure guard.
   assertLoopback(plan.baseUrl, 'captureOpenapi')
@@ -200,32 +231,62 @@ function main() {
   const runId = arg('--run-id', null)
   const date = arg('--date', new Date().toISOString().slice(0, 10))
   const rootPath = arg('--root-path', null) // optional proxy root_path (e.g. /api/v1); fails closed if unsafe
+
+  // The capture SOURCE selects which recorded live-op consent authorizes this read — run-dast's
+  // ONE resolveBaseUrl is the single arbiter of `source`, exactly as in run-dast's main(). An
+  // explicit --base-url is an ALREADY-RUNNING loopback instance the operator started (source
+  // 'explicit' → the live-instance-dast gate — the rung-1 fallback when the throwaway mirror
+  // never stood up); the --from-standup pointer below stays the disposable mirror (source
+  // 'standup' → throwaway-dast). Resolving the explicit URL HERE re-asserts loopback BEFORE
+  // any consent is even looked up.
+  let captureSource = null
+  if (baseUrl) {
+    try { captureSource = resolveBaseUrl(baseUrl, null).source } // 'explicit'
+    catch (e) {
+      // The shared resolver refused (invalid / non-loopback). Route the refusal through
+      // planCapture — same shared URL_OK + LOOPBACK — so it names the capture-native
+      // invariant; keep the resolver's message if the planner (unexpectedly) accepts.
+      // FAIL CLOSED either way: no source, no consent lookup, no GET.
+      let msg = String(e.message)
+      try { planCapture(baseUrl, { target, date, rootPath }) } catch (pe) { msg = String(pe.message) }
+      process.stdout.write(`## capture-openapi — ${msg}\n`); process.exitCode = 3; return
+    }
+  }
+
   // --from-standup (Slice D): reuse run-dast's ONE resolver — explicit --base-url still wins;
   // the resolver re-asserts loopback + the scannable-status gate; staleness guard catches a
   // swept manifest. The capture is DB-independent, so it still runs on an `unhealthy` mirror.
   if (argv.includes('--from-standup') && !baseUrl) {
     const pointer = readStandupPointer(target)
-    try { baseUrl = resolveBaseUrl(null, pointer).baseUrl }
+    let resolved
+    try { resolved = resolveBaseUrl(null, pointer) }
     catch (e) { process.stdout.write(`## capture-openapi — ${e.message}\n`); process.exitCode = 3; return }
     if (pointer && pointer.manifestPath && !existsSync(pointer.manifestPath)) {
       process.stdout.write(`## capture-openapi — the stand-up pointer references a manifest that no longer exists (${pointer.manifestPath}) — the throwaway is gone; stand up again\n`); process.exitCode = 3; return
     }
+    baseUrl = resolved.baseUrl
+    captureSource = resolved.source // 'standup'
   }
-  // --consent alone is insufficient: the capture rides on the SAME recorded affirmative
-  // 'throwaway-dast' consent that stood the mirror up (no new gate) — verified exactly the
-  // way run-dast verifies it.
+  // --consent alone is insufficient: the recorded live-op consent for THIS capture's source is
+  // also required, selected exactly the way run-dast selects its gate. Source 'explicit'
+  // verifies 'live-instance-dast' (the read hits the operator's OWN running instance — the
+  // throwaway's token never stands in for it); source 'standup' verifies the SAME recorded
+  // 'throwaway-dast' consent that stood the mirror up (no new gate).
   const consentFlag = argv.includes('--consent')
-  const consentRecorded = verifyConsent('throwaway-dast', { target })
+  const consentGate = captureSource === 'explicit' ? 'live-instance-dast' : 'throwaway-dast'
+  const consentRecorded = verifyConsent(consentGate, { target })
   const consent = consentFlag && consentRecorded
   const asJson = argv.includes('--json')
 
   let plan
-  try { plan = planCapture(baseUrl, { target, date, rootPath }) }
+  try { plan = planCapture(baseUrl, { target, date, rootPath, source: captureSource }) }
   catch (e) { process.stdout.write(`## capture-openapi — ${e.message}\n`); process.exitCode = 3; return }
   if (!consent) {
     const why = consentFlag && !consentRecorded
-      ? `--consent is set but no affirmative consent is recorded for gate 'throwaway-dast' (the flag alone is not enough). The capture rides on the same recorded consent that stood the mirror up.`
-      : `re-run with --consent (and the recorded throwaway-dast consent).`
+      ? `--consent is set but no affirmative consent is recorded for gate '${consentGate}' (the flag alone is not enough). ${captureSource === 'explicit'
+        ? `An explicit --base-url reads an ALREADY-RUNNING instance you started, so the capture requires the recorded live-instance-dast consent — the throwaway's token never stands in for it.`
+        : 'The capture rides on the same recorded consent that stood the mirror up.'}`
+      : `re-run with --consent (and the recorded ${consentGate} consent).`
     process.stdout.write(`## capture-openapi — NOT RUN (no consent)\nWould GET the framework spec from ${plan.baseUrl} (candidates: ${plan.candidatePaths.join(', ')}) → ${plan.evidencePath}\n${why}\n`)
     process.exitCode = 3; return
   }
@@ -237,7 +298,9 @@ function main() {
     L.push(`evidence: ${r.evidencePath}`)
     L.push(`spec: ${r.kind} ${r.version} · ${r.pathCount} paths (from ${r.capturedFrom})`)
     L.push('coverage: CAPTURE-ONLY — the throwaway DAST does NOT consume this spec; these endpoints were not necessarily exercised (authenticated endpoint testing remains owner-run)')
-    L.push('prod-equivalence: PENDING owner attestation (captured from the isolated mirror, not production)')
+    L.push(captureSource === 'explicit'
+      ? 'prod-equivalence: PENDING owner attestation (captured from your already-running loopback instance, not production)'
+      : 'prod-equivalence: PENDING owner attestation (captured from the isolated mirror, not production)')
   } else {
     L.push(r.reason)
     L.push('the api-endpoints artifact stays code-derived (unchanged, honest fallback)')
