@@ -3,7 +3,7 @@
   "name": "sf-security-review-toolkit",
   "displayName": "Salesforce Security Review Toolkit",
   "description": "Skills that prepare an ISV partner for the AppExchange/AgentExchange security review end to end — autonomous multi-agent codebase audit, submission-artifact generation, scan orchestration, test-environment runbooks, and an honest readiness verdict.",
-  "version": "0.8.115",
+  "version": "0.8.116",
   "author": {
     "name": "Aiden Seeley",
     "url": "https://github.com/runverdict"

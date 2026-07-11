@@ -51,6 +51,36 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.116] — 2026-07-11
+
+**The mandated report-headline block is now INJECTED into the audit report deterministically — its
+presence no longer depends on the synthesis agent remembering to paste it, closing the cold-run
+hard-stop where the block was skipped.**
+
+### Added
+- `harness/inject-report-headline.mjs` — a deterministic step (audit-codebase Step 7, after the
+  post-disposition re-render, before `verify-report-headline`) that splices the current-ledger
+  cluster block into the report at a `<!-- SRT:CLUSTER-HEADLINE -->` placeholder (or, absent one,
+  right after the exec-summary heading), recomputed via the same `renderClusterHeadline`
+  (+ `clusterOrNullFromFindings`) the gate uses so the two cannot drift. Idempotent; replaces a
+  stale prior injection without nesting; fails closed (exit 2) on an unreadable ledger or a missing
+  report. `verify-report-headline` stays the backstop for a contradicting claim in the prose.
+
+### Changed
+- `skills/audit-codebase/SKILL.md` — Step 6: the synthesis agent leaves a
+  `<!-- SRT:CLUSTER-HEADLINE -->` placeholder (or includes the sidecar) and writes prose around it;
+  Step 7: run `inject-report-headline.mjs` before `verify-report-headline` so the block's presence
+  is guaranteed by construction. Additive edits (the pinned `finding-clusters --headline` reference,
+  the reconcile → apply → render-recap ordering, and the verify invocation are preserved) + the
+  allowed-tools grant for the new engine.
+
+### Tests
+- `acceptance/test-inject-report-headline.mjs` (new, +7) — placeholder replacement, idempotency,
+  no-marker insertion after the first heading, stale-block replacement (no nesting), the round-trip
+  that the injected block equals `verify-report-headline`'s `expected`, and the fail-closed CLI.
+
+Suite 84 files / 1258 checks / 0 failed (+1 file, +7 checks).
+
 ## [0.8.115] — 2026-07-11
 
 **Two tag-gating checks now lock the two ways the readiness result could be untrustworthy: that

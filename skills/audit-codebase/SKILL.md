@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Bash(node *harness/inject-report-headline.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -339,9 +339,11 @@ regardless of anything this engine produces.
    `<target>/.security-review/report-headline.md` — byte-identical to the stdout of
    `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target> --headline`
    over the just-merged ledger, and refreshed post-disposition by Step 7's re-render — so
-   the synthesis agent INCLUDES that file's content verbatim as the exec-summary headline
-   instead of hand-running the command, and writes its blocking/hardening prose AROUND
-   the block, never restating a critical/high count that could contradict it.
+   the synthesis agent leaves a `<!-- SRT:CLUSTER-HEADLINE -->` placeholder where the
+   exec-summary headline goes (or includes that file's content verbatim) and writes its
+   blocking/hardening prose AROUND it, never restating a critical/high count that could
+   contradict it — Step 7 then INJECTS the current block at that placeholder deterministically
+   (`inject-report-headline.mjs`), so a forgotten paste no longer hard-stops the run.
    This is the SAME block the journey's blocker gate prints, so the failure verdict reads
    identically at both sites, and the per-dimension fan-out re-finding one root cause under
    several lenses is never presented as that many distinct problems; (2) prioritized findings
@@ -507,6 +509,19 @@ regardless of anything this engine produces.
    correction (`run-log: open confirmed 441 → 86 (…)`) so the fix is visible,
    never silent. On a missing ledger or a run-log with no `## Pass` block it exits
    non-zero and touches nothing — it never invents a count.
+
+   **Then INJECT the mandated headline block deterministically — its PRESENCE no
+   longer depends on the synthesis agent pasting it.** Run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/inject-report-headline.mjs --target <target>
+   --report <report-path>`. It recomputes the cluster block from the CURRENT
+   (post-disposition) ledger — the same `renderClusterHeadline` the gate uses, so the
+   two cannot drift — and splices it into the report at the
+   `<!-- SRT:CLUSTER-HEADLINE -->` placeholder (or, absent one, right after the
+   exec-summary heading), replacing any stale prior injection. Idempotent; it fails
+   closed (exit 2) on an unreadable ledger or a missing report. This makes the next
+   check pass its block-presence test BY CONSTRUCTION, closing the cold-run hard-stop
+   where a synthesis agent skipped the block; the gate below still catches a
+   contradicting critical/high claim in the surrounding prose.
 
    **Then verify the report headline against the ledger — a HARD STOP, not a
    warning.** Run `node ${CLAUDE_PLUGIN_ROOT}/harness/verify-report-headline.mjs
