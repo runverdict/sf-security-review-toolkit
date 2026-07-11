@@ -18,8 +18,9 @@
  *   U12 the python + dockerfile plans carry env NAMES only, never secret values
  *   U13 the kind-agnostic gates (consent, needs-secrets, port) hold for the new kinds
  *   U14 compose → needs-config-resolution pre-plan under the toolkit project name
- *   U15 planCompose: the loopback override rebinds the web tier to 127.0.0.1 and strips
- *       every other service's host ports (THE compose isolation boundary)
+ *   U15 planCompose: the loopback override rebinds the web tier to 127.0.0.1, strips
+ *       every other service's host ports, AND resets every service's volumes — no host
+ *       bind mount survives into the scanned throwaway (THE compose isolation boundary)
  *   U16 planCompose REFUSES an ambiguous web service — never guesses
  *   U17 the kind-agnostic gates (consent, needs-secrets, port) hold for compose
  *   U18 the compose plan carries env NAMES only + unsafe service names are refused
@@ -31,6 +32,10 @@
  *   H4  mapDockerHealth: partner's declared HEALTHCHECK honored; empty → HTTP-probe fallthrough
  *   U20 checkEnvFileRunId: matching toolkit path passes; mismatched refuses; custom allowed (fired in planStandup)
  *   U21 classifyPortOwnership: occupied-before + not-ours → refuse (misattribution); ours → ok
+ *   U24 composeUpArgs: buildsFromSource:false omits --build (never --no-build);
+ *       true/absent keep --build; planStandup threads the recipe flag into the plan
+ *   U25 safeComposeConfigError: a missing-env-file stderr surfaces the FILENAME only;
+ *       interpolation errors (which echo secret VALUES) and undefined/'' stay null
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
  * CI-hermetic — these tests pin the PURE planCompose (loopback override +
@@ -44,7 +49,7 @@ import { tmpdir } from 'node:os'
 import {
   planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE,
   classifyHealthCode, resolveHealth, mapDockerHealth, standupHealthNote, HEALTH_STATES,
-  checkEnvFileRunId, classifyPortOwnership,
+  checkEnvFileRunId, classifyPortOwnership, composeUpArgs, safeComposeConfigError,
 } from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
@@ -257,6 +262,13 @@ check('U15 planCompose: the loopback override rebinds the web tier to 127.0.0.1 
   // reset must be the REPLACE tag too, for the same merge reason)
   assert.match(o, /db:\n    ports: !reset \[\]/)
   assert.match(o, /cache:\n    ports: !reset \[\]/)
+  // (c) EVERY service — the web tier AND the others — loses its volumes: a prod compose's
+  // host bind mounts (a ~/.config credential dir, a root-owned ./data) must never survive
+  // into the scanned throwaway.
+  // MUTATION: deleting the volumes-reset lines from the override template → these three go red
+  assert.match(o, /web:\n    ports: !override\n      - "127\.0\.0\.1:8080:8080"\n    volumes: !reset \[\]/)
+  assert.match(o, /db:\n    ports: !reset \[\]\n    volumes: !reset \[\]/)
+  assert.match(o, /cache:\n    ports: !reset \[\]\n    volumes: !reset \[\]/)
   // the completed plan still points the scanners at loopback
   assert.equal(p.baseUrl, 'http://127.0.0.1:8080')
   assert.equal(p.host, '127.0.0.1')
@@ -483,6 +495,43 @@ check('U23 host-port decoupling: planCompose templates the override HOST slot fr
   // the ephemeral runtime marker: hostPort 0 → 127.0.0.1:0:<target> (docker assigns a free host port)
   const eph = planCompose(composeConfig, { ...pre, hostPort: 0 })
   assert.match(eph.overrideContent, /"127\.0\.0\.1:0:8080"/)
+})
+
+// ── Rung-2 prebuilt honoring + the safe compose-config error surface. The `up` argv and
+//    the stderr classifier are pure seams; the live `docker compose up` is operator-cold-
+//    validated, not CI-hermetic. ──
+
+check('U24 composeUpArgs: buildsFromSource:false omits --build (never --no-build); true/absent keep --build; planStandup threads it', () => {
+  // OMIT --build, do NOT pass --no-build: a clean box has no cached image — omitting lets
+  // compose build-if-missing while REUSING a present prebuilt image
+  assert.deepEqual(composeUpArgs({ buildsFromSource: false }), ['up', '-d'])
+  assert.ok(!composeUpArgs({ buildsFromSource: false }).includes('--no-build'), 'never --no-build (a clean box must still be able to build-if-missing)')
+  // MUTATION: flipping the `=== false` condition inverts every deepEqual here (red)
+  assert.deepEqual(composeUpArgs({ buildsFromSource: true }), ['up', '-d', '--build'])
+  assert.deepEqual(composeUpArgs({}), ['up', '-d', '--build'])   // legacy plan (flag absent) still builds
+  assert.deepEqual(composeUpArgs(), ['up', '-d', '--build'])
+  // planStandup threads recipe.buildsFromSource into the compose pre-plan, and planCompose's
+  // spread carries it into the full plan the executor's `up` reads
+  const prebuilt = { ...composeRunnable, recipe: { ...composeRunnable.recipe, file: 'docker-compose.prod.yml', buildsFromSource: false } }
+  const pre = planStandup(prebuilt, { runId: 'u24', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u24') })
+  assert.equal(pre.buildsFromSource, false, 'the compose pre-plan carries the recipe buildsFromSource flag')
+  const p = planCompose(composeConfig, pre)
+  assert.equal(p.buildsFromSource, false, 'planCompose completes the plan without dropping the flag')
+  assert.deepEqual(composeUpArgs(p), ['up', '-d'])
+})
+
+check('U25 safeComposeConfigError: a missing-env-file stderr surfaces the FILENAME; values/unknown/empty stay null', () => {
+  const msg = safeComposeConfigError('env file /x/.env not found')
+  assert.ok(msg && msg.includes('.env'), 'the safe message names the missing env file: ' + msg)
+  // an interpolation error echoes the offending VALUE into stderr — it must NEVER surface.
+  // MUTATION: returning the raw stderr unconditionally → the value below leaks (red)
+  assert.equal(safeComposeConfigError('invalid interpolation format for DATABASE_URL: "postgres://u:p@h"'), null)
+  // the go-toolchain open() shape surfaces too — a FILENAME only
+  const open = safeComposeConfigError('open /repo/.env.prod: no such file or directory')
+  assert.ok(open && open.includes('.env.prod'), String(open))
+  // the same catch swallows JSON.parse failures, which carry no .stderr — undefined/'' → null
+  assert.equal(safeComposeConfigError(undefined), null)
+  assert.equal(safeComposeConfigError(''), null)
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

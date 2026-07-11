@@ -37,7 +37,7 @@
  * USAGE: node stack-detect.mjs --target <repo> [--json]
  */
 import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Env-name classification — order matters: EXTERNAL (points at a real outside service)
@@ -267,6 +267,15 @@ function svcImage(lines) {
   return null
 }
 
+/** Pure: does the service declare a `build:` key — inline (`build: ./api`) or block form
+ *  (`build:` with `context:`/`dockerfile:` children)? A tier that declares BOTH `image:`
+ *  and `build:` still builds from source (the `image:` is the tag Compose applies to the
+ *  build), so `image:` alone must never read as "prebuilt". */
+export function svcBuild(lines) {
+  for (const line of lines) { if (/^\s*build\s*:/.test(line)) return true }
+  return false
+}
+
 /** Pure: the concatenated `command:`/`entrypoint:` text (inline + list forms). */
 function svcCommand(lines) {
   let cmd = ''
@@ -306,6 +315,32 @@ function svcDependsOn(lines) {
     }
   }
   return deps
+}
+
+/**
+ * PURE. The `env_file:` target paths a compose declares — short form (`env_file: .env`)
+ * and list form (`env_file:` + `- .env` children), across every service. Mirrors the
+ * svcPorts/composeServiceBlocks scanner idioms. A referenced env_file that is ABSENT on
+ * disk hard-fails `docker compose config` at stand-up, so the detector must see these
+ * paths to gate them (existsSync) instead of dying on a swallowed stderr later.
+ */
+export function composeEnvFiles(text) {
+  const out = []
+  const lines = String(text || '').split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)env_file\s*:\s*(.*?)\s*(?:#.*)?$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[2].trim()) { for (const tok of inlineList(m[2])) out.push(tok); continue }
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      const li = lines[j].match(/^\s*-\s*(.+)$/)
+      if (li) out.push(unq(li[1]))
+    }
+  }
+  return [...new Set(out)]
 }
 
 /**
@@ -379,7 +414,11 @@ export function composeWebTierImage(text) {
   if (!wt || !wt.service) return { prebuilt: false, service: null, image: null }
   const block = composeServiceBlocks(text).find((b) => b.name === wt.service)
   const image = block ? svcImage(block.lines) : null
-  return { prebuilt: Boolean(image), service: wt.service, image: image || null }
+  // `image:` + `build:` together = a build-from-source tier whose built image gets that
+  // tag — on a clean box the tag is not cached, so rung 2's "zero build" claim would be
+  // false; only an image WITHOUT a build directive is genuinely prebuilt.
+  const builds = block ? svcBuild(block.lines) : false
+  return { prebuilt: Boolean(image) && !builds, service: wt.service, image: image || null }
 }
 
 /**
@@ -466,6 +505,11 @@ function webTierReason(wt) {
   return frag
 }
 
+// DB-shaped env names for the external-managed-DB honesty note: a compose whose database
+// is an EXTERNAL managed service (a real DATABASE_URL) with NO in-compose datastore leaves
+// the isolated throwaway DB-less — the api tier may not come up even with a filled env-file.
+const EXTERNAL_DB_ENV = /(DATABASE|POSTGRES|PGHOST|MYSQL|MARIADB|MONGO)/i
+
 /** Pure: from gathered facts, classify the throwaway-DAST readiness. */
 export function classifyStack(facts = {}) {
   const roots = Array.isArray(facts.serverRoots) ? facts.serverRoots : []
@@ -493,9 +537,30 @@ export function classifyStack(facts = {}) {
     return { status: 'needs-recipe', serverRoots: roots, env, migration: facts.migration || null,
       reason: `external source at ${roots.join(', ')} but no runnable recipe (no compose / Dockerfile / start script) — provide a start command` }
   }
+  // External-managed-DB honesty note: a compose recipe with a DB-shaped EXTERNAL env var and
+  // NO in-compose datastore service means the isolated throwaway has no database at all —
+  // never a silent degrade; steer to rung 1 instead of a doomed stand-up. Reads
+  // facts.composeServices directly (the `services` local below is only built on the
+  // runnable path, after the needs-secrets returns).
+  const composeSvcs = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
+  const externalDbNote = (recipe.kind === 'compose'
+    && env.external.some((n) => EXTERNAL_DB_ENV.test(n))
+    && !composeSvcs.some((n) => INFRA_NAME.test(n)))
+    ? '; NOTE: a DB-shaped env var is EXTERNAL-managed and the compose defines no in-compose database service — the isolated throwaway has no DB, so the api tier may not come up even with a filled env-file; prefer rung 1 (an already-running --base-url)'
+    : ''
+  // A compose recipe referencing an env_file that is ABSENT on disk cannot be runnable —
+  // `docker compose config` hard-fails on it at stand-up. Name the file here, up front,
+  // instead of a swallowed stderr later. Env buckets are already computed (above), so
+  // env.external stays fully populated on this branch too.
+  const missingEnvFiles = (Array.isArray(facts.missingEnvFiles) ? facts.missingEnvFiles : []).filter(Boolean)
+  if (missingEnvFiles.length) {
+    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
+      reason: `recipe compose references env_file '${missingEnvFiles.join("', '")}' which is absent — provide it (or scaffold-env) before stand-up` +
+        (env.external.length ? `; external creds also needed: ${env.external.join(', ')}` : '') + externalDbNote }
+  }
   if (env.external.length) {
     return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
-      reason: `recipe present but needs external-service credentials the toolkit cannot synthesize: ${env.external.join(', ')} — scaffold-and-guide` }
+      reason: `recipe present but needs external-service credentials the toolkit cannot synthesize: ${env.external.join(', ')} — scaffold-and-guide` + externalDbNote }
   }
   const services = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
   return { status: 'runnable', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
@@ -519,6 +584,21 @@ const isDir = (p) => { try { return statSync(p).isDirectory() } catch { return f
 const isFile = (p) => { try { return statSync(p).isFile() } catch { return false } }
 
 function firstExisting(target, names) { for (const n of names) { const p = join(target, n); if (isFile(p)) return p } return null }
+
+/** The compose file a compose recipe stands up (absolute path), or null (non-compose / none). */
+function recipeComposeFile(target, recipe) {
+  return recipe && recipe.kind === 'compose' && recipe.file ? join(target, recipe.file) : null
+}
+
+/** The compose text env-gathering, satisfiability, services, and the env_file checks
+ *  classify off: the recipe's OWN file when the recipe IS a compose — the file actually
+ *  stood up. A rung-2-preferred `*.prod.yml` can declare `env_file:`/env the dev compose
+ *  lacks; classifying off the dev file while standing up the prod file left `docker
+ *  compose config` to hard-fail on an env surface the detector never read (the cold-run
+ *  mystery). Non-compose / no-recipe behavior is unchanged: the first canonical compose. */
+function composeTextFor(target, recipe) {
+  return readOr(recipeComposeFile(target, recipe) || firstExisting(target, COMPOSE_FILES) || '')
+}
 
 /** Discover a prebuilt-image compose file: the known `*.prod.{yml,yaml}` names first, then any
  *  top-level `*.prod.{yml,yaml}` (sorted → deterministic). Returns an absolute path or null. */
@@ -561,7 +641,7 @@ function serverRoots(target) {
 function gatherEnvNames(target, roots, recipe = null) {
   const names = new Set()
   const add = (re, text, idx = 1) => { let m; const r = new RegExp(re, 'g'); while ((m = r.exec(text))) names.add(m[idx]) }
-  const compose = readOr(firstExisting(target, COMPOSE_FILES) || '')
+  const compose = composeTextFor(target, recipe)
   // Compose-scoped gathering: when the run recipe IS the compose and it declares no
   // `env_file:`, the compose defines the app's entire env surface — env referenced
   // only by source files the compose never runs (one-off scripts, alt entrypoints,
@@ -675,12 +755,21 @@ function gatherFacts(target) {
   const roots = serverRoots(target)
   const { recipe, webTier } = gatherRecipe(target, roots)
   const envNames = gatherEnvNames(target, roots, recipe)
-  // Compose-satisfiability facts (empty when no compose file → non-compose stacks unchanged)
-  const composeText = readOr(firstExisting(target, COMPOSE_FILES) || '')
+  // Compose-satisfiability facts (empty when no compose file → non-compose stacks
+  // unchanged). The text is the recipe's own compose file when the recipe IS a compose —
+  // satisfiability/services read off the file actually stood up (see composeTextFor).
+  const composeText = composeTextFor(target, recipe)
   const satisfiable = new Set([...composeDefaultedVars(composeText), ...composeConcreteAssigned(composeText)])
   const composeServices = composeServiceNames(composeText)
+  // An env_file the recipe compose references but which is ABSENT on disk (resolved
+  // relative to the compose file's own dir) hard-fails `docker compose config` — surface
+  // it as a fact so classifyStack lands an honest needs-secrets NAMING the file.
+  const composePath = recipeComposeFile(target, recipe)
+  const missingEnvFiles = composePath
+    ? composeEnvFiles(composeText).filter((f) => !existsSync(resolve(dirname(composePath), f)))
+    : []
   const migration = detectMigration(gatherMigrationSignals(target, roots, composeServices))
-  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration }
+  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration, missingEnvFiles }
 }
 
 function main() {

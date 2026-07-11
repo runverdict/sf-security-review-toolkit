@@ -23,6 +23,12 @@
  *   S11 CLI cold-run shape (self-contained compose + scripts/*.py reading
  *       ADMIN_DATABASE_URL): compose-scoped gathering clears it → runnable;
  *       an env_file: directive falls back to union gathering → needs-secrets
+ *   S12 CLI env-read follows the recipe: a rung-2-preferred *.prod.yml is what env/
+ *       satisfiability classify off, never the dev compose that is NOT stood up
+ *   S13 composeEnvFiles + CLI: a referenced env_file ABSENT on disk → needs-secrets
+ *       NAMING the file (docker compose config would hard-fail on it); PRESENT → runnable
+ *   S14 classifyStack: external-managed DB + no in-compose datastore → the honest
+ *       no-DB-in-the-throwaway note; in-compose datastore / non-compose → note absent
  *   A1  composeWebTier via CLI on the Verdict shape → api:8000, not web:3000/db:5432
  *   A2  db-publishes-first not mis-picked (datastore hard-excluded)
  *   A3  port forms parsed: interpolated / long-form target-published / bind-IP
@@ -50,7 +56,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
   classifyEnvName, classifyStack, composeWebTier, composeWebTierImage, detectMigration, resolvePythonRun,
-  composeServiceNames, composeDefaultedVars, composeConcreteAssigned,
+  composeServiceNames, composeDefaultedVars, composeConcreteAssigned, composeEnvFiles, svcBuild,
 } from '../harness/stack-detect.mjs'
 
 const DETECT = fileURLToPath(new URL('../harness/stack-detect.mjs', import.meta.url))
@@ -241,6 +247,86 @@ check('S11 CLI cold-run shape: compose-scoped gathering clears scripts-only ADMI
   const out2 = cli(r2)
   assert.equal(out2.status, 'needs-secrets', out2.reason)
   assert.deepEqual(out2.env.external, ['ADMIN_DATABASE_URL'])
+})
+
+check('S12 CLI: env/satisfiability classify off the compose ACTUALLY stood up (recipe.file), never the dev compose', () => {
+  const r = mkrepo()
+  // the dev compose: a benign env surface with a var only IT declares — it is NOT stood up
+  w(r, 'docker-compose.yml', [
+    'services:', '  api:', '    build: ./api',
+    '    ports:', '      - "8000:8000"',
+    '    environment:',
+    '      DEV_ONLY_API_TOKEN: ${DEV_ONLY_API_TOKEN:-dev}', '',
+  ].join('\n'))
+  // the prebuilt prod compose (the rung-2 preference pick): a DISTINCT var only IT declares
+  w(r, 'docker-compose.prod.yml', [
+    'services:', '  api:', '    image: api:1.0',
+    '    ports:', '      - "8000:8000"',
+    '    environment:',
+    '      PROD_SIGNING_SECRET: ${PROD_SIGNING_SECRET:-x}', '',
+  ].join('\n'))
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  assert.ok(out.recipe.file.endsWith('docker-compose.prod.yml'), out.recipe.file)
+  // MUTATION: reverting env-gathering to firstExisting(COMPOSE_FILES) (the dev compose)
+  // → the prod-only var disappears and the dev-only var reappears (red on both asserts)
+  assert.ok(out.env.synthesizable.includes('PROD_SIGNING_SECRET'), 'the stood-up prod compose defines the env surface: ' + JSON.stringify(out.env))
+  assert.ok(!JSON.stringify(out.env).includes('DEV_ONLY_API_TOKEN'), 'the dev compose env surface must not classify a prod stand-up: ' + JSON.stringify(out.env))
+})
+
+// A prebuilt prod compose referencing an operator env_file. Its OWN env is benign/
+// synthesizable only — the present-.env leg below must land runnable for the RIGHT
+// reason (an external-cred key here would land needs-secrets for the wrong one).
+const PROD_ENVFILE_COMPOSE = [
+  'services:',
+  '  api:',
+  '    image: api:1.0',
+  '    env_file: .env',
+  '    ports:',
+  '      - "8000:8000"',
+  '    environment:',
+  '      SESSION_SECRET: ${SESSION_SECRET:-dev}',
+  '',
+].join('\n')
+
+check('S13 composeEnvFiles + CLI: a referenced env_file ABSENT on disk → needs-secrets NAMING the file; PRESENT → runnable', () => {
+  // pure helper: short form, list form, none — the same block/inline scanning idiom
+  assert.deepEqual(composeEnvFiles('services:\n  api:\n    env_file: .env\n'), ['.env'])
+  assert.deepEqual(composeEnvFiles('services:\n  api:\n    env_file:\n      - .env\n      - .env.prod\n'), ['.env', '.env.prod'])
+  assert.deepEqual(composeEnvFiles('services:\n  api:\n    image: api:1.0\n'), [])
+  const r = mkrepo()
+  w(r, 'docker-compose.prod.yml', PROD_ENVFILE_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  // ABSENT: `docker compose config` would hard-fail on the missing .env at stand-up —
+  // classify needs-secrets NAMING the file, never a swallowed stand-up death.
+  // MUTATION: dropping the existsSync gate on referenced env_files → this classifies runnable (red)
+  const absent = cli(r)
+  assert.equal(absent.status, 'needs-secrets', absent.reason)
+  assert.ok(absent.reason.includes('.env'), 'the reason must NAME the missing env_file: ' + absent.reason)
+  // PRESENT (benign + synthesizable keys ONLY — see the fixture note) → runnable
+  w(r, '.env', 'PORT=8000\nAPP_JWT_SECRET=x\n')
+  const present = cli(r)
+  assert.equal(present.status, 'runnable', present.reason)
+})
+
+check('S14 classifyStack: external-managed DB + NO in-compose datastore → the honest no-DB note; datastore/non-compose → absent', () => {
+  const base = { serverRoots: ['api'], recipe: { kind: 'compose', file: 'docker-compose.yml' }, webTier: { port: 8000 }, envNames: ['DATABASE_URL'] }
+  // an external DATABASE_URL and no datastore service: the isolated throwaway has no DB —
+  // the reason must say so and steer to rung 1, never leave a doomed stand-up implied fine
+  const noDb = classifyStack({ ...base, composeServices: ['api', 'web'] })
+  assert.equal(noDb.status, 'needs-secrets')
+  // MUTATION: dropping the external-DB note branch → the fragment disappears (red)
+  assert.ok(/throwaway has no DB/.test(noDb.reason), noDb.reason)
+  assert.ok(/--base-url/.test(noDb.reason), 'the note must steer to rung 1 (an already-running --base-url): ' + noDb.reason)
+  // two-sided: an in-compose datastore (the self-contained shape) → note ABSENT
+  const withDb = classifyStack({ ...base, composeServices: ['api', 'postgres'] })
+  assert.ok(!/throwaway has no DB/.test(withDb.reason), withDb.reason)
+  // and a NON-compose recipe never carries the compose-shaped note
+  const node = classifyStack({ serverRoots: ['api'], recipe: { kind: 'node' }, webTier: { port: 3000 }, envNames: ['DATABASE_URL'] })
+  assert.ok(!/throwaway has no DB/.test(node.reason), node.reason)
 })
 
 // ── Compose web-tier selection (Slice A) — the naive first-digit:digit picker scanned
@@ -529,6 +615,19 @@ const PROD_IMAGE_COMPOSE = [
   '',
 ].join('\n')
 
+// A tier declaring BOTH image: AND build: — Compose builds from source and applies the
+// image: string as the TAG, so on a clean box the tag is not cached and rung 2's
+// "zero build" assumption is false. Never "prebuilt".
+const IMAGE_AND_BUILD_COMPOSE = [
+  'services:',
+  '  api:',
+  '    image: api:1.0',
+  '    build: ./api',
+  '    ports:',
+  '      - "8000:8000"',
+  '',
+].join('\n')
+
 check('C1 composeWebTierImage: prebuilt web tier → prebuilt:true; a build-from-source tier → prebuilt:false', () => {
   const prebuilt = composeWebTierImage(PROD_IMAGE_COMPOSE)
   // MUTATION: dropping svcImage() on the picked tier → prebuilt:false → the preference pass never fires (red)
@@ -540,6 +639,17 @@ check('C1 composeWebTierImage: prebuilt web tier → prebuilt:true; a build-from
   assert.equal(built.prebuilt, false, 'a build: tier resolves no image: → not prebuilt')
   assert.equal(built.service, 'api')
   assert.equal(built.image, null)
+  // image: AND build: together = still a build-from-source tier (the image: is the tag
+  // Compose applies to the build — not cached on a clean box).
+  // MUTATION: dropping the `&& !svcBuild(...)` gate in composeWebTierImage → prebuilt:true here (red)
+  const both = composeWebTierImage(IMAGE_AND_BUILD_COMPOSE)
+  assert.equal(both.prebuilt, false, 'a tier with BOTH image: and build: is NOT prebuilt')
+  assert.equal(both.service, 'api')
+  assert.equal(both.image, 'api:1.0')            // the tag is still reported, prebuilt is not claimed
+  // svcBuild directly: inline form, block form (context: child), and the image-only negative
+  assert.equal(svcBuild(['    build: ./api']), true)
+  assert.equal(svcBuild(['    build:', '      context: ./api']), true)
+  assert.equal(svcBuild(['    image: api:1.0']), false)
 })
 
 check('C2 CLI: BOTH a build dev compose AND a prebuilt-image *.prod.yml → prod PREFERRED, buildsFromSource:false', () => {
