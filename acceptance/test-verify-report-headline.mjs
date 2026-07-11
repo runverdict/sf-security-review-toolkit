@@ -19,6 +19,13 @@
  *      a HARD STOP.
  * VH6  fail-closed — an unreadable ledger (missing file / dict findings) → exit 2,
  *      never a false PASS.
+ * VH7  ROUND-TRIP LOCK — the emitted sidecar block
+ *      (`renderClusterHeadline(clusterOrNullFromFindings(FINDINGS))`, the exact bytes
+ *      merge-ledger/render-recap write to `.security-review/report-headline.md`), placed
+ *      as the report headline, PASSES the gate (no missing-block failure, no self-tripped
+ *      contradiction from the block's own counts) — and a contradicting labelled claim
+ *      pasted BESIDE the correct block still FAILS it. Pins the emitter contract to
+ *      verify's expected block so the two can never drift apart.
  *
  * Dependency-free: `node acceptance/test-verify-report-headline.mjs`.
  */
@@ -29,7 +36,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { verifyReportHeadline } from '../harness/verify-report-headline.mjs'
-import { clusterFindings, renderClusterHeadline } from '../harness/finding-clusters.mjs'
+import { clusterFindings, renderClusterHeadline, clusterOrNullFromFindings } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'verify-report-headline.mjs')
@@ -222,6 +229,24 @@ check('VH6 fail-closed: an unreadable ledger (missing / dict findings) → exit 
   // missing --report is a usage error, also non-zero
   const r3 = run([CLI, '--target', d1])
   assert.equal(r3.code, 2)
+})
+
+check('VH7 round-trip lock: the emitted sidecar block passes the gate as-is; a contradicting claim beside it still fails', () => {
+  // FINDINGS holds a confirmed critical — the exact shape the cold run lied about.
+  // B is the byte-exact sidecar content (sans the trailing newline the writers append):
+  // the same composition merge-ledger (Step 6) and render-recap --target (Step 7) emit.
+  const B = renderClusterHeadline(clusterOrNullFromFindings(FINDINGS))
+  // (a) the emitted block, placed as the report headline, passes: verify recomputes the
+  // identical bytes from the same findings, and the block's own counts never self-trip
+  // the contradiction scans.
+  const ok = verifyReportHeadline(B, FINDINGS)
+  assert.equal(ok.ok, true, `the emitted block must pass the Step-7 gate: ${JSON.stringify(ok.failures)}`)
+  assert.equal(B, ok.expected, 'the emitter block is byte-identical to the block verify expects')
+  // (b) CONTRAST — the gate still catches the labelled contradiction pasted BESIDE the
+  // correct block (the `Blocking items (critical/high): none` shape verify parses).
+  const bad = verifyReportHeadline(B + '\n\nBlocking items (critical/high): none\n', FINDINGS)
+  assert.equal(bad.ok, false, 'a contradicting labelled claim beside the correct block must still fail')
+  assert.equal(bad.failures[0].code, 'blocking-items-contradiction')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

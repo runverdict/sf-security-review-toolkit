@@ -14,17 +14,22 @@
  * RC4  fail-safe — null facts → renders (no crash); empty findings → the NONE headline + PROCEED.
  * RC5  wiring — merge-ledger imports + calls renderAuditRecap and emits it to stdout;
  *      audit-codebase Step 7 grants + references the harness + states verbatim.
+ * RC12 headline-sidecar refresh — `--target` REWRITES `.security-review/report-headline.md`
+ *      from the CURRENT (post-disposition) ledger findings: a refuted/superseded finding
+ *      is NOT counted (the post-disposition drop is visible in the sidecar bytes), two
+ *      runs are byte-identical, a readable ledger with an empty passes[] still refreshes
+ *      (guarded on the LEDGER, not the facts), and a missing ledger writes nothing.
  *
  * Dependency-free: `node acceptance/test-render-recap.mjs`.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { renderAuditRecap } from '../harness/render-recap.mjs'
-import { clusterFindings, renderClusterHeadline } from '../harness/finding-clusters.mjs'
+import { clusterFindings, renderClusterHeadline, clusterOrNullFromFindings } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const CLI = join(PLUGIN, 'harness', 'render-recap.mjs')
@@ -207,6 +212,49 @@ check('RC11 wiring: merge-ledger threads R.coverage_failed → pass object + the
   assert.match(merge, /R\.coverage_failed/, 'merge-ledger reads coverage_failed off the workflow envelope')
   assert.match(merge, /coverage_failed: coverageFailed/, 'merge-ledger persists coverage_failed in the pass object')
   assert.match(merge, /coverageFailed,/, 'merge-ledger passes coverageFailed into renderAuditRecap')
+})
+
+check('RC12 headline-sidecar refresh: --target rewrites report-headline.md post-disposition — refuted/superseded drop out, byte-deterministic', () => {
+  // The post-disposition ledger shape: ONE open deterministic finding, one REFUTED
+  // (dispositioned by adjudication) and one SUPERSEDED — both must be OUT of the block.
+  const d = tmp(); mkdirSync(join(d, '.security-review'), { recursive: true })
+  const findings = [
+    { id: 'o1', dimension: 'injection-xss', title: 'SQL string concatenation', status: 'confirmed', adjusted_severity: 'critical', file: 'svc/api/query.js:12', provenance: 'deterministic', engine: 'semgrep', ruleId: 'sql-concat' },
+    { id: 'r1', dimension: 'secrets-credentials', title: 'Adjudicated scanner noise', status: 'refuted', adjusted_severity: 'high', file: 'a.cls:5', provenance: 'deterministic', engine: 'semgrep', ruleId: 'noisy-rule', disposition_reason: 'FP: adjudicated rule-wide' },
+    { id: 's1', dimension: 'injection-xss', title: 'Superseded LLM duplicate', status: 'superseded', adjusted_severity: 'critical', file: 'svc/api/query.js:12', superseded_by: 'o1' },
+  ]
+  const ledger = { schema_version: '1', findings, passes: [{ id: 1, dimensions: ['injection-xss', 'secrets-credentials'], candidates: 3, confirmed: 1, refuted: 1, unverified: 0, tier: 'standard' }] }
+  writeFileSync(join(d, '.security-review', 'audit-ledger.json'), JSON.stringify(ledger))
+  // Seed a STALE pre-disposition sidecar (what merge-ledger wrote at Step 6, before the
+  // refuted/superseded rows dropped out) — the refresh must OVERWRITE it.
+  writeFileSync(join(d, '.security-review', 'report-headline.md'), 'STALE PRE-DISPOSITION BLOCK\n')
+  execFileSync('node', [CLI, '--target', d], { encoding: 'utf8' })
+  const sidecar = readFileSync(join(d, '.security-review', 'report-headline.md'), 'utf8')
+  const expected = renderClusterHeadline(clusterOrNullFromFindings(findings)) + '\n'
+  assert.equal(sidecar, expected, 'the sidecar must equal the block over the CURRENT (post-disposition) findings')
+  assert.ok(!sidecar.includes('STALE'), 'the stale pre-disposition sidecar is overwritten')
+  assert.match(sidecar, /\*\*Raw confirmed findings: 1\*\*/, 'only the OPEN finding is counted')
+  assert.match(sidecar, /critical 1 · high 0/, 'the refuted high is NOT counted — the post-disposition drop is visible')
+  // Determinism: a second run over the same ledger is a byte-identical sidecar.
+  execFileSync('node', [CLI, '--target', d], { encoding: 'utf8' })
+  assert.equal(readFileSync(join(d, '.security-review', 'report-headline.md'), 'utf8'), expected, 'two runs → byte-identical sidecar')
+})
+
+check('RC12b sidecar guard: a readable ledger with empty passes[] still refreshes; a missing ledger writes nothing (and never crashes)', () => {
+  // Readable ledger, passes:[] → factsFromLedger returns null (recap = UNAVAILABLE) but
+  // the sidecar refresh is guarded on the LEDGER read, so it still lands.
+  const d = tmp(); mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'audit-ledger.json'), JSON.stringify({ schema_version: '1', findings: [], passes: [] }))
+  const out = execFileSync('node', [CLI, '--target', d], { encoding: 'utf8' })
+  assert.match(out, /\*\*Verdict: UNAVAILABLE\.\*\*/, 'the recap UNAVAILABLE path is not regressed')
+  const expected = renderClusterHeadline(clusterOrNullFromFindings([])) + '\n'
+  assert.equal(readFileSync(join(d, '.security-review', 'report-headline.md'), 'utf8'), expected,
+    'a readable no-pass ledger still refreshes the sidecar (guard is on the ledger, not the facts)')
+  // Missing ledger entirely → no crash, no sidecar.
+  const dM = tmp(); mkdirSync(join(dM, '.security-review'), { recursive: true })
+  const outM = execFileSync('node', [CLI, '--target', dM], { encoding: 'utf8' })
+  assert.match(outM, /\*\*Verdict: UNAVAILABLE\.\*\*/, 'missing ledger renders UNAVAILABLE, no crash')
+  assert.ok(!existsSync(join(dM, '.security-review', 'report-headline.md')), 'no sidecar is written when the ledger cannot be read')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

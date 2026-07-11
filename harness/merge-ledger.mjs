@@ -39,7 +39,7 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
-import { collapseCrossDimension } from './finding-clusters.mjs' // Track-1b cross-dimension same-location collapse
+import { collapseCrossDimension, clusterOrNullFromFindings, renderClusterHeadline } from './finding-clusters.mjs' // Track-1b collapse + the verbatim headline block
 import { renderAuditRecap } from './render-recap.mjs' // WI-04/INV-34 — the fixed end-of-run operator recap
 
 function arg(flag, def) {
@@ -275,6 +275,21 @@ ledger.passes.sort((a, b) => a.id - b.id)
 ledger.schema_version = '1'
 
 writeFileSync(LEDGER_PATH, JSON.stringify(ledger, null, 2))
+
+// ---- the verbatim cluster-headline sidecar (deterministic headline emission) ----
+// Emit the mandated exec-summary block — byte-identical to
+// `finding-clusters.mjs --target <target> --headline` over the just-written ledger — to
+// a deterministic on-disk artifact, so the synthesis LLM INCLUDES the file instead of
+// remembering to run the command (and can never paste a hand-rebuilt or stale block).
+// This runs at audit-codebase Step 6, BEFORE reconcile-provenance/apply-dispositions
+// modify the ledger, so these bytes are PRE-disposition; `render-recap.mjs --target`
+// (Step 7) REFRESHES the same file post-disposition — that refresh is the authoritative
+// copy the report is verified against (verify-report-headline.mjs stays the backstop).
+// No mkdir needed: the LEDGER_PATH write into `.security-review/` just succeeded.
+writeFileSync(
+  join(REPO, '.security-review', 'report-headline.md'),
+  renderClusterHeadline(clusterOrNullFromFindings(ledger.findings)) + '\n'
+)
 
 // ---- run-log ----
 const confirmed = ledger.findings.filter((f) => f.status === 'confirmed')

@@ -31,16 +31,20 @@
  *         AND a cross-dimension merged parent (rebuilt by the collapse, re-stamped by the
  *         guarded `if (!f.provenance)` normalize; a `deterministic` row is never relabeled).
  *         Schema honesty, not behavior: consumers already default absent → llm-inferred.
+ *   M18 — headline sidecar: every merge writes `.security-review/report-headline.md` ==
+ *         `renderClusterHeadline(clusterOrNullFromFindings(ledger.findings)) + '\n'` — the
+ *         deterministic on-disk copy of the mandated verbatim exec-summary block (the
+ *         pre-disposition emit; render-recap `--target` refreshes it post-disposition).
  *
  * Dependency-free: `node acceptance/test-merge-ledger.mjs`.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { collapseCrossDimension } from '../harness/finding-clusters.mjs'
+import { collapseCrossDimension, clusterOrNullFromFindings, renderClusterHeadline } from '../harness/finding-clusters.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const MERGE = join(PLUGIN, 'harness', 'merge-ledger.mjs')
@@ -339,6 +343,27 @@ check('M17 provenance self-declaration: after a merge EVERY finding carries prov
   const merged = l.findings.find((f) => Array.isArray(f.merged_dimensions))
   assert.ok(merged, 'the fixture produced a cross-dimension merged entry')
   assert.equal(merged.provenance, 'llm-inferred', 'a merged parent (rebuilt by the collapse) is re-stamped by the guarded normalize')
+})
+
+check('M18 headline sidecar: a merge writes report-headline.md byte-identical to the cluster block over the merged findings', () => {
+  const d = gitRepo(); dirs.push(d)
+  const l = runMerge(d, { ledger_updates: [
+    u({ file: 'svc/api/routes.js:13', title: 'JWT verify without algorithm allowlist' }),
+    u({ verdict: 'false_positive', file: 'a.cls:5', title: 'SOQL injection in getRows', verdict_reasoning: 'bound variable only' }),
+    u({ file: 'classes/SolanoCtl.cls:21-25', title: 'Missing FLS on the SELECT', dimension: 'apex-exposed-surface', adjusted_severity: 'critical' }),
+  ], dimensions_run: ['crypto-internals', 'apex-exposed-surface'], total_candidates: 3 })
+  const sidecar = join(d, '.security-review', 'report-headline.md')
+  assert.ok(existsSync(sidecar), 'the merge must emit .security-review/report-headline.md')
+  const expected = renderClusterHeadline(clusterOrNullFromFindings(l.findings)) + '\n'
+  assert.equal(readFileSync(sidecar, 'utf8'), expected,
+    'the sidecar must be byte-identical to renderClusterHeadline(clusterOrNullFromFindings(ledger.findings)) + one trailing newline')
+  assert.match(readFileSync(sidecar, 'utf8'), /### Finding triage — cluster view/, 'the sidecar carries the fixed block header')
+  // An incremental pass 2 REWRITES the sidecar from the re-merged ledger (never stale).
+  const l2 = runMerge(d, { ledger_updates: [
+    u({ file: 'b.cls:9', title: 'Missing CRUD check on update', dimension: 'apex-exposed-surface' }),
+  ], dimensions_run: ['apex-exposed-surface'], total_candidates: 1 }, 2)
+  assert.equal(readFileSync(sidecar, 'utf8'), renderClusterHeadline(clusterOrNullFromFindings(l2.findings)) + '\n',
+    'a later pass must refresh the sidecar from the CURRENT merged ledger')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

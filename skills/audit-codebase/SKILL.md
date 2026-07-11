@@ -335,6 +335,13 @@ regardless of anything this engine produces.
    headline — never hand-rebuilt, reordered, dropped a column, or flipped table↔prose;
    Step 7's `verify-report-headline.mjs` gate enforces this mechanically, so a skipped
    or hand-rewritten block HALTS the run instead of shipping).
+   `merge-ledger.mjs` (the merge run below) now ALSO emits that verbatim cluster block to
+   `<target>/.security-review/report-headline.md` — byte-identical to the stdout of
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/finding-clusters.mjs --target <target> --headline`
+   over the just-merged ledger, and refreshed post-disposition by Step 7's re-render — so
+   the synthesis agent INCLUDES that file's content verbatim as the exec-summary headline
+   instead of hand-running the command, and writes its blocking/hardening prose AROUND
+   the block, never restating a critical/high count that could contradict it.
    This is the SAME block the journey's blocker gate prints, so the failure verdict reads
    identically at both sites, and the per-dimension fan-out re-finding one root cause under
    several lenses is never presented as that many distinct problems; (2) prioritized findings
@@ -481,7 +488,13 @@ regardless of anything this engine produces.
    `disposition_reason`, so both drop out of the open band the headline and
    PROCEED/HALT verdict read — the re-render is what propagates the supersession and
    the dispositions to the operator-facing recap, whose deterministic-band line
-   surfaces the dispositioned count.)
+   surfaces the dispositioned count.) This same re-render ALSO REFRESHES
+   `<target>/.security-review/report-headline.md` — the deterministic headline sidecar
+   `merge-ledger.mjs` emitted PRE-disposition in Step 6 — to the post-disposition
+   cluster block, and the report's exec-summary headline must equal the CURRENT
+   `.security-review/report-headline.md` before `verify-report-headline.mjs` runs
+   (the gate recomputes the same block from the same ledger, so a report still
+   carrying the stale Step-6 copy over a changed band fails it).
 
    **Re-derive the durable run-log the same way.** The recap re-render fixes only
    the transient stdout block; `.security-review/run-log.md` — the committed,

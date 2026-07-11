@@ -28,10 +28,10 @@
  *   node render-recap.mjs --input <recap-facts.json>
  *   node render-recap.mjs --target <repo>   # derives facts from the ledger's latest pass
  */
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clusterFindings, renderClusterHeadline } from './finding-clusters.mjs'
+import { clusterFindings, renderClusterHeadline, clusterOrNullFromFindings } from './finding-clusters.mjs'
 
 const n = (v, def = 0) => (Number.isFinite(v) ? v : def)
 
@@ -235,6 +235,26 @@ function main() {
     let ledger = null
     try { ledger = JSON.parse(readFileSync(join(target, '.security-review', 'audit-ledger.json'), 'utf8')) } catch {}
     facts = factsFromLedger(ledger)
+    // Deterministic headline emission — the POST-disposition refresh. The `--target`
+    // re-render runs at audit-codebase Step 7, AFTER reconcile-provenance +
+    // apply-dispositions have modified the ledger, so REFRESH the
+    // `report-headline.md` sidecar merge-ledger emitted pre-disposition at Step 6:
+    // this write is the AUTHORITATIVE block the report is verified against
+    // (verify-report-headline.mjs recomputes the identical bytes from the same
+    // ledger). Byte-identical to `finding-clusters.mjs --headline` over the current
+    // ledger; idempotent (same ledger → byte-identical sidecar). Guarded on the
+    // LEDGER having been READ — never on `facts` (factsFromLedger returns null for
+    // a readable ledger with an empty passes[], which still deserves the refresh).
+    // A missing/unreadable ledger writes nothing and never crashes — the recap's
+    // own UNAVAILABLE path below is untouched.
+    if (ledger != null && typeof ledger === 'object') {
+      try {
+        writeFileSync(
+          join(target, '.security-review', 'report-headline.md'),
+          renderClusterHeadline(clusterOrNullFromFindings(ledger.findings)) + '\n'
+        )
+      } catch { /* an unwritable target must not break the recap render */ }
+    }
     // A2 (0.8.103) — also read deterministic-dispositions.json (when present + readable)
     // so the deterministic-band line can attribute how many dispositioned findings were
     // covered by a rule-wide (as_of_pass) adjudication. Absent/corrupt file → the
