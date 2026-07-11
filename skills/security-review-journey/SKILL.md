@@ -648,6 +648,22 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    which resolves them from the gitignored `stack-standup.json` pointer through ONE shared
    resolver — it re-asserts loopback, gates on `{up, unhealthy}`, and refuses a torn-down,
    swept-stale, or foreign pointer. An explicit `--base-url` always wins.)
+   **Rung-1 capture fallback (the mirror never stood up, but the app is already running):**
+   when the stand-up landed on `failed`/`unknown` (or Docker is unavailable) and the operator
+   ALREADY has the app running on a loopback host:port, capture-openapi can still land the
+   real framework spec with ZERO build and ZERO stand-up — the same rung-1 primitive
+   run-dast's fires-path ladder uses. It carries the DISTINCT recorded `live-instance-dast`
+   consent (the same gate run-dast's rung 1 verifies; the recorded `throwaway-dast` token
+   never stands in for it — capture-openapi selects the gate from the resolved source,
+   `explicit` → `live-instance-dast`, exactly as run-dast does, and fails closed without the
+   matching token). Detect-and-offer, never auto-capture: a listener on a loopback port is a
+   reason to ASK, not permission to read — record the affirmative first via
+   `record-consent.mjs --gate live-instance-dast`, then run
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/capture-openapi.mjs --consent --base-url
+   http://127.0.0.1:<port> --target <target>` (read-only GET; loopback is re-asserted on the
+   explicit URL; the provenance sidecar names the already-running instance — NO
+   mirror/synthetic-secrets claim — and prod-equivalence stays PENDING owner attestation; on
+   `not-exposed` the api-endpoints artifact stays code-derived, unchanged behavior).
    If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
    ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
    the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):
