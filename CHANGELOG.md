@@ -51,6 +51,42 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.114] — 2026-07-11
+
+**The throwaway-mirror DAST (rung 2/3) is hardened against a real prod compose: the loopback
+override strips host volume mounts, a prebuilt recipe no longer forces a source rebuild, env is
+classified off the compose actually stood up, and an absent `env_file:` yields an honest
+`needs-secrets` verdict naming the file instead of a swallowed `docker compose config` error.** These
+are the chain of gates a cold run hit standing up a partner's prod compose.
+
+### Fixed
+- `harness/standup-stack.mjs` `planCompose` — the loopback override now emits `volumes: !reset []`
+  for EVERY service (web tier included), so a prod compose's host bind mounts (a `~/.config/gcloud`
+  ADC, a root-owned `./data`) never survive into the ZAP-scanned throwaway. A dropped config bind
+  degrades the stand-up honestly rather than silently mounting the operator's real credentials.
+- `harness/stack-detect.mjs` — env / satisfiability / service classification now reads the compose
+  ACTUALLY stood up (`recipe.file`, e.g. a prebuilt `docker-compose.prod.yml`), not always the dev
+  `docker-compose.yml`; and the previously-unused `existsSync` now gates each referenced `env_file:`
+  — an absent target classifies `needs-secrets` NAMING the file (env buckets still computed first,
+  so the external-cred classification is unchanged), instead of a later swallowed
+  `docker compose config` failure the driver had to guess at.
+
+### Changed
+- `harness/standup-stack.mjs` — a genuinely-prebuilt compose recipe (`buildsFromSource:false`) omits
+  `docker compose up --build` (new pure `composeUpArgs`; OMITS, never `--no-build`, so a clean box
+  still builds-if-missing), threading `buildsFromSource` through the plan; a failed
+  `docker compose config` surfaces a safe FILENAME-only message (new pure `safeComposeConfigError`),
+  never a secret-echoing interpolation error.
+- `harness/stack-detect.mjs` `composeWebTierImage` — a web tier declaring BOTH `image:` and `build:`
+  is NOT counted prebuilt (the tag may be absent on a clean box); an external-managed-DB compose (a
+  DB-shaped external env var, no in-compose datastore) carries an honest note steering to rung 1.
+
+### Tests
+- `acceptance/test-stack-detect.mjs` (S12–S14), `acceptance/test-standup-stack.mjs` (U24–U25) — the
+  prod/dev compose decoupling, the absent-`env_file` `needs-secrets` verdict, the external-DB note,
+  the `composeUpArgs` build omission, and the safe-error surfacing, each mutation-proven. Suite 81
+  files / 1238 checks / 0 failed (+5).
+
 ## [0.8.113] — 2026-07-11
 
 **The mandated verbatim cluster-headline block is now emitted deterministically to
