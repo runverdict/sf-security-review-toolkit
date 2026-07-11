@@ -1,0 +1,166 @@
+<!--
+TEMPLATE: exposed-tools-list.md.tmpl
+Output:   <target>/docs/security-review/exposed-tools-list.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (row set drafted from
+           the CODE registration/dispatch registry — the source of truth; the
+           live tools/list count and the org-effective API-Catalog count arrive
+           DRIVER-INJECTED via the shared facts, because drafting agents cannot
+           read .security-review/ and have no network).
+Satisfies: baseline entry artifact-exposed-tools-list. The reconciled tool
+           count is the number access-control B.4, data-sensitivity §5, and the
+           OpenAPI paths all cross-read against (generate-artifacts step 12).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- The ROW SET comes from the code registration/dispatch registry, never from a
+  live capture — the capture is the cross-check. Drafting the client/ESR subset
+  as if it were the full registry is the known refresh failure the §1 structure
+  exists to prevent: when the client-exposed count M collides numerically with
+  one tier's count, a refresh can silently ship the subset as the whole
+  inventory. The three-count structure makes that substitution impossible to
+  write without noticing.
+- A live count the run did not capture reads `PENDING live capture` — never a
+  fabricated number, never a count copied from another lane.
+- A refresh must never replace a fuller prior inventory with a thinner subset.
+-->
+
+# {{PARTNER_NAME}} — Exposed MCP Tools & Resources Inventory
+
+| | |
+|---|---|
+| **Document** | Exposed Tools & Resources Inventory |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **Why this document exists.** The review requires a named inventory of every
+> tool and resource the MCP server exposes — including the administrative
+> ones. Omitting a tool the reviewer then discovers via `tools/list` reads as
+> concealment. The inventory is tiered by privilege so the access-control
+> story is legible, and it reconciles three independently sourced counts so a
+> partial view can never masquerade as the whole surface.
+
+---
+
+## 1. Three-count reconciliation
+
+<!-- guidance: MANDATORY structure — all three rows stay, every run. N comes
+from the code registry the drafting agent reads directly (cite the
+registration/dispatch structure path:line). M and A are live captures the
+agent CANNOT see (agents are barred from .security-review/ and the network) —
+they arrive in the shared facts, driver-injected; when a lane did not run its
+Value cell reads `PENDING live capture` (M) or `PENDING — org-effective
+capture absent (source-only run)` (A). Never substitute M or A for N: the
+registry N is the source of truth for the row set in §2, and A is
+corroborating activation evidence, not a row-set source. -->
+
+| Count | What it measures | Source | Value |
+|---|---|---|---|
+| **N — code-registry tools** | every tool the registration/dispatch registry defines (the row-set source of truth) | code: {{REGISTRY_CITATION}} | {{REGISTRY_TOOL_COUNT_N}} |
+| **M — client/ESR-exposed operations** | the operation surface the Agentforce client actually sees | live `tools/list` capture (driver-injected fact) | {{CLIENT_EXPOSED_COUNT_M}} |
+| **A — org-active agent actions** | which registered tools the org catalog ingested and wired as callable agent actions | org-effective Agentforce API-Catalog capture (deep-audit lane; driver-injected fact) | {{ORG_ACTIVE_COUNT_A}} |
+
+**Reconciliation statement (mandatory, names all three counts):** the registry
+defines {{REGISTRY_TOOL_COUNT_N}} tools (tiers: {{TIER_BREAKDOWN}}); the
+client/ESR exposes {{CLIENT_EXPOSED_COUNT_M}} operations; the org catalog has
+{{ORG_ACTIVE_COUNT_A}} active agent actions of the {{REGISTRY_TOOL_COUNT_N}}
+registered; the delta is {{DELTA_EXPLANATION}}.
+
+<!-- guidance: The delta explanation names the specific registry-resident
+tools that are not client-listed and WHY (admin-gated, feature-flagged,
+conditional, approval-tier). "The counts happen to match" is not a
+reconciliation — when M equals N, say which registry tools you verified are
+client-listed; when M equals one tier's count, state explicitly that the
+inventory below is the full registry, not the client subset. -->
+
+---
+
+## 2. Tiered tool inventory (row set = the code registry, all N rows)
+
+<!-- guidance: One block per privilege tier the dispatch table actually
+defines (e.g. read / propose / admin — use the code's own tier names, cited).
+Never collapse or drop a tier. One row per registry tool; the Client-listed?
+and Org-active? columns come from the driver-injected facts (`yes` / `no` /
+`PENDING live capture` — never guessed). Tier counts must sum to N. -->
+
+### Tier: {{TIER_NAME}} — {{TIER_TOOL_COUNT}} tool(s)
+
+{{TIER_DESCRIPTION}}
+
+| Tool | Description (honest, as registered) | Entities read/written | Client-listed? | Org-active agent action? | Registry evidence |
+|---|---|---|---|---|---|
+| {{TOOL_NAME}} | {{TOOL_DESCRIPTION}} | {{ENTITIES}} | {{YES_NO_OR_PENDING}} | {{YES_NO_PENDING_OR_NA}} | {{PATH_LINE}} |
+
+<!-- repeat the tier block per tier -->
+
+---
+
+## 3. Registry-resident, not client-listed
+
+<!-- guidance: Every tool that exists in the code registry but is absent from
+the client-advertised surface — admin-gated, conditional, feature-flagged,
+approval-tier. These MUST be enumerated: an unlisted-but-callable tool the
+reviewer discovers reads as concealment. For each, name the gate that keeps
+it off the client surface (path:line). If there are none, say so explicitly
+("every registry tool is client-listed; N = M") — never delete the heading. -->
+
+| Tool | Tier | Why not client-listed (the gate, path:line) |
+|---|---|---|
+| {{TOOL_NAME}} | {{TIER}} | {{GATE_REASON_CITATION}} |
+
+---
+
+## 4. Resources and prompts
+
+<!-- guidance: MCP resources and prompt templates the server exposes, from the
+same registry read. The baseline row asks for tools AND resources; an empty
+section states "the server registers no MCP resources or prompts" with the
+citation proving the registry has none. -->
+
+| Name | Kind (resource/prompt) | What it returns | Registry evidence |
+|---|---|---|---|
+| {{RESOURCE_NAME}} | {{KIND}} | {{RETURNS}} | {{PATH_LINE}} |
+
+---
+
+## 5. Metadata completeness check
+
+<!-- guidance: Baseline mcp-tools-list-metadata-completeness — every tool
+needs a name, an honest description, and input/output schemas. Gaps found
+during the registry read are FINDINGS listed here for the owner, not silent
+fixes and not omissions. -->
+
+{{METADATA_COMPLETENESS_RESULT}}
+
+---
+
+## 6. Mapping to review expectations
+
+| Review expectation | Where addressed |
+|---|---|
+| Named inventory of every exposed tool/resource, including administrative ones | §2, §3, §4 |
+| Privilege tiering (read/write/admin) | §2 tier blocks |
+| Inventory matches live `tools/list` (with the delta explained) | §1 reconciliation |
+| Org-effective activation evidence (which tools are live agent actions) | §1 count A, §2 Org-active column |
+| {{EXTRA_EXPECTATION}} | {{EXTRA_REF}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). State per section whether it
+was drafted from CODE (the registry read, path:line) or carries DRIVER-INJECTED
+live facts (tools/list capture, org-catalog capture) — and which live lanes
+were absent this run (their slots read PENDING, never fabricated). An empty
+"Verified by" means not submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Live-capture lanes present this run: {{LIVE_LANES_PRESENT}} (absent lanes are marked PENDING above, never filled from memory).
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This inventory reflects the code registry as read on the generation date, cross-checked against the captures named above; it is not a warranty. Salesforce performs its own penetration testing of the full composite application regardless of this inventory.

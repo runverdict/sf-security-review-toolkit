@@ -17,6 +17,17 @@
  *         exercised against the REAL template source.
  *   AE7 — every artifact withheld by the gate → exit 2 (fail closed).
  *   AE8 — determinism: same input → byte-identical artifact-engine.mjs.
+ *   AE9 — the TEMPLATE's per-artifact guard rejects an entry missing focus/out.
+ *   AE10 — the three templated AgentExchange artifacts (exposed-tools-list,
+ *          mcp-server-details, api-endpoints-spec) inject cleanly alongside
+ *          goodInput: template read + attached, focus ≥ 40 chars, keys present.
+ *   AE11 — MUTATION (AE4 pattern): shortening a new artifact's focus below 40
+ *          chars → the engine throws.
+ *   AE12 — template content contracts: each new .md.tmpl carries its {{SLOT}}
+ *          markers + the mandatory provenance-footer heading, and
+ *          exposed-tools-list.md.tmpl carries the three-count reconciliation
+ *          STRUCTURE (registry N / client-ESR M / org-active A — the guard
+ *          against a refresh drafting the client subset as the full registry).
  *
  * Dependency-free: `node acceptance/test-build-artifact-engine.mjs`.
  */
@@ -31,8 +42,9 @@ const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const BUILD = join(PLUGIN, 'harness', 'build-artifact-engine.mjs')
 const TEMPLATE = join(PLUGIN, 'harness', 'artifact-workflow-template.mjs')
 
-// two real templates that must exist under templates/
-for (const t of ['authn-authz-flow.md.tmpl', 'data-flow-diagram.md.tmpl']) {
+// real templates that must exist under templates/
+for (const t of ['authn-authz-flow.md.tmpl', 'data-flow-diagram.md.tmpl',
+  'exposed-tools-list.md.tmpl', 'mcp-server-details.md.tmpl', 'api-endpoints-spec.md.tmpl']) {
   if (!existsSync(join(PLUGIN, 'templates', t))) { console.error(`pre-req missing: templates/${t}`); process.exit(1) }
 }
 
@@ -174,6 +186,68 @@ await check('AE9 template per-artifact guard: a valid run with an artifact missi
   const badArgs = { repoRoot: '/r', runDate: '2026-06-17', facts: 'f', artifacts: [{ key: 'k', out: 'o.md' }] } // no focus
   await assert.rejects(fn(badArgs, phase, log, parallel, agent), /artifact entry missing key\/out\/focus/,
     'the template per-artifact loop must reject an entry missing focus/out')
+})
+
+// ---------------------------------------------------------------------------
+// The three templated AgentExchange artifacts (0.8.118): exposed-tools-list,
+// mcp-server-details, api-endpoints-spec — first-class templated entries, no
+// engine change (the registry is DATA). Fictional example facts only.
+// ---------------------------------------------------------------------------
+const newArtifacts = [
+  { key: 'exposed-tools-list', tmpl: 'exposed-tools-list.md.tmpl', out: 'docs/security-review/exposed-tools-list.md',
+    focus: 'Row set from the code registration/dispatch registry; carry the three-count reconciliation verbatim (registry N=12 tiers 6 read/4 propose/2 admin; client/ESR M=10; org-active A=PENDING — source-only run); registry-only admin tools enumerated; metadata gaps are findings.' },
+  { key: 'mcp-server-details', tmpl: 'mcp-server-details.md.tmpl', out: 'docs/security-review/mcp-server-details.md',
+    focus: 'Endpoint inventory from route definitions including identity paths; negotiated MCP protocol version from the injected facts or PENDING live capture; org-registration host is HOST-ONLY; every credential cell stays the fixed owner-run text, never a value.' },
+  { key: 'api-endpoints-spec', tmpl: 'api-endpoints-spec.md.tmpl', out: 'docs/security-review/api-endpoints-spec.md',
+    focus: 'Human-readable wrapper pointing at the captured OpenAPI evidence pair and its provenance sidecar; carry the CAPTURE-ONLY scan-coverage and scoped prod-equivalence PENDING notes plus the tools/list half; never regenerate the JSON; degrade to code-derived rows without a capture.' },
+]
+
+await check('AE10 the three templated AgentExchange artifacts inject cleanly alongside goodInput', () => {
+  const d = makeRepo({ ...goodInput, artifacts: [...goodInput.artifacts, ...newArtifacts] })
+  build(d)
+  const obj = readInjected(d)
+  assert.equal(obj.artifacts.length, 5, 'all five artifacts injected')
+  for (const na of newArtifacts) {
+    const got = obj.artifacts.find((x) => x.key === na.key)
+    assert.ok(got, `${na.key} injected`)
+    assert.ok(got.focus && got.focus.length >= 40, `${na.key} focus carried in DATA (≥ 40 chars)`)
+    assert.ok(got.templateContent && got.templateContent.length > 500, `${na.key} template read + attached`)
+    assert.match(got.out, new RegExp(`docs/security-review/${na.key}\\.md$`), `${na.key} out under docs/security-review/`)
+  }
+})
+
+await check('AE11 MUTATION (AE4 pattern): a new artifact focus shortened below 40 chars → the engine throws', () => {
+  const mutated = newArtifacts.map((a) => (a.key === 'exposed-tools-list' ? { ...a, focus: 'too short to be a contract' } : a))
+  const d = makeRepo({ ...goodInput, artifacts: mutated })
+  assert.throws(() => execFileSync('node', [BUILD, '--plugin', PLUGIN, '--repo', d], { stdio: 'pipe' }),
+    /short focus|content contract|Command failed/, 'a sub-40-char focus on a templated artifact must abort')
+})
+
+await check('AE12 template content contracts: {{SLOT}} markers + provenance footer + the exposed-tools three-count structure', () => {
+  const read = (t) => readFileSync(join(PLUGIN, 'templates', t), 'utf8')
+  const FOOTER = '## Automated vs. owner-run provenance'
+  const et = read('exposed-tools-list.md.tmpl')
+  for (const m of ['{{REGISTRY_TOOL_COUNT_N}}', '{{CLIENT_EXPOSED_COUNT_M}}', '{{ORG_ACTIVE_COUNT_A}}',
+    '{{TIER_BREAKDOWN}}', '{{DELTA_EXPLANATION}}', '{{GENERATION_DATE}}', '{{GIT_COMMIT}}', FOOTER,
+    'artifact-exposed-tools-list', 'PENDING live capture'])
+    assert.ok(et.includes(m), `exposed-tools-list.md.tmpl carries ${m}`)
+  // the three-count reconciliation STRUCTURE — all three count rows AND the mandatory
+  // statement naming all three (the guard against a refresh shipping the client subset
+  // as the full registry when M numerically collides with one tier's count)
+  assert.match(et, /N — code-registry tools/, 'count row N (code registry — row-set source of truth)')
+  assert.match(et, /M — client\/ESR-exposed operations/, 'count row M (client-advertised surface)')
+  assert.match(et, /A — org-active agent actions/, 'count row A (org-effective catalog)')
+  assert.match(et, /Reconciliation statement \(mandatory, names all three counts\)/, 'the mandatory three-count statement')
+  const md = read('mcp-server-details.md.tmpl')
+  for (const m of ['{{MCP_PROTOCOL_VERSION}}', '{{SERVER_URL_HOST}}', '{{TRANSPORT}}',
+    'Supplied separately (owner-run)', 'HOST-ONLY', '{{GENERATION_DATE}}', '{{GIT_COMMIT}}', FOOTER,
+    'artifact-mcp-server-details', 'PENDING live capture'])
+    assert.ok(md.includes(m), `mcp-server-details.md.tmpl carries ${m}`)
+  const ae = read('api-endpoints-spec.md.tmpl')
+  for (const m of ['{{OPENAPI_EVIDENCE_FILENAME}}', '{{OPENAPI_PROVENANCE_FILENAME}}',
+    '{{TOOLS_LIST_EVIDENCE_FILENAME}}', '{{OPENAPI_PATH_COUNT}}', 'CAPTURE-ONLY', 'PENDING owner attestation',
+    'code-derived', '{{GENERATION_DATE}}', '{{GIT_COMMIT}}', FOOTER, 'artifact-api-endpoints-spec'])
+    assert.ok(ae.includes(m), `api-endpoints-spec.md.tmpl carries ${m}`)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

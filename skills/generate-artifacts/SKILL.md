@@ -43,7 +43,9 @@ marked owner-input.
 - Templates in `${CLAUDE_PLUGIN_ROOT}/templates/` — this phase consumes
   `submission-checklist.md.tmpl`, `authn-authz-flow.md.tmpl`,
   `data-flow-diagram.md.tmpl`, `data-sensitivity.md.tmpl`,
-  `access-control.md.tmpl`, `fp-dossier.md.tmpl`, and the WI-19 written-policy
+  `access-control.md.tmpl`, `exposed-tools-list.md.tmpl`,
+  `mcp-server-details.md.tmpl`, `api-endpoints-spec.md.tmpl`,
+  `fp-dossier.md.tmpl`, and the WI-19 written-policy
   pack (`incident-response-plan.md.tmpl`, `data-retention-deletion.md.tmpl`,
   `disaster-recovery-backup.md.tmpl`, `vulnerability-remediation-sla.md.tmpl`,
   `hosting-architecture.md.tmpl`, `prior-pentest-attestation.md.tmpl`)
@@ -91,7 +93,7 @@ marked owner-input.
 
    | Bucket | Rows | Owner |
    |---|---|---|
-   | Drafted this phase | AuthN/AuthZ flow · architecture/data-flow · data sensitivity · access control · exposed tools + API spec · FP-dossier skeleton · endpoint inventory half of MCP server details · the written-policy pack (IR plan · retention + deletion-on-uninstall · DR/backup · vuln-remediation SLA · hosting architecture · prior-pen-test attestation) as owner-completed stubs | this skill |
+   | Drafted this phase | AuthN/AuthZ flow · architecture/data-flow · data sensitivity · access control · exposed tools (templated: `exposed-tools-list.md.tmpl`, step 9a) · API-spec wrapper (templated: `api-endpoints-spec.md.tmpl`, step 9c — the evidence pair itself stays capture-emitted) · FP-dossier skeleton · endpoint inventory half of MCP server details (templated: `mcp-server-details.md.tmpl`, step 9b; credential cells owner-run) · the written-policy pack (IR plan · retention + deletion-on-uninstall · DR/backup · vuln-remediation SLA · hosting architecture · prior-pen-test attestation) as owner-completed stubs | this skill |
    | Other phases | DAST reports (`/sf-security-review-toolkit:run-scans`) · test environment + utterances (`/sf-security-review-toolkit:prepare-test-environment`) · questionnaire + final checklist (`/sf-security-review-toolkit:compile-submission`) | route, don't duplicate |
    | Owner-run, registered only | org credentials · third-party credentials + two test users · every credential-bearing cell | human |
 
@@ -180,7 +182,11 @@ marked owner-input.
      If the framework has no introspection, generate from the route
      definitions in code and mark every path `code-derived` in the spec
      description so the owner knows to verify against live. Validate the
-     spec parses before calling it an artifact.
+     spec parses before calling it an artifact. The human-readable wrapper
+     document over the pair (`docs/security-review/api-endpoints-spec.md`)
+     is drafted through the templated fan-out (step 9c,
+     `api-endpoints-spec.md.tmpl`) — it points at the evidence pair and
+     carries the sidecar's honesty notes; it never regenerates the JSON.
 
    No reachable server, or no consent? Generate the code-derived halves,
    mark every live-capture slot `PENDING live capture`, and say so in the
@@ -215,7 +221,12 @@ marked owner-input.
    registry). A count that doesn't reconcile is a generator
    bug to fix now — every later artifact (access-control matrix,
    data-sensitivity tool map) reconciles against this number, and fudging it
-   here propagates the lie three documents deep.
+   here propagates the lie three documents deep. The inventory DOCUMENT
+   itself is drafted through the templated fan-out (step 9a,
+   `exposed-tools-list.md.tmpl`): this step produces the reconciliation and
+   the counts, which travel into `facts` and the step-9a `focus` — the
+   drafting agent cannot read the captures, so what this step assembles is
+   all it will ever see of the live surface.
 
 5. **Mine the audit for the controls narrative.** From the latest audit
    report, lift the "strong controls observed" entries — they were written
@@ -229,14 +240,20 @@ marked owner-input.
 
 ### Drafting mechanism — data-driven (P2), NOT a hand-authored Workflow
 
-The drafting fan-out (steps 6–11 below) is assembled from DATA and run through the
+The drafting fan-out (steps 6–11 below, including 9a–9c) is assembled from DATA and run through the
 shipped, tested template — exactly as the audit phase does (`build-audit-engine.mjs` +
 `workflow-template.mjs`). **Do NOT hand-author a per-run Workflow script** with inline
 prompt strings (`focus` text, nested backticks, regex): that improvisation is the
 JS-escaping/parse-error class the audit phase already retired, and a cold run plus the
-0.8.20 verification both tripped on it. Steps 6–11 are the per-artifact **content
-contracts** — they define what goes in each artifact's `focus` string; they are no
-longer hand-coded into a script.
+0.8.20 verification both tripped on it. Steps 6–11 (including 9a–9c) are the
+per-artifact **content contracts** — they define what goes in each artifact's `focus`
+string; they are no longer hand-coded into a script. One constraint shapes every
+contract: drafting agents CANNOT read `.security-review/` or anything outside the
+repo and have no network, so every LIVE input a contract needs (the tools/list
+capture, the org-catalog counts, the OpenAPI path count, the negotiated protocol
+version, the org-registration host) is injected DRIVER-SIDE through `facts` and the
+per-artifact `focus` — and when a live input is absent, the contract says so and the
+template's slot reads `PENDING live capture`, never a fabricated value.
 
 - **(a) Assemble `artifact-input.json`** at `<target>/.security-review/` — the drafting
   plan as DATA (the `focus` strings and the shared facts live HERE, never in JS):
@@ -248,7 +265,10 @@ longer hand-coded into a script.
     "gate": "<paste the step-1b artifact-gate.mjs --json result verbatim>",
     "artifacts": [
       { "key": "authn-authz-flow", "tmpl": "authn-authz-flow.md.tmpl", "out": "docs/security-review/authn-authz-flow.md", "focus": "<the step-6 content contract>" },
-      { "key": "data-flow-diagram", "tmpl": "data-flow-diagram.md.tmpl", "out": "docs/security-review/data-flow-diagram.md", "focus": "<the step-7 content contract>" }
+      { "key": "data-flow-diagram", "tmpl": "data-flow-diagram.md.tmpl", "out": "docs/security-review/data-flow-diagram.md", "focus": "<the step-7 content contract>" },
+      { "key": "exposed-tools-list", "tmpl": "exposed-tools-list.md.tmpl", "out": "docs/security-review/exposed-tools-list.md", "focus": "<the step-9a content contract, carrying the step-4 three-count reconciliation>" },
+      { "key": "mcp-server-details", "tmpl": "mcp-server-details.md.tmpl", "out": "docs/security-review/mcp-server-details.md", "focus": "<the step-9b content contract>" },
+      { "key": "api-endpoints-spec", "tmpl": "api-endpoints-spec.md.tmpl", "out": "docs/security-review/api-endpoints-spec.md", "focus": "<the step-9c content contract, carrying the step-3 evidence-pair filenames>" }
     ]
   }
   ```
@@ -463,6 +483,65 @@ The content contract each artifact's `focus` carries:
    grant but not the necessity), the dangerous-permission statement, and the
    Part C persona definitions — which become the test users
    `/sf-security-review-toolkit:prepare-test-environment` provisions.
+
+9a. **Draft the exposed-tools inventory artifact** from
+   `exposed-tools-list.md.tmpl` (baseline `artifact-exposed-tools-list` —
+   the templated form of the step-4 inventory). The `focus` MUST carry the
+   step-4 reconciliation VERBATIM — all three counts and the tier breakdown:
+   "the registry defines N tools (tiers a/b/c); the client/ESR exposes M
+   operations; the org catalog has A active agent actions of the N
+   registered; the delta is …" — because the drafting agent cannot read the
+   live captures; the counts arrive only through `facts`/`focus`. What the
+   agent reads: the code registration/dispatch registry (the row-set source
+   of truth — one row per registry tool, tiered by the tiers the dispatch
+   table actually defines, each row cited path:line), the gates that keep
+   admin/conditional/approval tools off the client surface (§3), and the
+   resource/prompt registrations (§4). The template's §1 three-count table is
+   STRUCTURAL: N from the registry read, M and A from the injected facts —
+   when the org lane is absent, A reads `PENDING — org-effective capture
+   absent (source-only run)` and the inventory stays code+protocol-derived;
+   when no live `tools/list` capture exists, M reads `PENDING live capture`.
+   Never substitute M or A for N (the numeric-collision trap step 4 names —
+   a refresh that drafts the client subset as the full registry), and never
+   replace a fuller prior inventory with a thinner subset. Metadata gaps
+   (name/description/schema, baseline
+   `mcp-tools-list-metadata-completeness`) land in §5 as findings.
+
+9b. **Draft the MCP server details** from `mcp-server-details.md.tmpl`
+   (baseline `artifact-mcp-server-details` — the endpoint-inventory half;
+   the credentials half of that row is owner-run by definition). The `focus`
+   MUST carry the live values the agent cannot capture: the negotiated MCP
+   protocol version from the step-3 `initialize` capture (or the instruction
+   to write `PENDING live capture`), the base-URL host, and — when the
+   deep-audit org lane ran — the org-registration `serverUrlHost`, which is
+   HOST-ONLY by construction (the capture allowlist discards path, query,
+   and any embedded token; never re-derive the full URL). What the agent
+   reads: the route definitions for the §1 endpoint table (every reachable
+   endpoint including the identity/OAuth/discovery paths, each with its auth
+   and citation), the handshake handler for the code-declared protocol
+   version(s) and transport, and the session-header handling. §4's external
+   components carry URLs and roles from code/config; every credential cell
+   is the FIXED text "Supplied separately (owner-run)" — writing a
+   credential value anywhere is a CONVENTIONS §6 violation and the write
+   harness never receives one.
+
+9c. **Draft the API-endpoints-spec wrapper** from `api-endpoints-spec.md.tmpl`
+   (baseline `artifact-api-endpoints-spec` — the HUMAN-READABLE WRAPPER that
+   POINTS AT the step-3 evidence pair; do NOT regenerate the JSON spec —
+   `capture-openapi.mjs` already emitted `evidence/openapi-<date>.json` plus
+   its provenance sidecar, and a second hand-assembled copy is exactly the
+   drift the capture exists to end). The `focus` MUST carry the evidence-pair
+   FILENAMES, the spec's path count, the capture source, the `tools/list`
+   evidence filename, and the sidecar's two honesty notes so the wrapper
+   restates them faithfully: scan coverage is CAPTURE-ONLY (the throwaway
+   DAST loopback spider does not consume the spec), and prod-equivalence is
+   PENDING owner attestation SCOPED to that one line (never mark the whole
+   artifact PENDING, never present the capture as the production spec). The
+   agent reads the route definitions to draft the §4 human-readable summary
+   and the identity-surface column. Degraded mode (no capture pair this
+   run): the wrapper says so, the spec is generated from the framework's own
+   model or route definitions per step 3, and EVERY §4 row's Source reads
+   `code-derived`; the `tools/list` row reads `PENDING live capture`.
 
 10. **Instantiate the FP-dossier skeleton** from `fp-dossier.md.tmpl`
     (baseline `scan-false-positive-documentation` plus the disposition half

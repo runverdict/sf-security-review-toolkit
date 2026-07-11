@@ -1,0 +1,140 @@
+<!--
+TEMPLATE: mcp-server-details.md.tmpl
+Output:   <target>/docs/security-review/mcp-server-details.md
+Filled by: /sf-security-review-toolkit:generate-artifacts (endpoint inventory
+           and transport drafted from route definitions and server config in
+           code; the negotiated protocol version and the org-registration host
+           arrive DRIVER-INJECTED via the shared facts — drafting agents cannot
+           read .security-review/ and have no network). Credential cells are
+           OWNER-RUN, supplied separately at submission time — never written
+           into this artifact or any state file (CONVENTIONS §6).
+Satisfies: baseline entry artifact-mcp-server-details (endpoint list, MCP
+           protocol version, and URLs for authenticated external components;
+           the credentials half of that row is owner-run by definition).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- NO credential value ever appears here: no tokens, no client secrets, no
+  passwords, no signed URLs. Each credential cell carries the fixed text
+  "Supplied separately (owner-run)" and the owner hands the values over through
+  the submission wizard's credential slots, not through this document.
+- Any server URL sourced from the org capture is HOST-ONLY — the capture
+  allowlist discards path, query, and any embedded token before the value ever
+  reaches a file. Do not re-derive the full URL here.
+- A live value the run did not capture reads `PENDING live capture` — never a
+  guess from docs or memory.
+-->
+
+# {{PARTNER_NAME}} — MCP Server Details
+
+| | |
+|---|---|
+| **Document** | MCP Server Details (endpoints, protocol, external components) |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **Why this document exists.** The review needs the server's complete network
+> surface (every endpoint, not only the MCP route), the MCP protocol version in
+> use, and the URL of every external component that requires authentication —
+> so the reviewer can reach the whole architecture. Credentials for those
+> components are owner-provided through the wizard, never through this file.
+
+---
+
+## 1. Server endpoint inventory
+
+<!-- guidance: One row per network-reachable endpoint from the route
+definitions in code — the MCP route(s), every identity/OAuth/discovery path,
+health checks, webhooks, static/asset routes if externally reachable. The
+base URL host comes from the shared facts (or config, cited); the paths come
+from code. This table must agree with the OpenAPI evidence pair and the
+data-flow hops (generate-artifacts step 12 cross-read). -->
+
+Base URL: `{{SERVER_BASE_URL}}`
+
+| Endpoint | Method(s) | Purpose | Auth at the endpoint | Code evidence |
+|---|---|---|---|---|
+| {{ENDPOINT_PATH}} | {{METHODS}} | {{PURPOSE}} | {{AUTH}} | {{PATH_LINE}} |
+
+---
+
+## 2. MCP protocol version and transport
+
+<!-- guidance: Two distinct facts — keep them distinct. (a) The protocol
+version(s) the CODE declares/accepts: read the handshake handler and cite it.
+(b) The version the live server actually NEGOTIATED in the `initialize`
+response: that is a live capture the drafting agent cannot perform — it
+arrives in the shared facts, or the cell reads PENDING live capture. -->
+
+| Item | Value | Source |
+|---|---|---|
+| Negotiated MCP protocol version (live `initialize`) | {{MCP_PROTOCOL_VERSION}} | driver-injected live capture fact, or `PENDING live capture` |
+| Protocol version(s) declared in code | {{CODE_DECLARED_VERSIONS}} | {{PATH_LINE}} |
+| Transport | {{TRANSPORT}} | {{PATH_LINE}} |
+| Session handling (`Mcp-Session-Id`) | {{SESSION_HEADER_BEHAVIOR}} | {{PATH_LINE}} |
+
+---
+
+## 3. Org-registration view (deep-audit lane, when captured)
+
+<!-- guidance: When the deployed-package deep audit stood up a throwaway org
+and the org-effective capture ran, state the registered server as the org
+sees it. The host below is HOST-ONLY by construction — the capture allowlist
+discards path/query/token before writing; never reconstruct the full URL.
+When the lane did not run, the value reads PENDING and this section says the
+run was source-only. -->
+
+| Item | Value |
+|---|---|
+| Registered server URL host (HOST-ONLY; path/query/token discarded by the capture allowlist) | {{SERVER_URL_HOST}} |
+| Registration status in the org catalog | {{ORG_REGISTRATION_STATUS}} |
+
+---
+
+## 4. External components requiring authentication
+
+<!-- guidance: Every authenticated component the reviewer must reach beyond
+the MCP endpoint itself — admin consoles, companion web apps, dashboards,
+third-party tenants in the test path. URL and role come from code/config
+(cited) or owner input. The Credentials column is FIXED TEXT: the values are
+owner-run, handed over through the submission wizard's credential slots.
+Writing a credential value here is a CONVENTIONS §6 violation — the toolkit
+refuses, and so must the owner's edits. -->
+
+| Component | URL | Role in the architecture | Credentials |
+|---|---|---|---|
+| {{COMPONENT_NAME}} | {{COMPONENT_URL}} | {{ROLE}} | Supplied separately (owner-run) — never written into this artifact |
+
+---
+
+## 5. Mapping to review expectations
+
+| Review expectation | Where addressed |
+|---|---|
+| Full MCP server endpoint list | §1 |
+| MCP protocol version in use | §2 |
+| URLs for authenticated external components | §4 |
+| Credentials for those components | owner-run, supplied separately via the wizard (§4) |
+| {{EXTRA_EXPECTATION}} | {{EXTRA_REF}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). Endpoint rows and transport
+are code-drafted (cite what was read); the negotiated protocol version and the
+org-registration host are driver-injected live facts (name the capture lane);
+every credential cell is owner-run by definition. An empty "Verified by" means
+not submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- Credential values: NONE appear in this document; owner supplies them separately through the submission wizard (CONVENTIONS §6).
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This document reflects the endpoint surface as code-verified on the generation date, with live values sourced from the named captures; it is not a warranty. Salesforce performs its own penetration testing of the full composite application regardless of this document.

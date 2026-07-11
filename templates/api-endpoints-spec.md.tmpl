@@ -1,0 +1,154 @@
+<!--
+TEMPLATE: api-endpoints-spec.md.tmpl
+Output:   <target>/docs/security-review/api-endpoints-spec.md
+Filled by: /sf-security-review-toolkit:generate-artifacts. This is the
+           HUMAN-READABLE WRAPPER around the machine-readable evidence pair
+           `evidence/openapi-<date>.json` + `openapi-<date>.provenance.json`
+           that harness/capture-openapi.mjs already emitted — it POINTS AT
+           that pair and carries its honesty notes; it NEVER regenerates,
+           edits, or inlines the JSON spec. Drafting agents cannot read
+           .security-review/ and have no network, so the evidence filenames,
+           path count, and sidecar notes arrive DRIVER-INJECTED via the
+           shared facts.
+Satisfies: baseline entry artifact-api-endpoints-spec (OpenAPI-style
+           description of all exposed endpoints, plus valid tools/list
+           output).
+
+Conventions:
+- {{PLACEHOLDER}} slots; <!- - guidance - -> comments are deleted before submission.
+- Do NOT regenerate the JSON spec here. The capture engine emitted it once,
+  with provenance; a second hand-assembled copy is exactly the drift the
+  capture exists to end.
+- PENDING is SCOPED: when the capture pair exists, the ONLY pending line is
+  the prod-equivalence attestation — never mark the whole artifact PENDING,
+  and never present the capture as the production spec.
+- No capture pair? The wrapper degrades honestly: the spec is generated from
+  the route definitions in code and EVERY path is marked `code-derived` so
+  the owner knows to verify against live.
+-->
+
+# {{PARTNER_NAME}} — API Endpoints Specification (wrapper)
+
+| | |
+|---|---|
+| **Document** | API Endpoints Specification — human-readable wrapper over the captured spec |
+| **Listing** | {{LISTING_NAME}} |
+| **Owner** | {{SECURITY_OWNER_NAME_ROLE}} |
+| **Last reviewed** | {{LAST_REVIEWED_DATE}} |
+| **Scope** | {{SCOPE_STATEMENT}} |
+| **Classification** | Shareable with Salesforce Product Security under the review engagement |
+
+> **Why this document exists.** The review wants a machine-readable
+> description of every exposed API endpoint plus valid `tools/list` output.
+> The machine-readable halves live as evidence files with provenance
+> sidecars; this wrapper tells the reviewer where they are, what they cover,
+> and — honestly — what they do not.
+
+---
+
+## 1. The machine-readable spec (pointer — not a copy)
+
+<!-- guidance: Point at the evidence pair by filename (driver-injected — the
+filenames carry the capture date). Do not inline or restate the JSON. When no
+capture pair exists this run, this table names the code-derived spec instead
+and §4 marks every path code-derived. -->
+
+| Evidence | Path | Status |
+|---|---|---|
+| OpenAPI spec | `.security-review/evidence/{{OPENAPI_EVIDENCE_FILENAME}}` | {{CAPTURED_OR_CODE_DERIVED}} |
+| Provenance sidecar | `.security-review/evidence/{{OPENAPI_PROVENANCE_FILENAME}}` | {{SIDECAR_STATUS}} |
+
+Spec source: {{SPEC_SOURCE}} <!-- e.g. container-isolated-throwaway-mirror
+(the capture lane), or "framework introspection, code-derived — no mirror
+capture this run" -->
+
+Paths in the spec: {{OPENAPI_PATH_COUNT}} <!-- driver-injected; must agree
+with the §4 summary row count and the mcp-server-details endpoint table
+(generate-artifacts step 12 cross-read) -->
+
+---
+
+## 2. Honesty notes carried from the provenance sidecar
+
+<!-- guidance: Carry these VERBATIM in meaning from the sidecar — they are the
+two lines a reviewer needs before trusting the spec, and softening either one
+converts an honest capture into an over-claim. -->
+
+- **Scan coverage: CAPTURE-ONLY.** The spec was captured/read for this
+  artifact; the throwaway DAST is an unauthenticated loopback spider that does
+  not consume it, so these endpoints were not necessarily exercised.
+  Authenticated / prod-equivalent endpoint testing remains owner-run.
+- **Prod-equivalence: PENDING owner attestation.** The spec was captured from
+  the container-isolated throwaway mirror the toolkit stood up, NOT from
+  production; only the owner can attest that production serves an equivalent
+  spec. This PENDING is scoped to this line — the capture itself is complete
+  evidence of what the mirror serves.
+
+{{ADDITIONAL_SIDECAR_NOTES}}
+
+---
+
+## 3. The tools/list half
+
+<!-- guidance: The baseline row pairs the endpoint spec with VALID tools/list
+output. Point at the captured evidence file (driver-injected filename) and
+state the two validations: it parses, and it matched the live server at
+capture time. No capture this run → the row reads PENDING live capture and
+the exposed-tools inventory stays code+protocol-derived; never substitute a
+from-memory listing. -->
+
+| Evidence | Path | Status |
+|---|---|---|
+| `tools/list` capture | `.security-review/evidence/{{TOOLS_LIST_EVIDENCE_FILENAME}}` | {{TOOLS_LIST_STATUS}} |
+
+Validation: {{TOOLS_LIST_VALIDATION}} <!-- e.g. "parses as JSON-RPC result;
+tool names cross-checked against the code registry (see
+exposed-tools-list.md §1)" or "PENDING live capture" -->
+
+---
+
+## 4. Endpoint summary (human-readable)
+
+<!-- guidance: One row per path in the spec, from the driver-injected path
+list plus the route definitions in code. The Source column is per-path
+honesty: `capture` when the path comes from the captured spec, `code-derived`
+when it was read from route definitions without a capture — in the degraded
+(no-capture) run EVERY row reads code-derived. Include the identity surface
+(OAuth/token/discovery paths); an identity endpoint missing here becomes an
+identity endpoint missing from the DAST scope. -->
+
+| Path | Method(s) | Purpose | Identity surface? | Source |
+|---|---|---|---|---|
+| {{PATH}} | {{METHODS}} | {{PURPOSE}} | {{YES_NO}} | {{CAPTURE_OR_CODE_DERIVED}} |
+
+---
+
+## 5. Mapping to review expectations
+
+| Review expectation | Where addressed |
+|---|---|
+| OpenAPI-style description of all exposed endpoints | §1 (the evidence pair), §4 (summary) |
+| Valid `tools/list` output | §3 |
+| Spec provenance and coverage honesty | §2 |
+| Identity endpoints included (future DAST scope) | §4 Identity-surface column |
+| {{EXTRA_EXPECTATION}} | {{EXTRA_REF}} |
+
+---
+
+## Automated vs. owner-run provenance
+
+<!-- guidance: MANDATORY footer (CONVENTIONS §2). This wrapper is agent-drafted
+from code plus driver-injected capture facts; the evidence pair it points at
+was engine-captured (name the lane); the prod-equivalence attestation is
+owner-run and stays PENDING until signed. An empty "Verified by" means not
+submission-ready. -->
+
+| Section | Drafted by | Inputs read | Verified by (human) | Date |
+|---|---|---|---|---|
+| {{SECTION_NAME}} | {{AGENT_OR_OWNER}} | {{INPUTS}} | {{VERIFIER_NAME_OR_EMPTY}} | {{DATE}} |
+
+- Generated by `/sf-security-review-toolkit:generate-artifacts` on {{GENERATION_DATE}} against commit `{{GIT_COMMIT}}`.
+- The machine-readable spec was NOT regenerated by this wrapper; it is the evidence pair named in §1, emitted by the capture engine with its provenance sidecar.
+- Prod-equivalence attestation: {{OWNER_ATTESTATION_DATE_OR_PENDING}} (owner-run; scoped to §2's second note).
+- Baseline entries referenced: {{BASELINE_IDS_USED}} (oldest `last_verified`: {{OLDEST_LAST_VERIFIED}}).
+- This wrapper reflects the captured/code-derived spec as of the generation date; it is not a warranty. Salesforce performs its own penetration testing of the full composite application regardless of this document.
