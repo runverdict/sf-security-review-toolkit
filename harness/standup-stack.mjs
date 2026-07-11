@@ -38,6 +38,16 @@
  * and the whole project runs under the toolkit run-name so teardown-stack can remove
  * it project-scoped). `procfile` is returned as unsupported, honest.
  *
+ * MIRROR FIXES: when stack-detect diagnosed a broken compose `build.target` (a stage
+ * the Dockerfile does not declare — `docker compose build` dies "target stage not
+ * found"), planCompose merges `build.target: <validStage>` into that service's
+ * override block (Compose V2 map-merge REPLACES the bad target; verified
+ * empirically) — the disposable MIRROR is repaired, the partner's files never
+ * touched — and the executor writes the partner-facing
+ * `.security-review/mirror-fixes.md` (defect / what the mirror did / the real-repo
+ * fix). A defect with NO honest fix is logged as a diagnosis and the stand-up
+ * degrades with its real failure status — never a silent build-into-failure.
+ *
  * USAGE: node standup-stack.mjs --target <repo> --consent [--run-id <id>] [--port N] [--json]
  */
 import {
@@ -279,6 +289,13 @@ export function planStandup(stack, { runId, target, tmpRoot, port, envFile, host
       // spread into the full plan, so the executor's `up` omits --build on a genuinely
       // prebuilt recipe (composeUpArgs) instead of forcing the heavy source build
       buildsFromSource: recipe.buildsFromSource,
+      // broken-`build.target` fixes stack-detect diagnosed (a target stage the Dockerfile
+      // does not declare hard-fails the build): planCompose merges the valid stage into
+      // the loopback override — the disposable MIRROR is repaired, the partner file never
+      // touched — and diagnoses (defects with no honest fix) ride along for the
+      // partner-facing mirror-fixes log
+      buildTargetFixes: recipe.buildTargetFixes,
+      buildTargetDiagnoses: recipe.buildTargetDiagnoses,
       // the compose PROJECT carries the toolkit run-name (the stackNames convention), so
       // every project resource (containers <project>-<svc>-N, network <project>_default,
       // volumes <project>_*) is name-scoped for the project-scoped teardown + sweep
@@ -369,6 +386,19 @@ export function planCompose(config, prePlan) {
   const webEntry = portsOf(webService).find(matchesWebPort) || portsOf(webService)[0]
   const targetPort = Number(webEntry && webEntry.target) || port
   const others = svcNames.filter((n) => n !== webService)
+  // Broken-`build.target` fixes (stack-detect diagnosed): merge `build:\n  target:
+  // <validStage>` into that service's override block. Compose V2 merges mappings
+  // key-by-key, so the override REPLACES the bad target while the base file keeps
+  // context/dockerfile — verified empirically, like the `ports: !override` semantics.
+  // The fix exists only in the disposable mirror's override file; the partner's compose
+  // and Dockerfile are never touched. Stage names land in the string-templated override,
+  // so an unsafe one is REFUSED, not escaped (the SERVICE_OK posture); a fix naming a
+  // service absent from the resolved config is skipped (nothing to repair).
+  const fixes = (Array.isArray(prePlan.buildTargetFixes) ? prePlan.buildTargetFixes : [])
+    .filter((f) => f && svcNames.includes(f.service))
+  const badStages = fixes.filter((f) => !SERVICE_OK.test(String(f.validTarget || '')))
+  if (badStages.length) return refuse(`unsafe Dockerfile stage name(s) '${badStages.map((f) => f.validTarget).join("', '")}' — refusing to template the build-target override`)
+  const fixLines = (n) => { const f = fixes.find((x) => x.service === n); return f ? ['    build:', `      target: ${f.validTarget}`] : [] }
   // `!override`/`!reset` are load-bearing: a PLAIN `ports:` in a compose override file
   // CONCATENATES with the base file's list, which would leave the original 0.0.0.0
   // publish alive next to ours — the exact isolation failure this override exists to
@@ -392,7 +422,8 @@ export function planCompose(config, prePlan) {
     '    ports: !override',
     `      - "127.0.0.1:${hostPub}:${targetPort}"`,
     '    volumes: !reset []',
-    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []']),
+    ...fixLines(webService),
+    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []', ...fixLines(n)]),
   ].join('\n') + '\n'
   const { needsConfigResolution, ...plan } = prePlan
   // targetPort is the container-side port the executor reads the assigned host port back on
@@ -426,6 +457,64 @@ export function safeComposeConfigError(stderr) {
     || s.match(/open ([^\s:]+\.env[^\s:]*): no such file or directory/i)
   if (m) return `docker compose config failed: env file '${m[1]}' not found — provide it (or scaffold-env) and re-run`
   return null
+}
+
+/**
+ * PURE. The partner-facing mirror-fixes artifact: exactly what the disposable MIRROR
+ * needed that the real repo did not provide. One section per entry, three parts each —
+ * (a) the DEFECT, (b) what the MIRROR did (an override in the throwaway only — the real
+ * code untouched, with the proof of where the fix lives), (c) the PARTNER FIX for the
+ * real repo. Diagnoses (defects with NO honest override) are recorded too, so a failed
+ * build is never silent. Deterministic: sorted by service, no wall clock.
+ */
+export function renderMirrorFixes({ fixes = [], diagnoses = [] } = {}) {
+  const cmp = (a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)
+  const L = [
+    '# mirror-fixes — defects the disposable mirror worked around',
+    '',
+    'The toolkit stood up a DISPOSABLE MIRROR of this stack as a safe DAST/capture target.',
+    'The compose recipe carries the defect(s) below. Where an honest fix exists, the mirror',
+    'applied it via a generated compose override file that lives OUTSIDE this repository and',
+    'dies with the mirror — proof the real code was untouched: no compose file, Dockerfile,',
+    'or source file in this repository was modified (the toolkit writes only its own',
+    'artifacts under `.security-review/`). Fix your real repo as noted below; the overrides',
+    'then become unnecessary.',
+    '',
+  ]
+  for (const f of [...fixes].sort(cmp)) {
+    L.push(`## service \`${f.service}\`: broken \`build.target\``, '')
+    L.push(`- DEFECT: service \`${f.service}\` targets build stage \`${f.badTarget}\`, absent from \`${f.dockerfile}\`${Array.isArray(f.stages) && f.stages.length ? ` [stages: ${f.stages.join(', ')}]` : ''}.`)
+    L.push(`- MIRROR: overrode \`build.target\` → \`${f.validTarget}\` in the disposable mirror ONLY — your real code was NOT modified.`)
+    L.push(`- PARTNER FIX: in your real repo, add a \`${f.badTarget}\` stage to \`${f.dockerfile}\`, or set the compose \`build.target\` to \`${f.validTarget}\`.`)
+    L.push('')
+  }
+  for (const d of [...diagnoses].sort(cmp)) {
+    L.push(`## service \`${d.service}\`: build target \`${d.target}\` could not be validated or fixed`, '')
+    L.push(`- DEFECT: ${d.reason} (service \`${d.service}\`, \`${d.dockerfile}\`).`)
+    L.push('- MIRROR: no honest override exists — nothing was fabricated; the stand-up degrades with its real failure status instead of a silent build-into-failure.')
+    L.push(`- PARTNER FIX: in your real repo, make \`${d.dockerfile}\` declare the stage \`${d.target}\` (or correct the compose \`build.target\` to a stage it does declare), then re-run.`)
+    L.push('')
+  }
+  return L.join('\n')
+}
+
+/**
+ * IMPURE. Write the mirror-fixes artifact into `<target>/.security-review/` whenever the
+ * plan carries fixes or diagnoses. Written BEFORE `up`, so even a failed stand-up leaves
+ * the diagnosis on disk (never a silent build-into-failure). Best-effort like the
+ * stack-standup.json pointer; returns the path, or null when there was nothing to log.
+ */
+function writeMirrorFixes(plan, target) {
+  const fixes = Array.isArray(plan.buildTargetFixes) ? plan.buildTargetFixes : []
+  const diagnoses = Array.isArray(plan.buildTargetDiagnoses) ? plan.buildTargetDiagnoses : []
+  if (!target || (!fixes.length && !diagnoses.length)) return null
+  try {
+    const dir = join(target, '.security-review')
+    mkdirSync(dir, { recursive: true })
+    const p = join(dir, 'mirror-fixes.md')
+    writeFileSync(p, renderMirrorFixes({ fixes, diagnoses }))
+    return p
+  } catch { return null }
 }
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -701,6 +790,10 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   // The `0` was only the override's ephemeral marker; the pre-`up` stub records the
   // container/web port as a placeholder host port (the real one is read back after `up`).
   full = { ...full, hostPort: plan.port }
+  // Partner-facing mirror-fixes log: whenever the MIRROR needed a build-target fix (or
+  // carries a defect with no honest fix), record the defect + what the mirror did + the
+  // real-repo fix — BEFORE `up`, so a failed build still leaves the diagnosis on disk.
+  const mirrorFixesPath = writeMirrorFixes(full, target)
   // The loopback override is the compose isolation boundary: the web tier publishes on
   // 127.0.0.1 ONLY, and every other service is stripped of host ports entirely.
   writeFileSync(full.overridePath, full.overrideContent, { mode: 0o600 })
@@ -744,6 +837,9 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   } catch {
     rec.status = 'failed'
     rec.log = 'stand-up failed during a docker compose step (the toolkit does not capture compose output, to avoid persisting secrets)'
+    // a known compose defect was already diagnosed before the build — name the log so
+    // the failure is attributable, never a silent build-into-failure
+    if (mirrorFixesPath) rec.log += '; known compose defects were diagnosed before the build — see .security-review/mirror-fixes.md'
   } finally {
     for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }

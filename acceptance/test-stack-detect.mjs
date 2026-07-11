@@ -44,6 +44,13 @@
  *       none → null; the CLI threads the detected migration onto the classified stack
  *   E1  resolvePythonRun: constructor-grounded ASGI/WSGI/factory/self-launcher; refuse-to-guess
  *   E2  CLI compose-less FastAPI (module-scope ctor) → recipe.run uvicorn main:app
+ *   D1  dockerfileStages: ordered FROM…AS names; final = docker's default target; no AS → []
+ *   D2  composeBuildTargets: inline + block build forms; context/dockerfile/target read
+ *   D3  validateBuildTargets: broken target → fix to the final stage; valid → none;
+ *       unreadable Dockerfile / no named stages → diagnosis only (never fabricated)
+ *   D4  CLI: a dev compose targeting a stage absent from its Dockerfile →
+ *       recipe.buildTargetFixes names the service + the valid final stage; a valid
+ *       target → no fixes; a missing Dockerfile → a diagnosis, not a fix
  *
  * The pure composeWebTier is tested directly (hermetic); A1 drives the CLI to pin the
  * gatherRecipe → classifyStack threading. Dependency-free: `node acceptance/test-stack-detect.mjs`.
@@ -57,6 +64,7 @@ import { fileURLToPath } from 'node:url'
 import {
   classifyEnvName, classifyStack, composeWebTier, composeWebTierImage, detectMigration, resolvePythonRun,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned, composeEnvFiles, svcBuild,
+  dockerfileStages, composeBuildTargets, validateBuildTargets,
 } from '../harness/stack-detect.mjs'
 
 const DETECT = fileURLToPath(new URL('../harness/stack-detect.mjs', import.meta.url))
@@ -692,6 +700,121 @@ check('C4 CLI: a *.prod.yml whose web tier STILL builds from source → falls th
   assert.equal(out.status, 'runnable', out.reason)
   assert.equal(out.recipe.file, 'docker-compose.yml', 'a build-only prod compose does not win the preference')
   assert.equal(out.recipe.buildsFromSource, true)
+})
+
+// ── Broken compose `build.target` (mirror robustness): a dev compose targeting a stage
+//    its Dockerfile does not declare hard-fails `docker compose build` — the detector must
+//    diagnose it and record the fix the disposable mirror can apply (never touch the repo). ──
+
+// A two-stage Dockerfile with NO `development` stage — the grounded defect shape.
+const TWO_STAGE_DOCKERFILE = [
+  'FROM node:20 AS builder',
+  'RUN echo build',
+  'FROM node:20-slim AS runtime',
+  'COPY --from=builder /tmp /tmp',
+  'CMD ["node"]',
+  '',
+].join('\n')
+
+// A dev compose whose api service targets the absent `development` stage (self-contained
+// env, so the broken target is the ONLY defect in the fixture).
+const BROKEN_TARGET_COMPOSE = [
+  'services:',
+  '  api:',
+  '    build:',
+  '      context: ./api',
+  '      target: development',
+  '    ports:',
+  '      - "8000:8000"',
+  '    environment:',
+  '      SESSION_SECRET: ${SESSION_SECRET:-seed}',
+  '',
+].join('\n')
+
+check('D1 dockerfileStages: ordered FROM…AS names; final = docker default target; no AS → []', () => {
+  assert.deepEqual(dockerfileStages(TWO_STAGE_DOCKERFILE), ['builder', 'runtime'])
+  // the FINAL stage is docker's default build target — what a broken target is overridden to
+  assert.equal(dockerfileStages(TWO_STAGE_DOCKERFILE).at(-1), 'runtime')
+  // lowercase `as` + --platform tolerated; a stage-as-base FROM without AS is not a stage name
+  assert.deepEqual(dockerfileStages('FROM --platform=linux/amd64 alpine:3.20 as base\nFROM base\n'), ['base'])
+  assert.deepEqual(dockerfileStages('FROM node:20\nRUN echo hi\n'), [])
+  assert.deepEqual(dockerfileStages(''), [])
+})
+
+check('D2 composeBuildTargets: inline + block build forms; context/dockerfile/target read; image-only absent', () => {
+  const t = ['services:',
+    '  api:', '    build:', '      context: ./api', '      dockerfile: Dockerfile.dev', '      target: development',
+    '  web:', '    build: ./web', '    ports:', '      - "3000:3000"',
+    '  db:', '    image: postgres:16', ''].join('\n')
+  assert.deepEqual(composeBuildTargets(t), [
+    { service: 'api', context: './api', dockerfile: 'Dockerfile.dev', target: 'development' },
+    { service: 'web', context: './web', dockerfile: 'Dockerfile', target: null },
+  ])
+  // an args: child named `target:` (nested indent) must not read as the build target
+  const nested = ['services:', '  api:', '    build:', '      context: ./api',
+    '      args:', '        target: not-a-stage', ''].join('\n')
+  assert.deepEqual(composeBuildTargets(nested), [{ service: 'api', context: './api', dockerfile: 'Dockerfile', target: null }])
+})
+
+check('D3 validateBuildTargets: broken → fix to the final stage; valid → none; unreadable/no-stages → diagnosis only', () => {
+  const entries = [{ service: 'api', context: './api', dockerfile: 'Dockerfile', target: 'development' }]
+  const stages = ['builder', 'runtime']
+  // MUTATION: dropping the stage-existence check → the broken target is not flagged (red)
+  const broken = validateBuildTargets(entries, () => stages)
+  assert.deepEqual(broken.fixes, [{ service: 'api', badTarget: 'development', validTarget: 'runtime', dockerfile: 'api/Dockerfile', stages }])
+  assert.deepEqual(broken.diagnoses, [])
+  // a VALID target → no fix (two-sided)
+  const valid = validateBuildTargets([{ ...entries[0], target: 'runtime' }], () => stages)
+  assert.deepEqual(valid, { fixes: [], diagnoses: [] })
+  // no target at all → nothing to validate
+  assert.deepEqual(validateBuildTargets([{ ...entries[0], target: null }], () => stages), { fixes: [], diagnoses: [] })
+  // an unreadable Dockerfile (stagesFor → null) → a diagnosis, never a fabricated fix
+  const unreadable = validateBuildTargets(entries, () => null)
+  assert.deepEqual(unreadable.fixes, [])
+  assert.equal(unreadable.diagnoses.length, 1)
+  assert.match(unreadable.diagnoses[0].reason, /missing or unreadable/)
+  // a Dockerfile with NO named stages → no valid stage to override to → diagnosis only
+  const noStages = validateBuildTargets(entries, () => [])
+  assert.deepEqual(noStages.fixes, [])
+  assert.match(noStages.diagnoses[0].reason, /NO named stages/)
+  // deterministic: sorted by service regardless of input order
+  const two = [{ service: 'web', context: './web', dockerfile: 'Dockerfile', target: 'x' }, entries[0]]
+  assert.deepEqual(validateBuildTargets(two, () => stages).fixes.map((f) => f.service), ['api', 'web'])
+})
+
+check('D4 CLI: a compose service targeting a stage absent from its Dockerfile → recipe.buildTargetFixes; valid → none; missing Dockerfile → diagnosis', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', BROKEN_TARGET_COMPOSE)
+  w(r, 'api/Dockerfile', TWO_STAGE_DOCKERFILE)
+  w(r, 'api/package.json', JSON.stringify({ name: 'api' }))
+  const out = cli(r)
+  assert.equal(out.status, 'runnable', out.reason)
+  // MUTATION: dropping the stage-existence check in validateBuildTargets → no fix recorded (red)
+  assert.ok(Array.isArray(out.recipe.buildTargetFixes), 'the broken target must surface on the recipe: ' + JSON.stringify(out.recipe))
+  const f = out.recipe.buildTargetFixes[0]
+  assert.equal(f.service, 'api')
+  assert.equal(f.badTarget, 'development')
+  assert.equal(f.validTarget, 'runtime', 'the fix targets the FINAL stage (docker default)')
+  assert.equal(f.dockerfile, 'api/Dockerfile')
+  assert.deepEqual(f.stages, ['builder', 'runtime'])
+  // two-sided: a VALID target → no fixes, no diagnoses on the recipe
+  const r2 = mkrepo()
+  w(r2, 'docker-compose.yml', BROKEN_TARGET_COMPOSE.replace('target: development', 'target: runtime'))
+  w(r2, 'api/Dockerfile', TWO_STAGE_DOCKERFILE)
+  w(r2, 'api/package.json', JSON.stringify({ name: 'api' }))
+  const out2 = cli(r2)
+  assert.equal(out2.status, 'runnable', out2.reason)
+  assert.equal(out2.recipe.buildTargetFixes, undefined, 'a valid target must record no fix')
+  assert.equal(out2.recipe.buildTargetDiagnoses, undefined)
+  // a MISSING Dockerfile → a diagnosis (cannot validate), never a fabricated fix
+  const r3 = mkrepo()
+  w(r3, 'docker-compose.yml', BROKEN_TARGET_COMPOSE)
+  w(r3, 'api/package.json', JSON.stringify({ name: 'api' }))
+  const out3 = cli(r3)
+  assert.equal(out3.recipe.buildTargetFixes, undefined, 'no Dockerfile → no fabricated fix')
+  assert.equal(out3.recipe.buildTargetDiagnoses.length, 1)
+  assert.equal(out3.recipe.buildTargetDiagnoses[0].service, 'api')
+  assert.match(out3.recipe.buildTargetDiagnoses[0].reason, /missing or unreadable/)
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }

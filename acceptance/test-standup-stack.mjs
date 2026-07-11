@@ -36,6 +36,12 @@
  *       true/absent keep --build; planStandup threads the recipe flag into the plan
  *   U25 safeComposeConfigError: a missing-env-file stderr surfaces the FILENAME only;
  *       interpolation errors (which echo secret VALUES) and undefined/'' stay null
+ *   U26 planCompose merges a buildTargetFixes entry into that service's override block
+ *       (`build:` + `target: <validStage>` — the mirror repair, zero partner-file touch);
+ *       a clean recipe stays byte-identical; an unsafe stage name is refused;
+ *       planStandup threads recipe.buildTargetFixes into the compose pre-plan
+ *   U27 renderMirrorFixes: three parts per fix (defect / mirror-only action / partner
+ *       fix), diagnoses recorded (no fabrication), deterministic (sorted, no wall clock)
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
  * CI-hermetic — these tests pin the PURE planCompose (loopback override +
@@ -49,7 +55,7 @@ import { tmpdir } from 'node:os'
 import {
   planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE,
   classifyHealthCode, resolveHealth, mapDockerHealth, standupHealthNote, HEALTH_STATES,
-  checkEnvFileRunId, classifyPortOwnership, composeUpArgs, safeComposeConfigError,
+  checkEnvFileRunId, classifyPortOwnership, composeUpArgs, safeComposeConfigError, renderMirrorFixes,
 } from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
@@ -532,6 +538,71 @@ check('U25 safeComposeConfigError: a missing-env-file stderr surfaces the FILENA
   // the same catch swallows JSON.parse failures, which carry no .stderr — undefined/'' → null
   assert.equal(safeComposeConfigError(undefined), null)
   assert.equal(safeComposeConfigError(''), null)
+})
+
+// ── Mirror build-target fixes: a compose service targeting a Dockerfile stage that does
+//    not exist kills `docker compose build` ("target stage not found"). stack-detect
+//    records the fix; planCompose merges it into the loopback override — the disposable
+//    MIRROR is repaired, the partner's compose/Dockerfile never touched — and
+//    renderMirrorFixes is the partner-facing log of exactly what the mirror needed. ──
+
+check('U26 planCompose merges buildTargetFixes into the override (mirror repair); clean recipe byte-identical; unsafe stage refused', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u26', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u26') })
+  const clean = planCompose(composeConfig, pre)
+  // a fix on the WEB service: its override block gains `build:` + `target: <validStage>`
+  // AFTER the ports/volumes isolation lines (Compose V2 map-merge REPLACES the bad target)
+  const webFix = [{ service: 'web', badTarget: 'development', validTarget: 'runtime', dockerfile: 'web/Dockerfile', stages: ['builder', 'runtime'] }]
+  const p = planCompose(composeConfig, { ...pre, buildTargetFixes: webFix })
+  // MUTATION: dropping the fixLines injection in planCompose → no build:/target: lines (red)
+  assert.match(p.overrideContent, /web:\n    ports: !override\n      - "127\.0\.0\.1:8080:8080"\n    volumes: !reset \[\]\n    build:\n      target: runtime/)
+  // a fix on a NON-web service lands in that service's block, after its reset lines
+  const q = planCompose(composeConfig, { ...pre, buildTargetFixes: [{ service: 'db', badTarget: 'development', validTarget: 'runtime' }] })
+  assert.match(q.overrideContent, /db:\n    ports: !reset \[\]\n    volumes: !reset \[\]\n    build:\n      target: runtime/)
+  assert.ok(!q.overrideContent.split('  db:')[0].includes('build:'), 'the fix lands ONLY on the named service (web block stays fix-free)')
+  // a clean recipe (no fixes / empty fixes) → override BYTE-identical to today (U15/U19/U23 hold)
+  assert.equal(planCompose(composeConfig, { ...pre, buildTargetFixes: [] }).overrideContent, clean.overrideContent)
+  assert.ok(!clean.overrideContent.includes('build:'), 'no fix → no build key in the override')
+  // a fix naming a service absent from the resolved config is skipped, not injected
+  assert.equal(planCompose(composeConfig, { ...pre, buildTargetFixes: [{ service: 'ghost', badTarget: 'x', validTarget: 'y' }] }).overrideContent, clean.overrideContent)
+  // an unsafe stage name could inject structure into the templated override → REFUSED, not escaped
+  const evil = planCompose(composeConfig, { ...pre, buildTargetFixes: [{ service: 'web', badTarget: 'dev', validTarget: 'x:\n    privileged: true' }] })
+  assert.equal(evil.unsupported, 'compose')
+  assert.match(evil.reason, /unsafe Dockerfile stage name/)
+  // planStandup threads recipe.buildTargetFixes into the compose pre-plan (the
+  // buildsFromSource idiom), and planCompose's spread carries it into the full plan
+  const withFix = { ...composeRunnable, recipe: { ...composeRunnable.recipe, buildTargetFixes: webFix } }
+  const pre2 = planStandup(withFix, { runId: 'u26', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u26') })
+  assert.deepEqual(pre2.buildTargetFixes, webFix, 'the compose pre-plan carries the recipe fixes')
+  const full = planCompose(composeConfig, pre2)
+  assert.deepEqual(full.buildTargetFixes, webFix)
+  assert.match(full.overrideContent, /build:\n      target: runtime/)
+})
+
+check('U27 renderMirrorFixes: defect / mirror-only action / partner fix per entry; diagnoses honest; deterministic', () => {
+  const fixes = [
+    { service: 'web', badTarget: 'production', validTarget: 'runtime', dockerfile: 'web/Dockerfile', stages: ['builder', 'runtime'] },
+    { service: 'api', badTarget: 'development', validTarget: 'runtime', dockerfile: 'api/Dockerfile', stages: ['builder', 'runtime'] },
+  ]
+  const md = renderMirrorFixes({ fixes })
+  // (a) the DEFECT names the service, the bad target, the Dockerfile, and its REAL stages
+  assert.match(md, /service `api` targets build stage `development`, absent from `api\/Dockerfile` \[stages: builder, runtime\]/)
+  // (b) what the MIRROR did — override-only, the real code untouched (stated verbatim)
+  assert.match(md, /overrode `build\.target` → `runtime` in the disposable mirror ONLY — your real code was NOT modified/)
+  // (c) the PARTNER FIX names the real-repo change (add the stage, or retarget the compose)
+  assert.match(md, /in your real repo, add a `development` stage to `api\/Dockerfile`, or set the compose `build\.target` to `runtime`/)
+  // the proof-of-untouched statement covers the whole artifact
+  assert.match(md, /no compose file, Dockerfile,\nor source file in this repository was modified/)
+  // deterministic: sorted by service (api before web), order-insensitive, no wall clock
+  assert.ok(md.indexOf('service `api`') < md.indexOf('service `web`'), 'sections sorted by service')
+  assert.equal(md, renderMirrorFixes({ fixes: [...fixes].reverse() }), 'input order must not change the artifact')
+  assert.ok(!/\d{4}-\d{2}-\d{2}/.test(md), 'no wall clock in the pure artifact')
+  // MUTATION: dropping any of the three parts from the fix section turns (a)/(b)/(c) red
+  // a diagnosis (no honest fix) is recorded — nothing fabricated, the degrade is named
+  const diag = renderMirrorFixes({ diagnoses: [{ service: 'api', target: 'development', dockerfile: 'api/Dockerfile', reason: "build target 'development' is not a stage and the Dockerfile declares NO named stages — no valid stage exists to override to" }] })
+  assert.match(diag, /could not be validated or fixed/)
+  assert.match(diag, /no honest override exists — nothing was fabricated/)
+  assert.match(diag, /degrades with its real failure status/)
+  assert.match(diag, /PARTNER FIX: in your real repo, make `api\/Dockerfile` declare the stage `development`/)
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)
