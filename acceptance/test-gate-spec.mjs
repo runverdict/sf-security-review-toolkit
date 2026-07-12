@@ -125,26 +125,18 @@ check('G2 golden snapshot: throwaway-dast (live-op consent) — {affirm, force-i
   assert.match(byLabel['Skip — no throwaway, no active scan'].description, /PENDING-OWNER-RUN/)
 })
 
-check('G2 golden snapshot: live-instance-dast (rung-1 live-op consent) — DISTINCT from throwaway-dast', () => {
-  const p = gateOptions('live-instance-dast', {})
-  assert.equal(p.consent, true, 'live-instance-dast is a consent gate')
-  assert.equal(p.kind, 'consent')
-  assert.deepEqual(labelsDecisions(p), [
-    ['Scan my already-running instance', 'affirm'],
-    ['Skip — do not scan the running instance', 'deny'],
-  ])
-  const byLabel = Object.fromEntries(p.options.map((o) => [o.label, o]))
-  // the affirm must make UNMISTAKABLE that this is the operator's OWN running app + its real data —
-  // NOT an isolated throwaway (the whole reason it cannot share throwaway-dast's consent).
-  assert.match(byLabel['Scan my already-running instance'].description, /already have running/)
-  assert.match(byLabel['Scan my already-running instance'].description, /NOT an isolated throwaway/)
-  assert.match(byLabel['Scan my already-running instance'].description, /REAL running instance and the live data/)
-  // and it must NOT reuse throwaway-dast's "nothing touches your real deployment" promise — that
-  // would be the exact consent MISLABEL this gate exists to prevent.
-  assert.ok(!/Nothing touches your real\s+deployment/.test(byLabel['Scan my already-running instance'].description),
-    'live-instance-dast must NOT carry throwaway-dast’s no-touch-real-deployment promise')
-  // the decline lands DAST on the same PENDING-OWNER-RUN floor throwaway-dast’s decline does
-  assert.match(byLabel['Skip — do not scan the running instance'].description, /PENDING-OWNER-RUN/)
+check('G2 the live-instance-dast gate is RETIRED: not in the catalog, not renderable — throwaway-dast is the ONLY DAST consent', () => {
+  // The "scan an already-running instance" consent is GONE from the catalog: no gate exists
+  // that could even OFFER active-scanning a pre-existing instance (someone could unknowingly
+  // approve a scan of their real product and its real data). Fail-closed proves it: rendering
+  // the retired id throws exactly like any unregistered gate.
+  assert.ok(!('live-instance-dast' in GATE_CATALOG), 'the retired gate must not exist in the catalog')
+  assert.throws(() => gateOptions('live-instance-dast', {}), /unknown gate 'live-instance-dast'/)
+  // the retired id appears NOWHERE in the catalog — no option text can offer the retired path
+  assert.ok(!JSON.stringify(GATE_CATALOG).includes('live-instance-dast'), 'no catalog text references the retired gate')
+  // throwaway-dast is the ONLY DAST consent gate registered
+  assert.deepEqual(Object.keys(GATE_CATALOG).filter((g) => /dast/.test(g)), ['throwaway-dast'],
+    'throwaway-dast must be the only DAST gate in the catalog')
 })
 
 check('G2 golden snapshot: sf-deep-audit-ops (umbrella live-op consent) — {affirm, force-injected deny}', () => {
@@ -211,7 +203,6 @@ check('G4 force-injection: the decline is present on EVERY consent gate, even wh
     'mcp-probe': { url: 'https://example.test/mcp' },
     'scope-confirm': {},
     'throwaway-dast': {},
-    'live-instance-dast': {},
     'sf-deep-audit-ops': {},
   }
   for (const [gate, spec] of Object.entries(GATE_CATALOG)) {

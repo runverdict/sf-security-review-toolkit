@@ -13,11 +13,10 @@
  *   O4   validateSpec accepts real OpenAPI 3.x + Swagger 2.0 bodies
  *   O5   validateSpec rejects HTML / `{}` / non-JSON / no-paths / array bodies
  *   O6   buildProvenance: mirror source + PENDING prod-equivalence, never asserted
- *   O6b  rung-1 provenance (source 'explicit'): live-instance source, NO mirror /
- *        synthetic-secrets claim, prod-equivalence still PENDING; standup branch unchanged
+ *   O6b  mirror-only provenance: ONE source — a 'source' knob passed to planCapture cannot
+ *        flip the envelope off the mirror; no live-instance envelope text survives
  *   O7   captureOpenapi FAILS CLOSED without consent
- *   O7b  the executor's consent refusal names the SOURCE-matched gate (explicit →
- *        live-instance-dast; standup → throwaway-dast)
+ *   O7b  the executor's consent refusal names throwaway-dast — the ONLY DAST consent
  *   O8   captureOpenapi re-asserts loopback on the executed plan (even WITH consent)
  *   O9   candidate paths: fixed deterministic order, /openapi.json first, bare rooted only
  *        (+ Slice C: proxied-FastAPI /api/v1/openapi.json + NestJS /api-json /docs-json shapes)
@@ -25,12 +24,12 @@
  *   O11  planCapture --root-path: prepend+dedupe to front; no-rootPath byte-identical; fail-closed
  *        (a scheme/URL root-path throws — the GET can never be re-aimed off loopback)
  *   O12  base-url resolver reuse (Slice D): capture imports the ONE resolveBaseUrl; torn-down refused
- *   O13  rung-1 consent gate is SOURCE-selected (mirrors run-dast L2): an explicit --base-url
- *        verifies live-instance-dast (NOT throwaway-dast) and fails closed without the token —
- *        a recorded throwaway-dast token must NOT authorize the already-running capture
- *   O13b the --from-standup pointer path still verifies throwaway-dast (unchanged)
- *   O13c loopback-only enforcement survives the explicit path — a non-loopback --base-url is
- *        refused before any GET, even WITH a recorded live-instance-dast token
+ *   O13  MIRROR-ONLY refusal (mirrors run-dast L2): an explicit --base-url through the CLI is
+ *        REFUSED (exit 3, honest message, NO GET) — no recorded token unlocks it; the
+ *        --from-standup mirror is the only capture path
+ *   O13b the --from-standup pointer path verifies throwaway-dast — the ONLY DAST consent
+ *   O13c loopback stays enforced on the pointer path (defense in depth) — a tampered
+ *        non-loopback pointer is refused before any GET, even WITH the recorded token
  *   W1   generate-artifacts Step 3 consumes the mirror capture; PENDING only on
  *        prod-equivalence; the code-derived + `PENDING live capture` fallback survives
  *   W2   ORDER: the journey invokes capture-openapi AFTER standup-stack, BEFORE teardown-stack
@@ -124,27 +123,25 @@ check('O6 buildProvenance: isolated-mirror source + PENDING prod-equivalence, ne
   assert.match(prov.singleSpec, /first-match single-spec/)
 })
 
-check('O6b rung-1 provenance (source explicit): live-instance source, NO mirror/synthetic-secrets claim, PENDING survives', () => {
-  const p = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02', source: 'explicit' })
-  assert.equal(p.source, 'explicit', 'planCapture threads the resolved source onto the plan')
-  const prov = buildProvenance(p, { capturedFrom: '/openapi.json', kind: 'openapi', version: '3.1.0', pathCount: 4 })
-  // MUTATION: reverting buildProvenance's source to the constant mirror string turns this red
-  assert.equal(prov.source, 'already-running-loopback-instance')
-  assert.notEqual(prov.source, 'container-isolated-throwaway-mirror')
-  // no synthetic-secrets claim — the toolkit did not stand this instance up and generated
-  // nothing for it; the operator's instance may hold REAL credentials
-  assert.ok(!/synthetic secrets/.test(prov.secrets), 'no synthetic-secrets sentence on the rung-1 branch')
-  assert.ok(!/mirror ran/.test(prov.secrets), 'no mirror claim on the rung-1 branch')
-  assert.match(prov.secrets, /operator/)
-  // a local dev instance is STILL not production — the PENDING attestation survives rung 1
+check('O6b mirror-only provenance: ONE source — a source knob cannot flip the envelope off the mirror', () => {
+  // The plan carries NO source field, so no caller can select a pre-existing instance.
+  const p = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02' })
+  assert.ok(!('source' in p), 'the plan must carry no source knob')
+  // MUTATION: restoring the 0.8.118 source knob (planCapture threading opts.source onto the
+  // plan and buildProvenance branching on it) turns these red — an opts.source is IGNORED and
+  // the envelope stays the mirror envelope.
+  const forced = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02', source: 'explicit' })
+  assert.ok(!('source' in forced), 'an opts.source must be ignored, not threaded onto the plan')
+  const prov = buildProvenance(forced, { capturedFrom: '/openapi.json', kind: 'openapi', version: '3.1.0', pathCount: 4 })
+  assert.equal(prov.source, 'container-isolated-throwaway-mirror', 'the envelope names ONLY the mirror source')
+  assert.match(prov.secrets, /synthetic secrets/)
   assert.match(prov.prodEquivalence, /PENDING owner attestation/)
   assert.match(prov.prodEquivalence, /NOT from production/)
-  assert.ok(!/source[":\s]+production/i.test(JSON.stringify(prov)), 'no production-source claim anywhere in the envelope')
-  // O6 parallel branch: the default (standup) envelope is UNCHANGED
-  const std = buildProvenance(planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02' }),
-    { capturedFrom: '/openapi.json', kind: 'openapi', version: '3.0.0', pathCount: 1 })
-  assert.equal(std.source, 'container-isolated-throwaway-mirror')
-  assert.match(std.secrets, /synthetic secrets/)
+  // no live-instance envelope text survives anywhere in the emitted provenance
+  const flat = JSON.stringify(prov)
+  assert.ok(!flat.includes('already-running-loopback-instance'), 'the live-instance source string is retired')
+  assert.ok(!flat.includes('live-instance-dast'), 'no retired gate name in the envelope')
+  assert.ok(!/source[":\s]+production/i.test(flat), 'no production-source claim anywhere in the envelope')
 })
 
 check('O7 captureOpenapi FAILS CLOSED without consent', () => {
@@ -153,12 +150,13 @@ check('O7 captureOpenapi FAILS CLOSED without consent', () => {
   assert.throws(() => captureOpenapi(p, {}), /without explicit consent/)
 })
 
-check('O7b the executor consent refusal names the SOURCE-matched gate', () => {
-  const explicitPlan = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02', source: 'explicit' })
-  assert.throws(() => captureOpenapi(explicitPlan, { consent: false }), /live-instance-dast/)
-  assert.throws(() => captureOpenapi(explicitPlan, { consent: false }), /already-running instance/)
-  const standupPlan = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02' })
-  assert.throws(() => captureOpenapi(standupPlan, { consent: false }), /throwaway-dast/)
+check('O7b the executor consent refusal names throwaway-dast — the ONLY DAST consent', () => {
+  const plan = planCapture('http://127.0.0.1:8000', { target: '/repo', date: '2026-07-02' })
+  assert.throws(() => captureOpenapi(plan, { consent: false }), /throwaway-dast/)
+  // there is no other gate the refusal could name — the live-instance gate is retired
+  try { captureOpenapi(plan, { consent: false }) } catch (e) {
+    assert.ok(!/live-instance-dast/.test(String(e.message)), 'the refusal must not name a retired gate')
+  }
 })
 
 check('O8 captureOpenapi re-asserts loopback on the executed plan (a hand-built remote plan is refused even with consent)', () => {
@@ -216,11 +214,11 @@ check('O12 base-url resolver reuse (Slice D): capture imports the ONE resolveBas
   assert.throws(() => resolveBaseUrl(null, { schema: 'sf-srt-stack/1', baseUrl: null, status: 'torn-down' }), /torn-down/)
 })
 
-// ── Rung-1 fallback (mirrors run-dast's L2 series): the consent gate is SELECTED BY SOURCE.
-//    An explicit --base-url reads an ALREADY-RUNNING loopback instance the operator started,
-//    so it verifies the recorded 'live-instance-dast' token — NEVER the throwaway's, whose
-//    affirmative promises the op touches only a disposable mirror. Driven through the CLI so
-//    the whole main() path (resolver → gate selection → fail-closed) is exercised. ──
+// ── MIRROR-ONLY through the CLI (mirrors run-dast's L2 series). An explicit --base-url could
+//    point at a pre-existing/running instance — someone's real product, real credentials, real
+//    data — so main() REFUSES it outright, before any consent is even looked up. No recorded
+//    token unlocks it. --from-standup (the toolkit-built disposable mirror) is the ONLY capture
+//    path, and it rides the recorded 'throwaway-dast' token — the ONLY DAST consent. ──
 
 const CAPTURE_CLI = fileURLToPath(new URL('../harness/capture-openapi.mjs', import.meta.url))
 const cliDirs = []
@@ -230,47 +228,53 @@ const runCli = (args) => {
   catch (e) { return { stdout: String(e.stdout || ''), status: e.status == null ? -1 : e.status } }
 }
 
-check('O13 explicit --base-url verifies live-instance-dast (NOT throwaway-dast) and fails closed without the token', () => {
+check('O13 refuses explicit target: an explicit --base-url is REFUSED (exit 3, honest message, NO GET) — no recorded token unlocks it', () => {
   const d = mkTarget()
-  // no consent recorded at all → the explicit path fails closed naming the live-instance-dast gate
-  const a = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
-  assert.equal(a.status, 3, 'no recorded token → fail closed with exit 3')
-  assert.match(a.stdout, /NOT RUN \(no consent\)/)
-  assert.match(a.stdout, /gate 'live-instance-dast'/, 'the explicit path names the live-instance-dast gate')
-  assert.ok(!/gate 'throwaway-dast'/.test(a.stdout), 'the explicit path must NOT name throwaway-dast')
-
-  // MUTATION BITE: record ONLY the throwaway-dast consent. If the capture reverted to always
-  // verifying 'throwaway-dast' on every path, THIS token would let the explicit path proceed.
-  // With the source-selected gate it STILL fails closed — the already-running instance never
-  // rides the throwaway's consent. (Reverting consentGate to a constant 'throwaway-dast'
-  // turns this red.)
+  // MUTATION-PROOF: record the throwaway-dast consent BEFORE the attempt. If the refusal were
+  // reverted (explicit re-allowed), this recorded token plus --consent would let the capture
+  // proceed to the GET loop (a not-exposed/captured record, no refusal text) — turning the
+  // assertions below RED. With the refusal in place, the run never reaches a consent lookup,
+  // never plans, never GETs.
   recordConsent('throwaway-dast', 'yes', { target: d, decision: 'affirm' })
-  const b = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
-  assert.equal(b.status, 3, 'a recorded throwaway-dast token must NOT authorize the already-running capture')
-  assert.match(b.stdout, /NOT RUN \(no consent\)/)
-  assert.match(b.stdout, /gate 'live-instance-dast'/)
+  const a = runCli(['--base-url', 'http://127.0.0.1:8080', '--target', d, '--consent'])
+  assert.equal(a.status, 3, 'explicit --base-url must exit 3, even with --consent + a recorded token')
+  assert.match(a.stdout, /REFUSED/, 'the refusal is explicit, not a silent skip')
+  assert.match(a.stdout, /NEVER read a pre-existing/, 'the message states the invariant honestly')
+  assert.match(a.stdout, /--from-standup/, 'the message points at the only supported path')
+  assert.match(a.stdout, /code-derived/, 'the message names the honest fallback artifact')
+  assert.ok(!/Would GET|not-exposed|captured|evidence:/.test(a.stdout), 'nothing was planned or fetched')
+  assert.ok(!/NOT RUN \(no consent\)/.test(a.stdout), 'this is a refusal, not a consent prompt — consent is never consulted')
+
+  // and without any --base-url or --from-standup: an honest nothing-to-read message, exit 3
+  const b = runCli(['--target', d, '--consent'])
+  assert.equal(b.status, 3)
+  assert.match(b.stdout, /--from-standup/)
+  assert.match(b.stdout, /never reads a pre-existing instance/)
 })
 
-check('O13b the --from-standup pointer path still verifies throwaway-dast (unchanged)', () => {
+check('O13b the --from-standup pointer path verifies throwaway-dast — the ONLY DAST consent', () => {
   const d = mkTarget()
   mkdirSync(join(d, '.security-review'), { recursive: true })
   writeFileSync(join(d, '.security-review', 'stack-standup.json'),
     JSON.stringify({ schema: 'sf-srt-stack/1', runId: 't1', baseUrl: 'http://127.0.0.1:8080', status: 'up', createdAt: '2026-07-10' }))
-  // a stood-up throwaway (source 'standup'), no consent recorded → fail closed naming throwaway-dast
+  // a stood-up mirror, no consent recorded → fail closed naming throwaway-dast
   const r = runCli(['--from-standup', '--target', d, '--consent'])
   assert.equal(r.status, 3)
   assert.match(r.stdout, /NOT RUN \(no consent\)/)
-  assert.match(r.stdout, /gate 'throwaway-dast'/, 'the standup path still names throwaway-dast')
-  assert.ok(!/gate 'live-instance-dast'/.test(r.stdout), 'the standup path must NOT name live-instance-dast')
+  assert.match(r.stdout, /gate 'throwaway-dast'/, 'the standup path names throwaway-dast')
+  assert.ok(!/live-instance-dast/.test(r.stdout), 'no other DAST gate exists to name')
 })
 
-check('O13c loopback-only enforcement survives the explicit path (non-loopback refused before any GET, even WITH the token)', () => {
+check('O13c loopback stays enforced on the pointer path (defense in depth) — a tampered non-loopback pointer refused before any GET', () => {
   const d = mkTarget()
-  // even with a recorded live-instance-dast token, a non-loopback host is refused before any GET
-  recordConsent('live-instance-dast', 'yes', { target: d, decision: 'affirm' })
-  const r = runCli(['--base-url', 'http://198.51.100.7:8080', '--target', d, '--consent'])
-  assert.equal(r.status, 3, 'a non-loopback explicit target must be refused')
-  assert.match(r.stdout, /non-loopback host/, 'the refusal cites the capture loopback-only invariant')
+  recordConsent('throwaway-dast', 'yes', { target: d, decision: 'affirm' })
+  mkdirSync(join(d, '.security-review'), { recursive: true })
+  writeFileSync(join(d, '.security-review', 'stack-standup.json'),
+    JSON.stringify({ schema: 'sf-srt-stack/1', runId: 't2', baseUrl: 'http://198.51.100.7:8080', status: 'up', createdAt: '2026-07-10' }))
+  // even with the recorded throwaway-dast token, a tampered pointer cannot smuggle a remote host
+  const r = runCli(['--from-standup', '--target', d, '--consent'])
+  assert.equal(r.status, 3, 'a non-loopback pointer target must be refused')
+  assert.match(r.stdout, /non-loopback/, 'the refusal cites the loopback-only invariant')
   assert.ok(!/status.*captured|evidence:/.test(r.stdout), 'nothing was captured')
 })
 
@@ -297,7 +301,8 @@ check('W1 generate-artifacts consumes the mirror capture; PENDING only on prod-e
 
 check('W2 ORDER — the journey invokes capture-openapi AFTER standup-stack and BEFORE teardown-stack', () => {
   // anchor on the ACTUAL live-tail invocation command, not a prose mention of the engine
-  const ci = journeyText.indexOf('harness/capture-openapi.mjs --consent --base-url')
+  // (anchored at `--consent` so the check survives the flag rewire to the mirror-only form)
+  const ci = journeyText.indexOf('harness/capture-openapi.mjs --consent')
   assert.ok(ci > -1, 'the journey live tail invokes capture-openapi.mjs')
   assert.ok(journeyText.lastIndexOf('standup-stack.mjs', ci) > -1, 'a standup-stack invocation precedes the capture')
   assert.ok(journeyText.indexOf('teardown-stack.mjs', ci) > -1, 'a teardown-stack invocation follows the capture (the mirror is still up)')
@@ -308,7 +313,7 @@ check('W3 run-scans GRANTS capture-openapi.mjs in allowed-tools', () => {
 })
 
 check('W4 the journey states the capture rides the recorded throwaway-dast consent (no new gate)', () => {
-  const ci = journeyText.indexOf('harness/capture-openapi.mjs --consent --base-url')
+  const ci = journeyText.indexOf('harness/capture-openapi.mjs --consent')
   const nearby = journeyText.slice(ci, ci + 1200)
   assert.ok(/NO new consent/.test(nearby), 'no-new-consent stated at the invocation')
   assert.ok(/recorded `throwaway-dast` token/.test(nearby), 'the throwaway-dast token is named as the gate it rides')
