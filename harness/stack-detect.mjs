@@ -34,6 +34,17 @@
  * a stand-up blocker. `${VAR:?required}` / `${VAR:+alt}` / bare `${VAR}` have no
  * fallback and stay owner-supplied.
  *
+ * BROKEN BUILD TARGET (mirror robustness): a compose service declaring a
+ * `build.target` that its Dockerfile does not define as a `FROM … AS` stage
+ * hard-fails `docker compose build` ("target stage not found") — a real
+ * partner-repo defect the disposable mirror must survive. The detector parses the
+ * referenced Dockerfile's stages (`dockerfileStages`) and records
+ * `recipe.buildTargetFixes` (override the mirror to the FINAL stage — docker's
+ * default target) or, when no valid stage exists / the Dockerfile is unreadable,
+ * `recipe.buildTargetDiagnoses` (never a fabricated fix). standup-stack merges the
+ * fix into the loopback override and logs it partner-facing (mirror-fixes.md); the
+ * partner's own files are never touched.
+ *
  * USAGE: node stack-detect.mjs --target <repo> [--json]
  */
 import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
@@ -274,6 +285,101 @@ function svcImage(lines) {
 export function svcBuild(lines) {
   for (const line of lines) { if (/^\s*build\s*:/.test(line)) return true }
   return false
+}
+
+/** Pure: a service's `build` directive detail — inline form (`build: ./api` → the context)
+ *  or block form (`context:`/`dockerfile:`/`target:` read at the FIRST child indent, so an
+ *  `args:` child named `target:` is never mis-read). Defaults mirror docker's own:
+ *  context '.', dockerfile 'Dockerfile', target null. No `build:` → null. */
+function svcBuildInfo(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)build\s*:\s*(.*?)\s*(?:#.*)?$/)
+    if (!m) continue
+    const indent = m[1].length
+    if (m[2].trim()) return { context: unq(m[2]), dockerfile: 'Dockerfile', target: null } // inline form
+    const rec = { context: '.', dockerfile: 'Dockerfile', target: null }
+    let childIndent = -1
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      const subIndent = lines[j].match(/^(\s*)/)[1].length
+      if (subIndent <= indent) break
+      if (childIndent < 0) childIndent = subIndent
+      if (subIndent !== childIndent) continue // nested (e.g. args:) children never read as build keys
+      const kv = lines[j].match(/^\s*(context|dockerfile|target)\s*:\s*(.+?)\s*(?:#.*)?$/)
+      if (kv && kv[2].trim()) rec[kv[1]] = unq(kv[2])
+    }
+    return rec
+  }
+  return null
+}
+
+/**
+ * PURE. Each compose service's `build` directive from raw compose text —
+ * `[{ service, context, dockerfile, target }]` for every service that declares `build:`
+ * (inline or block form), via the composeServiceBlocks scanner. The consumer that keys
+ * off this is the broken-`build.target` detection: a `target:` naming a stage the
+ * referenced Dockerfile does not declare hard-fails `docker compose build`.
+ */
+export function composeBuildTargets(text) {
+  const out = []
+  for (const b of composeServiceBlocks(text)) {
+    const rec = svcBuildInfo(b.lines)
+    if (rec) out.push({ service: b.name, ...rec })
+  }
+  return out
+}
+
+/**
+ * PURE. The ordered `FROM … AS <stage>` names a Dockerfile declares (the multi-stage
+ * build graph). `AS` is case-insensitive and `--platform=` is tolerated, mirroring the
+ * file's regex-scanner idioms (no parser deps). The FINAL stage is docker's default
+ * build target — what a broken compose `build.target` can honestly be overridden to.
+ * No `FROM … AS` at all → [] (a single unnamed stage has nothing to target by name).
+ */
+export function dockerfileStages(text) {
+  const out = []
+  for (const line of String(text || '').split('\n')) {
+    const m = line.match(/^\s*FROM\s+(?:--platform=\S+\s+)?\S+\s+AS\s+([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(?:#.*)?$/i)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+/**
+ * PURE. Validate compose `build.target`s against their Dockerfiles' parsed stages.
+ * `entries` = composeBuildTargets(); `stagesFor(entry)` returns the ordered stage list
+ * (dockerfileStages), or null when the Dockerfile is missing/unreadable. Decision, per
+ * entry with a `target:`:
+ *   • the target IS a declared stage → valid, nothing recorded;
+ *   • the target is absent and the Dockerfile HAS named stages → a FIX to the final
+ *     stage (docker's default build target) — what the disposable mirror overrides to;
+ *   • the Dockerfile is unreadable, or declares NO named stage to fall back to → a
+ *     DIAGNOSIS only. Never fabricate a fix the Dockerfile cannot honor.
+ * Deterministic: both lists sorted by service; `dockerfile` is the display path
+ * (context-relative, as the partner reads it).
+ */
+export function validateBuildTargets(entries, stagesFor) {
+  const cmp = (a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)
+  const fixes = []
+  const diagnoses = []
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (!e || !e.target) continue
+    const dockerfile = join(e.context || '.', e.dockerfile || 'Dockerfile')
+    const stages = stagesFor(e)
+    if (!Array.isArray(stages)) {
+      diagnoses.push({ service: e.service, target: e.target, dockerfile,
+        reason: `the referenced Dockerfile is missing or unreadable — the build target '${e.target}' cannot be validated` })
+      continue
+    }
+    if (stages.includes(e.target)) continue // a valid target → no fix
+    if (!stages.length) {
+      diagnoses.push({ service: e.service, target: e.target, dockerfile,
+        reason: `build target '${e.target}' is not a stage and the Dockerfile declares NO named stages — no valid stage exists to override to` })
+      continue
+    }
+    fixes.push({ service: e.service, badTarget: e.target, validTarget: stages[stages.length - 1], dockerfile, stages })
+  }
+  return { fixes: fixes.sort(cmp), diagnoses: diagnoses.sort(cmp) }
 }
 
 /** Pure: the concatenated `command:`/`entrypoint:` text (inline + list forms). */
@@ -768,8 +874,27 @@ function gatherFacts(target) {
   const missingEnvFiles = composePath
     ? composeEnvFiles(composeText).filter((f) => !existsSync(resolve(dirname(composePath), f)))
     : []
+  // Broken-`build.target` detection (mirror robustness): a compose service whose
+  // `build.target` names a stage its Dockerfile does not declare hard-fails
+  // `docker compose build` ("target stage not found"). Validate each built service's
+  // target against the referenced Dockerfile's parsed stages, and record the fix the
+  // disposable MIRROR can apply (override to the final stage) — or a diagnosis when no
+  // honest fix exists. Threaded on the recipe (the buildsFromSource idiom) so it rides
+  // the classified JSON into planStandup → planCompose → the loopback override.
+  let buildTargetFixes = []
+  let buildTargetDiagnoses = []
+  if (composePath) {
+    const validated = validateBuildTargets(composeBuildTargets(composeText), (e) => {
+      const p = resolve(dirname(composePath), e.context || '.', e.dockerfile || 'Dockerfile')
+      return isFile(p) ? dockerfileStages(readOr(p)) : null
+    })
+    buildTargetFixes = validated.fixes
+    buildTargetDiagnoses = validated.diagnoses
+    if (buildTargetFixes.length) recipe.buildTargetFixes = buildTargetFixes
+    if (buildTargetDiagnoses.length) recipe.buildTargetDiagnoses = buildTargetDiagnoses
+  }
   const migration = detectMigration(gatherMigrationSignals(target, roots, composeServices))
-  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration, missingEnvFiles }
+  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration, missingEnvFiles, buildTargetFixes, buildTargetDiagnoses }
 }
 
 function main() {
