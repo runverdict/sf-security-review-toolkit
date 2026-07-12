@@ -53,6 +53,12 @@
  *       names, stop/kill/rmi, and a foreign-project `down` all THROW
  *   U31 safeDockerNameConflictError: the conflict NAME (only) surfaces with the
  *       degrade-not-clear diagnosis; anything else (incl. the stderr tail) stays null
+ *   U32 THE BUILT-IMAGE OVERWRITE KEY TEST: a service with BOTH `build:` AND a fixed
+ *       `image:` tag (acme-api:latest) → the override rebinds it to the run-unique
+ *       throwaway tag `sf-srt-stack-<runId>-<svc>:throwaway`, so `up --build` builds
+ *       and tags the toolkit's own image, never the partner's; build-only (no image)
+ *       and pulled-image (no build) services get NO image line; a missing/unsafe
+ *       run-id refuses (an unsafe image name is never templated)
  *   S1  executor failure path (stub docker, hermetic): `compose up` fails on a name
  *       conflict → status `failed`, the honest diagnosis names the container, and NO
  *       destructive docker command (rm/rmi/stop/kill/down) was issued; the override on
@@ -732,6 +738,62 @@ check('U31 safeDockerNameConflictError: the conflict NAME surfaces with the degr
   assert.equal(safeDockerNameConflictError('some other failure: postgres://u:p@h leaked'), null)
   assert.equal(safeDockerNameConflictError(undefined), null)
   assert.equal(safeDockerNameConflictError(''), null)
+})
+
+// ── Built-image overwrite (the general partner case). A service with BOTH a `build:`
+//    directive AND a fixed `image:` tag makes `up --build` build and TAG the result as
+//    that fixed name — silently overwriting the partner's REAL image on the shared
+//    docker daemon (the shared-resource mutation class the mirror exists to avoid).
+//    The override must rebind exactly those services to a run-unique throwaway tag,
+//    and ONLY those: a pulled image (image, no build) must stay untouched. ──
+
+check('U32 KEY: a build+image service (fixed acme-api:latest) is rebound to the run-unique throwaway image; build-only + pulled-image services get NO image line', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u32', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u32') })
+  // neutral fixture: web BUILDS from source AND pins a fixed tag (the overwrite risk);
+  // builder BUILDS with no image (compose auto-names it); db is a PULLED image
+  const cfg = {
+    services: {
+      web: { build: { context: './api', dockerfile: 'Dockerfile' }, image: 'acme-api:latest', ports: [{ mode: 'ingress', target: 8080, published: '8080', protocol: 'tcp' }] },
+      builder: { build: { context: './worker', dockerfile: 'Dockerfile' } },
+      db: { image: 'postgres:16-alpine' },
+    },
+  }
+  const p = planCompose(cfg, pre)
+  assert.equal(p.unsupported, undefined)
+  const o = p.overrideContent
+  // (a) KEY: the build+image service is rebound to the run-unique throwaway tag —
+  // `up --build` builds and tags the TOOLKIT's own image, never the partner's.
+  // MUTATION: dropping the imageLines injection from the override template → red
+  assert.match(o, /web:\n    ports: !override\n      - "127\.0\.0\.1:8080:8080"\n    volumes: !reset \[\]\n    image: sf-srt-stack-u32-web:throwaway\n    container_name: sf-srt-stack-u32-web\n/)
+  // (b) the partner's fixed tag is NOT the mirror's image — the override scalar REPLACES
+  // the base file's `image:` under Compose V2 merge, and the generated override never
+  // even mentions it
+  assert.ok(!o.includes('acme-api'), 'the fixed partner image tag must never survive as the mirror\'s image')
+  // (c) a BUILD-ONLY service (no image) gets NO image line: compose already auto-names
+  // it `<project>-<svc>` under the run-scoped project — no partner image to clobber
+  assert.match(o, /builder:\n    ports: !reset \[\]\n    volumes: !reset \[\]\n    container_name: sf-srt-stack-u32-builder\n/)
+  // (d) a PULLED image (image, no build) is left exactly as-is: `up --build` never
+  // rebuilds it, and overriding it would break the pull.
+  // MUTATION: broadening the override to every image-carrying service → red
+  assert.match(o, /db:\n    ports: !reset \[\]\n    volumes: !reset \[\]\n    container_name: sf-srt-stack-u32-db\n/)
+  assert.ok(!o.includes('postgres'), 'the pulled image is neither overridden nor mentioned')
+  // (e) EXACTLY the build+image service carries an image override (scoping, both sides)
+  const imgLines = o.split('\n').filter((l) => l.trim().startsWith('image:'))
+  assert.deepEqual(imgLines, ['    image: sf-srt-stack-u32-web:throwaway'], 'the image override is scoped to build+image services ONLY')
+  // (f) a missing/unsafe run-id REFUSES — an unsafe image name is never templated
+  // (the same RUN_ID_OK gate the container_name rebind rides on)
+  for (const bad of [undefined, null, '', 'u32 bad', 'a/b']) {
+    const r = planCompose(cfg, { ...pre, runId: bad })
+    assert.equal(r.unsupported, 'compose', `run-id ${JSON.stringify(bad)} must be refused`)
+    assert.match(r.reason, /missing or unsafe run-id/)
+    assert.equal(r.overrideContent, undefined, 'no override — hence no image line — is templated on refusal')
+  }
+  // (g) deterministic given (config, prePlan); a config with no build+image service
+  // (U15's pulled-image fixture) templates no image line at all — the override shape
+  // for every existing fixture is unchanged
+  assert.equal(planCompose(cfg, pre).overrideContent, o)
+  const plain = planCompose(composeConfig, pre)
+  assert.equal(plain.overrideContent.split('\n').filter((l) => l.trim().startsWith('image:')).length, 0, 'an image-only (pulled) config templates no image line at all')
 })
 
 // ── S-tests: the impure executor against a STUB docker on PATH (hermetic — no daemon).
