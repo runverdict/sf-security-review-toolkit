@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, static scans, audit, artifacts, live scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/emit-permission-set.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -83,6 +83,36 @@ prescribed harness command as its OWN atomic Bash call —
 `node …/harness/X.mjs --flags`, one command per call, never `&&`-chained,
 never looped, never inlined. A denied call reads to the operator as a broken
 toolkit; atomic invocations are what keep the run legible to the classifier.
+
+**FIRST — the SELF-SKIPPING autorun-permissions gate (asked once, ever).**
+Before sub-step 1, run
+`node ${CLAUDE_PLUGIN_ROOT}/harness/emit-permission-set.mjs --check --target <target> --json`
+as its OWN atomic Bash call (the AUTO-MODE LEGIBILITY rule above). It reports
+whether the target repo's `.claude/settings.local.json` already pre-approves the
+toolkit's curated READ-ONLY command surface (`permissions.allow` entries only —
+the engine never touches `deny`/`ask`/`defaultMode`/`env` or any other key), and
+whether this gate was already answered (`askedBefore`). Branch on it:
+- **Satisfied (exit 0)** → say NOTHING about permissions; proceed.
+- **Not satisfied (exit 2) AND `askedBefore: true`** → the operator already
+  decided (either way); proceed silently with prompts as they come. NEVER re-ask.
+- **Not satisfied AND `askedBefore: false`** → render the pinned gate as the
+  FIRST gate of the run:
+  `node ${CLAUDE_PLUGIN_ROOT}/harness/gate-spec.mjs --gate autorun-permissions`
+  (its options VERBATIM via `AskUserQuestion`), then record the choice (atomic):
+  `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate autorun-permissions --decision <affirm|deny> --question "<the gate question>" --answer "<the option they picked>" --target <target>`
+  On **affirm**, THEN run (its own atomic call):
+  `node ${CLAUDE_PLUGIN_ROOT}/harness/emit-permission-set.mjs --apply --target <target> --consent --json`
+  — the engine re-verifies the recorded token (fail closed: no token → exit 3,
+  nothing written) and is code-bounded to APPENDING `permissions.allow` entries
+  from its curated read-only set; a merge that would change ANY other settings
+  key aborts and writes nothing. Then tell the operator: the read-only allowlist
+  was written to `.claude/settings.local.json` (partner-facing note at
+  `.security-review/autorun-permissions.md`); **RESTART Claude Code and run in
+  default mode for an uninterrupted run** — this run continues now with prompts
+  as they come, the next one is clean. Installs, org ops, and live probes still
+  prompt and stay consent-gated regardless — the allowlist never covers them.
+  On **decline**, proceed normally (prompts as they come); the recorded deny is
+  exactly what keeps this gate from ever being asked again.
 
 1. **Check baseline currency.** Do NOT hand-roll the date sort (a naive `sort | tail`
    lets a `null`/malformed token sort ahead of a real date and misreports a fresh
