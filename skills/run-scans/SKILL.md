@@ -252,8 +252,16 @@ families PENDING until a re-audit.
    export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true
    sf code-analyzer run --workspace <force-app-root> \
      -r AppExchange -r sfge -r pmd \
-     --output-file .security-review/evidence/code-analyzer-<date>.json --view detail
+     --output-file .security-review/evidence/code-analyzer-<date>.json --view detail \
+     2> .security-review/evidence/ca-scan-log-<date>.txt
    ```
+
+   The `2>` capture is load-bearing: a per-file PMD `ParseException` goes ONLY
+   to stderr (the violations JSON has no error channel), and the ingest step
+   reads this scan-log to emit the scan-error coverage note deterministically.
+   The log is named `ca-scan-log-<date>.txt` on purpose — it must NOT start
+   with `code-analyzer-` (the scan-status renderer keys CA-report presence on
+   that prefix, and a `.txt` under it would be mis-counted as the report).
 
    **`-r sfge` is mandatory for FLS:** `ApexFlsViolation` is DevPreview and NOT
    in `Recommended`, so it only fires when sfge is selected explicitly;
@@ -299,17 +307,24 @@ families PENDING until a re-audit.
    band + machine triage — what feeds the ledger) AND this HTML (the submission
    format — what gets uploaded). HTML alone is not enough; the engine-explicit
    form is what makes CRUD/FLS deterministic.
-   **Scan-error coverage mandate — a failure is never a pass.** After every Code
-   Analyzer run, check the run output (stderr + the report) for a PMD
-   `ParseException` / per-file scan-error: a file that errored was NOT scanned, and
-   its 0 violations are an artifact of the failure, not a clean result. When one is
-   present, record it as a **COVERAGE NOTE** naming the file and the error — the file
-   surfaces as un-scanned in the scan status, never credited as clean — and where
-   feasible fix the parse blocker and re-run so the file is actually covered.
+   **Scan-error coverage mandate — a failure is never a pass.** A file that hits
+   a PMD `ParseException` / per-file scan-error was NOT scanned, and its 0
+   violations are an artifact of the failure, not a clean result. This is now an
+   engine gate, not an eyeball step: the `2>` capture above records the run's
+   stderr to `evidence/ca-scan-log-<date>.txt`, and the ingest step
+   (`ingest-scanner-findings.mjs --all`) reads that log and emits a **COVERAGE
+   NOTE** naming each errored file DETERMINISTICALLY — the file surfaces as
+   un-scanned, never credited as clean. The driver's job is to verify the note
+   is present in the ingest output and record it (a missing scan-log degrades to
+   checking stderr by hand), then where feasible fix the parse blocker and
+   re-run so the file is actually covered.
    *Agent runs:* install check, scan, JSON parsing, diffing findings against
    the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
    confirmation of every FP justification.
-   *Evidence:* `evidence/code-analyzer-<date>.html` + `.json`.
+   *Evidence:* `evidence/code-analyzer-<date>.html` + `.json`. The captured
+   `ca-scan-log-<date>.txt` is an internal diagnostic, not submission evidence —
+   the completeness lint auto-excludes it (like the capture provenance sidecars),
+   and its signal surfaces as the deterministic scan-error coverage note.
    *Disposition:* every violation becomes **fixed** (then re-scan — the
    submitted report must come from the submitted code, not three fixes ago)
    or a **dossier row**. Critical/High are must-fix; Code Analyzer has no

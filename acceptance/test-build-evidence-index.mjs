@@ -191,6 +191,42 @@ check('B7 agent-test: on-disk result ⇒ reviewer-reproducible + satisfied', () 
   assert.equal(e.reviewer_reproducible, true, 'a result under .security-review/evidence/ is reviewer-reproducible')
 })
 
+// Run `--check`; execFileSync throws on non-zero exit, so normalize to {status, stdout, stderr}.
+// stderr is PIPED (not inherited) so an expected orphan report doesn't leak into test output.
+function runCheck(dir) {
+  try {
+    const stdout = execFileSync('node', [BUILD, '--repo', dir, '--check'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    return { status: 0, stdout, stderr: '' }
+  } catch (e) {
+    return { status: e.status, stdout: String(e.stdout || ''), stderr: String(e.stderr || '') }
+  }
+}
+
+check('B8 --check exclusion: a top-level ca-scan-log-<date>.txt is NOT an orphan (the CA scan-log is an internal diagnostic, auto-excluded like the provenance sidecars) — an indexed sibling clean + the scan-log un-indexed still exits 0', () => {
+  const d = mkdtempSync(join(tmpdir(), 'bei-scanlog-')); dirs.push(d)
+  const ev = join(d, '.security-review', 'evidence')
+  mkdirSync(ev, { recursive: true })
+  // a normally-indexed scanner output + the CA scan-log the 2> capture always writes
+  writeFileSync(join(ev, 'semgrep-2026-07-12.json'), JSON.stringify({ probe: 'semgrep' }))
+  writeFileSync(join(ev, 'ca-scan-log-2026-07-12.txt'), "ParseException: Parse exception in file 'classes/Foo.cls'\n")
+  // a valid index.json that cites ONLY the semgrep report — the scan-log is deliberately absent
+  writeFileSync(join(ev, 'index.json'), JSON.stringify({
+    schema_version: 1, generated: '2026-07-12', entries: [{
+      ref_type: 'scan', ref_id: 'run-scans:semgrep-2026-07-12.json', source: 'run-scans', collected_by: 'scanner',
+      verified: { value: true, how: 'scanner exit + parsed report on disk' },
+      reviewer_reproducible: true, location: '.security-review/evidence/semgrep-2026-07-12.json',
+      disposition: 'satisfied', timestamp: '2026-07-12',
+    }],
+  }, null, 2))
+  const r = runCheck(d)
+  // MUTATION PROOF: remove the `!/^ca-scan-log-.*\.txt$/` exclusion in build-evidence-index.mjs
+  // and this exits 2 with `ORPHAN ca-scan-log-2026-07-12.txt` — the scan-log would orphan on every
+  // clean run (2> writes it unconditionally), blocking compile-submission.
+  assert.equal(r.status, 0, `expected exit 0 (scan-log excluded), got ${r.status}\n${r.stdout}${r.stderr}`)
+  assert.ok(!/ORPHAN ca-scan-log/.test(r.stdout + r.stderr), `the CA scan-log must NOT be reported as an orphan:\n${r.stdout}${r.stderr}`)
+  assert.match(r.stdout, /all indexed \(clean\)/)
+})
+
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
