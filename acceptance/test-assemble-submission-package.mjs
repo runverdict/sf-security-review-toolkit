@@ -24,6 +24,18 @@
  *       assembles NOTHING.
  *   M3  credential refusal: a credential-shaped value in a to-be-copied file ⇒
  *       fail closed, nothing assembled, and the value itself never echoed.
+ *   R1  scanner-evidence auto-redaction: a bandit-shaped report that QUOTES a found
+ *       secret literal in its finding text assembles cleanly — the copied evidence
+ *       carries <redacted> in the value's place, the finding metadata
+ *       (test_id/filename/line_number) is preserved, the canonical original is
+ *       untouched, and the §6 scan of the shipped copy is EMPTY.
+ *   R2  redaction scoping: a NON-evidence file (artifact doc / runbook) carrying a
+ *       secret literal STILL refuses the whole assembly, even when scanner-evidence
+ *       redaction is in play in the same run — never redact-and-ship a real leak.
+ *   R3  the pure redactor mirrors CREDENTIAL_PATTERNS: values → the marker,
+ *       placeholder shapes untouched, and an unbounded private-key header stays in
+ *       place so the refusal backstop fires; the evidence-copy predicate needs BOTH
+ *       the scanner-reports slot and the evidence-tree source.
  *   F1  fail closed on an unreadable scope manifest / evidence index.
  *   C1  the frozen wizard-slot constants are pinned (the slot names live in the
  *       ENGINE, not prose — this check is the drift guard).
@@ -41,7 +53,8 @@ import { fileURLToPath } from 'node:url'
 import { parseBaselineApplies, computeApplicable } from '../harness/applicable-requirements.mjs'
 import {
   WIZARD_STEPS, STEP3_UPLOAD_SLOTS, STEP4_CREDENTIAL_SUBBLOCKS, PACKAGE_STEP_DIRS, SLOT_MAP,
-  slotStatus, findCredentialLikeContent,
+  slotStatus, findCredentialLikeContent, redactCredentialLikeContent, isScannerEvidenceCopy,
+  REDACTION_MARKER,
 } from '../harness/assemble-submission-package.mjs'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
@@ -151,7 +164,12 @@ function synthPlugin() {
 const SYNTH = synthPlugin()
 
 // ── the target fixture: a fictional Meridian repo ─────────────────────────────────
-function makeRepo({ elements, storedIds, withVerdict = true, seedSecret = false } = {}) {
+// The fake-by-inspection secret literal a fictional bandit run "found" — assembled
+// from parts so this test file stays secret-scan-clean itself.
+const FAKE_FOUND_SECRET = ['Welcome2', 'Meridian!'].join('')
+const FAKE_DOC_SECRET = ['somelong', 'secretvalue'].join('')
+
+function makeRepo({ elements, storedIds, withVerdict = true, seedSecret = false, banditEvidence = false, runbookSecret = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'asp-target-'))
   dirs.push(dir)
   const els = elements || [
@@ -173,19 +191,43 @@ function makeRepo({ elements, storedIds, withVerdict = true, seedSecret = false 
     `# Meridian architecture\nThe Meridian web app calls the Solano API.\n${seedSecret ? 'client_secret: "s3cr3tvalue99"\n' : ''}`)
   writeFileSync(join(dir, 'docs', 'security-review', 'audit-report.md'), '# audit pass 1\nno data-flow violation found\n')
   writeFileSync(join(dir, 'docs', 'security-review', 'test-environment.md'),
-    '# Test environment runbook\nPersona one signs in with credentials supplied through the submission channel.\n')
+    '# Test environment runbook\nPersona one signs in with credentials supplied through the submission channel.\n' +
+    (runbookSecret ? `client_secret: '${FAKE_DOC_SECRET}'\n` : ''))
+  if (banditEvidence) {
+    // A bandit-report-shaped scan output whose finding text QUOTES the secret it
+    // found — the toolkit's own scan evidence, not a leaked config value.
+    writeFileSync(join(dir, '.security-review', 'evidence', 'bandit-report.json'), JSON.stringify({
+      generated_at: FIXED_DATE,
+      metrics: { _totals: { loc: 240, nosec: 0 } },
+      results: [{
+        code: `41 password = '${FAKE_FOUND_SECRET}'\n`,
+        filename: 'apps/web/config/settings.py',
+        issue_confidence: 'MEDIUM',
+        issue_severity: 'LOW',
+        issue_text: `Possible hardcoded password: '${FAKE_FOUND_SECRET}'`,
+        line_number: 41,
+        line_range: [41],
+        test_id: 'B105',
+        test_name: 'hardcoded_password_string',
+      }],
+    }, null, 2))
+  }
   if (withVerdict) {
     writeFileSync(join(dir, 'docs', 'security-review', 'submission', 'readiness-verdict.md'),
       '# Readiness verdict\n**READINESS: NOT READY**\n')
   }
+  const indexEntries = [
+    { ref_type: 'requirement', ref_id: 'scan-external-sast', collected_by: 'scanner', disposition: 'satisfied', verified: { value: true, how: 'scanner report on disk' }, reviewer_reproducible: true, location: '.security-review/evidence/semgrep-report.sarif' },
+    { ref_type: 'requirement', ref_id: 'artifact-architecture-diagram', collected_by: 'agent', disposition: 'partial', verified: { value: false, how: 'drafted; owner completes' }, reviewer_reproducible: false, location: 'docs/security-review/architecture-diagram.md' },
+    { ref_type: 'requirement', ref_id: 'scan-sfge-crud-fls-dataflow', collected_by: 'agent', disposition: 'statically-cleared', verified: { value: true, how: 'white-box static audit only' }, reviewer_reproducible: false, location: 'docs/security-review/audit-report.md' },
+    { ref_type: 'requirement', ref_id: 'artifact-dast-scan-reports', collected_by: 'agent', disposition: 'pending-owner', verified: { value: false, how: 'plan prepared; owner runs it' }, reviewer_reproducible: false, location: '.security-review/evidence/dast/zap-plan.yaml', note: 'owner runs the authenticated DAST' },
+    { ref_type: 'requirement', ref_id: 'artifact-org-credentials', collected_by: 'agent', disposition: 'partial', verified: { value: false, how: 'runbook drafted' }, reviewer_reproducible: false, location: 'docs/security-review/test-environment.md' },
+  ]
+  if (banditEvidence) {
+    indexEntries.push({ ref_type: 'requirement', ref_id: 'scan-external-sast', collected_by: 'scanner', disposition: 'satisfied', verified: { value: true, how: 'bandit report on disk' }, reviewer_reproducible: true, location: '.security-review/evidence/bandit-report.json' })
+  }
   writeFileSync(join(dir, '.security-review', 'evidence', 'index.json'), JSON.stringify({
-    schema_version: 1, generated: FIXED_DATE, entries: [
-      { ref_type: 'requirement', ref_id: 'scan-external-sast', collected_by: 'scanner', disposition: 'satisfied', verified: { value: true, how: 'scanner report on disk' }, reviewer_reproducible: true, location: '.security-review/evidence/semgrep-report.sarif' },
-      { ref_type: 'requirement', ref_id: 'artifact-architecture-diagram', collected_by: 'agent', disposition: 'partial', verified: { value: false, how: 'drafted; owner completes' }, reviewer_reproducible: false, location: 'docs/security-review/architecture-diagram.md' },
-      { ref_type: 'requirement', ref_id: 'scan-sfge-crud-fls-dataflow', collected_by: 'agent', disposition: 'statically-cleared', verified: { value: true, how: 'white-box static audit only' }, reviewer_reproducible: false, location: 'docs/security-review/audit-report.md' },
-      { ref_type: 'requirement', ref_id: 'artifact-dast-scan-reports', collected_by: 'agent', disposition: 'pending-owner', verified: { value: false, how: 'plan prepared; owner runs it' }, reviewer_reproducible: false, location: '.security-review/evidence/dast/zap-plan.yaml', note: 'owner runs the authenticated DAST' },
-      { ref_type: 'requirement', ref_id: 'artifact-org-credentials', collected_by: 'agent', disposition: 'partial', verified: { value: false, how: 'runbook drafted' }, reviewer_reproducible: false, location: 'docs/security-review/test-environment.md' },
-    ],
+    schema_version: 1, generated: FIXED_DATE, entries: indexEntries,
   }))
   return dir
 }
@@ -323,6 +365,63 @@ check('M3 credential refusal: a secret-shaped value in a to-be-copied file → f
   assert.match(r.stderr, /assigned-secret-literal/, 'the refusal names the pattern')
   assert.ok(!(r.stdout + r.stderr).includes('s3cr3tvalue99'), 'the matched value itself must never be echoed')
   assert.ok(!existsSync(pkgOf(d)), 'nothing may be assembled after the refusal')
+})
+
+check('R1 scanner-evidence auto-redaction: a bandit report quoting a FOUND secret assembles; the copy ships the marker with metadata intact', () => {
+  const d = makeRepo({ banditEvidence: true })
+  const originalPath = join(d, '.security-review', 'evidence', 'bandit-report.json')
+  const original = readFileSync(originalPath, 'utf8')
+  const r = assemble(d)
+  assert.equal(r.status, 0, `assembler refused legitimate scanner evidence:\n${r.stdout}\n${r.stderr}`)
+  const copiedPath = join(pkgOf(d), 'step3-scans', 'bandit-report.json')
+  assert.ok(existsSync(copiedPath), 'the bandit report lands in step3-scans/')
+  const copied = readFileSync(copiedPath, 'utf8')
+  assert.ok(!copied.includes(FAKE_FOUND_SECRET), 'the found secret literal must not ship in the package')
+  assert.ok(copied.includes(REDACTION_MARKER), 'the value is replaced with the redaction marker')
+  const parsed = JSON.parse(copied) // the report structure survives the redaction
+  assert.equal(parsed.results[0].test_id, 'B105', 'finding rule id preserved')
+  assert.equal(parsed.results[0].filename, 'apps/web/config/settings.py', 'finding file preserved')
+  assert.equal(parsed.results[0].line_number, 41, 'finding line preserved')
+  assert.match(parsed.results[0].issue_text, /hardcoded password: '<redacted>'/, 'the issue text keeps its shape around the marker')
+  assert.deepEqual(findCredentialLikeContent(copied), [], 'the §6 scan of the SHIPPED copy is EMPTY — no raw secret in the package')
+  assert.equal(readFileSync(originalPath, 'utf8'), original, 'the canonical original stays byte-identical (copies, never mutations)')
+  assert.ok(!(r.stdout + r.stderr).includes(FAKE_FOUND_SECRET), 'the found value never echoes in the output')
+  assert.match(r.stdout, /evidence redaction: step3-scans\/bandit-report\.json/, 'the redaction is surfaced in the summary')
+})
+
+check('R2 redaction scoping: a secret in a NON-evidence runbook still refuses the whole assembly (never redact-and-ship a real leak)', () => {
+  const d = makeRepo({ banditEvidence: true, runbookSecret: true })
+  const r = assemble(d)
+  assert.notEqual(r.status, 0, 'a non-evidence secret must fail the assembly even with evidence redaction in play')
+  assert.match(r.stderr, /CREDENTIAL REFUSAL/)
+  assert.match(r.stderr, /test-environment\.md/, 'the refusal names the offending NON-evidence file')
+  assert.match(r.stderr, /assigned-secret-literal/, 'the refusal names the pattern')
+  assert.ok(!(r.stdout + r.stderr).includes(FAKE_DOC_SECRET), 'the matched value itself must never be echoed')
+  assert.ok(!r.stderr.includes('bandit-report.json'), 'the redactable scanner evidence is not what refuses')
+  assert.ok(!existsSync(pkgOf(d)), 'nothing may be assembled after the refusal')
+})
+
+check('R3 the pure redactor mirrors the pattern set; the evidence predicate needs slot AND source', () => {
+  const hit = redactCredentialLikeContent(`password: '${FAKE_FOUND_SECRET}' and Bearer abcdefghijklmnopqrstuvwxyz012345`)
+  assert.ok(hit.text.includes(`password: '${REDACTION_MARKER}'`), 'the key and quotes survive; the value does not')
+  assert.ok(hit.text.includes(`Bearer ${REDACTION_MARKER}`), 'the Bearer keyword survives; the token does not')
+  assert.deepEqual([...hit.patterns].sort(), ['assigned-secret-literal', 'bearer-token'])
+  assert.deepEqual(findCredentialLikeContent(hit.text), [], 'redacted text can never re-trip the detector')
+  const clean = redactCredentialLikeContent('password: "<from-vault>" and api_key: "{{SET_AT_SUBMISSION}}"')
+  assert.deepEqual(clean.patterns, [], 'placeholder shapes are not values; nothing to redact')
+  assert.ok(clean.text.includes('<from-vault>'), 'placeholders ride through untouched')
+  const bounded = redactCredentialLikeContent('-----BEGIN RSA PRIVATE KEY-----\nMIIEfakefakefake\n-----END RSA PRIVATE KEY-----')
+  assert.deepEqual(findCredentialLikeContent(bounded.text), [], 'a bounded key block is redacted whole')
+  const unbounded = redactCredentialLikeContent('-----BEGIN RSA PRIVATE KEY-----\nMIIEfakefakefake')
+  assert.deepEqual(findCredentialLikeContent(unbounded.text), ['private-key-block'],
+    'an unbounded key header stays in place so the refusal backstop still fires')
+  assert.ok(isScannerEvidenceCopy('Security scanner reports', '.security-review/evidence/bandit-report.json'))
+  assert.ok(!isScannerEvidenceCopy('Architecture & Usage Documentation', 'docs/security-review/architecture-diagram.md'),
+    'an artifact doc never qualifies')
+  assert.ok(!isScannerEvidenceCopy('Security scanner reports', 'docs/security-review/some-report.json'),
+    'slot alone is not enough — the source must live in the evidence tree')
+  assert.ok(!isScannerEvidenceCopy('False-positives documentation', '.security-review/evidence/fp-dossier.json'),
+    'evidence tree alone is not enough — the copy must route to the scanner-reports slot')
 })
 
 check('F1 fail closed: unreadable scope manifest / evidence index → non-zero, nothing assembled', () => {
