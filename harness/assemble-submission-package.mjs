@@ -44,7 +44,16 @@
  *   - Package credential material. Every source file in the copy plan and both
  *     rendered documents are scanned for credential-shaped content BEFORE anything
  *     is written (CONVENTIONS §6); any hit fails closed — the refusal names the
- *     file and the pattern, never the matched value.
+ *     file and the pattern, never the matched value. ONE carve-out, by construction:
+ *     a SCANNER-EVIDENCE file (routed to the Security scanner reports slot AND
+ *     sourced from .security-review/evidence/) is the toolkit's own scan output and
+ *     legitimately QUOTES the secret literals it FOUND — those are findings, not
+ *     leaked configuration. Its copy is AUTO-REDACTED (each matched value →
+ *     `<redacted>`, finding metadata preserved) and the §6 scan then runs on the
+ *     REDACTED text — the bytes that actually ship — so no raw secret can ride an
+ *     evidence file into the package. Every NON-evidence file (artifact docs,
+ *     config, runbooks) keeps the hard refusal: a secret there is a real leak the
+ *     owner must fix at the source, never a silent redaction.
  *
  * DETERMINISTIC (CONVENTIONS §7): no LLM, no network, no deps, no wall clock —
  * `--date` is required. Same inputs → byte-identical package on re-run.
@@ -179,6 +188,52 @@ export const CREDENTIAL_PATTERNS = Object.freeze([
 export function findCredentialLikeContent(text) {
   const s = String(text == null ? '' : text)
   return CREDENTIAL_PATTERNS.filter((p) => p.re.test(s)).map((p) => p.name)
+}
+
+// ─── Scanner-evidence auto-redaction (the §6 carve-out, by construction) ───────────
+// A scanner report (bandit/gitleaks/detect-secrets/semgrep/osv/checkov/trivy/
+// pip-audit) inherently quotes the secret literals it FOUND — that is the finding
+// text, not a leaked config value. Shipping the raw value would still violate §6,
+// so the copy replaces each matched VALUE with REDACTION_MARKER. The marker cannot
+// re-match: the assigned-secret-literal value class excludes `<>{}$`, and no other
+// pattern accepts `<`. The redactor set mirrors CREDENTIAL_PATTERNS one-for-one;
+// findCredentialLikeContent then re-runs on the REDACTED text as the backstop, so
+// anything a redactor cannot bound safely (a BEGIN PRIVATE KEY header with no
+// matching END, for example) is left in place and still fails closed.
+export const REDACTION_MARKER = '<redacted>'
+export const EVIDENCE_REDACTORS = Object.freeze([
+  // Only a BOUNDED key block is redactable; a lone BEGIN header stays put so the
+  // private-key-block refusal still fires on the copy.
+  Object.freeze({ name: 'private-key-block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, sub: REDACTION_MARKER }),
+  Object.freeze({ name: 'aws-access-key-id', re: /\bAKIA[0-9A-Z]{16}\b/g, sub: REDACTION_MARKER }),
+  Object.freeze({ name: 'sfdx-auth-url', re: /\bforce:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]{10,}/g, sub: REDACTION_MARKER }),
+  Object.freeze({ name: 'salesforce-session-id', re: /\b00D[A-Za-z0-9]{12,15}![A-Za-z0-9._+/=]{20,}/g, sub: REDACTION_MARKER }),
+  Object.freeze({ name: 'bearer-token', re: /\b(Bearer\s+)[A-Za-z0-9\-_.=]{25,}/g, sub: `$1${REDACTION_MARKER}` }),
+  Object.freeze({ name: 'assigned-secret-literal', re: /\b(password|passwd|client_secret|api[_-]?key|access[_-]?token|secret)\b(\s*[:=]\s*)(['"])[^'"\s<>{}$]{8,}(['"])/gi, sub: `$1$2$3${REDACTION_MARKER}$4` }),
+])
+
+/** Pure: text → { text, patterns } — every credential-shaped VALUE replaced with
+ * REDACTION_MARKER; the metadata around it (key name, quotes, Bearer keyword, the
+ * whole finding structure) rides through untouched. `patterns` names the redactors
+ * that fired (empty = nothing to redact). */
+export function redactCredentialLikeContent(text) {
+  let s = String(text == null ? '' : text)
+  const patterns = []
+  for (const r of EVIDENCE_REDACTORS) {
+    const next = s.replace(r.re, r.sub)
+    if (next !== s) { patterns.push(r.name); s = next }
+  }
+  return { text: s, patterns }
+}
+
+/** Pure: one copy-plan routing → is this copy SCANNER EVIDENCE (auto-redact) or not
+ * (hard refusal)? Scanner evidence must be BOTH routed to the Security scanner
+ * reports slot AND sourced from the .security-review/evidence/ tree. Artifact docs,
+ * config, and runbooks never qualify — a secret there is a real leak the owner
+ * fixes at the source. `rel` is the target-relative source path (leading slashes
+ * already stripped by the copy plan). */
+export function isScannerEvidenceCopy(slot, rel) {
+  return slot === 'Security scanner reports' && String(rel == null ? '' : rel).startsWith('.security-review/evidence/')
 }
 
 // ─── Status inheritance (the evidence-index dispositions, fail closed) ─────────────
@@ -350,7 +405,7 @@ function main() {
       if (claimed.has(key()) && claimed.get(key()) !== src) destName = `${row.req}--${destName}`
       if (claimed.get(key()) === src) { row.files.push(key()); continue }
       claimed.set(key(), src)
-      plan.push({ src, destDir: row.dir, destName, packageRel: key() })
+      plan.push({ src, destDir: row.dir, destName, packageRel: key(), scannerEvidence: isScannerEvidenceCopy(row.slot, rel) })
       row.files.push(key())
     }
   }
@@ -365,11 +420,26 @@ function main() {
   const pendingMd = renderPendingOwnerRun({ DATE, evEntries, baseline, applicableSet })
 
   // 7. CREDENTIAL-REFUSAL (CONVENTIONS §6) — scan everything that would land in the
-  // package BEFORE any copy. Fail closed; name the file + pattern, never the value.
+  // package BEFORE any copy. A SCANNER-EVIDENCE copy is auto-redacted FIRST and the
+  // scan runs on the redacted text (the bytes that would actually ship); every other
+  // file is scanned raw. Fail closed; name the file + pattern, never the value.
   const hits = []
+  const redactions = [] // { packageRel, patterns } — surfaced in the summary, values never echoed
   for (const p of plan) {
     let names = []
-    try { names = findCredentialLikeContent(readFileSync(p.src, 'utf8')) } catch { names = [] }
+    try {
+      const raw = readFileSync(p.src, 'utf8')
+      if (p.scannerEvidence) {
+        const r = redactCredentialLikeContent(raw)
+        if (r.patterns.length) {
+          p.redactedText = r.text
+          redactions.push({ packageRel: p.packageRel, patterns: r.patterns })
+        }
+        names = findCredentialLikeContent(r.text)
+      } else {
+        names = findCredentialLikeContent(raw)
+      }
+    } catch { names = [] }
     for (const n of names) hits.push(`${p.src} → ${n}`)
   }
   if (verdictOnDisk) {
@@ -389,7 +459,10 @@ function main() {
   rmSync(pkgDir, { recursive: true, force: true })
   for (const d of PACKAGE_STEP_DIRS) mkdirSync(join(pkgDir, d), { recursive: true })
   for (const p of plan.sort((a, b) => a.packageRel.localeCompare(b.packageRel))) {
-    copyFileSync(p.src, join(pkgDir, p.destDir, p.destName))
+    // A redacted scanner-evidence copy is WRITTEN (redacted bytes), never raw-copied;
+    // the canonical original under .security-review/evidence/ stays untouched.
+    if (p.redactedText != null) writeFileSync(join(pkgDir, p.destDir, p.destName), p.redactedText)
+    else copyFileSync(p.src, join(pkgDir, p.destDir, p.destName))
   }
   if (verdictOnDisk) {
     copyFileSync(verdictSrc, join(pkgDir, 'readiness-verdict.md'))
@@ -409,6 +482,9 @@ function main() {
   console.log(`submission-package assembled at ${pkgDir}`)
   console.log(`  slot rows: ${emitted.length} emitted · ${suppressed.length} suppressed (see INDEX.md)`)
   console.log(`  files copied: ${plan.length} (originals untouched) · readiness-verdict: ${verdictOnDisk ? 'copied' : 'TODO placeholder (step 8 has not run)'}`)
+  for (const r of redactions.sort((a, b) => a.packageRel.localeCompare(b.packageRel))) {
+    console.log(`  evidence redaction: ${r.packageRel} — ${r.patterns.join(', ')} value(s) replaced with ${REDACTION_MARKER} (CONVENTIONS §6; the canonical original is untouched)`)
+  }
   console.log(`  SCI band at assembly: ${sciJson.band} (completeness ${sciJson.completeness_pct}% — materials, not pass-odds)`)
 }
 
