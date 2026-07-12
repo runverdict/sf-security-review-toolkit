@@ -37,9 +37,11 @@
  * override that rebinds it to 127.0.0.1, strips every other service's host ports,
  * pins EVERY service to a run-unique toolkit `container_name` (a fixed name in the
  * partner file overrides project naming and collides with a live stack of the same
- * name — the prod-outage root cause), and the whole project runs under the toolkit
- * run-name so teardown-stack can remove it project-scoped). `procfile` is returned as
- * unsupported, honest.
+ * name — the prod-outage root cause), rebinds every build-from-source service that
+ * pins a fixed `image:` tag to a run-unique throwaway image (else `up --build` would
+ * rebuild and OVERWRITE the partner's real image — a pulled image stays untouched),
+ * and the whole project runs under the toolkit run-name so teardown-stack can remove
+ * it project-scoped). `procfile` is returned as unsupported, honest.
  *
  * NEVER-CLEAR-RUNNING (prod-outage fix): a stand-up FAILURE — name conflict, up
  * failure, unhealthy probe — DEGRADES to its honest status (failed/unknown/…) and
@@ -497,21 +499,41 @@ export function planCompose(config, prePlan) {
   // resets above, the rebind exists only in the disposable mirror's generated
   // override; the partner's compose file is never touched.
   const cname = (n) => composeContainerName(prePlan.runId, n)
+  // `image:` on every service that BUILDS FROM SOURCE **and** pins a fixed `image:` tag
+  // in the base file (a `build:` directive next to `image: api:latest`) — the built-image
+  // overwrite risk: under `up --build` compose builds that service and TAGS the result
+  // as the fixed name, silently OVERWRITING the partner's real image on the shared
+  // docker daemon (the same shared-resource mutation class as the container_name
+  // collision above). The override REBINDS such a service to the run-unique throwaway
+  // tag `sf-srt-stack-<runId>-<svc>:throwaway` (cname is already run-id-gated +
+  // SERVICE_OK-validated, and the tag matches teardown's image-name discipline), so
+  // `up --build` builds and tags ONLY the toolkit's own image. Scoped PRECISELY to
+  // build+image services: a build-only service already gets compose's project-scoped
+  // auto-name `<project>-<svc>` (no partner image to clobber), and an image-only
+  // service is a PULLED image (e.g. `postgres:16-alpine`) that `up --build` never
+  // rebuilds — overriding it would break the pull, so it is left exactly as-is. Like
+  // the resets and the container_name rebind, this exists only in the disposable
+  // mirror's generated override; the partner's compose file is never touched.
+  const imageLines = (n) => (services[n] && services[n].build && services[n].image ? [`    image: ${cname(n)}:throwaway`] : [])
   const overrideContent = [
     '# generated loopback override — the throwaway publishes ONLY the web tier, ONLY on',
     '# 127.0.0.1; every other service loses its host ports (services still reach each',
     '# other over the compose network), every service loses its volumes (no host',
-    '# bind mount survives into the scanned throwaway), and every service is pinned to',
+    '# bind mount survives into the scanned throwaway), every service is pinned to',
     '# a run-unique toolkit container_name (a fixed name in the base file overrides',
-    '# project isolation and would collide with a live stack of the same name).',
+    '# project isolation and would collide with a live stack of the same name), and',
+    '# every service that builds from source AND pins a fixed image tag is rebound to',
+    '# a run-unique throwaway image (else `up --build` would overwrite the partner\'s',
+    '# real image; a pulled image — no build — is never rebuilt and stays untouched).',
     'services:',
     `  ${webService}:`,
     '    ports: !override',
     `      - "127.0.0.1:${hostPub}:${targetPort}"`,
     '    volumes: !reset []',
     ...fixLines(webService),
+    ...imageLines(webService),
     `    container_name: ${cname(webService)}`,
-    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []', ...fixLines(n), `    container_name: ${cname(n)}`]),
+    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []', ...fixLines(n), ...imageLines(n), `    container_name: ${cname(n)}`]),
   ].join('\n') + '\n'
   const { needsConfigResolution, ...plan } = prePlan
   // targetPort is the container-side port the executor reads the assigned host port back on
