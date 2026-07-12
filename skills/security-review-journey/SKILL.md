@@ -714,6 +714,21 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    `sf-srt-stack-*` container + tmp tree from a prior crashed run (name-scoped; evidence
    untouched). Label the evidence as **local-throwaway**
    (corroborating + a de-risking dry run), NOT the production-equivalent submission scan.
+   **HARD RULE — never touch anything already running.** The driver NEVER touches,
+   stops, removes, or deletes ANYTHING already running that the toolkit did not itself
+   stand up — not files, not containers, not volumes, not Salesforce orgs. A
+   container-name / port / resource collision with something already running means
+   the toolkit DEGRADES — DAST → PENDING-OWNER-RUN with the honest diagnosis ("a
+   container named X is already running — it may be your live stack; I will NOT touch
+   it") — it NEVER clears the collision by hand. NEVER run `docker rm` / `docker stop`
+   / `docker kill` / `docker compose down` (or `sf org delete`) against a resource the
+   toolkit did not create: diagnosing a failed stand-up is never a licence to
+   improvise a destructive op, and ALL removal goes through the name-anchored teardown
+   engines (`teardown-stack.mjs`, `teardown-org.mjs` — the sweep above included),
+   which refuse non-toolkit names structurally. The rule is general, not
+   docker-specific: the same "improvise a destructive op while diagnosing a failure"
+   mode recurs as `sf org delete` in the deep-audit lane — degrade honestly there too;
+   only `teardown-org.mjs` ever deletes an org.
    **Branch on the stand-up health** (`stack-standup.json.status`, one of
    `up` / `unhealthy` / `redirect-only` / `failed` / `unknown`): on **`up`**, capture +
    run-dast as above; on **`unhealthy`** / **`redirect-only`**, STILL run capture-openapi
