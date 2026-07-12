@@ -361,7 +361,12 @@ const GATE_CATALOG = Object.freeze({
 
   // throwaway-dast — CONSENT to stand up a DISPOSABLE stack and active-scan it. The
   // affirm authorizes the whole isolated lifecycle (stand up → capture OpenAPI →
-  // active scan → tear down); nothing touches the real deployment. Deny → the DAST
+  // active scan → tear down); nothing touches the real deployment. The affirm
+  // description STATES the engine-enforced isolation guarantees (standup-stack /
+  // teardown-stack: run-unique project, container_name rebind, loopback-ephemeral
+  // publish, volumes reset, never-clear-running + name-anchored teardown) so the
+  // operator has the reassurance IN the gate — the exact point where "a live stack is
+  // running on this host" would otherwise read as a reason to decline. Deny → the DAST
   // families fall to PENDING-OWNER-RUN for the owner to run — DAST does not silently vanish.
   'throwaway-dast': Object.freeze({
     consent: true,
@@ -373,7 +378,12 @@ const GATE_CATALOG = Object.freeze({
         label: 'Stand up a throwaway & scan it',
         description:
           'Stand up an ISOLATED throwaway of the app on a loopback port, capture its OpenAPI, run the ' +
-          'active DAST scan against that disposable instance, then tear it down. Nothing touches your real ' +
+          'active DAST scan against that disposable instance, then tear it down. The mirror is fully ' +
+          'isolated even when a live stack is running on this host: it runs under its own run-unique ' +
+          'compose project (sf-srt-stack-<runId>), every container_name is rebound to ' +
+          'sf-srt-stack-<runId>-<svc>, the host publish is loopback-ephemeral, host volume binds are ' +
+          'reset away (volumes !reset), and it never touches a running container it did not create — ' +
+          'teardown is name-anchored to this run’s own resources. Nothing touches your real ' +
           'deployment — the scan only ever hits the throwaway, which is destroyed at cleanup.',
         decision: 'affirm',
       }),

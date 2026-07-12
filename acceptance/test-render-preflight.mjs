@@ -15,6 +15,11 @@
  * PF5  honesty — empty needFromYou → "none"; a missing package-readiness → the honest
  *      "readiness not sensed" power-up, never a fabricated state.
  * PF6  wiring — the journey grants + references the harness, states verbatim + the 4-state.
+ * PF8  collision-aware throwaway-DAST line — stackDetect.liveCollision present → the
+ *      line NAMES the running containers and states the mirror runs FULLY ISOLATED
+ *      (facts rendered from the block, never invented); absent → the pinned base line
+ *      byte-identical; a malformed block (colliding without isolatedBy) falls back to
+ *      the base line rather than fabricate isolation facts.
  *
  * Dependency-free: `node acceptance/test-render-preflight.mjs`.
  */
@@ -131,6 +136,42 @@ check('PF7 (0.8.43) installable+sf-absent → "pending sf install" qualifier; in
   assert.ok(!/pending sf install/.test(b), 'sf-present has no pending qualifier')
   // non-vacuous: the ONLY difference is the sf fact, and the label flips
   assert.notEqual(a, b)
+})
+
+check('PF8 collision-aware throwaway-DAST line: liveCollision → names + FULLY ISOLATED; absent → the base line unchanged', () => {
+  // The pinned base line — byte-identical when no liveCollision rides the stackDetect
+  // facts (the pre-collision-aware rendering, unchanged).
+  const BASE_LINE = '  • Throwaway-DAST — stack is standable and Docker is available: stand up an isolated throwaway, active-scan it, then destroy it? (yes/no)'
+  assert.ok(renderPreflight(FACTS).includes(BASE_LINE), 'no liveCollision → the pinned base line, byte-identical')
+  // WITH a liveCollision block (the stack-detect detectCollision shape — engine facts):
+  const lc = {
+    colliding: ['acme-api', 'acme-db'],
+    isolatedBy: [
+      'run-unique compose project sf-srt-stack-<runId>',
+      'container_name rebind to sf-srt-stack-<runId>-<svc>',
+      'loopback-ephemeral host publish',
+      'volumes !reset (no host binds)',
+      'never-clear-running + name-anchored teardown',
+    ],
+  }
+  const withLc = renderPreflight({ ...FACTS, stackDetect: { ...FACTS.stackDetect, liveCollision: lc } })
+  // MUTATION: dropping the liveCollision surfacing in renderPreflight renders the base
+  // line here instead → every assert below goes red.
+  assert.ok(withLc.includes('Throwaway-DAST — a live stack is running on this host (acme-api, acme-db)'),
+    'the line must NAME the colliding running containers')
+  assert.ok(withLc.includes('but the mirror runs FULLY ISOLATED'), 'the isolation is stated, not implied')
+  assert.ok(withLc.includes('it never touches a running container'), 'the never-touches-running clause is present')
+  // the isolation FACTS render from the block (engine-owned), never invented here
+  for (const fact of lc.isolatedBy) assert.ok(withLc.includes(fact), `isolatedBy fact rendered: ${fact}`)
+  // still an OFFER — the collision is informational, not a block on the power-up
+  assert.ok(withLc.includes('stand up an isolated throwaway, active-scan it, then destroy it? (yes/no)'),
+    'the collision variant still ends in the yes/no offer')
+  assert.ok(!withLc.includes(BASE_LINE), 'the collision variant REPLACES the base line (one throwaway-DAST line, not two)')
+  // fail-safe: a malformed block (colliding but NO isolatedBy) must not fabricate
+  // isolation facts — it falls back to the pinned base line
+  const malformed = renderPreflight({ ...FACTS, stackDetect: { ...FACTS.stackDetect, liveCollision: { colliding: ['acme-api'] } } })
+  assert.ok(malformed.includes(BASE_LINE), 'missing isolatedBy → the base line, never invented facts')
+  assert.ok(!malformed.includes('FULLY ISOLATED'), 'no isolation claim without the engine-supplied facts')
 })
 
 check('PF6 wiring: journey grants + references the harness + verbatim + the 4-state', () => {

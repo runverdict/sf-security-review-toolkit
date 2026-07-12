@@ -23,7 +23,10 @@
  *     baseline,          // baseline-counts.mjs --json
  *     packageReadiness,  // package-readiness.mjs --json   → drives the 4-state power-up
  *     toolDetect,        // tool-detect.mjs --json
- *     stackDetect,       // stack-detect.mjs --json
+ *     stackDetect,       // stack-detect.mjs --json (an optional liveCollision block —
+ *                        //   colliding running names + engine-owned isolatedBy facts —
+ *                        //   switches the throwaway-DAST line to its collision-aware
+ *                        //   variant: live stack named, mirror stated FULLY ISOLATED)
  *     dockerCheck        // docker-check.mjs --json
  *   }
  * Every field is OPTIONAL — a missing detector renders an honest "not detected" line,
@@ -162,7 +165,21 @@ export function renderPreflight(facts) {
   const stackRunnable = sd && sd.status === 'runnable'
   const dockerOk = dc && dc.runnable === true
   if (stackRunnable && dockerOk) {
-    L.push('  • Throwaway-DAST — stack is standable and Docker is available: stand up an isolated throwaway, active-scan it, then destroy it? (yes/no)')
+    // Collision-aware variant (additive): when stack-detect saw a LIVE stack whose fixed
+    // container_names are running on this host RIGHT NOW, the offer must SAY so — and say
+    // the mirror is fully isolated anyway. The scariest situation (live prod up +
+    // "runnable") must be where the report says the most, not the least. Both the
+    // colliding names and the isolation facts render from the engine's liveCollision
+    // block (stack-detect detectCollision + MIRROR_ISOLATION) — never invented here; a
+    // block missing either list falls back to the plain line rather than fabricate.
+    const lc = sd.liveCollision && typeof sd.liveCollision === 'object' ? sd.liveCollision : null
+    const colliding = lc && Array.isArray(lc.colliding) ? lc.colliding.map(oneLine).filter(Boolean) : []
+    const isolatedBy = lc && Array.isArray(lc.isolatedBy) ? lc.isolatedBy.map(oneLine).filter(Boolean) : []
+    if (colliding.length && isolatedBy.length) {
+      L.push(`  • Throwaway-DAST — a live stack is running on this host (${colliding.join(', ')}), but the mirror runs FULLY ISOLATED (${isolatedBy.join('; ')}; it never touches a running container) — stand up an isolated throwaway, active-scan it, then destroy it? (yes/no)`)
+    } else {
+      L.push('  • Throwaway-DAST — stack is standable and Docker is available: stand up an isolated throwaway, active-scan it, then destroy it? (yes/no)')
+    }
   } else if (sd && sd.status !== 'n/a') {
     const why = !dockerOk ? 'Docker unavailable' : `stack ${sd.status}`
     L.push(`  • Throwaway-DAST — not offered (${why}); DAST stays owner-run (you scan your own staging, which the submission requires regardless)`)

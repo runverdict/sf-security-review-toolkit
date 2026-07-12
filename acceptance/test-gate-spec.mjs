@@ -125,6 +125,27 @@ check('G2 golden snapshot: throwaway-dast (live-op consent) — {affirm, force-i
   assert.match(byLabel['Skip — no throwaway, no active scan'].description, /PENDING-OWNER-RUN/)
 })
 
+check('G2d throwaway-dast affirm description states the mirror-isolation facts IN the gate', () => {
+  // The operator decides AT this gate — with a live stack running on the host, the
+  // reassurance must be in the option text itself, not in a doc somewhere. The affirm
+  // description states the engine-enforced guarantees (standup-stack/teardown-stack):
+  // distinct run-unique project + container_name rebind + loopback publish + volumes
+  // reset + never-touches-running/name-anchored teardown.
+  // MUTATION: reverting the description to the pre-collision-aware wording reds each
+  // isolation-fact assert below.
+  const p = gateOptions('throwaway-dast', {})
+  const desc = p.options.find((o) => o.decision === 'affirm').description
+  assert.match(desc, /fully\s+isolated even when a live stack is running on this host/i, 'the live-stack case is addressed head-on')
+  assert.match(desc, /run-unique\s+compose project \(sf-srt-stack-<runId>\)/, 'the distinct project guarantee is stated')
+  assert.match(desc, /container_name is rebound to\s+sf-srt-stack-<runId>-<svc>/, 'the container_name rebind guarantee is stated')
+  assert.match(desc, /loopback-ephemeral/, 'the loopback publish guarantee is stated')
+  assert.match(desc, /volumes !reset/, 'the volumes-reset (no host binds) guarantee is stated')
+  assert.match(desc, /never\s+touches a running container it did not create/, 'the never-touches-running guarantee is stated')
+  assert.match(desc, /name-anchored/, 'the name-anchored teardown guarantee is stated')
+  // and the pre-existing verbatim promise survives unchanged (G2 pins it too)
+  assert.match(desc, /Nothing touches your real\s+deployment/)
+})
+
 check('G2 the live-instance-dast gate is RETIRED: not in the catalog, not renderable — throwaway-dast is the ONLY DAST consent', () => {
   // The "scan an already-running instance" consent is GONE from the catalog: no gate exists
   // that could even OFFER active-scanning a pre-existing instance (someone could unknowingly

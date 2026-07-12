@@ -51,9 +51,20 @@
  *   D4  CLI: a dev compose targeting a stage absent from its Dockerfile →
  *       recipe.buildTargetFixes names the service + the valid final stage; a valid
  *       target → no fixes; a missing Dockerfile → a diagnosis, not a fix
+ *   L1  detectCollision pure: match → {colliding, isolatedBy: the FIXED engine-owned
+ *       guarantees}; no match / empty / null inputs → null (fail-safe)
+ *   L2  composeFixedContainerNames pure: literal names per service; interpolated
+ *       (${…}) skipped — not a fixed name; none declared → []
+ *   L3  CLI (hermetic docker stub on PATH): a running container matching the compose
+ *       fixed container_name → liveCollision emitted, status STILL runnable
+ *       (informational, never a block); non-matching running names → no collision
+ *   L4  CLI fail-safe: docker ABSENT from PATH, or `docker ps` ERRORING → NO
+ *       liveCollision, no crash, status still classifies
  *
  * The pure composeWebTier is tested directly (hermetic); A1 drives the CLI to pin the
- * gatherRecipe → classifyStack threading. Dependency-free: `node acceptance/test-stack-detect.mjs`.
+ * gatherRecipe → classifyStack threading. The L3/L4 CLI runs control the child PATH
+ * (a stub `docker`, or none) so they stay hermetic on any host — including one with a
+ * real live stack running. Dependency-free: `node acceptance/test-stack-detect.mjs`.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -65,6 +76,7 @@ import {
   classifyEnvName, classifyStack, composeWebTier, composeWebTierImage, detectMigration, resolvePythonRun,
   composeServiceNames, composeDefaultedVars, composeConcreteAssigned, composeEnvFiles, svcBuild,
   dockerfileStages, composeBuildTargets, validateBuildTargets,
+  composeFixedContainerNames, detectCollision, MIRROR_ISOLATION,
 } from '../harness/stack-detect.mjs'
 
 const DETECT = fileURLToPath(new URL('../harness/stack-detect.mjs', import.meta.url))
@@ -74,6 +86,11 @@ const check = (name, fn) => { try { fn(); pass++; console.log(`  ✓ ${name}`) }
 const mkrepo = () => { const d = realpathSync(mkdtempSync(join(tmpdir(), 'srt-stackd-'))); dirs.push(d); return d }
 const w = (root, rel, body) => { const p = join(root, rel); mkdirSync(join(p, '..'), { recursive: true }); writeFileSync(p, body) }
 const cli = (target) => JSON.parse(execFileSync('node', [DETECT, '--target', target, '--json'], { encoding: 'utf8' }))
+// The hermetic-PATH variant for the live-collision checks: the child sees ONLY the given
+// PATH (a stub-docker dir, or an empty dir = docker absent), and node is invoked by its
+// absolute path so the restricted PATH cannot break the CLI itself.
+const cliEnv = (target, pathDir) => JSON.parse(execFileSync(process.execPath, [DETECT, '--target', target, '--json'],
+  { encoding: 'utf8', env: { ...process.env, PATH: pathDir } }))
 
 console.log('stack-detect standing test')
 
@@ -815,6 +832,110 @@ check('D4 CLI: a compose service targeting a stage absent from its Dockerfile �
   assert.equal(out3.recipe.buildTargetDiagnoses.length, 1)
   assert.equal(out3.recipe.buildTargetDiagnoses[0].service, 'api')
   assert.match(out3.recipe.buildTargetDiagnoses[0].reason, /missing or unreadable/)
+})
+
+// ── LIVE COLLISION (collision-aware detect): the mirror is fully isolated from a live
+//    stack whose fixed container_names match (run-unique project/names/ports/volumes,
+//    never-clear-running) — but `runnable` alone never SAID so. The detector must make
+//    the collision + the isolation visible, and the docker-ps read must be fail-safe. ──
+
+// The five engine-owned isolation guarantees, pinned VERBATIM: the preflight/gate
+// surfacing renders exactly these — a reworded guarantee is drift, not a variant.
+const ISOLATED_BY = [
+  'run-unique compose project sf-srt-stack-<runId>',
+  'container_name rebind to sf-srt-stack-<runId>-<svc>',
+  'loopback-ephemeral host publish',
+  'volumes !reset (no host binds)',
+  'never-clear-running + name-anchored teardown',
+]
+
+// A self-contained compose whose api service declares a FIXED container_name (the
+// collision surface) — NEUTRAL fixture names, no real partner's. The worker's
+// interpolated container_name is deliberately NOT a fixed name (varies by env).
+const FIXED_NAME_COMPOSE = [
+  'services:',
+  '  api:',
+  '    build: ./api',
+  '    container_name: acme-api',
+  '    ports:',
+  '      - "8000:8000"',
+  '    environment:',
+  '      SESSION_SECRET: ${SESSION_SECRET:-dev}',
+  '  worker:',
+  '    build: ./api',
+  '    container_name: ${WORKER_NAME:-acme-worker}',
+  '',
+].join('\n')
+
+check('L1 detectCollision: match → {colliding, isolatedBy}; no match / empty / null inputs → null (fail-safe)', () => {
+  // MUTATION: dropping the collision emit (returning null on a match) reds these
+  const hit = detectCollision(['acme-worker', 'acme-api'], ['acme-api', 'acme-worker', 'unrelated'])
+  assert.deepEqual(hit.colliding, ['acme-api', 'acme-worker'], 'colliding is sorted + deterministic')
+  assert.deepEqual(hit.isolatedBy, ISOLATED_BY, 'isolatedBy is the FIXED engine-owned guarantee list')
+  assert.deepEqual([...MIRROR_ISOLATION], ISOLATED_BY, 'MIRROR_ISOLATION is the pinned source of the list')
+  assert.ok(Object.isFrozen(MIRROR_ISOLATION), 'the guarantee list is frozen (engine-owned)')
+  // partial overlap → only the names actually RUNNING
+  assert.deepEqual(detectCollision(['acme-api', 'acme-db'], ['acme-db']).colliding, ['acme-db'])
+  // fail-safe nulls: no match; empty either side; null running (= docker ps failed); junk
+  assert.equal(detectCollision(['acme-api'], ['other-svc']), null)
+  assert.equal(detectCollision([], ['acme-api']), null)
+  assert.equal(detectCollision(['acme-api'], []), null)
+  assert.equal(detectCollision(['acme-api'], null), null)
+  assert.equal(detectCollision(null, ['acme-api']), null)
+  assert.equal(detectCollision(undefined, undefined), null)
+})
+
+check('L2 composeFixedContainerNames: literal names per service; interpolated skipped; none → []', () => {
+  // the interpolated ${WORKER_NAME:-acme-worker} is NOT a fixed name → only acme-api
+  assert.deepEqual(composeFixedContainerNames(FIXED_NAME_COMPOSE), ['acme-api'])
+  const multi = ['services:',
+    '  api:', '    container_name: acme-api',
+    '  db:', '    image: postgres:16', '    container_name: "acme-db"', ''].join('\n')
+  assert.deepEqual(composeFixedContainerNames(multi), ['acme-api', 'acme-db'])
+  // no container_name directives → [] (and the CLI then never invokes docker at all)
+  assert.deepEqual(composeFixedContainerNames(SELF_CONTAINED_COMPOSE), [])
+  assert.deepEqual(composeFixedContainerNames(''), [])
+})
+
+check('L3 CLI (stub docker): a running container matching the fixed container_name → liveCollision, status STILL runnable', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', FIXED_NAME_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  // hermetic stub: `docker ps` reports a running acme-api (+ unrelated noise)
+  const bin = mkrepo()
+  writeFileSync(join(bin, 'docker'), '#!/bin/sh\n[ "$1" = "ps" ] && printf "acme-api\\nunrelated-svc\\n"\nexit 0\n', { mode: 0o755 })
+  const out = cliEnv(r, bin)
+  // MUTATION: dropping the liveCollision emit (gatherFacts wiring OR the classifyStack
+  // ...live spread) reds the liveCollision asserts below while status stays green
+  assert.equal(out.status, 'runnable', out.reason) // INFORMATIONAL — the collision never blocks
+  assert.ok(out.liveCollision, 'liveCollision must surface on the classified output: ' + JSON.stringify(out.liveCollision))
+  assert.deepEqual(out.liveCollision.colliding, ['acme-api'])
+  assert.deepEqual(out.liveCollision.isolatedBy, ISOLATED_BY, 'the fixed isolation facts ride the output')
+  // two-sided: running containers that do NOT match the fixed names → no collision key
+  const bin2 = mkrepo()
+  writeFileSync(join(bin2, 'docker'), '#!/bin/sh\n[ "$1" = "ps" ] && printf "other-a\\nother-b\\n"\nexit 0\n', { mode: 0o755 })
+  const out2 = cliEnv(r, bin2)
+  assert.equal(out2.status, 'runnable', out2.reason)
+  assert.equal(out2.liveCollision, undefined, 'non-matching running names must emit NO collision')
+})
+
+check('L4 CLI fail-safe: docker ABSENT or `docker ps` ERRORING → NO liveCollision, no crash, status still classifies', () => {
+  const r = mkrepo()
+  w(r, 'docker-compose.yml', FIXED_NAME_COMPOSE)
+  w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
+  w(r, 'api/main.py', 'app = 1\n')
+  // docker ABSENT: the child PATH holds only an empty dir → spawning `docker` ENOENTs
+  const empty = mkrepo()
+  const absent = cliEnv(r, empty)
+  assert.equal(absent.status, 'runnable', absent.reason)
+  assert.equal(absent.liveCollision, undefined, 'no docker → no collision claim, never a crash or block')
+  // docker ERRORING (daemon-down shape: exit 1, no output) → the same fail-safe null
+  const bin = mkrepo()
+  writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const erroring = cliEnv(r, bin)
+  assert.equal(erroring.status, 'runnable', erroring.reason)
+  assert.equal(erroring.liveCollision, undefined, 'an erroring docker ps → no collision claim')
 })
 
 for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }) } catch {} }
