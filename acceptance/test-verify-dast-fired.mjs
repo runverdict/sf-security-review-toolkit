@@ -2,7 +2,7 @@
 /*
  * test-verify-dast-fired.mjs — the DAST-fired tag gate (harness/verify-dast-fired.mjs).
  *
- * The FIRE itself needs live docker (a stood-up throwaway or a rung-1 instance), so it
+ * The FIRE itself needs live docker (a stood-up disposable throwaway mirror), so it
  * cannot run in CI. What IS hermetic — and what this pins — is the PREDICATE + the CLI's
  * exit code: a real fire (scanKind ≠ not-run + a zap-throwaway-local-*.json report on
  * disk) → fired / exit 0; every degrade / absence → not-fired / exit 2 (fail closed).

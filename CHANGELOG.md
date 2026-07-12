@@ -51,6 +51,61 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.119] — 2026-07-12
+
+**A MIRROR-SAFETY doctrine makes the autonomous run provably harmless to a partner's real stack:
+active DAST and OpenAPI capture may ONLY ever touch a disposable throwaway the toolkit itself built
+and destroys — the rung-1 "scan the already-running instance" path is RETIRED, not merely
+de-preferred, and both engines now REFUSE an explicit `--base-url`. When the mirror can't build,
+the toolkit fixes the mirror's disposable copy (never the partner's code), logs every fix to a
+partner-facing artifact, and degrades DAST to PENDING-OWNER-RUN — it never falls back to scanning
+production. Two cold-run adjuncts ride along: the submission assembler auto-redacts scanner-evidence
+copies (a scanner's own report was tripping the credential-refusal backstop), and version
+reconciliation only emits its released-package quirk note on a fully-corroborated signal.**
+
+### Changed (mirror-safety — DAST & capture are throwaway-ONLY)
+- `harness/run-dast.mjs`, `harness/capture-openapi.mjs` — both now REFUSE an explicit `--base-url`
+  (exit 3 with a mirror-only diagnosis); DAST/capture resolve their target ONLY from a
+  toolkit-built standup (`--from-standup`). A real instance also lives on loopback, so loopback
+  alone was never a safe fence — the fence is now provenance (the toolkit built this target), not
+  the address. `run-dast`'s consent is hardcoded to `throwaway-dast`.
+- `harness/gate-spec.mjs` — the `live-instance-dast` gate is DELETED; `throwaway-dast` is the only
+  DAST consent that exists to name or record. Zero references remain outside retirement guards.
+- `harness/stack-detect.mjs` + `harness/standup-stack.mjs` (mirror build-robustness) —
+  `dockerfileStages` / `composeBuildTargets` / `validateBuildTargets` detect a compose `build.target`
+  that names no real Dockerfile stage and compute the final-stage fix; `planCompose` injects the
+  corrected `build.target` into the OVERRIDE (never the partner's compose) and `writeMirrorFixes`
+  logs each fix to a partner-facing artifact (the defect + the fix-your-real-repo note + proof the
+  real source was untouched). "Get the mirror working at all costs" — on the disposable copy only.
+- `harness/verify-dast-fired.mjs` — the FAIL stdout no longer points at a rung-1 already-running
+  instance; it directs the operator to stand up the disposable throwaway mirror and re-run
+  `run-dast --from-standup`, restating that DAST only ever scans a toolkit-built mirror.
+
+### Added
+- `harness/assemble-submission-package.mjs` — scanner-evidence copies are AUTO-REDACTED at the copy
+  seam (`isScannerEvidenceCopy` + `EVIDENCE_REDACTORS`): a scanner's own report (e.g. a Bandit JSON
+  under `evidence/`) is credential-like by construction, and the pre-copy refusal scan was blocking
+  on it. Scanner evidence is redacted-then-copied; the refusal backstop still fires for any
+  non-evidence credential-like content.
+- `harness/sf-autoresolve.mjs` — `reconcileReleasedSignals` emits the released-package quirk note
+  ONLY when every signal corroborates (`isReleased === true` AND a concrete `04t` version id AND an
+  empty released-list `{status:0, result:[]}`); every partial/ambiguous case fails closed to no note.
+
+### Changed (skills rewired to mirror-only)
+- `skills/{run-scans,security-review-journey,compile-submission}/SKILL.md` — the rung-1
+  "scan/capture the already-running instance" section is RETIRED; the fires-path ladder is
+  mirror-only end-to-end (`--from-standup`), the journey's running-instance capture fallback is
+  gone, and the pip-audit invocation is corrected to the positional `pip-audit <server-root>` form
+  (the `--project-path` flag it used does not exist).
+
+### Tests
+- Retirement + refusal guards across `test-run-dast` (refuses `--base-url`; no `live-instance-dast`
+  to name), `test-capture-openapi` (mirror-only), `test-gate-spec` (gate deleted),
+  `test-run-scans-fires-path` (F7 rung-1 RETIRED + F8 journey pin, F1/F2/F7 rewritten mirror-only);
+  mirror build-robustness in `test-stack-detect` + `test-standup-stack` (build-target fix + artifact);
+  `test-assemble-submission-package` (scanner-evidence redaction); `test-sf-autoresolve`
+  (reconcile fail-closed). Suite **85 files / 1306 checks / 0 failed** (+14 checks over 0.8.118).
+
 ## [0.8.118] — 2026-07-11
 
 **Four cold-run "moat" fixes make the autonomous run rescue-free end-to-end for an

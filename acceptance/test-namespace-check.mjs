@@ -40,17 +40,17 @@ check('N1 classifyNamespace: devhub / namespace matrix', () => {
   const noNs = classifyNamespace({ pkgNamespace: '', authedNamespaces: [], hasDevHub: true })
   assert.equal(noNs.buildable, true)
   // namespace registered (an authed org carries it) → buildable
-  const reg = classifyNamespace({ pkgNamespace: 'verdict', authedNamespaces: ['verdict'], hasDevHub: true })
+  const reg = classifyNamespace({ pkgNamespace: 'beacon', authedNamespaces: ['beacon'], hasDevHub: true })
   assert.equal(reg.buildable, true)
   assert.match(reg.reason, /registered/)
   // namespace NOT carried by any authed org → NOT confirmed (the Atlas-fixture case)
-  const unreg = classifyNamespace({ pkgNamespace: 'atlas', authedNamespaces: ['verdict'], hasDevHub: true })
+  const unreg = classifyNamespace({ pkgNamespace: 'atlas', authedNamespaces: ['beacon'], hasDevHub: true })
   assert.equal(unreg.buildable, false)
   assert.equal(unreg.namespace, 'atlas')
 })
 
 check('N2 conservative posture: unconfirmed ≠ false "impossible"', () => {
-  const unreg = classifyNamespace({ pkgNamespace: 'atlas', authedNamespaces: ['verdict'], hasDevHub: true })
+  const unreg = classifyNamespace({ pkgNamespace: 'atlas', authedNamespaces: ['beacon'], hasDevHub: true })
   assert.equal(unreg.buildable, false)
   assert.match(unreg.reason, /NOT confirmed|register|link/i)   // names the prerequisite
   assert.doesNotMatch(unreg.reason, /\bimpossible\b/i)          // never claims impossible (can't read the registry)

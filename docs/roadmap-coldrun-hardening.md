@@ -219,12 +219,17 @@ and pushed:
   ambiguity (Name/Alias unique keys win; NamespacePrefix only when unique — never first-match); loud
   degrade names the roster; `scope-submission` threads `--package-name` from `package-readiness`'s
   `.package`. Live-verified against a real hub. Tests A13/A14/A15.
-- ✅ **0.8.111 — DAST rung 1 gets an honest consent (`live-instance-dast`).** `run-dast` verified
-  `throwaway-dast` even for an explicit `--base-url` at a LIVE stack — a consent that promises
-  "nothing touches your real deployment." New `live-instance-dast` gate selected by `resolveBaseUrl`
-  source (`explicit` → live-instance, `standup` → throwaway); loopback re-asserted before consent.
-  **This makes DAST FIRE against an already-running instance — the cheapest rung, and the literal
-  tag gate.**
+- ⛔ **0.8.111 — DAST rung 1 gets an honest consent (`live-instance-dast`).** _(RETIRED at 0.8.119
+  — see the MIRROR-SAFETY doctrine below.)_ `run-dast` verified `throwaway-dast` even for an
+  explicit `--base-url` at a LIVE stack — a consent that promises "nothing touches your real
+  deployment." A new `live-instance-dast` gate was selected by `resolveBaseUrl` source (`explicit` →
+  live-instance, `standup` → throwaway). **This let DAST fire against an already-running instance.**
+  **SUPERSEDED:** the toolkit runs autonomously against arbitrary partners' real products, where the
+  bar for touching a live stack is ZERO risk, not "low." At **0.8.119** the `live-instance-dast`
+  gate was DELETED, `run-dast`/`capture-openapi` now REFUSE an explicit `--base-url`, and DAST is
+  throwaway-MIRROR-only (a real instance also lives on loopback, so loopback was never a safe fence
+  — the fence is provenance: the toolkit built this target). The literal tag gate is a throwaway
+  fire, never a live-instance one.
 - ✅ **0.8.112 — band-noise auto-disposition (honest headline by default).** The raw band was ~85%
   scanner noise (3 critical / 121 high) until a human hand-adjudicated to 1 critical / 34 high. New
   `harness/seed-auto-dispositions.mjs` emits `disposition_source:'heuristic'` OVERRIDABLE priors into

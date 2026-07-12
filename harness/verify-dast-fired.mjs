@@ -14,7 +14,7 @@
  * directory.
  *
  * This gate CANNOT be fully hermetic — the fire itself needs live docker + a stood-up
- * throwaway (or a rung-1 already-running instance), which CI does not have. So the
+ * disposable throwaway MIRROR the toolkit built, which CI does not have. So the
  * PREDICATE (`dastFired`) is pure + tested, and this CLI is the live cold-run runbook
  * step: exit 0 (fired) with a one-line confirmation, exit 2 (not fired / unverifiable —
  * FAIL CLOSED) with a loud reason. A gate that cannot confirm a fire never passes.
@@ -80,8 +80,9 @@ function main() {
     process.stderr.write(
       `verify-dast-fired: FAIL — ${r.reason}.\n` +
       '  The 0.9.0 tag gate requires a real DAST fire (a zap-throwaway-local-*.json report + honest\n' +
-      '  provenance, scanKind ≠ not-run). Stand up the throwaway (or point run-dast at a rung-1\n' +
-      '  already-running instance) and re-run run-dast, then re-check.\n'
+      '  provenance, scanKind ≠ not-run). Stand up the disposable throwaway mirror and re-run\n' +
+      '  run-dast --from-standup, then re-check — DAST only ever scans a mirror the toolkit built,\n' +
+      '  never a pre-existing/running instance.\n'
     )
   }
   if (!r.fired) process.exitCode = 2
