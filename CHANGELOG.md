@@ -51,6 +51,49 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.126] — 2026-07-12
+
+**Makes the DAST-on-the-live-host path work as designed — run the throwaway mirror in place, next to
+a live stack, with no separate box — by closing the three things that made a driver auto-decline it.
+The isolation was already complete (0.8.124/0.8.125); this makes it self-authoritative, visible, and
+gap-free: the toolkit stops deferring to stale host memory, the preflight SHOWS the mirror is isolated
+even when a live stack collides, and the last shared-resource edge (a built image getting overwritten)
+is closed.**
+
+### Changed (doctrine — the toolkit is self-authoritative)
+- `skills/security-review-journey/SKILL.md` + `skills/run-scans/SKILL.md` — the toolkit's live
+  engine output, gates, and on-disk `.security-review/` artifacts are the SOLE source of truth;
+  prior host/session MEMORY is untrusted and may be stale (it can describe behavior since fixed in
+  code), so it NEVER overrides a live engine decision or pre-empts a gate. The driver must NOT WRITE
+  host-session operational memories about the toolkit (a defect is fixed in code + the CHANGELOG, not
+  a memory that silently contaminates future runs). And NEVER auto-decide a gate: every consent gate
+  is surfaced LIVE; a memory/standing-instruction is context raised INSIDE the gate, never a
+  unilateral decision (forbidding by name the exact incident where a driver auto-declined
+  `throwaway-dast` from a stale memory).
+
+### Added (visibility)
+- `harness/stack-detect.mjs` — a fail-safe live-collision check: when the compose's fixed
+  `container_name`s match containers running right now (`docker ps`), it emits an INFORMATIONAL
+  `liveCollision` block (the colliding names + a frozen `isolatedBy` list: run-unique project,
+  container_name rebind, loopback-ephemeral publish, `volumes !reset`, never-clear-running +
+  name-anchored teardown). `status` stays `runnable` — a collision never blocks. The `docker ps` read
+  is `try/catch`+timeout guarded and only runs when there's a collision surface, so a docker-less host
+  never crashes or blocks. `render-preflight` surfaces it ("a live stack is running, but the mirror
+  runs FULLY ISOLATED and never touches a running container"), and the `throwaway-dast` gate option
+  bakes in the isolation facts — turning an auto-deny into an informed yes at the decision point.
+
+### Fixed (the last isolation edge)
+- `harness/standup-stack.mjs` — `planCompose` now templates a run-unique
+  `image: sf-srt-stack-<runId>-<svc>:throwaway` for any service that BOTH builds from source AND
+  carries a fixed `image:` tag, so `up --build` can never overwrite a partner's real built image
+  (`app:latest`). Scoped precisely: build-only services are auto-named by Compose, and a pulled image
+  (`postgres:16-alpine`, no `build`) is left untouched.
+
+### Tests
+- `test-run-scans-fires-path` (F10–F13 doctrine guards), `test-stack-detect` (L1–L4 collision +
+  fail-safe), `test-render-preflight` (PF8), `test-gate-spec` (G2d), `test-standup-stack` (U32 image
+  override). Suite **88 files / 1377 checks / 0 failed** (+11 over 0.8.125).
+
 ## [0.8.125] — 2026-07-12
 
 **Closes the last uninterrupted-run gap: the 0.8.122 permission-set was Bash-only, so the journey's
