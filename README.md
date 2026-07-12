@@ -140,7 +140,13 @@ Then just say **"run the security review."** You never run the `harness/*.mjs` f
 The journey is **read-only on your source** — finders and verifiers only read
 code; the writes are the toolkit's own state (`.security-review/`), generated
 artifacts (`docs/security-review/`), and the consent-gated exceptions disclosed
-above. Two ways to cut the per-step permission prompts for an autonomous run:
+above. **The easiest path: let the toolkit set it up for you.** On the first run in a repo, the
+journey's preflight offers a one-time, owner-authorized gate to write the exact read-only allowlist
+it needs into `.claude/settings.local.json` (nothing destructive — installs, org ops, and live
+probes still prompt and stay consent-gated); restart once and every later run goes uninterrupted in
+default mode, with no auto mode and none of its safety-classifier false positives. It asks exactly
+once and never touches any setting but `permissions.allow`. If you'd rather do it by hand, two ways
+to cut the per-step permission prompts for an autonomous run:
 
 - **Recommended read-only allowlist.** Drop this into the target repo's
   `.claude/settings.json`. It pre-approves only non-destructive commands —
@@ -335,7 +341,7 @@ The methodology and harness were extracted from real multi-pass audits of a prod
 
 ## Maturity & what's in the box
 
-**14 skills · 19 audit dimensions · 8 scan families · up to 16 consent-installed OSS scanners + Code Analyzer + 5 zero-install Salesforce-metadata scanners · an 18-adapter deterministic findings band · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (1,300+ checks across 86 files)** that fails the build if a refactor breaks an enforced gate or its determinism.
+**14 skills · 19 audit dimensions · 8 scan families · up to 16 consent-installed OSS scanners + Code Analyzer + 5 zero-install Salesforce-metadata scanners · an 18-adapter deterministic findings band · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (1,300+ checks across 87 files)** that fails the build if a refactor breaks an enforced gate or its determinism.
 
 Honest beta (see the top of this README). See [`CHANGELOG.md`](CHANGELOG.md) for the current version and release notes. Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
 

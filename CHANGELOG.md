@@ -51,6 +51,41 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.122] — 2026-07-12
+
+**A self-skipping first gate sets the repo up to run the review UNINTERRUPTED in Claude Code's
+DEFAULT mode — no auto mode, so none of the auto-mode safety classifier's "could not evaluate"
+false-positive blocks. It automates (as one gated, owner-authorized step) the manual `permissions.allow`
+setup the README already documents: preflight checks whether the toolkit's read-only command surface
+is already allow-listed → if yes, silent; if no, offers ONCE to write it to `.claude/settings.local.json`.
+Asks exactly once, ever.**
+
+### Added
+- `harness/emit-permission-set.mjs` — a pure-predicate + fail-closed CLI (modeled on
+  `verify-dast-fired`) that emits a CURATED, reviewed `permissions.allow` set — the toolkit's
+  READ-ONLY + deterministic-ENGINE surface (git/file reads, read-only `sf`, and all
+  `node *harness/<engine>.mjs` calls — which the README's own hand-written allowlist OMITS, so a
+  by-the-book user still got prompted on every engine call). The EXECUTORS (install-scanners,
+  standup/teardown, run-dast, capture-*, write-drafted-content) and all broad/destructive prefixes
+  are DELIBERATELY EXCLUDED — they keep prompting, still governed by their own recorded-consent
+  gates. `--check` reports whether the set is already present (0/2, for the preflight self-skip);
+  `--apply` is consent-fail-closed AND CODE-ENFORCES a hard boundary — `assertOnlyAllowGrew` permits
+  ONLY appends of curated strings to `permissions.allow` and asserts every other settings key is
+  byte-identical, aborting (exit 2, writing nothing) otherwise. Writes a partner-facing
+  `.security-review/autorun-permissions.md` (what was added + that installs/org-ops/probes still ask
+  + how to remove it).
+- `harness/gate-spec.mjs` — a frozen `autorun-permissions` consent gate (affirm + force-injected
+  decline); no existing gate touched.
+- `skills/security-review-journey/SKILL.md` — Step-0 wiring: an atomic `--check`, then the gate
+  only when unsatisfied (a recorded decision permanently silences the re-ask), and restart guidance
+  on apply.
+
+### Tests
+- `acceptance/test-emit-permission-set.mjs` (new file) — the curated set (no executors, no blanket),
+  the predicates, the consent fail-close, the non-clobbering merge, and the allow-only boundary
+  (12 tamper cases proving no non-`permissions.allow` key can ever be written). Suite **87 files /
+  1344 checks / 0 failed** (+1 file, +25 checks over 0.8.121).
+
 ## [0.8.121] — 2026-07-12
 
 **Auto-mode legibility: the driver is told to invoke harness commands ATOMICALLY (one command per
