@@ -154,8 +154,9 @@ export function renderScopeSummary(manifest) {
   }
   L.push('')
 
-  // ── endpoints (the environment label is load-bearing: an unlabeled production URL becomes a
-  // production DAST scan three phases later, so a missing environment renders LOUDLY) ──
+  // ── endpoints (the environment label is load-bearing PROVENANCE: the DAST only ever hits the
+  // disposable loopback mirror — run-dast refuses any non-loopback target — but an unlabeled
+  // endpoint muddies every artifact that cites it, so a missing environment renders LOUDLY) ──
   const eps = Array.isArray(manifest.endpoints)
     ? manifest.endpoints.filter((e) => e && typeof e === 'object')
     : []
@@ -167,7 +168,7 @@ export function renderScopeSummary(manifest) {
     L.push('|---|---|---|')
     for (const e of eps) {
       // Trim BEFORE the truthiness test so a whitespace-only environment is flagged as loudly as an
-      // absent one (a silent blank is exactly how an unlabeled prod URL becomes a prod DAST scan).
+      // absent one (a silent blank is exactly how an endpoint's provenance goes unlabeled into evidence).
       const envRaw = typeof e.environment === 'string' ? e.environment.trim() : e.environment
       const env = envRaw ? cell(envRaw) : '⚠ UNLABELED — must label'
       const role = e.role ? cell(e.role) : '(not recorded)'

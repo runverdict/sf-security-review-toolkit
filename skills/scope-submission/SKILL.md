@@ -40,6 +40,17 @@ elements, get the requirement list those elements imply.
 
 ## Steps
 
+**AUTO-MODE LEGIBILITY (an operating rule for every step below).** Claude Code
+auto mode runs a safety classifier that FAILS CLOSED on compound or opaque
+shell it "could not evaluate". When inspecting files or repos, PREFER the
+dedicated Read / Grep / Glob tools over compound shell — `cd X && grep …`
+chains, `cat` pipelines, inline `node -e "…"`, and `python3 - <<PY` heredocs
+are exactly the forms the classifier cannot evaluate and blocks. And run each
+prescribed harness command (`gate-spec.mjs`, `record-consent.mjs`, the
+renders) as its OWN atomic Bash call: one command per call, never `&&`-chained,
+never batched in a `for`-loop. Atomic invocations evaluate cleanly; compound
+ones get denied mid-run and read to the operator as a broken toolkit.
+
 1. **Check baseline currency.** Read the baseline; if the newest `last_verified`
    is older than 90 days, warn before doing anything else (CONVENTIONS §4 — the
    review process changed three times in eighteen months).
@@ -172,11 +183,14 @@ elements, get the requirement list those elements imply.
 3. **Probe the live MCP server — after confirming which environment you are
    pointing at.** Ask the operator for the URL *and* whether it is staging or
    production; never probe a URL whose environment you haven't confirmed, and
-   never probe production silently. The handshake itself is read-only, but the
-   endpoints recorded here become the DAST target list in
-   `/sf-security-review-toolkit:run-scans` — a production URL recorded without
-   an environment label becomes a production DAST scan three phases later.
-   Label every endpoint.
+   never probe production silently. The handshake itself is read-only, and the
+   endpoints recorded here become the paths the DAST in
+   `/sf-security-review-toolkit:run-scans` exercises on the disposable loopback
+   mirror the toolkit stands up — never on this host (`run-dast.mjs` refuses
+   any explicit or non-loopback target outright, exit 3). The environment label
+   is evidence provenance, not a scan-target decision: an unlabeled endpoint
+   renders LOUDLY in the scope summary and muddies every artifact that cites
+   it. Label every endpoint.
 
    **Confirm the URL + environment through the `mcp-probe` CONSENT gate before any
    probe — and record the decision.** Probing a live URL is a real outbound action,

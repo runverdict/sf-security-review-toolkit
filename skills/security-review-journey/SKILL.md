@@ -72,6 +72,18 @@ five seconds, not after a forty-agent audit. **Even a full-auto run does this
 first** — there is no point burning a 40-agent audit if a required input is
 missing or a key piece of the architecture was misread.
 
+**AUTO-MODE LEGIBILITY — an operating rule for every step in this skill.**
+Claude Code auto mode runs a safety classifier that FAILS CLOSED on compound
+or opaque shell it "could not evaluate": `cd X && cmd1 && cmd2` chains,
+batched `for …; do …; done` loops, inline `node -e "…"`, and `python3 - <<PY`
+heredocs all get DENIED mid-run, while atomic single-purpose commands and the
+dedicated tools evaluate cleanly. So: when inspecting files or repos, PREFER
+the dedicated Read / Grep / Glob tools over compound shell; and run every
+prescribed harness command as its OWN atomic Bash call —
+`node …/harness/X.mjs --flags`, one command per call, never `&&`-chained,
+never looped, never inlined. A denied call reads to the operator as a broken
+toolkit; atomic invocations are what keep the run legible to the classifier.
+
 1. **Check baseline currency.** Do NOT hand-roll the date sort (a naive `sort | tail`
    lets a `null`/malformed token sort ahead of a real date and misreports a fresh
    baseline as stale — a cold-run driver tripped on exactly this). Run the deterministic
@@ -184,6 +196,11 @@ missing or a key piece of the architecture was misread.
    Docker is a documented prerequisite, NOT something the toolkit tmp-installs — unlike the
    userland scanners, it's a privileged daemon needing root-level setup, so the honest move
    is to GUIDE the install, never auto-provision it.
+
+   **Run these four detectors as FOUR separate atomic Bash calls.** "The same
+   pass" means the same preflight stage, never one `&&`-chained compound
+   command or a `for`-looped batch — a batched detector chain is exactly what
+   auto mode's classifier denies (the AUTO-MODE LEGIBILITY rule above).
 
 5. **Classify every needed input into exactly one tier, and per applicable
    dimension assign GREEN/YELLOW/RED audit-readiness.** The classification rule
@@ -332,6 +349,20 @@ missing or a key piece of the architecture was misread.
    the options; the driver only pipes the chosen option's `decision` token to
    `record-consent`). This kills the run-to-run drift a cold campaign caught (the
    same depth gate offered a different option set each run).**
+
+   **ATOMIC INVOCATIONS — one gate = one Bash call. NEVER batch the recordings.**
+   Every `record-consent.mjs` call below (and every `gate-spec.mjs` render) is
+   its OWN separate Bash tool call. NEVER chain two recordings with `&&`, NEVER
+   wrap them in a `cd <dir> && T=… && call1 && call2` compound, NEVER emit them
+   from a `for`-loop or heredoc. Claude Code auto mode's safety classifier FAILS
+   CLOSED on compound/opaque commands it "could not evaluate" — a live cold run
+   had six recordings batched into one `&&`-chain DENIED outright, while the
+   SAME six recorded one-per-Bash-call all passed. Batching consolidates the
+   SCREENS (how many times the operator is asked); the recordings themselves
+   stay atomic — one `node …/record-consent.mjs` per Bash call, every time. The
+   same rule holds for every multi-step harness sequence this skill prescribes
+   (the Step 0 detectors, the install/standup/capture/run engine chains):
+   separate atomic calls, in order, never one compound command.
 
    - **SCREEN 1 — Run-mode + tier** — render BOTH gates in ONE `AskUserQuestion` call
      (its `questions` array carries both):
