@@ -299,6 +299,13 @@ families PENDING until a re-audit.
    band + machine triage — what feeds the ledger) AND this HTML (the submission
    format — what gets uploaded). HTML alone is not enough; the engine-explicit
    form is what makes CRUD/FLS deterministic.
+   **Scan-error coverage mandate — a failure is never a pass.** After every Code
+   Analyzer run, check the run output (stderr + the report) for a PMD
+   `ParseException` / per-file scan-error: a file that errored was NOT scanned, and
+   its 0 violations are an artifact of the failure, not a clean result. When one is
+   present, record it as a **COVERAGE NOTE** naming the file and the error — the file
+   surfaces as un-scanned in the scan status, never credited as clean — and where
+   feasible fix the parse blocker and re-run so the file is actually covered.
    *Agent runs:* install check, scan, JSON parsing, diffing findings against
    the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
    confirmation of every FP justification.
@@ -378,52 +385,34 @@ families PENDING until a re-audit.
    executes the scan against production — OR the toolkit runs it against a
    throwaway.**
 
-   **THE FIRES-PATH LADDER — DAST must FIRE regardless of app size (0.8.109).** The
-   throwaway DAST is a flagship feature, not a nice-to-have: it must land real evidence
-   in the common case, degrading only when every rung genuinely fails. A real cold run's
-   throwaway DAST did NOT fire — the standup got a port and then the api **image build**
-   lost the last cores to the audit fan-out (resource contention, NOT a broken build:
-   the same Dockerfile builds fine standalone in ~240s, and the sandbox is not
-   network-blocked). Try the rungs IN ORDER; drop to the next only when the current one
-   is unavailable:
-   1. **Already-running loopback instance — ZERO build, ZERO stand-up.** If your app
-      is already reachable on `127.0.0.1:<port>`, prefer
-      `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --base-url http://127.0.0.1:<port> --target <repo> --consent`.
-      Explicit `--base-url` ALWAYS wins in the engine (`run-dast.mjs` `resolveBaseUrl`,
-      source `explicit`) — it fires even when the stand-up pointer is torn-down, because
-      a live app needs neither. This is the cheapest, most size-independent rung and the
-      first thing to reach for; the engine re-asserts loopback on the explicit URL, so it
-      can still only ever hit a local (loopback) address.
+   **THE FIRES-PATH LADDER — DAST must FIRE regardless of app size, and it is
+   MIRROR-ONLY.** The throwaway DAST is a flagship feature, not a nice-to-have: it must
+   land real evidence in the common case, degrading only when every rung genuinely fails.
+   A real cold run's throwaway DAST did NOT fire — the standup got a port and then the
+   api **image build** lost the last cores to the audit fan-out (resource contention,
+   NOT a broken build: the same Dockerfile builds fine standalone in ~240s, and the
+   sandbox is not network-blocked).
 
-      *Its own consent gate — `live-instance-dast`, NOT `throwaway-dast`.* This rung
-      active-scans YOUR OWN running app and the real data behind it, not an isolated
-      disposable mirror, so it carries a DISTINCT consent gate: `live-instance-dast`
-      (record it with `record-consent.mjs --gate live-instance-dast --decision affirm`).
-      run-dast picks that gate automatically from the resolved source (`explicit` →
-      `live-instance-dast`; a stood-up throwaway → `throwaway-dast`) and fails closed
-      without the matching recorded token. The throwaway's consent must never stand in
-      for it: `throwaway-dast`'s affirmative promises the scan touches only a disposable
-      throwaway — the OPPOSITE of scanning a live instance — so reusing it here would
-      mislabel what the operator agreed to.
-
-      *Detect-and-offer, never auto-scan.* When `stack-detect` has scored a web tier,
-      probe `127.0.0.1:<detected webPort>` (a single connect / HTTP HEAD is enough); if
-      something answers, OFFER the live-instance scan as the cheapest rung, behind its own
-      `live-instance-dast` consent, and wait for the operator to confirm. **CRITICAL:
-      never auto-chain probe → scan — a probe that finds a listener requires a FRESH
-      affirmative before any scan runs.** An arbitrary loopback port may be an UNRELATED
-      service (another project's dev server, a local database admin UI); run-dast
-      re-asserts loopback but does NOT verify the responder is the app you intend to scan,
-      and an active scan hits the operator's REAL data. A found listener is a reason to
-      ASK, not permission to scan — detect, offer, and record the explicit
-      `live-instance-dast` go-ahead every time.
-   2. **Prebuilt-image compose — no source build.** `stack-detect` PREFERS a
+   **MIRROR-ONLY, no exceptions.** DAST and the OpenAPI capture only ever hit a
+   DISPOSABLE THROWAWAY MIRROR the toolkit itself builds and destroys — `run-dast.mjs`
+   and `capture-openapi.mjs` take `--from-standup` (the stand-up pointer) and nothing
+   else; both engines REFUSE an explicit `--base-url` outright (exit 3), before any
+   consent is even looked up. The toolkit will NEVER scan or capture a pre-existing /
+   already-running instance: a listener that is already up could be a partner's REAL
+   product with REAL data behind it, and **loopback is NOT a sufficient safeguard — a
+   real instance is also on loopback**. There is no consent that unlocks a
+   running-instance scan; the ONLY DAST consent is `throwaway-dast`, whose affirmative
+   promises the scan touches only the disposable mirror the toolkit built. Do not offer,
+   suggest, or accept a running-instance scan under any framing — the engines refuse it
+   and so must the driver. Try the rungs IN ORDER; drop to the next only when the
+   current one is unavailable:
+   1. **Prebuilt-image compose — no source build.** `stack-detect` PREFERS a
       `docker-compose.prod.yml` / `*.prod.yml` whose web/api tier ships an `image:` (not a
       `build:`) over the build-from-source dev compose, recording
       `recipe.buildsFromSource:false`. Standing that up pulls/uses the prebuilt image
       instead of compiling from source — no heavy build competes with anything. This is
       automatic in recipe selection; nothing to pass.
-   3. **Build from source (the current path) — but SERIALIZED, never concurrent with the
+   2. **Build from source — but SERIALIZED, never concurrent with the
       audit fan-out.** When only a build-from-source recipe exists, the throwaway
       stand-up/build MUST run **BEFORE or AFTER the audit fan-out, never DURING it** — the
       cold-run failure was the heavy image build competing with the fan-out for the last
@@ -432,12 +421,32 @@ families PENDING until a re-audit.
       flag: do not kick off the throwaway build while an audit fan-out is saturating the
       box. On a journey run, stand the throwaway up in the live/conditional tail (after the
       audit), or explicitly ahead of it — just not overlapping.
-   4. **Honest-degrade — the genuine LAST resort, not the expected outcome.** Only when all
-      three rungs fail: write the evidence-of-absence stub
-      (`run-dast.mjs --absent --reason <why>`), tear the stack down cleanly, and hand the
-      owner the ZAP plan to run themselves. Keep this branch exactly as-is; it is the floor,
-      not the target. The tag gate is met by DAST **firing** in the common case — fire
-      first, degrade last.
+   3. **GET THE MIRROR WORKING AT ALL COSTS — fix the MIRROR's disposable copy, never
+      the partner's real files.** When the mirror build fails on a partner-repo defect
+      (the proven case: a compose `build.target` naming a stage its Dockerfile does not
+      declare — `docker compose build` dies "target stage not found"), the toolkit's
+      answer is to repair the THROWAWAY, not to give up and not to reach for something
+      already running. `stack-detect` diagnoses the defect and `standup-stack` applies
+      the fix inside the disposable mirror ONLY — a generated compose override (or a
+      copied-source patch) that lives OUTSIDE the repository and dies with the mirror —
+      and logs the partner-facing `.security-review/mirror-fixes.md`: (a) the DEFECT,
+      (b) what the MIRROR did, with proof the real code was untouched (the override
+      lives outside the repo; no compose file, Dockerfile, or source file in the
+      partner's repository was modified), and (c) the "fix this in your real repo"
+      guidance. The partner's real compose files, Dockerfiles, and source are NEVER
+      edited. A defect with no honest override is logged as a diagnosis and the
+      stand-up degrades with its real failure status — never a silent
+      build-into-failure, and never a fabricated fix.
+   4. **Honest-degrade — the genuine LAST resort, not the expected outcome.** Only when
+      the mirror genuinely cannot be built (every rung above failed): write the
+      evidence-of-absence stub (`run-dast.mjs --absent --reason <why>`), tear the stack
+      down cleanly, and hand the owner the ZAP plan plus the honest diagnosis (the
+      `mirror-fixes.md` diagnosis names what blocked the build) — DAST and the OpenAPI
+      capture DEGRADE to **PENDING-OWNER-RUN**. NEVER a running-instance scan: a mirror
+      that will not build is a reason to hand the owner the plan, not permission to
+      point the scanner at something already listening. Keep this branch exactly as-is;
+      it is the floor, not the target. The tag gate is met by DAST **firing** in the
+      common case — fire first, degrade last.
 
    *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
    was given, the toolkit stands the backend up as a disposable mirror and runs a
@@ -454,8 +463,9 @@ families PENDING until a re-audit.
    tag-gate DAST-fired check `node ${CLAUDE_PLUGIN_ROOT}/harness/verify-dast-fired.mjs --target
    <repo>` confirms a real fire actually LANDED — a `zap-throwaway-local-*.json` report AND an
    honest `dast-provenance.json` (`scanKind ≠ not-run`, i.e. not the `--absent` degrade stub):
-   exit 0 = fired, exit 2 = degraded/absent (re-run run-dast against the throwaway, or point it at
-   a rung-1 already-running instance). The 0.9.0 cold-run tag gate requires that exit 0. *Requires (the
+   exit 0 = fired, exit 2 = degraded/absent (re-run run-dast against the toolkit-built mirror —
+   re-stand it up if it was torn down; the fire only ever comes from the mirror). The 0.9.0
+   cold-run tag gate requires that exit 0. *Requires (the
    submission scan):* partner-run DAST of every external
    endpoint with an industry tool — there is no hosted alternative (baseline:
    `dast-self-run-required`); the scan must be **authenticated** (baseline:
@@ -822,7 +832,7 @@ families PENDING until a re-audit.
 
    ```bash
    pip-audit -r <server-root>/requirements.txt -f json -o evidence/pip-audit-<date>.json   # requirements
-   pip-audit --project-path <server-root> -f json -o evidence/pip-audit-<date>.json         # pyproject
+   pip-audit <server-root> -f json -o evidence/pip-audit-<date>.json                        # pyproject (positional path; the installed pip-audit REJECTS a --project-path flag)
    ```
 
    `pip-audit` is a **first-class INSTALLED scanner**: it rides the consented tmp

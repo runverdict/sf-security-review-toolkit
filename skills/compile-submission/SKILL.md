@@ -101,6 +101,17 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
    slot, the dead link, the parse failure) — they demote to PARTIAL or TODO,
    never squeak through as HAVE.
 
+   **OpenAPI-capture ordering — refresh a code-derived `api-endpoints-spec` when the
+   mirror capture postdates it.** On a journey run the api-endpoints artifact is
+   drafted in the artifacts phase, BEFORE the live-tail mirror capture lands
+   `evidence/openapi-<date>.json` — so a first run's draft is code-derived even
+   though the captured spec now exists. During this inventory, when a captured
+   `openapi-*.json` (with its mirror-provenance sidecar) is newer than the drafted
+   `docs/security-review/api-endpoints-spec.md`, re-draft/refresh the wrapper from
+   the captured spec (re-run `generate-artifacts` step 9c against the capture) before
+   classifying the row — never ship the stale code-derived draft when the
+   mirror-captured evidence is already on disk.
+
 3. **Run the open-findings gate.** From the audit ledger:
    - `confirmed` at critical/high, open: **any value > 0 blocks the
      compile's READY verdict** (audit-methodology §4). The only override is

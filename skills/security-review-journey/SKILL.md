@@ -607,18 +607,19 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    falls back to owner-run.)
    `node ${CLAUDE_PLUGIN_ROOT}/harness/standup-stack.mjs --consent --target <target> --json`
    (isolated container, synthetic secrets, manifest of created resources) →
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/capture-openapi.mjs --consent --base-url <baseUrl
-   from standup> --target <target>` (while the mirror is up: a read-only GET of the
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/capture-openapi.mjs --consent --from-standup
+   --target <target>` (while the mirror is up: a read-only GET of the
    framework's own spec — `/openapi.json` first — lands the REAL api-endpoints spec in
    `evidence/openapi-<date>.json` with a container-isolated-mirror provenance sidecar;
    prod-equivalence stays PENDING owner attestation. **NO new consent** — it rides on the
    recorded `throwaway-dast` token that stood the mirror up and verifies that token exactly
-   as `run-dast` does; the capture refuses any non-loopback URL. On `not-exposed` /
+   as `run-dast` does; the capture resolves the mirror URL from the stand-up pointer and
+   REFUSES an explicit `--base-url` (exit 3) — it only ever reads the toolkit-built mirror.
+   On `not-exposed` /
    declined consent, nothing is captured and the api-endpoints artifact stays code-derived —
    unchanged behavior) →
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --base-url <baseUrl from
-   standup> --target <target> --health <stack-standup.json status> --scored-port <scannedPort>
-   --service <scannedService> [--guarded] [--migration <tool>]` (digest-pinned ZAP → real
+   `node ${CLAUDE_PLUGIN_ROOT}/harness/run-dast.mjs --consent --from-standup
+   --target <target> [--guarded] [--migration <tool>]` (digest-pinned ZAP → real
    evidence under `evidence/dast/`; run-dast reads the manifest's health/tier flags, prefixes
    the alert counts with a **DEGRADED** line when the stand-up was not verified `up` or the
    scanned port is not the detected web tier, and stamps a machine-readable
@@ -643,27 +644,18 @@ pass the detected-state summary forward so no phase re-detects from scratch.
    <target>` (writes a `not-run` `dast-provenance.json` so `compile-submission` renders an
    explicit "corroboration not attempted", never a silent gap) and emitting the ZAP plan into
    `PENDING-OWNER-RUN.md` (on `unknown` the detected web tier may be wrong — hint `--port`).
-   Teardown ALWAYS runs, on every branch. (Robustness: instead of hand-copying the
-   `baseUrl`/health/tier from the manifest, run-dast + capture-openapi accept `--from-standup`,
-   which resolves them from the gitignored `stack-standup.json` pointer through ONE shared
-   resolver — it re-asserts loopback, gates on `{up, unhealthy}`, and refuses a torn-down,
-   swept-stale, or foreign pointer. An explicit `--base-url` always wins.)
-   **Rung-1 capture fallback (the mirror never stood up, but the app is already running):**
-   when the stand-up landed on `failed`/`unknown` (or Docker is unavailable) and the operator
-   ALREADY has the app running on a loopback host:port, capture-openapi can still land the
-   real framework spec with ZERO build and ZERO stand-up — the same rung-1 primitive
-   run-dast's fires-path ladder uses. It carries the DISTINCT recorded `live-instance-dast`
-   consent (the same gate run-dast's rung 1 verifies; the recorded `throwaway-dast` token
-   never stands in for it — capture-openapi selects the gate from the resolved source,
-   `explicit` → `live-instance-dast`, exactly as run-dast does, and fails closed without the
-   matching token). Detect-and-offer, never auto-capture: a listener on a loopback port is a
-   reason to ASK, not permission to read — record the affirmative first via
-   `record-consent.mjs --gate live-instance-dast`, then run
-   `node ${CLAUDE_PLUGIN_ROOT}/harness/capture-openapi.mjs --consent --base-url
-   http://127.0.0.1:<port> --target <target>` (read-only GET; loopback is re-asserted on the
-   explicit URL; the provenance sidecar names the already-running instance — NO
-   mirror/synthetic-secrets claim — and prod-equivalence stays PENDING owner attestation; on
-   `not-exposed` the api-endpoints artifact stays code-derived, unchanged behavior).
+   Teardown ALWAYS runs, on every branch. (`--from-standup` is the ONLY input form:
+   run-dast + capture-openapi resolve the `baseUrl`/health/tier from the gitignored
+   `stack-standup.json` pointer through ONE shared resolver — it re-asserts loopback,
+   gates on `{up, unhealthy}`, and refuses a torn-down, swept-stale, or foreign pointer.
+   Both engines REFUSE an explicit `--base-url` outright, exit 3: they never scan or read
+   a pre-existing/running instance — that could be a partner's real product, and loopback
+   alone is not a sufficient guard, since a real instance is also on loopback.)
+   **No running-instance fallback:** when the mirror never stood up (`failed`/`unknown`,
+   or Docker is unavailable), capture + DAST DEGRADE to PENDING-OWNER-RUN with the honest
+   diagnosis (`mirror-fixes.md` names any build defect the mirror could not work around);
+   the api-endpoints artifact stays code-derived. There is no path that points either
+   engine at something already running.
    If `stack-detect` = `needs-secrets`, do the scaffold-and-guide loop first — and **thread
    ONE run-id through scaffold-env → standup → teardown** so the filled secret stub lives in
    the SAME tmp dir the teardown destroys (a different run-id would orphan the filled stub):
