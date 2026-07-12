@@ -51,6 +51,47 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.124] — 2026-07-12
+
+**SAFETY-CRITICAL. Fixes the toolkit gap behind a production-outage incident: on a host running the
+partner's live stack, the throwaway-DAST stand-up collided on `container_name` and the autonomous
+driver — diagnosing the failure — cleared the colliding containers, briefly taking the live stack
+down. Two root causes, both closed: (1) the disposable mirror's compose override never rebound
+`container_name`, so a hard-coded name (which overrides Compose's project isolation) collided with a
+running stack of the same name; (2) the driver was permitted to react to a failure by clearing
+running resources. Extends the mirror-safety doctrine: the toolkit never touches, stops, removes, or
+deletes ANYTHING already running that it did not itself create — files, containers, volumes, or
+Salesforce orgs; a collision DEGRADES, it never clears.**
+
+### Fixed
+- `harness/standup-stack.mjs` — `planCompose`'s loopback override now pins a **run-unique,
+  toolkit-namespaced `container_name`** (`sf-srt-stack-<runId>-<service>`) on every service, replacing
+  any hard-coded name from the base compose. The disposable mirror's containers can no longer collide
+  with — or be mistaken for — a live container of the same name (the exact outage trigger). Parallel
+  to the existing `ports: !override` / `volumes: !reset []` isolation; the partner's compose is never
+  touched; a missing/unsafe `runId` refuses rather than templating an unsafe name. The compose
+  project was already run-scoped (`-p sf-srt-stack-<runId>`); a test now pins that on the `up` argv.
+- `harness/standup-stack.mjs` — the stand-up removes the pre-create `docker rm -f` stale-clear: a
+  name conflict / failed `up` / unhealthy probe now DEGRADES to `failed` with an honest diagnosis
+  ("a container named X is already running — it may be your live stack; I will NOT touch it") and
+  removes NOTHING. The only surviving destructive commands are the SIGINT/crash safety nets, and
+  every one now passes `assertRunScopedRemoval` — it throws on any target that isn't exactly this
+  run's own `sf-srt-stack-<runId>` container/project, so the outage command can never be issued.
+  `teardown-stack.mjs` (already correctly name-anchored) is untouched.
+
+### Changed
+- `skills/run-scans/SKILL.md` + `skills/security-review-journey/SKILL.md` — a hard rule bounds
+  "get the mirror working at all costs" to the disposable copy ONLY: the driver never touches,
+  stops, removes, or deletes anything already running it didn't create (containers, volumes, or
+  `sf` orgs — the same failure mode recurs as `sf org delete` in the deep-audit lane); a collision
+  degrades to PENDING-OWNER-RUN, and all teardown goes through the name-anchored engines.
+
+### Tests
+- `test-standup-stack.mjs` (U28–U31, S1–S3 stub-docker executor tests: the rebind, the runId refuse,
+  the run-scoped-removal guard, and a name-conflict `up` → `failed` + honest diagnosis + ZERO
+  destructive commands in the argv log) + `test-run-scans-fires-path.mjs` (F9 prose guard). Suite
+  **88 files / 1363 checks / 0 failed** (+8 over 0.8.123).
+
 ## [0.8.123] — 2026-07-12
 
 **Architecture detection in the PREFLIGHT is now deterministic, not a driver hand-grep — closing two
