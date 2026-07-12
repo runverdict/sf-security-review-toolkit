@@ -204,6 +204,7 @@ check('G4 force-injection: the decline is present on EVERY consent gate, even wh
     'scope-confirm': {},
     'throwaway-dast': {},
     'sf-deep-audit-ops': {},
+    'autorun-permissions': {},
   }
   for (const [gate, spec] of Object.entries(GATE_CATALOG)) {
     if (!spec.consent) continue

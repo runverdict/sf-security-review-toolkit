@@ -417,6 +417,39 @@ const GATE_CATALOG = Object.freeze({
       decision: 'deny',
     }),
   }),
+
+  // autorun-permissions — the SELF-SKIPPING preflight setup CONSENT (asked once, ever): write
+  // the toolkit's curated READ-ONLY command allowlist into the target repo's
+  // `.claude/settings.local.json` so the review runs uninterrupted in Claude Code's DEFAULT
+  // mode. The write itself is `emit-permission-set.mjs --apply`, which verifies THIS gate's
+  // recorded token (fail closed) and is code-bounded to appending `permissions.allow` entries
+  // only — it aborts rather than touch any other settings key. The preflight renders this gate
+  // ONLY when the check reports the set absent AND the gate was never answered; a recorded
+  // answer (either way) means it is never asked again.
+  'autorun-permissions': Object.freeze({
+    consent: true,
+    kind: 'consent',
+    header: 'Uninterrupted run',
+    question: 'Set this repo up to run the review uninterrupted?',
+    base: Object.freeze([
+      Object.freeze({
+        label: 'Write the read-only allowlist',
+        description:
+          'Write the read-only command allowlist this review needs into .claude/settings.local.json ' +
+          '(nothing destructive — installs, org ops, and live probes still ask and stay consent-gated); ' +
+          'restart Claude Code to activate it. The engine appends permissions.allow entries only and ' +
+          'aborts rather than change any other settings key.',
+        decision: 'affirm',
+      }),
+    ]),
+    safeDefault: Object.freeze({
+      label: "Skip — I'll approve prompts as they come",
+      description:
+        'Write nothing. The run proceeds normally with each command prompting for approval as it comes; ' +
+        'this recorded answer means the setup offer is not asked again.',
+      decision: 'deny',
+    }),
+  }),
 })
 
 // The SIX partner-program preflight sub-gates (scope-submission step 5 / baseline
@@ -647,6 +680,10 @@ export function gateOptions(gateId, facts = {}) {
     // The live-op consents — a single static affirm in `base`; the decline is
     // FORCE-INJECTED from safeDefault by the consent-gate block below.
     options = spec.base.map(pickOption)
+  } else if (gateId === 'autorun-permissions') {
+    // The one-time preflight setup consent — a single static affirm in `base`;
+    // the decline is FORCE-INJECTED from safeDefault by the consent-gate block below.
+    options = spec.base.map(pickOption)
   } else {
     // A catalog entry exists but has no selector branch — a build error, fail closed.
     throw new Error(`gate-spec: gate '${gateId}' is registered but has no selector branch`)
@@ -692,6 +729,7 @@ const LOAD_CHECK_FACTS = Object.freeze({
   'tenancy': [{}],
   'throwaway-dast': [{}],
   'sf-deep-audit-ops': [{}],
+  'autorun-permissions': [{}],
 })
 
 /** Self-check the FROZEN catalog at module load: every static option well-formed + every gate
