@@ -34,9 +34,22 @@
  * run-name so teardown removes it), and `compose` (multi-container — docker's OWN
  * parser resolves the file [`docker compose config --format json`; the harness bundles
  * no YAML lib], the PURE `planCompose` picks the web tier and templates a loopback
- * override that rebinds it to 127.0.0.1 and strips every other service's host ports,
- * and the whole project runs under the toolkit run-name so teardown-stack can remove
- * it project-scoped). `procfile` is returned as unsupported, honest.
+ * override that rebinds it to 127.0.0.1, strips every other service's host ports,
+ * pins EVERY service to a run-unique toolkit `container_name` (a fixed name in the
+ * partner file overrides project naming and collides with a live stack of the same
+ * name — the prod-outage root cause), and the whole project runs under the toolkit
+ * run-name so teardown-stack can remove it project-scoped). `procfile` is returned as
+ * unsupported, honest.
+ *
+ * NEVER-CLEAR-RUNNING (prod-outage fix): a stand-up FAILURE — name conflict, up
+ * failure, unhealthy probe — DEGRADES to its honest status (failed/unknown/…) and
+ * leaves EVERY pre-existing resource untouched: the executor issues NO destructive
+ * docker command as a failure reaction (no rm/stop/kill/down, ever — a collision with
+ * something already running may be a partner's LIVE stack). The only destructive argv
+ * in this file are the crash safety nets for THIS process's own synchronous window,
+ * and each must pass `assertRunScopedRemoval` (anchored to this run's own
+ * `sf-srt-stack-<runId>` names) before it executes. All real teardown is the
+ * SEPARATE, name-anchored teardown-stack.mjs.
  *
  * MIRROR FIXES: when stack-detect diagnosed a broken compose `build.target` (a stage
  * the Dockerfile does not declare — `docker compose build` dies "target stage not
@@ -203,6 +216,60 @@ export function stackNames(runId) {
 }
 
 /**
+ * PURE. The run-unique `container_name` the loopback override pins on EVERY compose
+ * service (prod-outage fix): toolkit-prefixed + run-scoped, so the disposable mirror
+ * can never collide with — or be mistaken for — a pre-existing container, and
+ * teardown-stack's NAME_OK gate already recognizes the form. Both parts are validated
+ * (RUN_ID_OK / SERVICE_OK are subsets of docker's legal container-name grammar
+ * `[a-zA-Z0-9][a-zA-Z0-9_.-]*`), so this never returns an unsafe or
+ * structure-injecting name — it throws instead.
+ */
+export function composeContainerName(runId, svc) {
+  if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`standup-stack: invalid run-id '${runId}' for a container name`)
+  if (!SERVICE_OK.test(String(svc || ''))) throw new Error(`standup-stack: unsafe service name '${svc}' for a container name`)
+  return `${NAME_PREFIX}-${runId}-${svc}`
+}
+
+/**
+ * PURE guard (prod-outage fix): the stand-up NEVER clears a pre-existing resource — a
+ * name conflict / failed `up` / unhealthy probe DEGRADES and removes NOTHING; teardown
+ * is the SEPARATE, name-anchored teardown-stack.mjs. The only destructive docker argv
+ * this executor may ever issue are its crash safety nets (a SIGINT/SIGTERM/fatal
+ * between create and teardown must not orphan a secret-bearing container), and EVERY
+ * such argv passes through this assertion first: a single-container `rm` may name only
+ * THIS run's own container (`sf-srt-stack-<runId>`), and a compose `down` may target
+ * only THIS run's own project (`-p sf-srt-stack-<runId>`). Anything else — a partner's
+ * fixed-name container, another run's resources, an unsanctioned verb
+ * (stop/kill/rmi/…) — throws instead of executing, so the "clear whatever is in the
+ * way" op that once took down a live production stack is structurally unreachable
+ * from this file.
+ */
+export function assertRunScopedRemoval(args, runId) {
+  if (!RUN_ID_OK.test(String(runId || ''))) throw new Error(`standup-stack: invalid run-id '${runId}' — refusing any destructive docker command`)
+  const base = `${NAME_PREFIX}-${runId}`
+  const a = (Array.isArray(args) ? args : []).map(String)
+  const rmNames = a[0] === 'rm' ? a.slice(1).filter((x) => !x.startsWith('-')) : []
+  const ok = (a[0] === 'rm' && rmNames.length > 0 && rmNames.every((n) => n === base))
+    || (a[0] === 'compose' && a.includes('down') && a.indexOf('-p') >= 0 && a[a.indexOf('-p') + 1] === base)
+  if (!ok) throw new Error(`standup-stack: refusing destructive docker command 'docker ${a.join(' ')}' — the stand-up may only ever remove THIS run's own '${base}' resources (its crash safety net); a pre-existing container is NEVER cleared, and all teardown goes through the name-anchored teardown-stack.mjs`)
+  return a
+}
+
+/**
+ * PURE. Classify a failed `docker create`/`docker compose up` stderr → the honest
+ * name-conflict diagnosis, or null. Same posture as safeComposeConfigError: ONLY the
+ * known-safe structural shape is surfaced, and only the container NAME (the capture is
+ * constrained to docker's own name grammar — no secret-bearing stderr tail can ride
+ * along). The message is the degrade-not-clear doctrine verbatim: the conflicting
+ * container may be a LIVE stack; the toolkit will not stop or remove it.
+ */
+export function safeDockerNameConflictError(stderr) {
+  const m = String(stderr || '').match(/container name "?\/?([A-Za-z0-9][A-Za-z0-9_.-]*)"? is already in use/i)
+  if (!m) return null
+  return `a container named '${m[1]}' already exists and may be a live stack — the toolkit will NOT stop or remove it (degrade, never clear); a toolkit-run leftover is removed only by the separate name-anchored teardown (teardown-stack.mjs --run-id <id> / --sweep)`
+}
+
+/**
  * PURE. From a stack-detect result, compute the throwaway stand-up spec.
  * Deterministic given (stack, runId, tmpRoot, port). Throws on an unrunnable stack.
  */
@@ -351,6 +418,11 @@ export function planCompose(config, prePlan) {
   const svcNames = Object.keys(services)
   const port = Number(prePlan.port)
   const refuse = (reason) => ({ schema: prePlan.schema, runId: prePlan.runId, unsupported: 'compose', reason })
+  // run-id gate FIRST: it lands verbatim in every templated `container_name:` below, so
+  // a missing or unsafe one is REFUSED, never templated (the SERVICE_OK posture —
+  // refuse, don't escape). RUN_ID_OK is a subset of docker's legal container-name
+  // grammar, so a passing id can never produce an illegal or structure-injecting name.
+  if (!RUN_ID_OK.test(String(prePlan.runId || ''))) return refuse(`missing or unsafe run-id '${prePlan.runId}' — refusing to template run-unique container names into the loopback override`)
   const badNames = svcNames.filter((n) => !SERVICE_OK.test(n))
   if (badNames.length) return refuse(`unsafe compose service name(s) '${badNames.join("', '")}' — refusing to template the loopback override`)
   // network_mode guard: a service sharing the host's (or another container's) network
@@ -412,18 +484,34 @@ export function planCompose(config, prePlan) {
   // HONESTLY (failed/unknown status) rather than silently mounting the operator's real
   // credentials: the deliberate security-over-convenience tradeoff. Named data volumes are
   // dropped harmlessly (the throwaway is disposable by definition).
+  // `container_name:` on EVERY service (web tier included) — the prod-outage root
+  // cause: a FIXED `container_name` in the partner's compose OVERRIDES Docker
+  // Compose's project-based naming, so the "isolated" mirror's containers would carry
+  // the SAME names as the partner's LIVE stack — the mirror can never stand up on a
+  // host already running that stack (create-time name conflict), and a mirror
+  // container becomes indistinguishable from a live one to anything "cleaning up"
+  // (the exact chain that took a production stack down). The override REBINDS every
+  // service to the run-unique toolkit name `sf-srt-stack-<runId>-<svc>`
+  // (composeContainerName — teardown-stack's NAME_OK gate already recognizes it), so
+  // the mirror can never collide with, or be mistaken for, a live container. Like the
+  // resets above, the rebind exists only in the disposable mirror's generated
+  // override; the partner's compose file is never touched.
+  const cname = (n) => composeContainerName(prePlan.runId, n)
   const overrideContent = [
     '# generated loopback override — the throwaway publishes ONLY the web tier, ONLY on',
     '# 127.0.0.1; every other service loses its host ports (services still reach each',
-    '# other over the compose network), and every service loses its volumes (no host',
-    '# bind mount survives into the scanned throwaway).',
+    '# other over the compose network), every service loses its volumes (no host',
+    '# bind mount survives into the scanned throwaway), and every service is pinned to',
+    '# a run-unique toolkit container_name (a fixed name in the base file overrides',
+    '# project isolation and would collide with a live stack of the same name).',
     'services:',
     `  ${webService}:`,
     '    ports: !override',
     `      - "127.0.0.1:${hostPub}:${targetPort}"`,
     '    volumes: !reset []',
     ...fixLines(webService),
-    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []', ...fixLines(n)]),
+    `    container_name: ${cname(webService)}`,
+    ...others.flatMap((n) => [`  ${n}:`, '    ports: !reset []', '    volumes: !reset []', ...fixLines(n), `    container_name: ${cname(n)}`]),
   ].join('\n') + '\n'
   const { needsConfigResolution, ...plan } = prePlan
   // targetPort is the container-side port the executor reads the assigned host port back on
@@ -687,8 +775,10 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
 
   // Best-effort teardown safety net for THIS process's synchronous window: a SIGINT/SIGTERM/
   // fatal between create and teardown must not leave a secret-bearing container up (audit:
-  // guaranteed teardown). teardown-stack remains the authoritative removal.
-  const cleanup = () => { try { execFileSync('docker', ['rm', '-f', plan.container], { stdio: 'ignore' }) } catch {} }
+  // guaranteed teardown). teardown-stack remains the authoritative removal. The argv passes
+  // the run-scope guard FIRST — this net may remove ONLY this run's own container, never
+  // anything pre-existing (prod-outage fix).
+  const cleanup = () => { try { execFileSync('docker', assertRunScopedRemoval(['rm', '-f', plan.container], plan.runId), { stdio: 'ignore' }) } catch {} }
   const handlers = {
     SIGINT: () => { cleanup(); process.exit(130) },
     SIGTERM: () => { cleanup(); process.exit(143) },
@@ -700,7 +790,12 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
   // as planned (hostPort == webPort), so a create/start crash still writes a coherent stub.
   let live = plan
   try {
-    quiet('docker', ['rm', '-f', plan.container]) // clear any stale same-name container
+    // NO pre-create "clear the way" (prod-outage fix): the executor NEVER removes a
+    // pre-existing container, not even one carrying this run's own name — a create-time
+    // name conflict degrades to `failed` with the honest conflict diagnosis below, and
+    // stale toolkit residue is removed only by the SEPARATE name-anchored teardown
+    // (teardown-stack.mjs --run-id <id> / --sweep, which the driver runs at the START of
+    // a throwaway-DAST run).
     if (plan.kind === 'dockerfile') {
       // BUILD-THEN-RUN: the partner's own Dockerfile brings the source + base image.
       run('docker', ['build', '-t', plan.image, '-f', plan.dockerfilePath, plan.buildContext])
@@ -728,8 +823,13 @@ export function standupStack(plan, { consent = false, target, createdAt, timeout
     const h = pollHealth(live.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
     rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
   } catch (e) {
+    // DEGRADE, never clear (prod-outage fix): a failed docker step — a name conflict
+    // included — removes NOTHING; only the known-safe conflict NAME is surfaced (the
+    // honest "I will not touch it" diagnosis), never the rest of stderr.
     rec.status = 'failed'
     rec.log = 'stand-up failed during a docker step (the toolkit does not capture container output, to avoid persisting secrets)'
+    const conflict = safeDockerNameConflictError(e && e.stderr)
+    if (conflict) rec.log += `; ${conflict}`
   } finally {
     for (const [s, h] of Object.entries(handlers)) process.removeListener(s, h)
   }
@@ -804,8 +904,10 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
   writeManifest(full, rec, target)
 
   // Same synchronous-window safety net as the single-container path — the project-scoped
-  // `down` removes every project resource; teardown-stack remains authoritative.
-  const cleanup = () => { try { execFileSync('docker', [...composeArgs, 'down', '-v', '--remove-orphans'], { stdio: 'ignore' }) } catch {} }
+  // `down` removes every project resource; teardown-stack remains authoritative. The argv
+  // passes the run-scope guard FIRST: this net may `down` ONLY this run's own
+  // `-p sf-srt-stack-<runId>` project, never anything pre-existing (prod-outage fix).
+  const cleanup = () => { try { execFileSync('docker', assertRunScopedRemoval([...composeArgs, 'down', '-v', '--remove-orphans'], plan.runId), { stdio: 'ignore' }) } catch {} }
   const handlers = {
     SIGINT: () => { cleanup(); process.exit(130) },
     SIGTERM: () => { cleanup(); process.exit(143) },
@@ -827,16 +929,23 @@ function standupCompose(plan, { target, createdAt, timeoutMs = 90000 } = {}) {
     rec.status = 'starting'
     // Same 3-state liveness (Slice B1) as the single-container path — deliberately NO
     // `docker compose logs` capture (boot output can echo operator-filled secrets). The
-    // declared HEALTHCHECK is read off the web-tier container (`<project>-<service>-1`).
+    // declared HEALTHCHECK is read off the web-tier container — which the loopback
+    // override pinned to the run-unique toolkit `container_name`, NOT compose's default
+    // `<project>-<service>-1`.
     const isRunning = () => { try { return run('docker', [...composeArgs, 'ps', '--status', 'running', '-q']).trim() !== '' } catch { return false } }
     const dockerHealth = full.webService
-      ? () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', `${full.project}-${full.webService}-1`]).trim() } catch { return '' } }
+      ? () => { try { return run('docker', ['inspect', '-f', '{{if .State.Health}}{{.State.Health.Status}}{{end}}', composeContainerName(full.runId, full.webService)]).trim() } catch { return '' } }
       : undefined
     const h = pollHealth(live.baseUrl, { isRunning, dockerHealth }, Date.now() + timeoutMs)
     rec.status = h.status; rec.guarded = h.guarded; rec.readiness = h.readiness; rec.log = h.log
-  } catch {
+  } catch (e) {
+    // DEGRADE, never clear (prod-outage fix): a failed `up` — a container-name conflict
+    // with something already running included — removes NOTHING; only the known-safe
+    // conflict NAME is surfaced (the honest "I will not touch it" diagnosis).
     rec.status = 'failed'
     rec.log = 'stand-up failed during a docker compose step (the toolkit does not capture compose output, to avoid persisting secrets)'
+    const conflict = safeDockerNameConflictError(e && e.stderr)
+    if (conflict) rec.log += `; ${conflict}`
     // a known compose defect was already diagnosed before the build — name the log so
     // the failure is attributable, never a silent build-into-failure
     if (mirrorFixesPath) rec.log += '; known compose defects were diagnosed before the build — see .security-review/mirror-fixes.md'

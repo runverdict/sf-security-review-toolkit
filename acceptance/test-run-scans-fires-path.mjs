@@ -22,6 +22,11 @@
  *       is the ONLY DAST consent, and the SKILL forbids offering a running-instance scan
  *   F8  the journey SKILL carries no running-instance wiring either: `--from-standup` only,
  *       no `live-instance-dast`, no explicit `--base-url` capture/DAST invocation
+ *   F9  the never-touch-anything-already-running HARD RULE (prod-outage fix) is stated
+ *       in BOTH skills: collision → DEGRADE (PENDING-OWNER-RUN + honest diagnosis),
+ *       never a manual clear; no `docker rm`/`stop`/`kill`/`compose down` (or
+ *       `sf org delete`) on a non-toolkit resource; removal only via the name-anchored
+ *       teardown engines; "at all costs" bounded to the disposable copy
  *
  * Dependency-free: `node acceptance/test-run-scans-fires-path.mjs` (exit 0 = pass).
  */
@@ -153,6 +158,27 @@ check('F8 the journey SKILL carries no running-instance wiring: --from-standup o
     'the journey states both engines refuse an explicit --base-url')
   assert.match(journey, /No running-instance fallback/, 'the failed-mirror branch degrades — no running-instance fallback')
   assert.match(journey, /real instance is also on loopback/, 'WHY: a real instance is also on loopback')
+})
+
+check('F9 the never-touch-anything-already-running HARD RULE (prod-outage fix) is stated in BOTH skills — degrade, never clear', () => {
+  // MUTATION: deleting the hard rule — or any of its named command literals — from
+  // either SKILL → red. Whitespace-normalized so hard-wrapped Markdown can't dodge it.
+  const flatten = (t) => t.replace(/\s+/g, ' ')
+  for (const [name, text] of [['run-scans', flatten(skill)], ['journey', flatten(journey)]]) {
+    const has = (phrase, why) => assert.ok(text.includes(phrase), `${name}: ${why} — missing '${phrase}'`)
+    has('NEVER touches, stops, removes, or deletes ANYTHING already running that the toolkit did not itself stand up',
+      'the hard rule headline (running resources are untouchable, files included)')
+    has('it may be your live stack; I will NOT touch it', 'the honest collision diagnosis, verbatim')
+    has('PENDING-OWNER-RUN with the honest diagnosis', 'a collision means DEGRADE, never clear')
+    has('`docker rm` / `docker stop` / `docker kill` / `docker compose down` (or `sf org delete`)',
+      'the banned destructive commands are NAMED (docker AND sf — the rule is general)')
+    has('name-anchored teardown engines', 'all removal goes through the teardown engines')
+    has('recurs as `sf org delete` in the deep-audit lane',
+      'the failure mode is stated generally: the same improvised-destructive-op recurs on the sf side')
+  }
+  // run-scans specifically re-bounds "at all costs" to the disposable copy
+  assert.ok(flatten(skill).includes('bounded to the DISPOSABLE COPY only'),
+    'run-scans: "get the mirror working at all costs" is bounded to the disposable copy, never anything running')
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

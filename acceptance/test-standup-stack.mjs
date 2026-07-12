@@ -42,20 +42,46 @@
  *       planStandup threads recipe.buildTargetFixes into the compose pre-plan
  *   U27 renderMirrorFixes: three parts per fix (defect / mirror-only action / partner
  *       fix), diagnoses recorded (no fabrication), deterministic (sorted, no wall clock)
+ *   U28 THE PROD-OUTAGE KEY TEST: a partner compose with a FIXED `container_name`
+ *       (acme-api) → the loopback override REBINDS every service (web AND others) to
+ *       the run-unique toolkit name `sf-srt-stack-<runId>-<svc>`; the fixed name never
+ *       survives as the mirror's container name; teardown's name gate accepts every one
+ *   U29 planCompose REFUSES a missing/unsafe run-id (never templates an unsafe
+ *       container_name); composeContainerName validates both parts
+ *   U30 assertRunScopedRemoval: only the two crash-net shapes anchored to THIS run's
+ *       own names pass; the outage command (`rm -f` a foreign name), other runs'
+ *       names, stop/kill/rmi, and a foreign-project `down` all THROW
+ *   U31 safeDockerNameConflictError: the conflict NAME (only) surfaces with the
+ *       degrade-not-clear diagnosis; anything else (incl. the stderr tail) stays null
+ *   S1  executor failure path (stub docker, hermetic): `compose up` fails on a name
+ *       conflict → status `failed`, the honest diagnosis names the container, and NO
+ *       destructive docker command (rm/rmi/stop/kill/down) was issued; the override on
+ *       disk carries the run-unique container_name lines; `up` ran under
+ *       `-p sf-srt-stack-<runId>`
+ *   S2  executor failure path, single-container: `docker create` name-conflict →
+ *       `failed`, no destructive docker command (MUTATION: restoring the old pre-create
+ *       `docker rm -f` stale-clear turns this red)
+ *   S3  executor success path: the declared-HEALTHCHECK read targets the run-unique
+ *       container_name (NOT compose's default `<project>-<svc>-1`), and the success
+ *       path issues no destructive command either
  *
  * The live `docker compose config`/`up`/`down` is operator-cold-validated, not
- * CI-hermetic — these tests pin the PURE planCompose (loopback override +
- * refuse-on-ambiguity), which is what regresses silently.
+ * CI-hermetic — the U-tests pin the PURE planCompose (loopback override +
+ * refuse-on-ambiguity), and the S-tests drive the impure executor against a STUB
+ * `docker` on PATH (still hermetic: no daemon, no images) to pin the
+ * never-destructive-on-failure contract, which is what regresses silently.
  *
  * Dependency-free: `node acceptance/test-standup-stack.mjs` (exit 0 = pass).
  */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import {
   planStandup, planCompose, standupStack, stackNames, STACK_SCHEMA, NAME_PREFIX, PYTHON_BASE,
   classifyHealthCode, resolveHealth, mapDockerHealth, standupHealthNote, HEALTH_STATES,
   checkEnvFileRunId, classifyPortOwnership, composeUpArgs, safeComposeConfigError, renderMirrorFixes,
+  composeContainerName, assertRunScopedRemoval, safeDockerNameConflictError,
 } from '../harness/standup-stack.mjs'
 import { assertStackName } from '../harness/teardown-stack.mjs'
 
@@ -603,6 +629,231 @@ check('U27 renderMirrorFixes: defect / mirror-only action / partner fix per entr
   assert.match(diag, /no honest override exists — nothing was fabricated/)
   assert.match(diag, /degrades with its real failure status/)
   assert.match(diag, /PARTNER FIX: in your real repo, make `api\/Dockerfile` declare the stage `development`/)
+})
+
+// ── Container-name collision (the prod-outage fix). A partner compose that hard-codes
+//    `container_name:` OVERRIDES Docker Compose's project-based naming, so the mirror's
+//    containers would collide with — and be mistaken for — the partner's LIVE stack of
+//    the same name. The override must rebind EVERY service to a run-unique toolkit
+//    name, and the executor must NEVER clear anything on failure. ──
+
+check('U28 KEY: a fixed partner container_name (acme-api) is REBOUND to the run-unique toolkit name on EVERY service', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u28', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u28') })
+  // neutral fixture for "a partner's fixed container_name" — the web tier AND a non-web service
+  const namedConfig = {
+    services: {
+      web: { image: 'node:18-alpine', container_name: 'acme-api', ports: [{ mode: 'ingress', target: 8080, published: '8080', protocol: 'tcp' }] },
+      worker: { image: 'node:18-alpine', container_name: 'acme-worker' },
+    },
+  }
+  const p = planCompose(namedConfig, pre)
+  assert.equal(p.unsupported, undefined)
+  const o = p.overrideContent
+  // MUTATION: dropping the `container_name:` line from the override template turns
+  // every assertion below red — the mirror would again collide with a live stack
+  // (a) the WEB service is pinned to the run-unique toolkit name (after the isolation lines)
+  assert.match(o, /web:\n    ports: !override\n      - "127\.0\.0\.1:8080:8080"\n    volumes: !reset \[\]\n    container_name: sf-srt-stack-u28-web\n/)
+  // (b) a NON-web (`others`) service is pinned too
+  assert.match(o, /worker:\n    ports: !reset \[\]\n    volumes: !reset \[\]\n    container_name: sf-srt-stack-u28-worker\n/)
+  // (c) the partner's fixed names are NOT the mirror's container names — the override
+  // scalar REPLACES the base file's container_name under Compose V2 merge, and the
+  // generated override never even mentions them
+  assert.ok(!o.includes('acme-api') && !o.includes('acme-worker'), 'the fixed partner container_name must never survive into the mirror override')
+  // (d) EVERY service in the config gets a container_name line, run-scoped + toolkit-prefixed
+  const lines = o.split('\n').filter((l) => l.trim().startsWith('container_name:'))
+  assert.equal(lines.length, Object.keys(namedConfig.services).length, 'container_name is set for EVERY service')
+  for (const l of lines) {
+    assert.match(l, /^    container_name: sf-srt-stack-u28-[A-Za-z0-9][A-Za-z0-9._-]*$/, 'run-scoped (contains the runId) + toolkit-prefixed (sf-srt-stack-)')
+  }
+  // (e) teardown's name gate accepts every pinned name (sweep/NAME_OK recognize the form)
+  assert.equal(assertStackName('sf-srt-stack-u28-web'), 'sf-srt-stack-u28-web')
+  assert.equal(assertStackName('sf-srt-stack-u28-worker'), 'sf-srt-stack-u28-worker')
+  // (f) the names sit under the toolkit-scoped compose PROJECT (`-p sf-srt-stack-<runId>`,
+  // the same run-name the executor passes on `config`/`up`/`port`/`ps` — see S1/S3)
+  assert.ok(`sf-srt-stack-u28-web`.startsWith(p.project + '-'), 'container names extend the project run-name')
+  // (g) a compose WITHOUT any fixed container_name still gets every service pinned
+  //     (project naming alone is not collision-proof against a same-name toolkit leftover)
+  const plain = planCompose(composeConfig, pre)
+  const plainLines = plain.overrideContent.split('\n').filter((l) => l.trim().startsWith('container_name:'))
+  assert.equal(plainLines.length, Object.keys(composeConfig.services).length)
+  assert.match(plain.overrideContent, /db:\n    ports: !reset \[\]\n    volumes: !reset \[\]\n    container_name: sf-srt-stack-u28-db\n/)
+  // (h) deterministic given (config, prePlan)
+  assert.equal(planCompose(namedConfig, pre).overrideContent, o)
+})
+
+check('U29 planCompose REFUSES a missing/unsafe run-id — an unsafe container_name is never templated', () => {
+  const pre = planStandup(composeRunnable, { runId: 'u29', target: TARGET, tmpRoot: join(tmpdir(), 'sf-srt-stack', 'u29') })
+  // MUTATION: dropping the run-id gate templates `sf-srt-stack-undefined-web` (or an
+  // injection) into the override instead of refusing — these go red
+  for (const bad of [undefined, null, '', 'u29 bad', 'a/b', '-x', 'x\ny']) {
+    const r = planCompose(composeConfig, { ...pre, runId: bad })
+    assert.equal(r.unsupported, 'compose', `run-id ${JSON.stringify(bad)} must be refused`)
+    assert.match(r.reason, /missing or unsafe run-id/)
+    assert.equal(r.overrideContent, undefined, 'no override is templated on refusal')
+  }
+  // composeContainerName validates BOTH parts and never returns an unsafe name
+  assert.equal(composeContainerName('u29', 'web'), 'sf-srt-stack-u29-web')
+  assert.throws(() => composeContainerName('a b', 'web'), /invalid run-id/)
+  assert.throws(() => composeContainerName('', 'web'), /invalid run-id/)
+  assert.throws(() => composeContainerName('u29', 'w eb'), /unsafe service name/)
+  assert.throws(() => composeContainerName('u29', ''), /unsafe service name/)
+})
+
+check('U30 assertRunScopedRemoval: only THIS run\'s own crash-net shapes pass — the outage command throws', () => {
+  // the two sanctioned crash-net shapes, anchored to this run's own names
+  assert.deepEqual(assertRunScopedRemoval(['rm', '-f', 'sf-srt-stack-u30'], 'u30'), ['rm', '-f', 'sf-srt-stack-u30'])
+  assert.deepEqual(
+    assertRunScopedRemoval(['compose', '-p', 'sf-srt-stack-u30', '--env-file', '/tmp/x.env', '-f', 'a.yml', '-f', 'b.yml', 'down', '-v', '--remove-orphans'], 'u30'),
+    ['compose', '-p', 'sf-srt-stack-u30', '--env-file', '/tmp/x.env', '-f', 'a.yml', '-f', 'b.yml', 'down', '-v', '--remove-orphans'])
+  // MUTATION: loosening the guard to a prefix/any-name match lets these through — red
+  assert.throws(() => assertRunScopedRemoval(['rm', '-f', 'acme-api'], 'u30'), /refusing destructive docker command/) // THE outage command
+  assert.throws(() => assertRunScopedRemoval(['rm', '-f', 'sf-srt-stack-OTHER'], 'u30'), /refusing/)                  // another run's container
+  assert.throws(() => assertRunScopedRemoval(['rm', '-f', 'sf-srt-stack-u30', 'acme-api'], 'u30'), /refusing/)        // no smuggling a foreign name alongside ours
+  assert.throws(() => assertRunScopedRemoval(['rm', '-f'], 'u30'), /refusing/)                                        // rm with no names
+  assert.throws(() => assertRunScopedRemoval(['stop', 'sf-srt-stack-u30'], 'u30'), /refusing/)                        // unsanctioned verbs — even on our own name
+  assert.throws(() => assertRunScopedRemoval(['kill', 'sf-srt-stack-u30'], 'u30'), /refusing/)
+  assert.throws(() => assertRunScopedRemoval(['rmi', '-f', 'sf-srt-stack-u30:throwaway'], 'u30'), /refusing/)
+  assert.throws(() => assertRunScopedRemoval(['compose', '-p', 'acme', 'down'], 'u30'), /refusing/)                   // foreign project down
+  assert.throws(() => assertRunScopedRemoval(['compose', '-p', 'sf-srt-stack-u30', 'rm', '-f'], 'u30'), /refusing/)   // compose verbs other than down
+  assert.throws(() => assertRunScopedRemoval(['rm', '-f', 'sf-srt-stack-u30'], ''), /invalid run-id/)                 // no run-id, no destruction
+})
+
+check('U31 safeDockerNameConflictError: the conflict NAME surfaces with the degrade-not-clear diagnosis; nothing else leaks', () => {
+  const stderr = 'docker: Error response from daemon: Conflict. The container name "/acme-api" is already in use by container "1f2e3d4c5b6a". You have to remove (or rename) that container to be able to reuse that name.'
+  const msg = safeDockerNameConflictError(stderr)
+  assert.ok(msg && msg.includes("'acme-api'"), 'the conflicting container is NAMED: ' + msg)
+  assert.match(msg, /will NOT stop or remove it/, 'the degrade-not-clear doctrine is stated verbatim')
+  assert.match(msg, /teardown-stack\.mjs/, 'removal is routed to the separate name-anchored teardown')
+  // MUTATION: returning raw stderr leaks the container ID / the "remove that container"
+  // instruction that primed the outage improvisation — red
+  assert.ok(!msg.includes('1f2e3d4c5b6a'), 'the container ID must not surface')
+  assert.ok(!/You have to remove/.test(msg), 'docker\'s own "remove it" advice must not surface')
+  // anything not the known-safe shape stays null
+  assert.equal(safeDockerNameConflictError('some other failure: postgres://u:p@h leaked'), null)
+  assert.equal(safeDockerNameConflictError(undefined), null)
+  assert.equal(safeDockerNameConflictError(''), null)
+})
+
+// ── S-tests: the impure executor against a STUB docker on PATH (hermetic — no daemon).
+//    What they pin: the failure path DEGRADES and never issues a destructive docker
+//    command, and the health read targets the run-unique container_name. ──
+
+const stubEnv = (script, config) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sf-srt-stub-'))
+  writeFileSync(join(dir, 'docker'), script, { mode: 0o755 })
+  const logFile = join(dir, 'docker-log.txt')
+  writeFileSync(logFile, '')
+  if (config) writeFileSync(join(dir, 'config.json'), JSON.stringify(config))
+  return { dir, logFile, configFile: join(dir, 'config.json') }
+}
+const DESTRUCTIVE = (line) => {
+  const t = line.trim().split(/\s+/)
+  return ['rm', 'rmi', 'stop', 'kill'].includes(t[0]) || (t[0] === 'compose' && t.includes('down')) || t.includes('down')
+}
+const withStub = ({ script, config }, fn) => {
+  const stub = stubEnv(script, config)
+  const target = mkdtempSync(join(tmpdir(), 'sf-srt-tgt-'))
+  const oldPath = process.env.PATH
+  process.env.PATH = `${stub.dir}:${oldPath}`
+  process.env.SRT_DOCKER_LOG = stub.logFile
+  process.env.SRT_COMPOSE_CONFIG = stub.configFile
+  try { return fn({ ...stub, target }) }
+  finally {
+    process.env.PATH = oldPath
+    delete process.env.SRT_DOCKER_LOG; delete process.env.SRT_COMPOSE_CONFIG
+    rmSync(stub.dir, { recursive: true, force: true }); rmSync(target, { recursive: true, force: true })
+  }
+}
+// the resolved-config shape for the stub `docker compose config` — a partner with a
+// FIXED container_name on the web tier (the adversarial collision fixture)
+const stubConfig = {
+  services: {
+    web: { container_name: 'acme-api', ports: [{ mode: 'ingress', target: 8080, published: '8080', protocol: 'tcp' }] },
+    worker: { container_name: 'acme-worker', image: 'node:18-alpine' },
+  },
+}
+const stubScript = (composeUp, extra = '') => `#!/bin/sh
+[ -n "$SRT_DOCKER_LOG" ] && echo "$*" >> "$SRT_DOCKER_LOG"
+case "$1" in
+  info) exit 0 ;;
+${extra}  compose)
+    for a in "$@"; do case "$a" in
+      version) exit 0 ;;
+      config) cat "$SRT_COMPOSE_CONFIG"; exit 0 ;;
+      up) ${composeUp} ;;
+      port) echo "127.0.0.1:49321"; exit 0 ;;
+    esac; done
+    exit 0 ;;
+  *) exit 0 ;;
+esac
+`
+
+check('S1 compose `up` fails on a name conflict → failed + honest diagnosis + ZERO destructive docker commands', () => {
+  const conflict = `echo 'docker: Error response from daemon: Conflict. The container name "/acme-api" is already in use by container "1f2e3d4c5b6a". You have to remove (or rename) that container to be able to reuse that name.' >&2; exit 1`
+  withStub({ script: stubScript(conflict), config: stubConfig }, ({ logFile, target }) => {
+    const tmp = join(tmpdir(), 'sf-srt-stack', 's1run')
+    const plan = planStandup(composeRunnable, { runId: 's1run', target, tmpRoot: tmp })
+    const m = standupStack(plan, { consent: true, target, timeoutMs: 2000 })
+    try {
+      assert.equal(m.status, 'failed', 'a colliding stand-up DEGRADES to failed')
+      // the honest diagnosis: the container is NAMED and explicitly not touched
+      assert.match(m.log, /a container named 'acme-api' already exists and may be a live stack/)
+      assert.match(m.log, /will NOT stop or remove it/)
+      // THE contract: no destructive docker command was issued on the failure path.
+      // MUTATION: any `rm`/`stop`/`kill`/`compose … down` "cleanup" reaction → red
+      const lines = readFileSync(logFile, 'utf8').split('\n').filter(Boolean)
+      assert.ok(lines.length > 0, 'the stub docker was exercised')
+      assert.deepEqual(lines.filter(DESTRUCTIVE), [], 'the failure path must issue NO destructive docker command')
+      // the compose PROJECT is toolkit-run-scoped on the actual `up` argv
+      const up = lines.find((l) => l.split(/\s+/).includes('up'))
+      assert.ok(up && /-p sf-srt-stack-s1run\b/.test(up), '`up` runs under -p sf-srt-stack-<runId>: ' + up)
+      // the override on disk pinned the run-unique container_name for every service
+      const override = readFileSync(plan.overridePath, 'utf8')
+      assert.match(override, /container_name: sf-srt-stack-s1run-web/)
+      assert.match(override, /container_name: sf-srt-stack-s1run-worker/)
+      assert.ok(!override.includes('acme-api'), 'the partner fixed name never reaches the mirror override')
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
+  })
+})
+
+check('S2 single-container `create` name-conflict → failed, NO destructive command (the old pre-create rm -f stale-clear is GONE)', () => {
+  const createFail = `  create) echo 'docker: Error response from daemon: Conflict. The container name "/sf-srt-stack-s2run" is already in use by container "9a8b7c6d".' >&2; exit 1 ;;\n`
+  withStub({ script: stubScript('exit 0', createFail) }, ({ logFile, target }) => {
+    const tmp = join(tmpdir(), 'sf-srt-stack', 's2run')
+    const plan = planStandup(runnable, { runId: 's2run', target, tmpRoot: tmp })
+    const m = standupStack(plan, { consent: true, target, timeoutMs: 2000 })
+    try {
+      assert.equal(m.status, 'failed')
+      assert.match(m.log, /a container named 'sf-srt-stack-s2run' already exists/)
+      assert.match(m.log, /will NOT stop or remove it/)
+      // MUTATION: restoring the old `quiet('docker', ['rm', '-f', plan.container])`
+      // pre-create stale-clear puts an `rm` line in the log → red. A same-name conflict
+      // now degrades honestly; only the separate name-anchored teardown removes residue.
+      const lines = readFileSync(logFile, 'utf8').split('\n').filter(Boolean)
+      assert.ok(lines.some((l) => l.startsWith('create ')), 'the create was attempted')
+      assert.deepEqual(lines.filter(DESTRUCTIVE), [], 'no rm/stop/kill/down — before create OR as a failure reaction')
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
+  })
+})
+
+check('S3 success path: the declared-HEALTHCHECK read targets the run-unique container_name, not `<project>-<svc>-1`', () => {
+  const inspectHealthy = `  inspect) echo "healthy"; exit 0 ;;\n`
+  withStub({ script: stubScript('exit 0', inspectHealthy), config: stubConfig }, ({ logFile, target }) => {
+    const tmp = join(tmpdir(), 'sf-srt-stack', 's3run')
+    const plan = planStandup(composeRunnable, { runId: 's3run', target, tmpRoot: tmp })
+    const m = standupStack(plan, { consent: true, target, timeoutMs: 5000 })
+    try {
+      assert.equal(m.status, 'up', 'the declared HEALTHCHECK (stub: healthy) drives the up status')
+      assert.equal(m.baseUrl, 'http://127.0.0.1:49321', 'baseUrl follows the read-back ephemeral host port')
+      const lines = readFileSync(logFile, 'utf8').split('\n').filter(Boolean)
+      // MUTATION: reverting the health read to compose's default `<project>-<web>-1`
+      // (which the container_name pin makes nonexistent) → red
+      const inspect = lines.find((l) => l.startsWith('inspect '))
+      assert.ok(inspect && / sf-srt-stack-s3run-web$/.test(inspect), 'inspect targets the pinned run-unique name: ' + inspect)
+      assert.ok(!lines.some((l) => l.includes('sf-srt-stack-s3run-web-1')), 'the stale default `<project>-<svc>-1` name is gone')
+      assert.deepEqual(lines.filter(DESTRUCTIVE), [], 'the success path issues no destructive command either')
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
+  })
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -452,6 +452,29 @@ families PENDING until a re-audit.
       edited. A defect with no honest override is logged as a diagnosis and the
       stand-up degrades with its real failure status — never a silent
       build-into-failure, and never a fabricated fix.
+      **HARD RULE — "at all costs" NEVER means touching anything already RUNNING.**
+      The driver NEVER touches, stops, removes, or deletes ANYTHING already running
+      that the toolkit did not itself stand up — not files, not containers, not
+      volumes, not Salesforce orgs. "Get the mirror working at all costs" is
+      bounded to the DISPOSABLE COPY only (compose overrides on the mirror's own
+      throwaway); it is never a licence to clear whatever is in the mirror's way.
+      A container-name / port / resource collision with something already running
+      means the toolkit DEGRADES — DAST → PENDING-OWNER-RUN with the honest
+      diagnosis ("a container named X is already running — it may be your live
+      stack; I will NOT touch it") — it NEVER clears the collision by hand. NEVER
+      run `docker rm` / `docker stop` / `docker kill` / `docker compose down` (or
+      `sf org delete`) against a resource the toolkit did not create: diagnosing a
+      failed stand-up is exactly when the temptation to improvise a destructive op
+      strikes, and that improvisation is how a live production stack gets taken
+      down. ALL removal goes through the name-anchored teardown engines
+      (`teardown-stack.mjs`, `teardown-org.mjs`), which refuse non-toolkit names
+      structurally. The rule is general, not docker-specific: the same "improvise
+      a destructive op while diagnosing a failure" mode recurs as `sf org delete`
+      in the deep-audit lane — degrade honestly there too. (The engine enforces
+      the docker half: the loopback override pins every mirror service to a
+      run-unique `sf-srt-stack-<runId>-<svc>` container_name so the mirror can
+      never collide with — or be mistaken for — a live container, and the stand-up
+      executor never issues a destructive docker command on any failure.)
    4. **Honest-degrade — the genuine LAST resort, not the expected outcome.** Only when
       the mirror genuinely cannot be built (every rung above failed): write the
       evidence-of-absence stub (`run-dast.mjs --absent --reason <why>`), tear the stack
