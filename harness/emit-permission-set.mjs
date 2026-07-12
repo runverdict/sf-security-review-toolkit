@@ -101,6 +101,7 @@ const ALLOWED_ENGINES = Object.freeze([
   'artifact-gate',
   'baseline-counts',
   'compute-sci',
+  'detect-agentforce',
   'docker-check',
   'emit-permission-set', // self: --check is read-only; --apply is consent-gated in code
   'enumerate-app-roots',
