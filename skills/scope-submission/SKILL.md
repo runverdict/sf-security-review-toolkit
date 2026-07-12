@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) Bash(node *harness/detect-agentforce.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -129,23 +129,33 @@ ones get denied mid-run and read to the operator as a broken toolkit.
    VerifiedCustomerId scoping, user-controlled record refs, third-party-LLM)
    now gate **solely** on the `agentforce` element, not on `managed-package`. So
    a failure to detect the agent under-prepares the partner for an entire
-   AgentExchange track with no error. Before writing the manifest, run a
-   deterministic confirmation: grep EVERY `force-app/` tree (there may be more than
-   one, under nested packages — don't assume a single root `force-app`) for any
-   `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
-   metadata (e.g. `grep -rlE '<(Bot|GenAiPlugin|GenAiPlanner|GenAiFunction)' --include='*.xml' . --exclude-dir=node_modules`
-   plus `find . -path '*/node_modules/*' -prune -o \( -name '*.genAiPlugin-meta.xml' -o -name '*.bot-meta.xml' \) -print`).
-   **ALSO detect a SUBSCRIBER-BUILT agent**, whose declarative definition ships OUTSIDE
-   packaged Bot/GenAiPlanner metadata: an `*.agentscript.yaml` (typically under an `agent/`
-   path), or an ESR-registered tool-action wired as an agent action (the AgentExchange-MCP
-   shape) — e.g. `find . -path '*/node_modules/*' -prune -o -name '*.agentscript.yaml' -print`.
-   This is the exact cold-run miss: the agent was defined via `agent/*.agentscript.yaml` + an
-   MCP tool as an agent action, so the XML grep found nothing and the whole AgentExchange
-   track nearly dropped. A match on EITHER shape — packaged Bot/GenAiPlanner metadata OR an
-   `agentscript.yaml` / ESR-registered agent-action — is an `agentforce` signal.
-   If any matches but no `agentforce` element was emitted, that is a detection
-   miss — emit the element. (This is the inverse of the MCP-client trap above:
-   there, over-detection drags in a track; here, under-detection drops one.)
+   AgentExchange track with no error. Before writing the manifest, source the
+   signal from the deterministic engine — the ONE detector this phase AND the
+   journey preflight both run, never a hand grep (the reuse-the-engine rule:
+   prose-strength detection is exactly how the preflight missed this once):
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/harness/detect-agentforce.mjs --target <target> --json
+   ```
+
+   It detects EVERY shape, across every `force-app/` tree (there may be more than
+   one, under nested packages — it walks the whole repo, node_modules excluded):
+   packaged `Bot`/`BotVersion`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction` and
+   `genAiPromptTemplate` metadata, **AND the SUBSCRIBER-BUILT agent** whose
+   declarative definition ships OUTSIDE packaged Bot/GenAiPlanner metadata: an
+   `*.agentscript.yaml` (typically under an `agent/` path), or an ESR-registered
+   tool-action wired as an agent action (the AgentExchange-MCP shape — a
+   best-effort heuristic the engine marks `confidence: heuristic`; corroborate a
+   heuristic-ONLY match through the `clarify-detection` gate above rather than
+   silently asserting or dropping it). The subscriber-built shape is the exact
+   cold-run miss: the agent was defined via `agent/*.agentscript.yaml` + an MCP
+   tool as an agent action, so an XML-only grep found nothing and the whole
+   AgentExchange track nearly dropped. A match on EITHER shape — packaged
+   Bot/GenAiPlanner metadata OR an `agentscript.yaml` / ESR-registered
+   agent-action — is an `agentforce` signal. If the engine matches but no
+   `agentforce` element was emitted, that is a detection miss — emit the
+   element. (This is the inverse of the MCP-client trap above: there,
+   over-detection drags in a track; here, under-detection drops one.)
 
    **Classify the listing direction — it branches every MCP auth/transport
    check.** A single merged "MCP auth check" emits contradictory guidance,

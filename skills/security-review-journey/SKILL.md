@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, static scans, audit, artifacts, live scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/emit-permission-set.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/emit-permission-set.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/detect-agentforce.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -133,17 +133,37 @@ whether this gate was already answered (`askedBefore`). Branch on it:
    mode live there). At preflight depth you are only deciding *what tier each
    input lands in*, not writing the manifest. In the target repo, in one sweep:
    - **Detect architecture elements** by evidence: `sfdx-project.json` +
-     `force-app/` (managed package, namespace, Apex/LWC/Aura),
-     `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/`genAiPromptTemplate`
-     metadata (an **`agentforce`** element — the AgentExchange-listing signal
-     that gates the agentforce-* requirements; a miss silently drops 12 of them,
-     so do not infer it from `managed-package` alone), MCP SDK imports /
+     `force-app/` (managed package, namespace, Apex/LWC/Aura), MCP SDK imports /
      JSON-RPC `initialize`+`tools/list` dispatch in the partner's *own* code
      (MCP **server** — not a Named Credential pointing at someone else's, which
      makes them an MCP client), server frameworks + route definitions (external
      web/API), `signed_request`/Canvas SDK (Canvas), mobile project trees,
      queue/scheduler config (async workers), OAuth/token/`.well-known` routes
      (identity surface).
+   - **Agentforce — run the deterministic detector, never a hand grep.** As its
+     OWN atomic Bash call (the AUTO-MODE LEGIBILITY rule above), run
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/detect-agentforce.mjs --target <target> --json`
+     — it covers the packaged `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction`/
+     `genAiPromptTemplate` metadata AND the subscriber-built shapes an XML grep
+     misses: an `agent/*.agentscript.yaml` agent and the (heuristic, weaker-signal)
+     ESR-registered agent-action. A match on ANY shape is the **`agentforce`**
+     element — the AgentExchange-listing signal that gates the agentforce-*
+     requirements; a miss silently drops 12 of them, so never infer it from
+     `managed-package` alone and never hand-detect it: a live cold run's
+     packaged-metadata-only grep reported "no Agentforce" for a subscriber-built
+     agent, and the scope phase had to correct it downstream every run. Fold a
+     match into the detected `elements[]` (a heuristic-only ESR match rides in
+     with its confidence note — the scope phase's `clarify-detection` gate is
+     where it gets corroborated, never silently asserted or dropped).
+   - **App roots — run the deterministic enumerator, never a hand sweep.** As its
+     OWN atomic Bash call, run
+     `node ${CLAUDE_PLUGIN_ROOT}/harness/enumerate-app-roots.mjs --target <target> --json`
+     — the SAME engine the scope phase runs (WO-108): a preflight hand-sweep
+     missed a third app (`apps/admin`) that this engine then caught in the scope
+     phase; running it here makes the preflight as accurate as the scope phase.
+     Fold every `candidate: true` root into `elements[]` as its own
+     external-web-app element carrying the engine's evidence (path, framework,
+     declared port).
    - **Detect prior state** for smart-resume (the table below). This is the same
      state model the 0.1 router used — now it feeds *where to resume*, not just
      *what to report*.
