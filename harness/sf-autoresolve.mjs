@@ -29,6 +29,18 @@
  *      (pass the `0Ho` id — `--packages <NAME>` is what throws InvalidPackageIdError)
  *   3. `sf package version report --package <04t>` → promotion / coverage / validation-skipped
  *   4. `sf data query --use-tooling-api --query "… SubscriberPackageVersion …"` → the keystone
+ *   5. `sf package version list --released [--packages <0Ho>]` → the RELEASED-LIST
+ *      CORROBORATION. On a real cold run the driver faced FOUR disagreeing released
+ *      signals — readiness said installable, this engine and `version report` both
+ *      said IsReleased:true, yet `version list --released` returned 0 rows — and had
+ *      to investigate manually. Now, when step 3 confirms IsReleased:true on a
+ *      CONCRETE 04t but this corroborating list RAN and came back EMPTY, the output
+ *      carries an inline `releasedReconciliation` row (directly under `isReleased`)
+ *      naming the quirk and the authoritative 04t, so the driver reads ONE reconciled
+ *      line instead of four contradicting raw outputs. FAIL-CLOSED: the note fires
+ *      only on that exact disagreement — an agreeing / errored / never-ran list, a
+ *      placeholder id, or a not-released / unknown report emits NO note and never
+ *      fabricates a released status (see `reconcileReleasedSignals`).
  * When `packageId`/`versionId` are already known the planner short-circuits the
  * matching resolution step; the DEFAULT path resolves `0Ho`→`04t` live.
  *
@@ -82,6 +94,7 @@ export const MANIFEST_REL = join('.security-review', 'scope-manifest.json')
 const KEYSTONE_SOURCE = 'Tooling SOQL SubscriberPackageVersion'
 const REPORT_SOURCE = 'sf package version report --json'
 const COVERAGE_SOURCE = 'sf package version report — ApexCodeCoverageAggregate'
+const RELEASED_LIST_SOURCE = 'sf package version report × sf package version list --released — reconciled'
 
 // ── PURE argv builders ──────────────────────────────────────────────────────
 // `package*` verbs thread the hub via `--target-dev-hub`; `data query` via
@@ -94,6 +107,15 @@ export const versionListArgv = (packageId, devhub) =>
   withDevHub(['package', 'version', 'list', '--packages', String(packageId), '--json'], devhub)
 export const versionReportArgv = (versionId, devhub) =>
   withDevHub(['package', 'version', 'report', '--package', String(versionId), '--json'], devhub)
+// The corroborating `--released` list: scoped to the 0Ho when one is known,
+// hub-wide when the plan only carries a 04t (there is no 0Ho to scope by).
+export const versionListReleasedArgv = (packageId, devhub) =>
+  withDevHub(
+    packageId
+      ? ['package', 'version', 'list', '--packages', String(packageId), '--released', '--json']
+      : ['package', 'version', 'list', '--released', '--json'],
+    devhub
+  )
 export const subscriberVersionSoql = (versionId) =>
   `SELECT IsSecurityReviewed, MajorVersion, MinorVersion, PatchVersion, BuildNumber ` +
   `FROM SubscriberPackageVersion WHERE Id='${versionId}'`
@@ -126,6 +148,11 @@ export function planSfAutoResolve({ packageName, packageId, versionId, devhub } 
   steps.push({ key: 'versionReport', needs: '04t', argv: versionReportArgv(vid, dh) })
   // 4. The Tooling keystone — IsSecurityReviewed + the version parts.
   steps.push({ key: 'subscriberVersion', needs: '04t', argv: subscriberVersionArgv(vid, dh) })
+  // 5. Released-list corroboration — `--released`, scoped to the 0Ho when known
+  //    (hub-wide when only a 04t was given). The executor runs it ONLY after step 3
+  //    confirmed IsReleased:true on a concrete 04t; its outcome feeds the pure
+  //    `reconcileReleasedSignals` (the inline released-vs-empty-list reconciliation).
+  steps.push({ key: 'releasedCorroboration', needs: '04t', argv: versionListReleasedArgv(pkgId || (verId ? null : PLACEHOLDER_PACKAGE_ID), dh) })
   return {
     schema: AUTORESOLVE_SCHEMA,
     packageName: packageName || null,
@@ -205,6 +232,47 @@ export function normalizeVersionReport(raw) {
     validationSkipped: triBool(r.ValidationSkipped),
     coverage,
   }
+}
+
+// A concrete SubscriberPackageVersion id — `04t` + a 15/18-char id body. The
+// planner's PLACEHOLDER_VERSION_ID never matches: a placeholder is not a
+// released artifact and can never anchor a reconciliation claim.
+const CONCRETE_04T_RE = /^04t[A-Za-z0-9]{12}([A-Za-z0-9]{3})?$/
+
+/**
+ * PURE. Reconcile the two LIVE released-status signals so the driver reads one
+ * honest line instead of investigating four contradicting raw outputs (the real
+ * cold-run failure this locks). Returns the inline reconciliation note string
+ * ONLY when every condition of the exact observed disagreement holds:
+ *   • `isReleased` is the explicit boolean `true` from `normalizeVersionReport`
+ *     (the authoritative `sf package version report` confirmation), AND
+ *   • `versionId` is a CONCRETE 04t (never the planner placeholder), AND
+ *   • the corroborating `sf package version list --released` RAN, parsed clean
+ *     (status 0, an array result), and carried 0 rows.
+ * Every other arm FAILS CLOSED to `null` — no note, no fabricated released
+ * status: a not-released/unknown report, a missing/placeholder id, a list that
+ * errored or never ran, an unrecognized list shape, or a NON-EMPTY list (the
+ * signals agree at the released level; a populated list that happens to lack
+ * this 04t is a different mismatch, not this quirk, and gets no invented note).
+ * The quirk itself: a freshly promoted version can be confirmed released by
+ * `version report` while the `--released` list lags — a DevHub-registration /
+ * eventual-consistency behavior, observed on the cold run; the concrete 04t
+ * with IsReleased:true is the authoritative signal.
+ */
+export function reconcileReleasedSignals({ isReleased, versionId, releasedList } = {}) {
+  if (isReleased !== true) return null // fail-closed: never fabricate a released status
+  const vid = String(versionId || '')
+  if (!CONCRETE_04T_RE.test(vid)) return null // only a concrete 04t is authoritative
+  if (releasedList == null || typeof releasedList !== 'object') return null // list never ran — no disagreement observed
+  if ('status' in releasedList && Number(releasedList.status) !== 0) return null // list errored — no claim about what it said
+  const listRows = Array.isArray(releasedList.result) ? releasedList.result : null
+  if (!listRows) return null // unrecognized shape — no claim
+  if (listRows.length !== 0) return null // the list carries released rows — agreement, no note
+  return (
+    `released status CONFIRMED via \`sf package version report\` (IsReleased:true) on the concrete 04t ${vid}; ` +
+    'NOTE: `sf package version list --released` returned 0 rows — a known DevHub-registration / eventual-consistency ' +
+    'quirk for a freshly promoted version, NOT a blocker; the concrete released 04t is authoritative'
+  )
 }
 
 // ── row assembly (field-by-field, never a spread of raw `sf` output) ────────
@@ -362,6 +430,8 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
 
   let resolvedPackageId = plan.packageId || null
   let resolvedVersionId = plan.versionId || null
+  let reportIsReleased = 'unknown' // tracked for the released-list corroboration (fail-closed default)
+  let releasedListJson = null // the corroborating `--released` list; null = never ran / failed
   const rows = []
   const stepLog = []
 
@@ -397,7 +467,9 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
           stepLog.push({ step: step.key, ok: false, reason: 'no version id resolved' })
           continue
         }
-        rows.push(...reportRows(normalizeVersionReport(parseSfJson(runner('sf', versionReportArgv(vid, dh))))))
+        const norm = normalizeVersionReport(parseSfJson(runner('sf', versionReportArgv(vid, dh))))
+        reportIsReleased = norm.isReleased
+        rows.push(...reportRows(norm))
         stepLog.push({ step: step.key, ok: true })
       } else if (step.key === 'subscriberVersion') {
         const vid = resolvedVersionId || plan.versionId
@@ -408,14 +480,51 @@ export function runSfAutoResolve(plan, { target, devhub, generated, runner = def
         }
         rows.push(...keystoneRows(parseSfJson(runner('sf', subscriberVersionArgv(vid, dh)))))
         stepLog.push({ step: step.key, ok: true })
+      } else if (step.key === 'releasedCorroboration') {
+        const vid = resolvedVersionId || plan.versionId
+        // Runs ONLY when the report confirmed a released 04t — there is nothing to
+        // corroborate otherwise, and a skipped list can never ground a note (fail-closed).
+        if (reportIsReleased !== true || !vid) {
+          stepLog.push({ step: step.key, ok: false, reason: 'skipped — no report-confirmed released 04t to corroborate' })
+          continue
+        }
+        releasedListJson = parseSfJson(runner('sf', versionListReleasedArgv(resolvedPackageId || plan.packageId || null, dh)))
+        stepLog.push({ step: step.key, ok: true })
       }
     } catch {
       // independent degradation — this step's row(s) fall back to `unknown`,
       // every remaining step still runs, and the manifest flag still writes
       if (step.key === 'versionReport') rows.push(...reportRowsUnknown())
       if (step.key === 'subscriberVersion') rows.push(...keystoneRowsUnknown())
-      stepLog.push({ step: step.key, ok: false, reason: 'sf step failed — degraded to unknown' })
+      stepLog.push({
+        step: step.key,
+        ok: false,
+        reason:
+          step.key === 'releasedCorroboration'
+            ? 'released-list corroboration failed — fail-closed: no reconciliation note'
+            : 'sf step failed — degraded to unknown',
+      })
     }
+  }
+
+  // RELEASED-SIGNAL RECONCILIATION (inline, honest). The pure decision lives in
+  // `reconcileReleasedSignals` (see its fail-closed contract); when it fires, the
+  // note row lands DIRECTLY under the `isReleased` row it reconciles, so the
+  // driver reads the reconciled line where the claim is — never four
+  // contradicting raw outputs to investigate manually.
+  const reconciliation = reconcileReleasedSignals({
+    isReleased: reportIsReleased,
+    versionId: resolvedVersionId || plan.versionId,
+    releasedList: releasedListJson,
+  })
+  if (reconciliation) {
+    const at = rows.findIndex((r) => r.key === 'isReleased')
+    rows.splice(at >= 0 ? at + 1 : rows.length, 0, {
+      key: 'releasedReconciliation',
+      value: reconciliation,
+      source: RELEASED_LIST_SOURCE,
+      provenance: 'automated',
+    })
   }
 
   // Assemble the render contract field-by-field (never a spread of raw `sf` output).
@@ -494,10 +603,14 @@ function main() {
     process.stdout.write(`## sf-autoresolve — no-devhub (sfAutoResolved:false)\n${res.reason}\n`)
     return
   }
+  const recon = Array.isArray(res.rows) ? res.rows.find((r) => r.key === 'releasedReconciliation') : null
   process.stdout.write(
     `## sf-autoresolve — ${res.status} (sfAutoResolved:${res.sfAutoResolved})\n` +
       // the honest all-unknown headline: degraded — resolve manually, never "resolved"
       (res.status === 'degraded' ? `resolve manually: ${res.reason}\n` : '') +
+      // the released-vs-empty-list reconciliation, surfaced INLINE (never left for
+      // the driver to re-derive from contradicting raw outputs)
+      (recon ? `reconciliation: ${recon.value}\n` : '') +
       `rows: ${res.rows.length}   output: ${res.outputPath}\n` +
       `render: node harness/render-sf-autoresolve.mjs --target <repo>\n`
   )
