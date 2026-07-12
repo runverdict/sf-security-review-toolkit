@@ -7,16 +7,21 @@
  * drops the ladder, the pip-audit fallback, the coverage rule, or the auto-ingest fails the
  * build — exactly the ci-hygiene skill-prose-guard pattern (test-ci-hygiene.mjs F8-compose-iac).
  *
- *   F1  Family 3 documents the 4-rung fires-path ladder (rung 1 --base-url already-running →
- *       rung 2 prebuilt *.prod.yml → rung 3 build SERIALIZED never-during → rung 4 honest-degrade)
- *   F2  rung 1 surfaces `--base-url` as the first-class "scan an already-running instance" option
- *   F3  rung 3 serialize rule: build BEFORE or AFTER the audit fan-out, never DURING
+ *   F1  Family 3 documents the MIRROR-ONLY fires-path ladder (prebuilt *.prod.yml →
+ *       build SERIALIZED never-during → fix-the-mirror at all costs → honest-degrade to
+ *       PENDING-OWNER-RUN) and the retired running-instance rung is GONE
+ *   F2  the SKILL states DAST/capture REFUSE a pre-existing `--base-url` (exit 3) and only ever
+ *       scan the toolkit-built disposable mirror (`--from-standup`); no explicit --base-url
+ *       invocation survives
+ *   F3  serialize rule: build BEFORE or AFTER the audit fan-out, never DURING
  *   F4  SCA Family carries `pip-audit` as a FIRST-CLASS installed scanner for lockfile-less Python
  *       (consented install set + evidence name + adapter + gate; PENDING-OWNER-RUN only absent consent)
  *   F5  fail-loud on any dependency manifest no scanner covered → coverage gap, never a silent pass
  *   F6  ReDoS `.txt` ingest AUTO-runs after the redos scan (regexploit explicit-scanner form)
- *   F7  rung 1 names its DISTINCT `live-instance-dast` consent gate + the detect-and-offer /
- *       never-auto-scan rule (a found loopback listener is a reason to ASK, not permission to scan)
+ *   F7  `live-instance-dast` is RETIRED: never offered/named as a scan gate — `throwaway-dast`
+ *       is the ONLY DAST consent, and the SKILL forbids offering a running-instance scan
+ *   F8  the journey SKILL carries no running-instance wiring either: `--from-standup` only,
+ *       no `live-instance-dast`, no explicit `--base-url` capture/DAST invocation
  *
  * Dependency-free: `node acceptance/test-run-scans-fires-path.mjs` (exit 0 = pass).
  */
@@ -27,39 +32,58 @@ import { fileURLToPath } from 'node:url'
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url))
 const skill = readFileSync(join(PLUGIN, 'skills', 'run-scans', 'SKILL.md'), 'utf8')
+const journey = readFileSync(join(PLUGIN, 'skills', 'security-review-journey', 'SKILL.md'), 'utf8')
 
 let pass = 0, fail = 0
 const check = (name, fn) => { try { fn(); pass++; console.log(`  ✓ ${name}`) } catch (e) { fail++; console.log(`  ✗ ${name}\n    ${String(e.message).split('\n').join('\n    ')}`) } }
 
-console.log('run-scans fires-path + lockfile-less-SCA + ReDoS-auto-route prose guard (0.8.109)')
+console.log('run-scans fires-path (mirror-only) + lockfile-less-SCA + ReDoS-auto-route prose guard')
 
-check('F1 Family 3 documents the 4-rung fires-path ladder (DAST must FIRE regardless of app size)', () => {
-  // MUTATION: dropping the ladder section from Family 3 → these fail (red)
+check('F1 Family 3 documents the MIRROR-ONLY fires-path ladder (DAST must FIRE; no running-instance rung)', () => {
+  // MUTATION: dropping the ladder — or reverting the SKILL to re-describe the retired
+  // running-instance scan rung — → red
   assert.match(skill, /FIRES-PATH LADDER/, 'the ladder must be named in Family 3')
   assert.match(skill, /DAST must FIRE regardless of app size/, 'the headline invariant must be stated')
-  // rung 1: already-running loopback instance
-  assert.match(skill, /Already-running loopback instance/i, 'rung 1: already-running loopback instance')
-  // rung 2: prebuilt-image compose
-  assert.match(skill, /Prebuilt-image compose/i, 'rung 2: prebuilt-image compose')
-  assert.match(skill, /buildsFromSource:false/, 'rung 2 references the stack-detect prebuilt signal')
-  // rung 3: build from source, SERIALIZED
-  assert.match(skill, /Build from source[^\n]*SERIALIZED/i, 'rung 3: build from source, serialized')
-  // rung 4: honest-degrade as the LAST resort
+  assert.match(skill, /MIRROR-ONLY, no exceptions/, 'the ladder is framed mirror-only')
+  assert.match(skill, /DISPOSABLE THROWAWAY MIRROR/i, 'DAST/capture only ever hit the toolkit-built disposable throwaway')
+  // rung 1: prebuilt-image compose
+  assert.match(skill, /Prebuilt-image compose/i, 'rung 1: prebuilt-image compose')
+  assert.match(skill, /buildsFromSource:false/, 'rung 1 references the stack-detect prebuilt signal')
+  // rung 2: build from source, SERIALIZED
+  assert.match(skill, /Build from source[^\n]*SERIALIZED/i, 'rung 2: build from source, serialized')
+  // rung 3: get the mirror working at all costs — fix the MIRROR's copy, never the partner's files
+  assert.match(skill, /GET THE MIRROR WORKING AT ALL COSTS/, 'rung 3: the fix-the-mirror doctrine is titled')
+  assert.match(skill, /mirror-fixes\.md/, 'rung 3 logs the partner-facing mirror-fixes.md')
+  assert.match(skill, /real compose files, Dockerfiles, and source are NEVER\s+edited/i,
+    'the mirror fix never touches the partner\'s real files')
+  // rung 4: honest-degrade as the LAST resort — PENDING-OWNER-RUN, never a running-instance scan
   assert.match(skill, /Honest-degrade/i, 'rung 4: honest-degrade')
+  assert.match(skill, /DEGRADE to \*\*PENDING-OWNER-RUN\*\*/, 'the degrade lands DAST/capture at PENDING-OWNER-RUN')
+  assert.match(skill, /NEVER a running-instance scan/, 'the degrade is never a running-instance scan')
   assert.match(skill, /fire\s+first, degrade last/i, 'the ladder posture: fire first, degrade last')
+  // the retired rung is GONE — the mirror-only mutation guard
+  assert.doesNotMatch(skill, /Already-running loopback instance/i, 'the retired running-instance rung must not survive')
+  assert.doesNotMatch(skill, /OFFER the live-instance scan/i, 'the SKILL must not offer a live-instance scan')
 })
 
-check('F2 rung 1 surfaces --base-url as the first-class "scan an already-running instance" option', () => {
-  // MUTATION: removing the --base-url first-rung surfacing → red
-  assert.match(skill, /--base-url\s+http:\/\/127\.0\.0\.1/, 'rung 1 shows the explicit --base-url loopback invocation')
-  assert.match(skill, /Explicit `--base-url` ALWAYS wins/, 'the engine primitive (explicit wins) must be surfaced')
-  assert.match(skill, /ZERO build, ZERO stand-up/i, 'rung 1 is the no-build, no-standup path')
+check('F2 the SKILL states DAST/capture REFUSE a pre-existing --base-url and only scan the toolkit-built mirror', () => {
+  // MUTATION: re-surfacing an explicit --base-url DAST/capture invocation, or dropping the refusal, → red
+  assert.match(skill, /REFUSE an explicit `--base-url`/, 'the engines refuse an explicit --base-url (exit 3)')
+  assert.match(skill, /--from-standup/, 'the stand-up pointer is the only input form')
+  assert.match(skill, /NEVER scan or capture a pre-existing/, 'no pre-existing/running instance is ever scanned or captured')
+  assert.match(skill, /loopback is NOT a\s+sufficient safeguard|loopback is NOT\s+a sufficient safeguard|loopback is NOT a sufficient safeguard/,
+    'loopback-not-sufficient is stated')
+  assert.match(skill, /real instance is also on loopback/, 'WHY: a real instance is also on loopback')
+  // the retired rung-1 surfacing is GONE
+  assert.doesNotMatch(skill, /--base-url\s+http:\/\/127\.0\.0\.1/, 'no explicit --base-url loopback invocation survives')
+  assert.doesNotMatch(skill, /Explicit `--base-url` ALWAYS wins/, 'the retired explicit-wins primitive must not survive')
+  assert.doesNotMatch(skill, /ZERO build, ZERO stand-up/i, 'the retired no-build no-standup rung framing must not survive')
 })
 
-check('F3 rung 3 serialize rule: build BEFORE or AFTER the audit fan-out, never DURING', () => {
+check('F3 serialize rule: build BEFORE or AFTER the audit fan-out, never DURING', () => {
   // MUTATION: dropping the never-during serialization rule → red
   assert.match(skill, /BEFORE or AFTER the audit fan-out, never DURING/i,
-    'the rung-3 serialization rule (build before/after the fan-out, never during) must be present')
+    'the serialization rule (build before/after the fan-out, never during) must be present')
   assert.match(skill, /resource contention|competing[^\n]*cores|lost the last cores/i,
     'the rule must state WHY (resource contention with the fan-out, not a broken build)')
 })
@@ -107,21 +131,28 @@ check('F6 ReDoS `.txt` ingest AUTO-runs after the redos scan (not deferred to a 
     'the prose must forbid deferring the .txt ingest (the cold-run miss)')
 })
 
-check('F7 rung 1 names the DISTINCT live-instance-dast gate + the detect-and-offer / never-auto-scan rule', () => {
-  // MUTATION: dropping the distinct-gate naming or the detect-and-offer safety rule → red
-  // the explicit already-running path is gated by live-instance-dast, NOT throwaway-dast
-  assert.match(skill, /live-instance-dast/, 'rung 1 must name the distinct live-instance-dast consent gate')
-  assert.match(skill, /`live-instance-dast`, NOT `throwaway-dast`/,
-    'rung 1 must state the gate is live-instance-dast, NOT throwaway-dast')
-  // detect-and-offer, never auto-chain probe → scan
-  assert.match(skill, /Detect-and-offer, never auto-scan/i, 'the detect-and-offer rule must be titled')
-  assert.match(skill, /never auto-chain probe\s*→\s*scan/i, 'the never-auto-chain rule must be present')
-  assert.match(skill, /reason to\s+ASK, not permission to scan/i,
-    'a found loopback listener is a reason to ASK, not permission to scan')
-  // WHY: an arbitrary loopback port may be an unrelated service; the responder is not verified
-  assert.match(skill, /UNRELATED\s+service/i, 'the rule must state an arbitrary loopback port may be an unrelated service')
-  assert.match(skill, /does NOT verify the responder is the app you intend to scan/i,
-    'run-dast re-asserts loopback but does NOT verify the responder identity')
+check('F7 live-instance-dast is RETIRED: never offered as a scan gate — throwaway-dast is the ONLY DAST consent', () => {
+  // MUTATION: reverting the SKILL to name/offer the retired running-instance gate → red
+  assert.doesNotMatch(skill, /live-instance-dast/, 'the retired live-instance-dast gate must not be named or offered')
+  assert.match(skill, /ONLY DAST consent is `throwaway-dast`/, 'throwaway-dast is the only DAST consent')
+  assert.match(skill, /no consent that unlocks a\s+running-instance scan/,
+    'no consent unlocks a running-instance scan')
+  assert.match(skill, /Do not offer,\s+suggest, or accept a running-instance scan/,
+    'the driver must not offer, suggest, or accept a running-instance scan under any framing')
+})
+
+check('F8 the journey SKILL carries no running-instance wiring: --from-standup only, no live-instance gate', () => {
+  // MUTATION: reverting the journey to re-wire a --base-url capture/DAST (the retired
+  // running-instance fallback) → red
+  assert.doesNotMatch(journey, /live-instance-dast/, 'the retired live-instance-dast gate must not survive in the journey')
+  assert.doesNotMatch(journey, /--base-url\s+http/, 'no explicit --base-url invocation survives in the journey')
+  assert.doesNotMatch(journey, /--base-url <baseUrl/, 'the capture/DAST invocations must not thread a --base-url')
+  assert.match(journey, /run-dast\.mjs --consent --from-standup/, 'run-dast is invoked mirror-only via --from-standup')
+  assert.match(journey, /capture-openapi\.mjs --consent --from-standup/, 'capture-openapi is invoked mirror-only via --from-standup')
+  assert.match(journey, /REFUSE an explicit `--base-url` outright, exit 3/,
+    'the journey states both engines refuse an explicit --base-url')
+  assert.match(journey, /No running-instance fallback/, 'the failed-mirror branch degrades — no running-instance fallback')
+  assert.match(journey, /real instance is also on loopback/, 'WHY: a real instance is also on loopback')
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)
