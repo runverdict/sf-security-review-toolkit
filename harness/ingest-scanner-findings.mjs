@@ -3457,6 +3457,62 @@ export function mergeFindings(ledger, newFindings, pass) {
 }
 
 // ----------------------------------------------------------------------------
+// extractCodeAnalyzerScanErrors — the deterministic Code-Analyzer scan-error →
+// COVERAGE-NOTE extractor (the run-scans Family-1 "a failure is never a pass"
+// mandate, moved from driver-eyeball prose into the engine). The CA v5 violations
+// JSON has NO error channel (every real capture carries exactly {runDir,
+// violationCounts, versions, violations}); a per-file PMD ParseException goes
+// ONLY to stderr — which run-scans now captures to evidence/ca-scan-log-<date>.txt.
+// ingestAll (below) folds THIS extractor's notes into the SAME notes[] channel
+// pip-audit's coverage note rides: a file that errored was NOT scanned, so its
+// 0 violations are an artifact of the failure, never a clean pass. A STANDALONE
+// extractor on purpose — the shared coverageNotes(raw) hook sees only the
+// violations JSON, which by construction cannot see a stderr-only error.
+// TOLERANT matching: no live errored-run capture exists, so the exact PMD stderr
+// grammar is inferred — a line is an error line on the PRESENCE of an error token
+// (never a rigid full-line grammar), and the errored file is best-effort extracted
+// by source extension. One note per DISTINCT file (deduped, sorted); ≥1 error line
+// with NO extractable file → ONE catch-all note (the error still surfaces); capped
+// at 50 notes with an honest (+N more) summary on a pathological log.
+// PURE + fail-safe: non-string/empty/whitespace-only → []; never throws; no
+// Date/Math.random anywhere.
+// ----------------------------------------------------------------------------
+const CA_SCAN_ERROR_LINE = /ParseException|PMDException|scan[- ]?error|error while (?:processing|analyzing|scanning)/i
+const CA_SCAN_ERROR_FILE = /([^\s:'"()]+\.(?:cls|trigger|js|jsx|ts|tsx|html|htm|xml|cmp|page|java|apex|py))\b/i
+const CA_SCAN_ERROR_NOTE_CAP = 50
+export function extractCodeAnalyzerScanErrors(logText) {
+  if (typeof logText !== 'string' || !logText.trim()) return []
+  const files = new Set()
+  let errorLines = 0
+  for (const line of logText.split('\n')) {
+    if (!CA_SCAN_ERROR_LINE.test(line)) continue
+    errorLines++
+    const m = CA_SCAN_ERROR_FILE.exec(line)
+    if (m) files.add(m[1])
+  }
+  if (!errorLines) return []
+  if (!files.size) {
+    // an error line with NO extractable file still counts — the failure surfaces either way
+    return [
+      'code-analyzer: the scan logged ≥1 parse/scan error but no file could be identified — ' +
+        'its 0 violations cannot be treated as a clean pass; inspect the captured scan-log',
+    ]
+  }
+  const sorted = [...files].sort()
+  const notes = sorted
+    .slice(0, CA_SCAN_ERROR_NOTE_CAP)
+    .map(
+      (file) =>
+        `code-analyzer: ${oneLine(file, 160)} failed to parse during the scan — a file that errored ` +
+        'was NOT scanned; its 0 violations are an artifact of the failure, never a clean pass'
+    )
+  if (sorted.length > CA_SCAN_ERROR_NOTE_CAP) {
+    notes.push(`code-analyzer: (+${sorted.length - CA_SCAN_ERROR_NOTE_CAP} more) errored files in the captured scan-log`)
+  }
+  return notes
+}
+
+// ----------------------------------------------------------------------------
 // ingestAll — the --all journey-wiring orchestrator (Phase 2, 0.8.40). The I/O seam that
 // makes the whole Phase-2 build run in the real journey: it ALWAYS runs the source-scanners
 // (metadata-viewall + egress-plain-http + view-modify-all-data + remote-site-protocol-security + admin-privilege-grant), then
@@ -3651,6 +3707,35 @@ export function ingestAll({ target, pass, dryRun } = {}) {
       findings: res.findings.length,
       status: res.findings.length ? 'ran' : 'clean',
     })
+  }
+
+  // (2b) Code-Analyzer scan-error COVERAGE NOTES (Family 1 — "a failure is never a pass").
+  // The CA violations JSON has no error channel, so run-scans captures the run's stderr to
+  // evidence/ca-scan-log-<date>.txt — a `.txt` OUTSIDE the json|sarif enumeration above (this
+  // explicit glob is therefore required), and deliberately NOT `code-analyzer-*` so
+  // render-scan-status never counts the log as the CA report itself. Each log's extracted
+  // notes ride the same aggregate notes[] channel pip-audit's coverage note uses. A standalone
+  // block ON PURPOSE — the per-adapter coverageNotes(raw) dispatch sees only the violations
+  // JSON, which cannot see a stderr-only ParseException. Fail-safe end to end: no log →
+  // nothing (degrades to the run-scans prose mandate); an unreadable log is skipped; logs
+  // process in sorted filename order for determinism.
+  let scanLogs = []
+  try {
+    scanLogs = readdirSync(evidenceDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && /^ca-scan-log-.*\.txt$/.test(e.name.toLowerCase()))
+      .map((e) => e.name)
+      .sort()
+  } catch {
+    scanLogs = [] // no evidence dir yet — same posture as the json|sarif enumeration
+  }
+  for (const name of scanLogs) {
+    let logText = null
+    try {
+      logText = readFileSync(join(evidenceDir, name), 'utf8')
+    } catch {
+      continue // unreadable scan-log — skip; never crash --all over the honesty channel
+    }
+    notes.push(...extractCodeAnalyzerScanErrors(logText))
   }
 
   // (3) deterministic combined order, independent of file-iteration order (ingest already

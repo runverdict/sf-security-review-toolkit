@@ -203,6 +203,7 @@ import {
   loadLedger,
   recognizeScanner,
   ingestAll,
+  extractCodeAnalyzerScanErrors,
   resolveDevScope,
   hasSecurityTag,
   REQ_SEVERITY_TO_FINDING,
@@ -5939,6 +5940,102 @@ check('AP-all (--all journey wiring): admin-privilege-grant ALWAYS runs — a gr
   // only objectPermissions) reports the scanner honestly clean — no crash, no double-report
   const out2 = runAll(setupAllTarget())
   assert.ok(out2.scanners.some((s) => s.scanner === 'admin-privilege-grant' && s.findings === 0 && s.status === 'clean'))
+})
+
+// ───────────────────── CAE — Code-Analyzer scan-error COVERAGE NOTES (Family 1,
+// "a failure is never a pass" moved from driver-eyeball prose into the engine).
+// The CA v5 violations JSON has NO error channel (a per-file PMD ParseException goes
+// ONLY to stderr), so run-scans captures the run's stderr to evidence/ca-scan-log-<date>.txt
+// and extractCodeAnalyzerScanErrors() turns it into notes on the SAME notes[] channel
+// pip-audit's coverage note rides — OUTSIDE the per-adapter coverageNotes(raw) dispatch,
+// which sees only the violations JSON. All fixtures INLINE (a new acceptance/fixtures/
+// code-analyzer-*.json would auto-join the determinism-band corpus + fixture-count locks).
+// MUTATION: dropping the ParseException branch from CA_SCAN_ERROR_LINE reds CAE1 + CAE6
+// (CAE3 stays green); dropping the dedupe/sort reds CAE2; dropping the catch-all reds CAE5.
+
+check('CAE1 extractor: a stderr ParseException naming Foo.cls → exactly ONE note naming the file, never-a-clean-pass voiced', () => {
+  const log = [
+    'Scanning workspace with 3 engines…',
+    "net.sourceforge.pmd.lang.ast.ParseException: Parse exception in file '/work/force-app/main/default/classes/Foo.cls' at line 12",
+    'Run complete.',
+  ].join('\n')
+  const notes = extractCodeAnalyzerScanErrors(log)
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /^code-analyzer: /)
+  assert.match(notes[0], /Foo\.cls/)
+  assert.match(notes[0], /never a clean pass/)
+  assert.match(notes[0], /NOT scanned/)
+})
+
+check('CAE2 extractor: two distinct errored files → 2 notes, SORTED, deduped (a file repeated twice → still 1 note)', () => {
+  // the log emits triggers/Bar.trigger FIRST — the sorted output must still lead with
+  // classes/Foo.cls, proving sort-by-file (not log order) is what makes the notes deterministic
+  const log = [
+    'PMDException: error while processing triggers/Bar.trigger',
+    "ParseException: error in file 'classes/Foo.cls'",
+    "ParseException: error in file 'classes/Foo.cls' (again — the dedupe probe)",
+  ].join('\n')
+  const notes = extractCodeAnalyzerScanErrors(log)
+  assert.equal(notes.length, 2, `deduped to one note per distinct file (got ${JSON.stringify(notes)})`)
+  // sorted: classes/Foo.cls < triggers/Bar.trigger (full-path lexicographic order, deterministic)
+  assert.match(notes[0], /classes\/Foo\.cls/)
+  assert.match(notes[1], /triggers\/Bar\.trigger/)
+  assert.ok(notes.every((n) => /never a clean pass/.test(n)))
+})
+
+check('CAE3 extractor: a clean stderr (no error token) → [] — warnings/info lines never manufacture a coverage gap', () => {
+  const log = [
+    'Scanning workspace with 3 engines…',
+    'WARNING: sfge is DevPreview',
+    'Scanned 45 files in 30s — 0 violations',
+    'Run complete.',
+  ].join('\n')
+  assert.deepEqual(extractCodeAnalyzerScanErrors(log), [])
+})
+
+check('CAE4 extractor fail-safe: null / \'\' / whitespace / non-string → [] — never throws', () => {
+  for (const bad of [null, undefined, '', '   \n\t  ', 123, {}, [], true]) {
+    assert.deepEqual(extractCodeAnalyzerScanErrors(bad), [], `${JSON.stringify(bad)} → []`)
+  }
+})
+
+check('CAE5 extractor: an error line with NO extractable file → exactly ONE catch-all note (the failure still surfaces)', () => {
+  const notes = extractCodeAnalyzerScanErrors('PMD scan error: internal failure (no path emitted)\n')
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /no file could be identified/)
+  assert.match(notes[0], /cannot be treated as a clean pass/)
+})
+
+check('CAE6 integration (--all): a 0-violation CA JSON + a sibling ca-scan-log with a Baz.cls ParseException → notes[] carries BOTH the false-clean note AND the coverage note; log removed → no coverage note', () => {
+  const T = mkdtempSync(join(tmpdir(), 'ingest-cae-'))
+  dirs.push(T)
+  const ev = join(T, '.security-review', 'evidence')
+  mkdirSync(ev, { recursive: true })
+  // minimal REAL-SHAPED CA v5 output: the exact top-level key set, 0 violations — the
+  // "clean" report an errored run still produces (the false-clean the note must caveat)
+  writeFileSync(
+    join(ev, 'code-analyzer-2026-07-12.json'),
+    JSON.stringify({ runDir: '/work/', violationCounts: { total: 0, sev1: 0, sev2: 0, sev3: 0, sev4: 0, sev5: 0 }, versions: { 'code-analyzer': '5.14.0' }, violations: [] })
+  )
+  const logPath = join(ev, 'ca-scan-log-2026-07-12.txt')
+  writeFileSync(logPath, "ParseException: Parse exception in file '/work/force-app/main/default/classes/Baz.cls' at line 3\n")
+  const out = ingestAll({ target: T, dryRun: true })
+  // the CA JSON ingested as code-analyzer (0 violations → the :1035 false-clean note, untouched)
+  assert.ok(out.scanners.some((s) => s.scanner === 'code-analyzer' && s.findings === 0), 'the 0-violation CA JSON is recognized + ingested')
+  assert.ok(out.notes.some((n) => /code-analyzer: 0 violations/.test(n)), 'the false-clean note is still present (additive, never replaced)')
+  // …AND the deterministic scan-error coverage note rides the same notes[] channel
+  assert.ok(
+    out.notes.some((n) => /code-analyzer: .*Baz\.cls.* never a clean pass/.test(n)),
+    `the scan-error coverage note names Baz.cls (got ${JSON.stringify(out.notes)})`
+  )
+  // determinism: the same evidence dir → byte-identical notes on a re-run
+  assert.equal(JSON.stringify(ingestAll({ target: T, dryRun: true }).notes), JSON.stringify(out.notes))
+  // with the scan-log REMOVED, the coverage note disappears (fail-safe: degrades silently —
+  // no crash, no phantom note; the prose mandate is the only remaining net)
+  rmSync(logPath)
+  const out2 = ingestAll({ target: T, dryRun: true })
+  assert.ok(!out2.notes.some((n) => /never a clean pass/.test(n)), 'no coverage note without a scan-log')
+  assert.ok(out2.notes.some((n) => /code-analyzer: 0 violations/.test(n)), 'the false-clean note remains')
 })
 
 // ─────────────────────────────────────────────────────────────────── cleanup
