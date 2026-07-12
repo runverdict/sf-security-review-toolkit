@@ -486,6 +486,15 @@ families PENDING until a re-audit.
       it is the floor, not the target. The tag gate is met by DAST **firing** in the
       common case — fire first, degrade last.
 
+   **The `throwaway-dast` gate is the OPERATOR'S LIVE CALL — never auto-decline
+   it from a memory or a standing note** (the journey's SOURCE OF TRUTH &
+   MEMORY-INDEPENDENCE and NEVER AUTO-DECIDE A GATE rules). A stale host-session
+   memory about a past stand-up failure describes a toolkit that may since have
+   been fixed in code; it is context to RAISE inside the gate, never a decision.
+   Surface the gate; DAST degrades to PENDING-OWNER-RUN only on the operator's
+   own decline or a genuine engine refusal (e.g. `needs-secrets` left unfilled,
+   `no-docker`) — never on a pre-decided deny the operator never made.
+
    *Autonomous option (0.7.0):* when the journey's throwaway-DAST consent
    was given, the toolkit stands the backend up as a disposable mirror and runs a
    digest-pinned ZAP against THAT

@@ -27,6 +27,19 @@
  *       never a manual clear; no `docker rm`/`stop`/`kill`/`compose down` (or
  *       `sf org delete`) on a non-toolkit resource; removal only via the name-anchored
  *       teardown engines; "at all costs" bounded to the disposable copy
+ *   F10 the journey's SOURCE OF TRUTH & MEMORY-INDEPENDENCE operating rule: the toolkit
+ *       is SELF-AUTHORITATIVE (live engines + gates + `.security-review/` artifacts are
+ *       the SOLE source of truth); host/session memory is UNTRUSTED / MAY BE STALE and
+ *       never overrides a live engine decision or pre-empts a consent gate
+ *   F11 the journey's write-side memory rule: DO NOT WRITE host-session operational
+ *       memories about the toolkit — a defect is fixed in CODE + recorded in
+ *       CHANGELOG/artifacts, never a host memory that contaminates future runs
+ *   F12 the journey's NEVER-AUTO-DECIDE-A-GATE rule at the consent-gate section: every
+ *       gate is surfaced LIVE; a memory/standing note is a NOTE raised inside the gate,
+ *       the OPERATOR decides; the stale-memory throwaway-dast DENY is named + forbidden
+ *   F13 run-scans carries the throwaway-dast pointer: the gate is the operator's LIVE
+ *       call — never auto-declined from a memory; degrade only on the operator's own
+ *       decline or a genuine engine refusal (needs-secrets / no-docker)
  *
  * Dependency-free: `node acceptance/test-run-scans-fires-path.mjs` (exit 0 = pass).
  */
@@ -179,6 +192,59 @@ check('F9 the never-touch-anything-already-running HARD RULE (prod-outage fix) i
   // run-scans specifically re-bounds "at all costs" to the disposable copy
   assert.ok(flatten(skill).includes('bounded to the DISPOSABLE COPY only'),
     'run-scans: "get the mirror working at all costs" is bounded to the disposable copy, never anything running')
+})
+
+check('F10 the journey states SOURCE OF TRUTH & MEMORY-INDEPENDENCE — self-authoritative; memory never overrides or pre-empts', () => {
+  // MUTATION: deleting the memory-independence operating block (or its override/pre-empt
+  // halves) → red. Whitespace-normalized so hard-wrapped Markdown can't dodge it.
+  const flat = journey.replace(/\s+/g, ' ')
+  const has = (phrase, why) => assert.ok(flat.includes(phrase), `journey: ${why} — missing '${phrase}'`)
+  assert.match(journey, /SOURCE OF TRUTH & MEMORY-INDEPENDENCE/, 'the operating rule is titled')
+  has('The toolkit is SELF-AUTHORITATIVE', 'the self-authoritative headline')
+  has('are the SOLE source of truth', 'live engines + gates + on-disk artifacts are the sole source of truth')
+  has('(audit-ledger, scope-manifest, deterministic-dispositions, `consent/`)', 'the .security-review/ artifacts are named')
+  has('every run RE-DERIVES its facts from the current engine state', 're-derive, never replay a memory')
+  has('UNTRUSTED and MAY BE STALE', 'host/session memory is untrusted and may be stale')
+  has('may describe behavior that has since been FIXED IN CODE', 'WHY stale: the toolkit updates; old memories describe fixed behavior')
+  has('A memory NEVER overrides a live engine decision', 'the override half is forbidden')
+  has('NEVER pre-empts, pre-decides, or auto-declines a consent gate', 'the gate pre-emption half is forbidden')
+})
+
+check('F11 the journey forbids WRITING host-session operational memories about the toolkit (the write-side half)', () => {
+  // MUTATION: deleting the do-not-write-operational-memory sentence → red
+  const flat = journey.replace(/\s+/g, ' ')
+  const has = (phrase, why) => assert.ok(flat.includes(phrase), `journey: ${why} — missing '${phrase}'`)
+  has('DO NOT WRITE host-session operational memories', 'the write-side prohibition headline')
+  has('fixed in the toolkit\'s CODE and recorded in its CHANGELOG and `.security-review/` artifacts', 'where a toolkit defect IS recorded')
+  has('never in a host memory that silently contaminates future runs', 'the contamination framing')
+  has('a stale "never do X here" memory is exactly what blocks a toolkit that has since been fixed', 'the concrete contamination shape')
+  has('it stops the contamination at the source', 'the write side is the important half')
+})
+
+check('F12 the journey states NEVER-AUTO-DECIDE-A-GATE at the consent-gate section — surface live, operator decides', () => {
+  // MUTATION: deleting the never-auto-decide rule — or its named throwaway-dast DENY
+  // failure example — → red
+  const flat = journey.replace(/\s+/g, ' ')
+  const has = (phrase, why) => assert.ok(flat.includes(phrase), `journey: ${why} — missing '${phrase}'`)
+  has('NEVER AUTO-DECIDE A GATE', 'the rule is titled')
+  has('EVERY consent gate is surfaced LIVE', 'gates are surfaced live for the operator')
+  has('NEVER records an affirm or deny the operator did not just make on THIS run', 'no recorded decision the operator did not make')
+  has('NEVER pre-decides a gate from a host/session memory, a standing instruction, or its own read of the source', 'the pre-decide sources are enumerated')
+  has('a NOTE the driver RAISES inside the gate', 'a memory/standing constraint is a note inside the gate')
+  has('and the OPERATOR decides', 'the operator owns the decision')
+  has('a driver once recorded `throwaway-dast` as DENY on its own, from a stale memory', 'the concrete forbidden failure is named')
+  has('surface the gate, mention the memory as context, let the operator choose', 'the prescribed behavior, verbatim')
+})
+
+check('F13 run-scans: the throwaway-dast gate is the operator\'s LIVE call — never auto-declined from a memory', () => {
+  // MUTATION: deleting the run-scans pointer (or its degrade-only-on conditions) → red
+  const flat = skill.replace(/\s+/g, ' ')
+  const has = (phrase, why) => assert.ok(flat.includes(phrase), `run-scans: ${why} — missing '${phrase}'`)
+  has('The `throwaway-dast` gate is the OPERATOR\'S LIVE CALL — never auto-decline it from a memory or a standing note', 'the pointer headline')
+  has('SOURCE OF TRUTH & MEMORY-INDEPENDENCE and NEVER AUTO-DECIDE A GATE rules', 'points at the journey doctrine by name')
+  has('it is context to RAISE inside the gate, never a decision', 'a stale memory is context, not a decision')
+  has('only on the operator\'s own decline or a genuine engine refusal', 'the only two degrade triggers')
+  has('never on a pre-decided deny the operator never made', 'the forbidden pre-decided deny, verbatim')
 })
 
 console.log(`\n${pass} passed, ${fail} failed`)
