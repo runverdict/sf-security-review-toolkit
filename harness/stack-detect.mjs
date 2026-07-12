@@ -45,9 +45,24 @@
  * fix into the loopback override and logs it partner-facing (mirror-fixes.md); the
  * partner's own files are never touched.
  *
+ * LIVE COLLISION (make the isolation VISIBLE): the mirror is fully isolated from a
+ * live stack on the same host (run-unique compose project, container_name rebind,
+ * loopback-ephemeral publish, `volumes: !reset`, never-clear-running + name-anchored
+ * teardown — standup-stack/teardown-stack), but `runnable` alone said nothing about
+ * WHAT is running right now — so at the decision point the scariest situation (live
+ * prod up + "runnable") was where the report said the least. When the compose's
+ * FIXED `container_name` values match containers RUNNING right now (`docker ps`),
+ * the detector emits an INFORMATIONAL `liveCollision` block — the colliding names +
+ * the fixed, engine-owned `isolatedBy` guarantees. `status` stays `runnable`: the
+ * mirror CAN stand up, and the isolation holds regardless. FAIL-SAFE: docker absent
+ * / `docker ps` errs / no fixed container_names → no collision emitted, never a
+ * crash, never a block. Pure predicate `detectCollision`; the `docker ps` read is
+ * the only I/O and lives in the CLI gather step.
+ *
  * USAGE: node stack-detect.mjs --target <repo> [--json]
  */
 import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -450,6 +465,57 @@ export function composeEnvFiles(text) {
 }
 
 /**
+ * PURE. The FIXED `container_name:` values a compose declares (one per service that
+ * carries the directive). A fixed name is what collides with a live stack: it
+ * overrides compose's per-project naming, so the same repo stood up twice lands on
+ * the SAME container names (the prod-outage shape). An interpolated value
+ * (`${VAR…}`/`$VAR`) is NOT a fixed name — it varies by env, so no deterministic
+ * collision claim can be made from it and it is skipped (fail-safe: emit no
+ * collision rather than a wrong one). Deduped, file order. Never throws.
+ */
+export function composeFixedContainerNames(text) {
+  const out = []
+  for (const b of composeServiceBlocks(text)) {
+    for (const line of b.lines) {
+      const m = line.match(/^\s*container_name\s*:\s*(.+?)\s*(?:#.*)?$/)
+      if (!m) continue
+      const name = unq(m[1])
+      if (name && !name.includes('$')) out.push(name)
+      break // compose takes one container_name per service
+    }
+  }
+  return [...new Set(out)]
+}
+
+// The FIXED, engine-owned statement of the mirror's isolation guarantees
+// (standup-stack + teardown-stack, 0.8.124/0.8.125). These hold REGARDLESS of what is
+// running on the host — a liveCollision is informational, never a block — and they are
+// frozen here so the preflight/gate surfacing renders engine facts, never improvised
+// reassurance.
+export const MIRROR_ISOLATION = Object.freeze([
+  'run-unique compose project sf-srt-stack-<runId>',
+  'container_name rebind to sf-srt-stack-<runId>-<svc>',
+  'loopback-ephemeral host publish',
+  'volumes !reset (no host binds)',
+  'never-clear-running + name-anchored teardown',
+])
+
+/**
+ * PURE. Do any of the compose's FIXED container_names match a container RUNNING right
+ * now? Returns `{ colliding: [names…], isolatedBy: MIRROR_ISOLATION }` on a match,
+ * else null. FAIL-SAFE by construction: empty/absent declared names, or an
+ * empty/absent running list (docker missing, `docker ps` errored — the impure gather
+ * passes null), → null. `colliding` is deduped + sorted (deterministic). Never throws.
+ */
+export function detectCollision(composeContainerNames, runningNames) {
+  const declared = [...new Set((Array.isArray(composeContainerNames) ? composeContainerNames : []).filter(Boolean).map(String))]
+  const running = new Set((Array.isArray(runningNames) ? runningNames : []).filter(Boolean).map(String))
+  if (!declared.length || !running.size) return null
+  const colliding = declared.filter((n) => running.has(n)).sort()
+  return colliding.length ? { colliding, isolatedBy: [...MIRROR_ISOLATION] } : null
+}
+
+/**
  * PURE. Pick the DAST-target web tier from raw compose text. Returns
  * `{ port, service, ambiguous, candidates[], exposedApiTier[], note }`. `port` is null
  * when no non-infra service host-publishes (REFUSE — never scan a datastore). Never
@@ -654,22 +720,29 @@ export function classifyStack(facts = {}) {
     && !composeSvcs.some((n) => INFRA_NAME.test(n)))
     ? '; NOTE: a DB-shaped env var is EXTERNAL-managed and the compose defines no in-compose database service — the isolated throwaway has no DB, so the api tier may not come up even with a filled env-file; prefer rung 1 (an already-running --base-url)'
     : ''
+  // LIVE COLLISION (informational, additive): a live stack on this host whose running
+  // container names match the compose's FIXED container_names. Gathered impurely
+  // (docker ps) by the CLI, threaded here as a fact — the classification itself stays
+  // pure, and the status is NEVER changed by it: the mirror is isolated regardless
+  // (see MIRROR_ISOLATION), the block only makes that visible at the decision point.
+  const live = facts.liveCollision && typeof facts.liveCollision === 'object'
+    ? { liveCollision: facts.liveCollision } : {}
   // A compose recipe referencing an env_file that is ABSENT on disk cannot be runnable —
   // `docker compose config` hard-fails on it at stand-up. Name the file here, up front,
   // instead of a swallowed stderr later. Env buckets are already computed (above), so
   // env.external stays fully populated on this branch too.
   const missingEnvFiles = (Array.isArray(facts.missingEnvFiles) ? facts.missingEnvFiles : []).filter(Boolean)
   if (missingEnvFiles.length) {
-    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
+    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env, ...live,
       reason: `recipe compose references env_file '${missingEnvFiles.join("', '")}' which is absent — provide it (or scaffold-env) before stand-up` +
         (env.external.length ? `; external creds also needed: ${env.external.join(', ')}` : '') + externalDbNote }
   }
   if (env.external.length) {
-    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
+    return { status: 'needs-secrets', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env, ...live,
       reason: `recipe present but needs external-service credentials the toolkit cannot synthesize: ${env.external.join(', ')} — scaffold-and-guide` + externalDbNote }
   }
   const services = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
-  return { status: 'runnable', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env,
+  return { status: 'runnable', recipe, webTier: facts.webTier || null, migration: facts.migration || null, serverRoots: roots, env, ...live,
     reason: `standable: ${recipe.kind} recipe${webTierReason(facts.webTier)}` +
       (services.length ? ` (in-compose services: ${services.join(', ')})` : '') +
       `; env the toolkit generates: ${env.synthesizable.join(', ') || 'none'}` +
@@ -844,6 +917,25 @@ function gatherRecipe(target, roots) {
   return { recipe: null, webTier: null }
 }
 
+/**
+ * IMPURE + FAIL-SAFE: the names of containers RUNNING right now, via
+ * `docker ps --format '{{.Names}}'` — a read-only listing, never a mutation. Returns
+ * null when docker is absent, the daemon is down, or the command errs/hangs (short
+ * timeout): detectCollision treats null as "no running names" → no collision, so a
+ * docker-less host can NEVER crash or block detection (same I/O-guard posture as
+ * docker-check's dockerStatus). Called only when the compose declares fixed
+ * container_names — no compose collision surface, no docker call at all.
+ */
+function gatherRunningContainerNames() {
+  try {
+    const out = execFileSync('docker', ['ps', '--format', '{{.Names}}'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 })
+    return out.split('\n').map((s) => s.trim()).filter(Boolean)
+  } catch {
+    return null // no docker / daemon down / timeout → no collision claim, never a crash
+  }
+}
+
 /** Collect schema-migration PRESENCE signals (no file contents, no secrets) → detectMigration. */
 function gatherMigrationSignals(target, roots, composeServices) {
   const files = new Set()
@@ -894,7 +986,13 @@ function gatherFacts(target) {
     if (buildTargetDiagnoses.length) recipe.buildTargetDiagnoses = buildTargetDiagnoses
   }
   const migration = detectMigration(gatherMigrationSignals(target, roots, composeServices))
-  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration, missingEnvFiles, buildTargetFixes, buildTargetDiagnoses }
+  // LIVE-COLLISION gather (informational, fail-safe): only a COMPOSE recipe carries the
+  // fixed-container_name collision surface, and `docker ps` runs only when at least one
+  // fixed name exists to check — a repo with no container_name directives never touches
+  // docker here. Any docker failure yields null → detectCollision → null (no block).
+  const fixedNames = composePath ? composeFixedContainerNames(composeText) : []
+  const liveCollision = fixedNames.length ? detectCollision(fixedNames, gatherRunningContainerNames()) : null
+  return { serverRoots: roots, recipe, webTier, envNames, satisfiable, composeServices, migration, missingEnvFiles, buildTargetFixes, buildTargetDiagnoses, liveCollision }
 }
 
 function main() {
@@ -907,6 +1005,9 @@ function main() {
     if (r.env.synthesizable.length) L.push(`  toolkit generates: ${r.env.synthesizable.join(', ')}`)
     if (r.env.external.length) L.push(`  owner must supply (external): ${r.env.external.join(', ')}`)
     if (r.env.unknown.length) L.push(`  unclassified (default/leave-unset, review): ${r.env.unknown.join(', ')}`)
+  }
+  if (r.liveCollision) {
+    L.push(`  live collision (informational): ${r.liveCollision.colliding.join(', ')} running on this host right now — the mirror is isolated regardless (${r.liveCollision.isolatedBy.join('; ')})`)
   }
   process.stdout.write(L.join('\n') + '\n')
 }
