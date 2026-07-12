@@ -51,6 +51,41 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.123] — 2026-07-12
+
+**Architecture detection in the PREFLIGHT is now deterministic, not a driver hand-grep — closing two
+misses a live cold run surfaced: a subscriber-built Agentforce agent (`agent/*.agentscript.yaml`) the
+preflight's packaged-metadata grep didn't see (the scope phase caught it every run and corrected the
+preflight — a backport gap since 0.8.117), and a third app (`apps/admin`) only the deterministic
+`enumerate-app-roots` engine caught. Both had the same root cause; both are now caught up front.**
+
+### Added
+- `harness/detect-agentforce.mjs` — a deterministic Agentforce detector used by BOTH the preflight
+  and the scope phase (one detector, no shallow/deep split — the journey already said "reuse the
+  detection heuristics, don't re-implement them"; this makes it literal). Detects any of four shapes
+  → `agentforce`: packaged `Bot`/`GenAiPlugin`/`GenAiPlanner`/`GenAiFunction` metadata,
+  `genAiPromptTemplate`, a subscriber-built `*.agentscript.yaml` (the miss), and — heuristic, weaker
+  signal — an ESR wired as an agent-action. Confidence is `hard` unless ONLY the ESR heuristic
+  matched, so a heuristic false-negative never suppresses the clear-cut shapes and a heuristic-only
+  positive is flagged for corroboration, never dropped. Critically, it does NOT infer Agentforce
+  from a plain managed package (asserting a listing that manufactures blockers it can never satisfy
+  is worse than the miss). Fail-safe, read-only, bounded walk.
+
+### Changed
+- `skills/security-review-journey/SKILL.md` — Step 0.2 now runs `detect-agentforce` +
+  `enumerate-app-roots` as atomic calls, folding both into the detected elements (the shallow
+  packaged-metadata-only Agentforce grep is retired); the two allowed-tools grants added.
+- `skills/scope-submission/SKILL.md` — the Agentforce self-check sources its signal from the engine
+  instead of a hand grep; the element-table doctrine (do not infer from managed-package alone) is
+  preserved.
+- `harness/emit-permission-set.mjs` — `detect-agentforce` added to the 0.8.122 read-only allow-set
+  (a default-mode run pre-approves the new engine).
+
+### Tests
+- `acceptance/test-detect-agentforce.mjs` (new file, AF1–AF11) — the four shapes, the
+  don't-infer-from-managed-package guard, exclusions, determinism, and fail-safe. Suite **88 files /
+  1355 checks / 0 failed** (+1 file, +11 checks over 0.8.122).
+
 ## [0.8.122] — 2026-07-12
 
 **A self-skipping first gate sets the repo up to run the review UNINTERRUPTED in Claude Code's

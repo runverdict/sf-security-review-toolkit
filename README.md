@@ -341,7 +341,7 @@ The methodology and harness were extracted from real multi-pass audits of a prod
 
 ## Maturity & what's in the box
 
-**14 skills · 19 audit dimensions · 8 scan families · up to 16 consent-installed OSS scanners + Code Analyzer + 5 zero-install Salesforce-metadata scanners · an 18-adapter deterministic findings band · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (1,300+ checks across 87 files)** that fails the build if a refactor breaks an enforced gate or its determinism.
+**14 skills · 19 audit dimensions · 8 scan families · up to 16 consent-installed OSS scanners + Code Analyzer + 5 zero-install Salesforce-metadata scanners · an 18-adapter deterministic findings band · a deterministic Submission Completeness Index + a sequenced path-to-green · a core of deterministic engines in `harness/` guarded by a standing test suite (1,300+ checks across 88 files)** that fails the build if a refactor breaks an enforced gate or its determinism.
 
 Honest beta (see the top of this README). See [`CHANGELOG.md`](CHANGELOG.md) for the current version and release notes. Contributions that update the baseline with primary-source citations, or that close a recall gap, are the most valuable PRs you can make.
 
