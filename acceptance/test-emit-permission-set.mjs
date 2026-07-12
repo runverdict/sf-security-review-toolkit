@@ -6,23 +6,32 @@
  * `permissions.allow`, fail-closed on consent, and abort (writing NOTHING) if any other
  * settings key would change.
  *
- * P1  REQUIRED_ALLOW curation — colon-prefix shape, frozen, covers the README allowlist
- *     (parsed from README.md, so the two can't drift), every node entry names a real
- *     harness file (a typo'd engine name turns this RED).
+ * P1  REQUIRED_ALLOW curation — scoped shapes only (Bash colon-prefix / per-skill
+ *     plugin-prefixed Skill), frozen, covers the README allowlist (parsed from README.md,
+ *     so the two can't drift), every node entry names a real harness file (a typo'd
+ *     engine name turns this RED), and the SKILL DRIFT GUARD: the `Skill(...)` entries
+ *     ⟺ the `skills/` directory in BOTH directions (a skill added to the repo without a
+ *     REQUIRED_ALLOW entry reds this, and so does a dangling Skill entry).
  * P2  the exclusion boundary — NO executor engine (install-scanners / standup-* /
  *     teardown-* / run-dast / capture-* / write-drafted-content / …) and NO blanket
- *     `Bash(*)` / `Bash(node:*)` / `Bash(sf:*)` / destructive shell prefix is in the set.
+ *     `Bash(*)` / `Bash(node:*)` / `Bash(sf:*)` / `Skill` / `Skill(*)` /
+ *     `Skill(sf-security-review-toolkit:*)` / destructive shell prefix is in the set.
  * P3  permissionSetSatisfied — fail-safe false on missing/malformed; true only when the
- *     FULL set is present; one missing entry → false.
+ *     FULL set is present; one missing entry → false; the pre-Skill Bash-only set is
+ *     NOT satisfied (missing exactly the Skill surface).
  * P4  mergePermissionSet — pure: appends exactly the missing entries, dedupes, preserves
  *     existing allow entries AND every unrelated key untouched, idempotent (twice == once),
  *     never mutates its input (deep-frozen input survives).
  * P5  assertOnlyAllowGrew — THE BOUNDARY: passes on a legit merge; THROWS on a created
  *     `permissions.deny`, a changed `env`, a removed key, an altered/reordered existing
- *     allow entry, a shrunk allow, or an appended entry outside REQUIRED_ALLOW. Mutation
- *     proof: neuter the guard (or make merge touch another key) and P5 + P8 turn RED.
+ *     allow entry, a shrunk allow, or an appended entry outside REQUIRED_ALLOW —
+ *     including a `Skill(...)` entry that is NOT in the curated list (wrong plugin,
+ *     non-existent skill, or a wildcard). Mutation proof: neuter the guard (or make
+ *     merge touch another key) and P5 + P8 turn RED.
  * P6  CLI --check exit codes — 0 satisfied / 2 not; `askedBefore` reflects the recorded
- *     gate; a malformed settings file reports itself and stays exit 2.
+ *     gate; a malformed settings file reports itself and stays exit 2; a settings file
+ *     carrying the full Bash surface but NO Skill entries is NOT satisfied (exit 2,
+ *     missing exactly the Skill entries).
  * P7  CLI --apply consent fail-closed — no recorded token → exit 3 and NOTHING written;
  *     a recorded DENY → exit 3 and nothing written; a recorded affirm without the
  *     `--consent` flag → exit ≠ 0 and nothing written.
@@ -45,7 +54,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -86,14 +95,45 @@ const deepFreeze = (v) => { if (v && typeof v === 'object') { Object.freeze(v); 
 console.log('emit-permission-set standing test')
 
 // ── P1 curation ────────────────────────────────────────────────────────────────
-check('P1 every entry is a scoped colon-prefix rule and the set is frozen', () => {
+check('P1 every entry is a scoped rule (Bash colon-prefix or per-skill Skill) and the set is frozen', () => {
   assert.ok(Object.isFrozen(REQUIRED_ALLOW), 'REQUIRED_ALLOW is frozen')
   assert.ok(REQUIRED_ALLOW.length >= 40, `a real curated surface (got ${REQUIRED_ALLOW.length})`)
   for (const e of REQUIRED_ALLOW) {
-    assert.match(e, /^Bash\([^()]+:\*\)$/, `${e} must be the colon-prefix Bash(<cmd>:*) form`)
-    assert.notEqual(e.replace(/^Bash\(/, '').replace(/:\*\)$/, '').trim(), '', `${e} must scope a real command prefix`)
+    if (e.startsWith('Skill(')) {
+      assert.match(e, /^Skill\(sf-security-review-toolkit:[a-z0-9-]+\)$/,
+        `${e} must be the plugin-prefixed per-skill Skill(sf-security-review-toolkit:<skill>) form`)
+    } else {
+      assert.match(e, /^Bash\([^()]+:\*\)$/, `${e} must be the colon-prefix Bash(<cmd>:*) form`)
+      assert.notEqual(e.replace(/^Bash\(/, '').replace(/:\*\)$/, '').trim(), '', `${e} must scope a real command prefix`)
+    }
   }
   assert.equal(new Set(REQUIRED_ALLOW).size, REQUIRED_ALLOW.length, 'no duplicate entries')
+})
+
+check('P1 SKILL DRIFT GUARD: Skill(...) entries ⟺ skills/ directories, both directions', () => {
+  const skillDirs = readdirSync(join(PLUGIN, 'skills'), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort()
+  assert.ok(skillDirs.length >= 10, `a real skills tree (got ${skillDirs.length})`)
+  const named = REQUIRED_ALLOW
+    .filter((e) => e.startsWith('Skill('))
+    .map((e) => {
+      const m = e.match(/^Skill\(sf-security-review-toolkit:([a-z0-9-]+)\)$/)
+      assert.ok(m, `${e} must name one skill of this plugin`)
+      return m[1]
+    })
+    .sort()
+  // forward: every skills/<dir> has its Skill entry — a skill added to the repo without
+  // being added to ALLOWED_SKILLS turns this RED (it would prompt mid-journey)
+  for (const dir of skillDirs) {
+    assert.ok(named.includes(dir), `skills/${dir}/ has NO Skill(sf-security-review-toolkit:${dir}) entry — it would prompt mid-journey`)
+  }
+  // reverse: every Skill entry names a real skills/<name>/ directory (no dangling grant)
+  for (const name of named) {
+    assert.ok(skillDirs.includes(name), `Skill entry '${name}' names no skills/${name}/ directory — a dangling grant`)
+  }
+  assert.deepEqual(named, skillDirs, 'the Skill surface is EXACTLY the skills/ directory (no dupes, no gaps)')
 })
 
 check('P1 the README hands-off allowlist is a subset (parsed from README.md — no drift)', () => {
@@ -127,8 +167,13 @@ check('P2 NO executor engine is pre-approved (they stay prompting + consent-gate
     'agent-trace-probe', 'normalize-agent-test', 'scaffold-env', 'cleanup-scanners',
     'build-managed-package',
   ]
+  // Scan the Bash COMMAND surface only: a Skill(...) entry may share an executor's name
+  // (the build-managed-package SKILL is pre-approved to load its instructions; every
+  // packaging OPERATION inside it still prompts and stays consent-gated) — what must
+  // never appear pre-approved is the executor as a runnable command.
+  const bashEntries = REQUIRED_ALLOW.filter((e) => e.startsWith('Bash('))
   for (const x of EXECUTORS) {
-    assert.ok(!REQUIRED_ALLOW.some((e) => e.includes(x)), `executor '${x}' must NOT be in REQUIRED_ALLOW`)
+    assert.ok(!bashEntries.some((e) => e.includes(x)), `executor '${x}' must NOT be in the Bash surface of REQUIRED_ALLOW`)
   }
 })
 
@@ -140,6 +185,23 @@ check('P2 NO blanket or destructive prefix is in the set', () => {
   ]
   for (const b of BANNED) {
     assert.ok(!REQUIRED_ALLOW.includes(b), `${b} must NOT be in REQUIRED_ALLOW`)
+  }
+})
+
+check('P2 NO blanket Skill grant — per-skill, plugin-prefixed, no wildcard', () => {
+  const BANNED = [
+    'Skill', // the bare tool name would pre-approve EVERY skill of EVERY plugin
+    'Skill(*)',
+    'Skill(*:*)',
+    'Skill(sf-security-review-toolkit)', // the bare plugin would cover future skills sight-unseen
+    'Skill(sf-security-review-toolkit:*)',
+  ]
+  for (const b of BANNED) {
+    assert.ok(!REQUIRED_ALLOW.includes(b), `${b} must NOT be in REQUIRED_ALLOW`)
+  }
+  for (const e of REQUIRED_ALLOW.filter((x) => x.startsWith('Skill'))) {
+    assert.ok(e.startsWith('Skill(sf-security-review-toolkit:'), `${e} must be scoped to THIS plugin`)
+    assert.ok(!e.includes('*'), `${e} must carry NO wildcard — one named skill per entry`)
   }
 })
 
@@ -156,6 +218,12 @@ check('P3 satisfied ⟺ the full set is present; fail-safe false on missing/malf
   assert.equal(missingAllowEntries({}).length, REQUIRED_ALLOW.length, 'empty settings → everything missing')
   // extra unrelated entries never break satisfaction
   assert.equal(permissionSetSatisfied({ permissions: { allow: ['Bash(make:*)', ...REQUIRED_ALLOW] } }), true)
+  // the pre-Skill Bash-only set is NOT satisfied — missing exactly the Skill surface
+  const skillEntries = REQUIRED_ALLOW.filter((e) => e.startsWith('Skill('))
+  assert.ok(skillEntries.length >= 10, `the Skill surface is present in REQUIRED_ALLOW (got ${skillEntries.length})`)
+  const bashOnly = { permissions: { allow: REQUIRED_ALLOW.filter((e) => !e.startsWith('Skill(')) } }
+  assert.equal(permissionSetSatisfied(bashOnly), false, 'the Bash-only set (no Skill entries) → false')
+  assert.deepEqual(missingAllowEntries(bashOnly), skillEntries, 'missing is exactly the Skill entries')
 })
 
 // ── P4 mergePermissionSet ─────────────────────────────────────────────────────
@@ -242,6 +310,18 @@ check('P5 BOUNDARY: allow itself may only GROW with curated strings', () => {
   assert.throws(() => assertOnlyAllowGrew(original, shrunk), /BOUNDARY/, 'a shrunk allow throws')
   const smuggled = legit(); smuggled.permissions.allow.push('Bash(curl:*)')
   assert.throws(() => assertOnlyAllowGrew(original, smuggled), /BOUNDARY/, 'an appended entry outside REQUIRED_ALLOW throws')
+  // a Skill(...) entry NOT in the curated list is rejected the same way — the boundary
+  // covers the new surface automatically (only strings ∈ REQUIRED_ALLOW may be appended)
+  for (const rogue of [
+    'Skill(sf-security-review-toolkit:not-a-toolkit-skill)', // right plugin, no such skill
+    'Skill(some-other-plugin:audit-codebase)', // right skill name, wrong plugin
+    'Skill(sf-security-review-toolkit:*)', // wildcard
+    'Skill(*)',
+    'Skill',
+  ]) {
+    const n = legit(); n.permissions.allow.push(rogue)
+    assert.throws(() => assertOnlyAllowGrew(original, n), /BOUNDARY/, `non-curated ${rogue} must throw`)
+  }
   const noAllow = { permissions: {} }
   assert.throws(() => assertOnlyAllowGrew(original, noAllow), /BOUNDARY/, 'a merged object with no allow array throws')
 })
@@ -269,6 +349,16 @@ check('P6 --check: exit 0 when the set is present; askedBefore true after a reco
   const r1 = run(['--check', '--target', d2, '--json'])
   assert.equal(r1.status, 2, 'still not satisfied')
   assert.equal(JSON.parse(r1.stdout).askedBefore, true, 'askedBefore true — the preflight must not re-ask')
+})
+
+check('P6 --check: the full Bash surface WITHOUT the Skill entries is NOT satisfied (exit 2)', () => {
+  const d = tmp()
+  writeSettings(d, { permissions: { allow: REQUIRED_ALLOW.filter((e) => !e.startsWith('Skill(')) } })
+  const r = run(['--check', '--target', d, '--json'])
+  assert.equal(r.status, 2, 'Bash-only (the pre-Skill set) → exit 2')
+  const j = JSON.parse(r.stdout)
+  assert.equal(j.satisfied, false)
+  assert.deepEqual(j.missing, REQUIRED_ALLOW.filter((e) => e.startsWith('Skill(')), 'missing is exactly the Skill surface')
 })
 
 check('P6 --check: a malformed settings file reports itself and stays exit 2', () => {
@@ -324,6 +414,8 @@ check('P8 consented --apply: allow grows, every other key byte-preserved, artifa
   assert.equal(raw, JSON.stringify(written, null, 2) + '\n', 'pretty-printed 2-space + trailing newline')
   assert.equal(written.permissions.allow[0], 'Bash(make:*)', 'pre-existing allow entry preserved, first')
   assert.equal(permissionSetSatisfied(written), true, 'the full set is now present')
+  assert.ok(written.permissions.allow.includes('Skill(sf-security-review-toolkit:security-review-journey)'),
+    'the Skill surface was written (the confirmed per-skill form)')
   assert.deepEqual(written.permissions.deny, original.permissions.deny, 'deny untouched')
   assert.equal(written.permissions.defaultMode, 'default', 'defaultMode untouched')
   assert.deepEqual(written.env, original.env, 'env untouched')
@@ -335,6 +427,7 @@ check('P8 consented --apply: allow grows, every other key byte-preserved, artifa
   assert.match(art, /consent/i, 'artifact states the consent-gating survives')
   assert.match(art, /How to remove/i, 'artifact carries the removal instructions')
   assert.ok(art.includes('Bash(git status:*)'), 'artifact lists the added entries')
+  assert.ok(art.includes('Skill(sf-security-review-toolkit:'), 'artifact lists AND explains the Skill entries')
   // and the check now passes
   assert.equal(run(['--check', '--target', d]).status, 0)
 })

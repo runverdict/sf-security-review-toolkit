@@ -30,14 +30,21 @@
  *     would have to overwrite a value that is not ours).
  *
  * THE CURATED SURFACE (REQUIRED_ALLOW) — scoped prefixes only, NEVER a blanket `Bash(*)` /
- * `Bash(node:*)` / `Bash(sf:*)`:
+ * `Bash(node:*)` / `Bash(sf:*)` / `Skill(*)`:
  *   - the read-only shell/file/git tools the README allowlist documents;
  *   - the read-only `sf` CLI reads the README allowlist documents (org/list/display, data
  *     query, sobject, package version list/report, config get, project retrieve + the local
  *     Code Analyzer run — the two that write only retrieved metadata / report files);
  *   - the toolkit's DETERMINISTIC ENGINE calls (`node *harness/<name>.mjs:*`): the render-*
  *     family, the read-only detectors/verifiers, and the local-state engines whose writes
- *     are confined to the toolkit's own `.security-review/` + `docs/security-review/` trees.
+ *     are confined to the toolkit's own `.security-review/` + `docs/security-review/` trees;
+ *   - the toolkit's OWN SKILLS (`Skill(sf-security-review-toolkit:<skill>)`): the journey
+ *     drives its phases by invoking its sub-skills through the Skill tool, which prompts
+ *     PER SKILL in default mode — the gap the 0.8.122 Bash-only set left, stalling an
+ *     otherwise-uninterrupted run at every phase hand-off. Each entry is scoped to one
+ *     named skill of THIS plugin (never a blanket `Skill` / `Skill(*)`); pre-approving an
+ *     invocation only loads the skill's instructions — every privileged operation inside
+ *     a skill still hits its own tool prompts and recorded-consent gates.
  *
  * EXCLUDED ON PURPOSE — the EXECUTORS stay prompting AND stay behind their own recorded
  * consent gates; pre-approving them here would remove a safety prompt from an op that
@@ -133,10 +140,42 @@ const ALLOWED_ENGINES = Object.freeze([
   'seed-auto-dispositions',
 ])
 
+// The plugin's own name — the prefix Claude Code records for per-skill permission
+// entries: `Skill(<plugin>:<skill>)` is the exact form it writes to settings.local.json
+// when the operator answers a Skill prompt with "don't ask again".
+const PLUGIN = 'sf-security-review-toolkit'
+
+// The toolkit's own skills — one entry per `skills/<name>/` directory. The journey
+// invokes these through the Skill tool, and in default mode the Skill tool prompts once
+// per skill, so a Bash-only allowlist still interrupts an autonomous run at every phase
+// hand-off. Safe to pre-approve by construction: each entry names ONE skill of THIS
+// plugin (never a blanket `Skill` / `Skill(*)`), and approving the invocation only loads
+// the skill's instructions — every privileged operation a skill performs still raises its
+// own tool prompt and stays behind its own recorded-consent gate. The acceptance drift
+// guard holds this list ⟺ the skills/ directory in both directions.
+const ALLOWED_SKILLS = Object.freeze([
+  'audit-codebase',
+  'audit-deployed-package',
+  'bootstrap-cli-auth',
+  'build-managed-package',
+  'compile-submission',
+  'generate-artifacts',
+  'install-and-verify-package',
+  'prepare-test-environment',
+  'reviewer-simulation',
+  'run-scans',
+  'scope-submission',
+  'security-review-journey',
+  'stay-listed',
+  'teardown-mcp-registration',
+])
+
 /**
  * The curated `permissions.allow` set, in Claude Code's colon-prefix syntax
  * (`Bash(git status:*)` — the form the README's settings.json example uses; NOT the
- * space form the skills' allowed-tools frontmatter uses).
+ * space form the skills' allowed-tools frontmatter uses) plus the per-skill
+ * `Skill(sf-security-review-toolkit:<skill>)` form Claude Code itself records for
+ * Skill-tool approvals.
  */
 export const REQUIRED_ALLOW = Object.freeze([
   // read-only git/shell/file tools (the README allowlist)
@@ -167,6 +206,9 @@ export const REQUIRED_ALLOW = Object.freeze([
   'Bash(sf code-analyzer run:*)',
   // the toolkit's own deterministic engines (the gap the README misses)
   ...ALLOWED_ENGINES.map((name) => `Bash(node *harness/${name}.mjs:*)`),
+  // the toolkit's own sub-skill invocations (the Skill tool prompts per skill in default
+  // mode — the gap the Bash-only set left); scoped per-skill, never a blanket Skill grant
+  ...ALLOWED_SKILLS.map((s) => `Skill(${PLUGIN}:${s})`),
 ])
 
 /** True iff v is a plain object (not null, not an array). */
@@ -314,7 +356,12 @@ export function renderArtifact({ added, alreadyPresent }) {
   lines.push('  discloses (`sf project retrieve` writes retrieved metadata into the project')
   lines.push('  tree; `sf code-analyzer run` writes report files);')
   lines.push('- the toolkit\'s own deterministic `harness/*.mjs` engines, whose writes are')
-  lines.push('  confined to `.security-review/` and `docs/security-review/`.')
+  lines.push('  confined to `.security-review/` and `docs/security-review/`;')
+  lines.push('- the toolkit\'s own skills (`Skill(sf-security-review-toolkit:<skill>)`) — the')
+  lines.push('  journey invokes its sub-skills through the Skill tool, which otherwise prompts')
+  lines.push('  once per skill. Each entry is scoped to one named skill of this plugin (never')
+  lines.push('  a blanket `Skill` grant), and approving the invocation only loads the skill\'s')
+  lines.push('  instructions — anything privileged a skill does still prompts below.')
   lines.push('')
   lines.push('## What still asks (unchanged, consent-gated in code)')
   lines.push('')
