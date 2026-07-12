@@ -191,12 +191,16 @@ const GATE_CATALOG = Object.freeze({
     probeTemplate: Object.freeze({
       staging:
         'Confirm {{URL}} is a STAGING endpoint and run the read-only initialize + tools/list ' +
-        'handshake. The handshake itself is read-only, but the endpoints recorded here become the ' +
-        'DAST target list three phases later — the environment label rides with them.',
+        'handshake. The handshake itself is read-only, and the endpoints recorded here become the ' +
+        'paths the later DAST exercises on the disposable loopback mirror the toolkit stands up — ' +
+        'never on this host (run-dast refuses any explicit or non-loopback target). The ' +
+        'environment label rides with them as evidence provenance.',
       production:
         'Confirm {{URL}} is a PRODUCTION endpoint and run the read-only handshake. Production is ' +
-        'probed ONLY with this explicit confirmation, never silently — an unlabeled production URL ' +
-        'becomes a production DAST scan downstream.',
+        'probed ONLY with this explicit confirmation, never silently — the label is evidence ' +
+        'provenance, not a scan target: the later DAST exercises the recorded paths on the ' +
+        'disposable loopback mirror the toolkit stands up, and run-dast refuses any explicit or ' +
+        'non-loopback target, so this endpoint is never DAST-scanned.',
     }),
     safeDefault: Object.freeze({
       label: 'Skip — do not probe',
