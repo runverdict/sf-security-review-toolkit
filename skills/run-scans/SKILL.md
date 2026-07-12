@@ -321,9 +321,10 @@ families PENDING until a re-audit.
    *Agent runs:* install check, scan, JSON parsing, diffing findings against
    the audit ledger, dossier-row drafting. *Owner runs:* the code fixes, and
    confirmation of every FP justification.
-   *Evidence:* `evidence/code-analyzer-<date>.html` + `.json` +
-   `ca-scan-log-<date>.txt` (the captured stderr — index it like any other
-   evidence file so the completeness lint stays green).
+   *Evidence:* `evidence/code-analyzer-<date>.html` + `.json`. The captured
+   `ca-scan-log-<date>.txt` is an internal diagnostic, not submission evidence —
+   the completeness lint auto-excludes it (like the capture provenance sidecars),
+   and its signal surfaces as the deterministic scan-error coverage note.
    *Disposition:* every violation becomes **fixed** (then re-scan — the
    submitted report must come from the submitted code, not three fixes ago)
    or a **dossier row**. Critical/High are must-fix; Code Analyzer has no

@@ -86,6 +86,7 @@ if (process.argv.includes('--check')) {
       .filter((n) => CHECK_EXTS.some((ext) => n.endsWith(ext)))
       .filter((n) => n !== 'index.json') // the index never lists itself
       .filter((n) => !n.endsWith('.provenance.json')) // capture-* sidecars ride their artifact
+      .filter((n) => !/^ca-scan-log-.*\.txt$/.test(n)) // the CA scan-log is an internal diagnostic — its signal surfaces as the ingest scan-error coverage note, not a requirement-satisfying artifact
       .sort()
   } catch {
     console.log('evidence-index check: no evidence directory on disk — nothing to index (clean)')
