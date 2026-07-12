@@ -51,6 +51,31 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.125] — 2026-07-12
+
+**Closes the last uninterrupted-run gap: the 0.8.122 permission-set was Bash-only, so the journey's
+own sub-skill invocations (scope, run-scans, audit, artifacts, reviewer-sim, compile, the deep-audit
+skills) each still prompted "Use skill X?" in default mode — stalling autonomous runs. The permission
+set now pre-approves the toolkit's own Skill invocations too, so a first-run setup makes a default-mode
+review go gate-to-package without a single tool prompt.**
+
+### Added
+- `harness/emit-permission-set.mjs` — `REQUIRED_ALLOW` now includes a `Skill(sf-security-review-toolkit:<skill>)`
+  entry for every one of the plugin's 14 skills (a curated `ALLOWED_SKILLS` array). The syntax is the
+  one Claude Code itself persists on "don't ask again"; entries are per-skill and plugin-prefixed —
+  never a blanket `Skill`, `Skill(*)`, or `Skill(plugin:*)` wildcard. The `assertOnlyAllowGrew`
+  boundary is unchanged and covers the new surface automatically (a Skill entry not in the curated
+  set is still rejected — the write can only ever append curated strings). `Write`/`Edit` are
+  deliberately NOT added: the toolkit writes through its allow-listed `node harness/*` engines, so
+  file writes never prompt (a 30+-file run persists zero Write entries).
+
+### Tests
+- `test-emit-permission-set.mjs` — a bidirectional DRIFT GUARD (every `skills/` directory has a
+  matching Skill entry and vice-versa, `readdirSync`-checked so a new skill can't ship un-allowed),
+  the per-skill/no-wildcard shape lock, boundary tamper cases for non-curated/wildcard/wrong-plugin
+  Skill entries, and check/apply coverage. Suite **88 files / 1366 checks / 0 failed** (+3 over
+  0.8.124).
+
 ## [0.8.124] — 2026-07-12
 
 **SAFETY-CRITICAL. Fixes the toolkit gap behind a production-outage incident: on a host running the
