@@ -51,6 +51,46 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.120] — 2026-07-12
+
+**"A Code-Analyzer scan-error is never a clean pass" becomes a DETERMINISTIC engine gate instead of
+a driver-eyeball. When a per-file PMD `ParseException`/scan-error means a file was NOT scanned, its
+0 violations are an artifact of the failure — the ingest now emits a fail-loud COVERAGE NOTE naming
+the file, on the same `notes[]` channel pip-audit's coverage note rides. This closes the one 0.8.119
+gap where the mandate was prose-only (`run-scans` SKILL) and the "failure is never a pass" promise
+rested on the driver remembering to eyeball stderr.**
+
+### Added
+- `harness/ingest-scanner-findings.mjs` — exported pure `extractCodeAnalyzerScanErrors(logText)` +
+  a standalone step in `ingestAll` that reads the captured Code-Analyzer scan-log and folds its
+  scan-error coverage notes into the aggregate `notes[]`. The CA v5 violations JSON has NO error
+  channel (every real capture is exactly `{runDir, violationCounts, versions, violations}`), so a
+  PMD `ParseException` — which lands ONLY in stderr — cannot reach the per-adapter `coverageNotes(raw)`
+  hook. Hence a standalone stderr-log reader, deliberately OUTSIDE the shared adapter dispatch (zero
+  change to the 19-adapter contract). Tolerant matching (the exact PMD grammar is inferred from a
+  no-live-capture position), one note per distinct errored file (deduped, sorted, capped), a catch-all
+  when a file can't be extracted, and fail-safe end to end (no log / unreadable log / clean log → no
+  note, never a crash). The additive note coexists with the existing `0 violations — no findings`
+  note rather than replacing it.
+
+### Changed
+- `skills/run-scans/SKILL.md` — the primary Code Analyzer invocation now captures stderr to
+  `.security-review/evidence/ca-scan-log-<date>.txt` (`2>`), named to avoid the
+  `render-scan-status` CA-report presence prefix; the Family-1 scan-error mandate is reworded from a
+  hand-check to "the engine emits the coverage note deterministically from this log — the driver
+  verifies + records it" (honest degrade to eyeballing stderr only when no log exists).
+- `harness/build-evidence-index.mjs` — the `--check` orphan lint now excludes `ca-scan-log-*.txt`
+  (parallel to the existing `index.json` / `*.provenance.json` exclusions): the scan-log is an
+  internal diagnostic whose signal surfaces as the coverage note, not a requirement-satisfying
+  evidence artifact, so a clean run's (often empty) log never false-orphans and blocks
+  compile-submission.
+
+### Tests
+- `test-ingest-scanner-findings.mjs` CAE1–CAE6 (extractor units incl. fail-safe + the
+  `ingestAll` integration proving the coverage note coexists with the false-clean note and vanishes
+  when the log is absent) + `test-build-evidence-index.mjs` B8 (the scan-log exclusion never
+  orphans). Suite **85 files / 1313 checks / 0 failed** (+7 over 0.8.119).
+
 ## [0.8.119] — 2026-07-12
 
 **A MIRROR-SAFETY doctrine makes the autonomous run provably harmless to a partner's real stack:
