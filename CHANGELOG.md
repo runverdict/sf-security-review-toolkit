@@ -51,6 +51,36 @@ follow semantic versioning.
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
 > above `## [0.5.5]`.
 
+## [0.8.121] — 2026-07-12
+
+**Auto-mode legibility: the driver is told to invoke harness commands ATOMICALLY (one command per
+Bash call) and to prefer the dedicated Read/Grep/Glob tools over compound shell — because Claude
+Code's auto-mode safety classifier FAILS CLOSED on compound/opaque commands it "could not evaluate"
+(`cd X && a && b` chains, `for` loops, `node -e`, heredocs). A live cold run had six `record-consent`
+calls batched into one `&&`-chain DENIED, while the same six recorded one-per-call all passed —
+so a batched invocation reads to the operator as a broken toolkit. Consent prompts are already
+gate-spec-canonical + rendered verbatim; this makes the *invocations* legible too.**
+
+### Changed
+- `skills/security-review-journey/SKILL.md` — an AUTO-MODE LEGIBILITY operating rule (prefer
+  dedicated tools over compound shell) + an explicit ATOMIC-INVOCATIONS mandate in the consent-gates
+  block (one gate = one Bash call; never `&&`-chained / looped / heredoc'd) + a clarifier that the
+  four preflight detectors are four separate atomic calls.
+- `skills/scope-submission/SKILL.md` — the same legibility rule; and the mcp-probe consent currency
+  fix (below).
+- `harness/gate-spec.mjs` + `skills/scope-submission/SKILL.md` + `harness/render-scope-summary.mjs`
+  — **mcp-probe consent currency**: the stale "an unlabeled production URL becomes a production DAST
+  scan downstream" warning is corrected to the post-mirror-safety truth — the recorded endpoints
+  become the paths the DAST exercises on the disposable loopback mirror, never on the production host
+  (`run-dast` refuses any explicit/non-loopback target, exit 3); the environment label is evidence
+  provenance, not a scan target. gate-spec structure (labels/decisions/frozen catalog) untouched.
+
+### Tests
+- `acceptance/test-automode-legibility.mjs` (new file, AL1–AL6) — locks the atomic-invocation +
+  legibility mandates present and the mcp-probe wording current (loopback-mirror truth in, the
+  "production DAST scan" threat out, via a functional `gateOptions('mcp-probe')` assertion). Suite
+  **86 files / 1319 checks / 0 failed** (+1 file, +6 checks over 0.8.120).
+
 ## [0.8.120] — 2026-07-12
 
 **"A Code-Analyzer scan-error is never a clean pass" becomes a DETERMINISTIC engine gate instead of
