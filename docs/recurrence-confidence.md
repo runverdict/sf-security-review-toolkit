@@ -1,9 +1,10 @@
 # Recurrence-confidence — classifying findings by how reliably they recur
 
-**Status: ENGINE SHIPPED + SKILL-WIRED on `main` (built 0.8.7, wired end-to-end 0.8.10, UNTAGGED).**
-Invoked live by `audit-codebase` (step 9) and read by `compile-submission`; the release tag stays
-HELD with the rest of the 0.8.x arc (the claim that holds the tag is the [ceiling test](ceiling-test.md),
-not this engine).
+**Status: ENGINE SHIPPED + SKILL-WIRED on `main` (built 0.8.7, wired end-to-end 0.8.10; first
+tagged release `v0.9.0`, 2026-07-13).** Invoked live by `audit-codebase` (step 9) and read by
+`compile-submission`. The strong stability claim that once held the tag remains refuted (the
+[ceiling test](ceiling-test.md)) — `v0.9.0` ships under that test's §6 scoped claim, with this
+engine as the surface that keeps the run-to-run variance visible.
 
 This is the contract for `harness/recurrence-confidence.mjs` — the deterministic engine
 that takes N independent audit-ledgers of the **same** codebase and classifies each
@@ -249,4 +250,4 @@ display-only direction).
 `acceptance/test-recurrence-confidence.mjs`. Pure, deterministic, dependency-free; same N
 ledgers in → byte-identical JSON out. Authored 2026-06-23 from the Solano
 cold-at-exhaustive refutation; wired into audit-codebase (step 9) + compile-submission
-(informational) at 0.8.10. The tag stays HELD pending cold validation.*
+(informational) at 0.8.10. First tagged release: `v0.9.0` (2026-07-13), under the ceiling test's scoped claim — see that doc's addendum.*

@@ -7,7 +7,7 @@ that adds or retires a doc. The states are defined in [`CONVENTIONS.md`](../CONV
 | Document | State | Purpose |
 |---|---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | `REFERENCE` | Property → enforcing-engine → guarding-test → code-excerpt map; the trust claim, verifiable in five minutes without a clone. |
-| [ceiling-test.md](ceiling-test.md) | `HONEST-ARTIFACT` | The published falsification of the toolkit's strongest reliability claim — the reason the release tag is HELD. Preserved verbatim. |
+| [ceiling-test.md](ceiling-test.md) | `HONEST-ARTIFACT` | The published falsification of the toolkit's strongest reliability claim — it held the release tag through the 0.8.x arc; `v0.9.0` was tagged under its §6 scoped claim. Preserved verbatim (+ dated addendum). |
 | [recurrence-confidence.md](recurrence-confidence.md) | `REFERENCE` | Spec/contract for the shipped, wired `harness/recurrence-confidence.mjs` engine (run-to-run finding stability). |
 | [deterministic-findings-acceptance.md](deterministic-findings-acceptance.md) | `REFERENCE` | The live Level-A/B acceptance runbook for the deterministic-findings engine (the campaign replacement). |
 | [sf-ops-safety-gate.md](sf-ops-safety-gate.md) | `REFERENCE` | The shipped fail-closed PreToolUse consent gate for irreversible Salesforce/host ops. |

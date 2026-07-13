@@ -1,6 +1,6 @@
 # SF-ops safety gate — fail-closed consent for irreversible operations
 
-**Status: SHIPPED on `main` (0.8.11; classifier hardened 0.8.12–0.8.13, UNTAGGED).**
+**Status: SHIPPED on `main` (0.8.11; classifier hardened 0.8.12–0.8.13; first tagged release `v0.9.0`).**
 
 The deployed-package deep audit runs **irreversible** Salesforce / host operations as
 prose-only Bash inside skills. A prior full-auto run skipped the consent asks and fanned

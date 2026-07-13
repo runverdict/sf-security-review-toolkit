@@ -5,6 +5,12 @@ This document is the public record of that experiment: the hypothesis, the bar w
 before the runs, the result, and the product position the result forced. The tag stays
 **HELD** because the claim that would justify it did not survive the test.
 
+> *Addendum (2026-07-13): `v0.9.0` was tagged under the **scoped claim** of §6 — the toolkit
+> reliably finds the unambiguous blockers and builds the evidence pack, while the
+> contestable-severity band remains an incomplete, unstable sample needing repeated runs plus
+> human adjudication. The strong claim this test refuted remains refuted and untagged; the
+> tag-HELD statements in this document are preserved verbatim and record the 2026-06-23 state.*
+
 ## 1. What this is
 
 The toolkit's strongest selling point was a claim about its ceiling: *run the full

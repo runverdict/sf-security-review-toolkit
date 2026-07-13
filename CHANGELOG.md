@@ -6,6 +6,58 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.9.0] — 2026-07-13
+
+**The flagship tag — cut under the ceiling test's §6 SCOPED claim.** `v0.9.0` publishes the
+0.7.1–0.8.126 unreleased-on-`main` arc plus this release's pre-tag audit. The scoped claim it
+ships under: the toolkit **reliably finds the unambiguous blockers and builds the reviewer
+evidence pack**, with the deterministic band byte-identical run-to-run; the
+**contestable-severity band remains an incomplete, unstable sample** needing repeated runs plus
+human adjudication (`docs/ceiling-test.md` — the strong claim remains refuted and untagged; a
+dated addendum records this tagging). The cold-validated tag gate (`docs/roadmap-coldrun-hardening.md`)
+was NOT met and remains the bar for the cold-validated claim; the tag is an owner election under
+the scoped claim.
+
+### Changed (release mechanics)
+- `.claude-plugin/plugin.json` — version `0.8.126` → `0.9.0`.
+- Tag-state banners flipped in this changeset so no doc becomes false at tag time:
+  `docs/ceiling-test.md` (dated addendum; original preserved verbatim), `docs/recurrence-confidence.md`
+  (status + footer), `docs/sf-ops-safety-gate.md` (status), `docs/INDEX.md` (ceiling-test row),
+  `docs/roadmap-coldrun-hardening.md` (the tag-gate paragraph + order line annotated with the
+  owner-election record).
+
+### Fixed (pre-0.9.0 end-to-end audit — docs accuracy · deeplinks · dead code · consistency)
+A 28-finder multi-agent audit (2,453 claims fact-checked against the tree; 189 findings raised,
+183 adversarially confirmed, 6 refuted) swept every doc surface, every internal deeplink, dead
+code, and count-sync before this tag. Two commits carry the fixes:
+- **docs(pre-0.9.0 audit)** — README adapter/scanner/suite counts corrected (18→19 adapters,
+  16→17 consent-installed scanners + pip-audit named, the measured 1,377 checks / 88 files
+  stated), the retired already-running-instance DAST rung removed from the README mirror
+  description (0.8.119 MIRROR-SAFETY), all 14 stale `docs/ARCHITECTURE.md` `file:line` anchors
+  repointed, CONVENTIONS tree diagram completed (13 missing engines + 3 templates + root/CI/docs
+  entries; `applies_to` enum synced; the ONE-network-engine claim rescoped to the consent-gated
+  executor tiers), `docs/INDEX.md` + roadmap status-bearing lines brought to the 0.8.126 truth
+  (coldrun banner 0.8.112/81/1229 → 0.8.126/88/1377; shipped items struck+annotated; middle-band
+  steps re-marked EXECUTED/SUPERSEDED per the ceiling campaign), `merge-ledger.mjs:59`→`:63` in
+  three citing files, agentforce requirement count 12→11 in three files, audit-methodology
+  self-refs/§5.1 `superseded` state/dedup-key scoping/quick-tier truth, skills' allowed-tools
+  synced to what each skill actually invokes (journey DROPS the never-invoked
+  standup-org/teardown-org executor grants), SECRET-SCAN-FAMILY-6 reframed as the integrated
+  reference, reviewer-simulation/reviewer-challenges verdict states completed (UNEXAMINED ·
+  dynamically-observed).
+- **chore(pre-0.9.0 audit)** — engine header/comment truth (USAGE flag surfaces completed;
+  rerender-runlog + build-audit-engine anchors; ingest adapter roster + usage gains pip-audit
+  #19; sf-ops-gate header bullets match the classifier's real verb set), the stack-detect
+  needs-secrets note no longer steers to the retired `--base-url` rung (now an honest
+  PENDING-OWNER-RUN degrade; `test-stack-detect` S14 asserts the new steer and that the retired
+  steer cannot return), stack/standup ladder comments renumbered to the current rungs,
+  `classifyPortOwnership` re-labeled a retained-but-superseded seam, teardown-stack `--run-id`
+  resolver joins `tmpdir()` (was hardcoded `/tmp`), unused `MANIFEST_SCHEMA` import dropped,
+  four provably-unreferenced `export` keywords dropped, six literal NUL bytes escaped
+  (byte-identical runtime). Suite before and after: **88 files / 1377 checks / 0 failed**.
+
 ### Added
 - `docs/roadmap-coldrun-hardening.md` — the `ACTIVE` post-cold-run hardening backlog: B1 run static
   deterministic scanners before the LLM fan-out (the top PENDING-OWNER-RUN drainer) · B2 throwaway-tier
@@ -42,10 +94,10 @@ follow semantic versioning.
 
 ---
 
-> **Unreleased on `main` (untagged).** The last published tag is **`v0.7.0`** (cold-validated
-> 2026-06-19). Every version from **`0.7.1`** upward in the sections below is merged to `main`
-> but **not tagged** — they are unreleased-on-`main` checkpoints, not published releases, and
-> the dates are their commit dates on `main`. Each section is a per-version summary; the full
+> **Published in `v0.9.0` (2026-07-13).** The sections from **`0.7.1`** through **`0.8.126`**
+> below were unreleased-on-`main` checkpoints between the cold-validated **`v0.7.0`** tag
+> (2026-06-19) and the **`v0.9.0`** tag that publishes them all; the dates are their commit
+> dates on `main`. Each section is a per-version summary; the full
 > change-typed detail for the `0.6.0`–`0.8.x` arc (the `Fixed` / `Changed` / `Added` /
 > `Hardened` / `Roadmap` record and the program-note checkpoints those summaries draw on) is
 > preserved verbatim under **Detailed record & program notes** at the foot of this arc, just
