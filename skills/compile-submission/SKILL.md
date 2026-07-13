@@ -334,7 +334,7 @@ submitted (baseline: `dast-salesforce-runs-own-pentest`).
 
    Then write the slot values to `<target>/.security-review/verdict-slots.json` (one
    JSON object — the `SCI_BLOCK`/`LEDGER_FRESHNESS`/`FINDING_STABILITY` values are the
-   captured harness stdout, pasted byte-for-byte; the rest are the DATA slots above; OMIT
+   captured harness stdout, pasted byte-for-byte; the rest — including the `SOLUTION_NAME`/`RUN_DATE` header slots (the listing's solution name from the scope manifest + this compile's run date) — are the DATA slots above; OMIT
    `STANDING_CAVEAT`, the engine injects it) and render:
    `node ${CLAUDE_PLUGIN_ROOT}/harness/render-readiness-verdict.mjs --template ${CLAUDE_PLUGIN_ROOT}/templates/operator/readiness-verdict.md.tmpl --slots <target>/.security-review/verdict-slots.json --out <target>/docs/security-review/submission/readiness-verdict.md`.
    The engine fills every `{{SLOT}}`, force-injects the standing caveat, and ABORTS (exit

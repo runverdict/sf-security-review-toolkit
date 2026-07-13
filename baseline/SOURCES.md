@@ -276,7 +276,7 @@ useful if it is treated as a living dataset:
    the superseded readings in `details` (partners still encounter them), and
    leave a dated one-line comment above the entry.
 3. **Staleness.** Skills warn when `last_verified` is older than 90 days. An
-   update pass means: re-check the three remaining conflicting entries first,
+   update pass means: re-check the remaining conflicting entry (and the two open facets tracked in entry `details`) first,
    then the blocker-severity entries, then anything whose cited source is
    2023-era (flagged above). Re-fetch the packagingGuide pages at the current
    doc version (the docs content API serves page bodies when the SPA shell

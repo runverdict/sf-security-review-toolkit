@@ -43,7 +43,7 @@ sorted by locus for byte-stability, written to stdout and (with `--out`) to
 `<target>/.security-review/recurrence-confidence.json`:
 
 ```
-node harness/recurrence-confidence.mjs --ledger <p1> --ledger <p2> [--ledger <pN> …] [--out <path>]
+node harness/recurrence-confidence.mjs --ledger <p1> --ledger <p2> [--ledger <pN> …] [--repo-root <path>] [--out <path>]
 ```
 
 It is **pure, deterministic, dependency-free**: no LLM, no network, no learned weights;
@@ -55,10 +55,11 @@ non-JSON ledger path is `exit 2` — you cannot classify recurrence over a phant
 
 ## 3. The match key — locus-based, and why it diverges from the grader
 
-`finding.id` is **unusable across runs**. It is `SHA256(strippedFile + '\n' +
-normalizedTitle)`, and finder titles are model prose that varies run-to-run, so the same
+`finding.id` is **unusable across runs**. It is the first 16 hex chars of `SHA256(repoRelativeStrippedFile + '\n' +
+normalizedTitle)` (`merge-ledger.mjs`), and finder titles are model prose that varies run-to-run, so the same
 defect gets a **different id in every run** (empirically the controller-FLS finding
-carried three different ids across the three runs). The grader script `grade-solano.py`
+carried three different ids across the three runs). The grader script `grade-solano.py` (the one-off local
+grading artifact from the ceiling test — not committed; see `ceiling-test.md`)
 keys by `normalized_file + location + issue-class`, but its `canon()` hard-codes
 fixture-specific issue-classes (`if 'opportunitycontroller' in fn …`) — a grading hack
 that is **forbidden in shipped code** (CONVENTIONS §3, no partner/fixture coupling).

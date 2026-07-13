@@ -1,7 +1,7 @@
 ---
 name: install-and-verify-package
 description: Stand up the partner's EXISTING released managed package in a throwaway scratch/trial org and audit the deployed artifact — exactly what the Salesforce reviewer does when they install your package. Pre-install contamination check, headless permission-chain verification (the install-time UEC grant drop), Connect API credential configuration, Manage Tools sync, install+uninstall integrity, and an Apex smoke test through the installed Named Credential. The core of the CLI-gated deployed-org deep audit.
-allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(rm *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(rm *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/agent-trace-probe.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) Read Write AskUserQuestion
 ---
 
 # Install and Verify Package

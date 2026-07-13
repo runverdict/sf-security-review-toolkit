@@ -31,6 +31,8 @@ anything else.
 
 ## The challenges
 
+(F*n* below = `run-scans` scan Family *n*.)
+
 Each row: the reviewer's question · what they actually do · the dimension(s) /
 scan family that answers it · the baseline id(s) · which scope element triggers
 it. `reviewer-simulation` marks each **WILL-FIND** (a confirmed-open ledger entry
@@ -39,7 +41,12 @@ remediation with a fix commit + clean re-scan, disclosed as resolved),
 **ADDRESSED-refuted(FP)** (a `refuted` entry with non-exploitability reasoning or
 a satisfied control — disclosed via the FP dossier, NEVER as a fix), or
 **NOT-STATICALLY-EXAMINED** (genuine pen-test territory the static pass cannot
-settle — name it, never imply it's clean). The two ADDRESSED sub-labels stay
+settle — name it, never imply it's clean). Two further states exist: a
+statically answerable challenge whose dimension/scan did not run is
+marked **UNEXAMINED — run <dimension/family>**, and when the S2 agent-trace
+probe ran, an agent-runtime challenge may instead carry a
+**dynamically-observed** pointer (see the skill's step 2) — neither is ever
+ADDRESSED. The two ADDRESSED sub-labels stay
 distinct everywhere a verdict is rendered so a refuted finding is never skim-read
 as fixed.
 

@@ -11,7 +11,7 @@ Product Security runs its own penetration test regardless of anything this toolk
 produces.
 
 This policy is about vulnerabilities **in the toolkit itself** — the engines under
-`harness/`, the `hooks/` PreToolUse hook, the skills, or the templates — for example: an
+`harness/`, the `hooks/` PreToolUse hooks, the skills, or the templates — for example: an
 engine that writes outside the target's `.security-review/` directory, a path-traversal or
 command-injection in an engine that shells out, a code path that fails *open* on a security
 gate, or a credential/secret that the redaction layer lets through into a state file.

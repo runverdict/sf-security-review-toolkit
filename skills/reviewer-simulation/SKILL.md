@@ -1,6 +1,6 @@
 ---
 name: reviewer-simulation
-description: Audit the submission AS THE SALESFORCE REVIEWER WILL. Runs the Product-Security challenge checklist (reviewer-challenges.md) against the audit ledger + scan evidence + the scope manifest, and emits a "what the reviewer will see" report — every challenge marked WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED, ranked by the reviewer's own attack priority (public reach → authz → injection → egress → package hygiene → infra), headed by the first things they will hit. Use after audit-codebase + run-scans, before compile-submission; it reframes what the toolkit already found as what the human tester will reproduce.
+description: Audit the submission AS THE SALESFORCE REVIEWER WILL. Runs the Product-Security challenge checklist (reviewer-challenges.md) against the audit ledger + scan evidence + the scope manifest, and emits a "what the reviewer will see" report — every challenge marked WILL-FIND / ADDRESSED-fixed / ADDRESSED-refuted(FP) / NOT-STATICALLY-EXAMINED / UNEXAMINED, ranked by the reviewer's own attack priority (public reach → authz → injection → egress → package hygiene → infra), headed by the first things they will hit. Use after audit-codebase + run-scans, before compile-submission; it reframes what the toolkit already found as what the human tester will reproduce.
 allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(cat *) Bash(git rev-parse *) Bash(git log *)
 ---
 
@@ -142,3 +142,11 @@ verdict mapping, ranking, report writing, the FP-dossier disclosure extraction.
 NOT-STATICALLY-EXAMINED list as the live-test surface to harden before submission.
 Nothing here is a scan or a pen test — it is a reframing of static findings as
 reviewer intent, and Salesforce runs its own penetration test regardless.
+
+## What feeds the next skill
+
+The **WILL-FIND** ranking and the **ADDRESSED-refuted(FP)** rows feed
+`/sf-security-review-toolkit:compile-submission` — the fix-vs-document decisions and the
+FP dossier it cross-checks before the SCI gate. The **NOT-STATICALLY-EXAMINED** list feeds
+`/sf-security-review-toolkit:prepare-test-environment` as the live-test surface to harden
+before the review window opens.

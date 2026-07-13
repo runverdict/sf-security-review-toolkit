@@ -92,13 +92,13 @@ never hard-coded paths. Applicability:
 | `resource-consumption-abuse.md` | an external endpoint, an MCP server, an Agentforce agent, or Apex does unbounded work — rate-limit/quota gaps + unbounded page sizes/reads/memory (API4:2023), **denial-of-wallet** on metered Agentforce/MCP/LLM round-trips (LLM10:2025), ReDoS, and decompression/parser bombs. The general how-much/how-fast + cost question the per-surface limits (identity/email/export) leave uncovered |
 
 **Engine-enforced always-on dimensions (`build-audit-engine.mjs`, 0.8.17).** Three
-dimensions marked "always" above — `sessionid-egress` (:77), `secrets-credentials`
-(:78), and `error-handling-disclosure` (:91) — are auto-fail classes the driver must
+dimensions marked "always" above — `sessionid-egress` (:76), `secrets-credentials`
+(:77), and `error-handling-disclosure` (:90) — are auto-fail classes the driver must
 never silently drop. The audit assembler force-injects them into EVERY built dimension
 set regardless of the driver's scope-input, and an always-on key the driver wrongly
 marked N/A is moved back to applicable with a loud `WARN` (it cannot be N/A). This is a
 deterministic backstop, not a substitute for scoping — the driver still supplies
-targets/stackNotes for the dimensions it lists. `injection-xss` (:81) is CONDITIONAL
+targets/stackNotes for the dimensions it lists. `injection-xss` (:80) is CONDITIONAL
 ("always for the injection half") and is deliberately left to the driver, not forced.
 
 Packaged Apex's **structured CRUD/FLS dataflow** stays Code Analyzer's job (the
@@ -225,8 +225,14 @@ Known findings — do NOT re-report any of these:
 Read the ACTUAL code in {{REPO}}. Report every grounded finding with exact
 file:line and a concrete exploit_scenario. If a control is correctly
 implemented, do NOT report it as a finding (you may note a notably strong
-control as a single info-level finding). Return your findings.
+control as a single info-level finding). An empty findings array is valid
+ONLY after you have actually read the targets under {{REPO}} and found
+nothing real — never return empty because you could not locate the files.
 ```
+
+(An always-on auto-injected dimension gets a full-source-tree variant of the
+primary-targets block — `workflow-template.mjs` `isFullTree` — since it has no
+narrower target list.)
 
 `{{SHARED_CONTEXT}}` is built once per run from the scope manifest and is
 identical for every finder and verifier in the run:
@@ -378,7 +384,7 @@ source for fees, thresholds, or timelines.
 
 | Severity | Meaning | Review consequence | Downstream handling |
 |---|---|---|---|
-| `critical` | Auto-fail class: cross-tenant read/write, key or secret compromise, session-identifier egress off-platform, unauthenticated reach into tenant data | Submitting with this open burns the attempt — a fee-bearing resubmission plus lost queue position (see baseline entries `process-review-fee` and `process-review-timeline` for current figures; both are perishable facts) | The journey does NOT halt — it auto-proceeds to the full NOT-READY report; the AuthN/AuthZ doc is WITHHELD (it would otherwise map the vulnerable flow for the reviewer). Readiness verdict: NOT READY |
+| `critical` | Auto-fail class: cross-tenant read/write, key or secret compromise, session-identifier egress off-platform, unauthenticated reach into tenant data | Submitting with this open burns the attempt — a fee-bearing resubmission plus lost queue position (see baseline entries `process-review-fee` and `process-review-timeline` for current figures; both are perishable facts) | The journey does NOT halt — it auto-proceeds to the full NOT-READY report; the AuthN/AuthZ doc is WITHHELD when the open finding sits in an authN/authZ-category dimension (§4.1 — it would otherwise map the vulnerable flow for the reviewer). Readiness verdict: NOT READY |
 | `high` | Exploitable by a single authenticated user or a realistic external attacker; a reviewer running their own pen test plausibly reproduces it | Near-certain failed cycle | Must fix before submission. Readiness verdict: NOT READY |
 | `medium` | Likely flagged: missing defense-in-depth, exploitable only under limited preconditions | Fix-or-document | Fix, or carry a justified entry in the false-positive dossier (`${CLAUDE_PLUGIN_ROOT}/templates/fp-dossier.md.tmpl`). Undispositioned mediums block the compile-submission gate |
 | `low` | Hardening | Rarely blocks alone, but volume reads as immaturity to a reviewer | Backlog; dossier mention optional |
@@ -422,8 +428,9 @@ The eight categories (use these exact keys — they are the report spine and the
 FINDING_SCHEMA and VERDICT_SCHEMA (§2.1, §3.2) are unchanged — adding a required
 field to either would break the ledger merge and every harness call. Instead the
 engine derives `category` after verification, from a deterministic
-**dimension × finding-title → category** map the synthesis step applies (and the
-ledger merge records alongside the entry, the same way it records `dimension`).
+**dimension × finding-title → category** map the synthesis step applies (category
+is applied at report time only — the ledger records `dimension`, never `category`,
+which also keeps category out of the dedup key).
 Each dimension declares its candidate categories; the synthesis agent picks the
 single best-fit category per confirmed finding from that dimension's allowed set,
 using the title and the verified evidence. The default dimension→category mapping:
@@ -494,11 +501,16 @@ dedup keys.
 | `refuted` | Verifier returned `false_positive` | Kept, not deleted: it stops the next pass's finder from re-raising the same non-issue, and its `reasoning`/`evidence` is reusable verbatim when a scanner later flags the same pattern (the FP dossier feeds on these) |
 | `fixed` | The partner remediated; set with a fix reference (commit/PR) — by the user or by a skill that verified the fix landed | In the digest as "re-report ONLY if regressed." A new candidate matching a `fixed` entry's dedup key flips it back to `confirmed` with a regression marker — the engine handles this in the merge; finders don't need a special field |
 | `accepted_risk` | The partner decided, with a written `accepted_risk_justification` and a named owner, not to fix a real defect — an owner decision, never agent-made (the schema rejects the status without the justification) | Dispositioned for the readiness gates like a dossier entry, but the defect is real: it stays in the digest as do-not-re-report and surfaces by name in the readiness tracker and verdict so the acceptance is visible, never buried |
+| `superseded` | `harness/reconcile-provenance.mjs` moved an `llm-inferred` finding out of the open band because a deterministic engine finding in the same owned class at the same locus is authoritative; kept (never deleted) with `superseded_by` pointing at the deterministic finding | Not in the open band; auditable and recoverable — only `llm-inferred` findings are ever superseded, never a deterministic one |
 
 ### 5.2 Dedup key: normalized file + normalized title — never description
 
-Key = file path with any `:line` suffix stripped, plus the title lowercased
-with whitespace and punctuation collapsed. Rationale, learned the slow way:
+Key (for `llm-inferred` findings) = file path with any `:line` suffix stripped,
+plus the title lowercased with whitespace and punctuation collapsed. (A
+deterministic finding's id hashes engine+ruleId+file:line instead —
+`templates/audit-ledger.schema.json` `provenance` — line numbers are kept there
+because one scanner rule can legitimately fire N times in one file.) Rationale,
+learned the slow way:
 
 - **Descriptions are model prose.** Two finders (or the same finder on two
   runs) describe the same defect in structurally different sentences;
@@ -586,7 +598,7 @@ exhausted what this method finds in this codebase — which is not the same as
 A pass whose only net-new finding(s) are contestable-band FLIPS — a finding
 refuted in a prior pass reappearing as confirmed, or vice-versa, on UNCHANGED
 code (same `audited_commit`) — **counts as DRY for the stop rule.** The
-contestable-severity band (§9) is surfaced by `harness/recurrence-confidence.mjs`
+contestable-severity band (audit-codebase step 9) is surfaced by `harness/recurrence-confidence.mjs`
 for HUMAN adjudication, not certified by run count; chasing more passes to
 "resolve" a flip is futile — the flip is the variance, not a new finding. The
 reliably-recurring blockers (confirmed every pass, severity-stable) are the
@@ -604,7 +616,7 @@ at every tier. The skill reports the live agent count as the run progresses.
 
 | Tier | What runs | Approx. agents | Honest cost note |
 |---|---|---|---|
-| `quick` | Top-failure dimensions only, one pass: `sessionid-egress`, `tenant-isolation`, `oauth-identity`, `secrets-credentials`, `injection-xss` (+ `mcp-surface` when an MCP server exists) | ~8–10 (5–6 finders + verifiers + synthesis) | A triage, not an audit. Catches the auto-fail classes; says nothing about the other dimensions and the report must list them as not covered |
+| `quick` | Top-failure dimensions only, one pass: `sessionid-egress`, `tenant-isolation`, `oauth-identity`, `secrets-credentials`, `error-handling-disclosure` (engine-forced always-on), `injection-xss` (+ `mcp-surface` when an MCP server exists) | ~9–11 (6–7 finders + verifiers + synthesis) | A triage, not an audit. Catches the auto-fail classes; says nothing about the other dimensions and the report must list them as not covered |
 | `standard` | All applicable dimensions, one pass (the pass-1 band plus whatever the manifest activates) | ~20–30 | The default. Each finder reads tens of files; expect a run measured in millions of tokens and an hour-plus of wall clock on a real codebase |
 | `exhaustive` | Multi-pass per §6 until two consecutive dry passes | ~50–80 across passes | What the method was field-proven at (three passes). Several times `standard` cost; spread it across work sessions — the ledger makes every resumption incremental |
 

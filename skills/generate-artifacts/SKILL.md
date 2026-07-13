@@ -1,7 +1,7 @@
 ---
 name: generate-artifacts
 description: Phase 2 of security review prep. Drafts every reviewer-facing submission artifact from the partner's actual code, config, and live server — AuthN/AuthZ flow, architecture/data-flow diagram, data-sensitivity classification, access control, exposed tools + OpenAPI, FP-dossier skeleton, and the written-policy / org-config pack (incident-response, data-retention + deletion-on-uninstall, DR/backup, vuln-remediation SLA, hosting architecture, prior-pen-test attestation) as owner-completed stubs — each claim citation-backed, each artifact provenance-footered, all cross-read for contradictions. Use after the audit ledger is clean of critical/high findings.
-allowed-tools: Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) Bash(node *harness/write-drafted-content.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
+allowed-tools: Task Read Grep Glob Write Write(**/.security-review/artifact-input.json) Bash(ls *) Bash(find *) Bash(cat *) Bash(git log *) Bash(git rev-parse *) Bash(curl *) Bash(node *harness/artifact-gate.mjs *) Bash(node *harness/build-artifact-engine.mjs *) Bash(node *harness/write-drafted-content.mjs *) Bash(node *harness/capture-org-mcp.mjs *) AskUserQuestion
 ---
 
 # Generate Artifacts

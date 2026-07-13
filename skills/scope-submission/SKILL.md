@@ -1,7 +1,7 @@
 ---
 name: scope-submission
 description: Phase 0 of security review prep. Detects the partner's architecture elements (managed package, MCP server, external web app/API, Canvas, LWC/Aura, mobile) from the repo plus an optional live MCP probe, runs the partner-program preflight gates, compiles which baseline requirements apply, and writes the scope manifest every later phase keys off. Use first, or whenever the architecture has changed since the last manifest.
-allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) Bash(node *harness/detect-agentforce.mjs *) AskUserQuestion
+allowed-tools: Read Grep Glob Write Bash(ls *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git rev-parse *) Bash(sf package *) Bash(sf data query *) Bash(sf project retrieve *) Bash(sf org *) Bash(sf sobject *) Bash(curl *) Bash(node *harness/render-detected-elements.mjs *) Bash(node *harness/render-mcp-scope.mjs *) Bash(node *harness/applicable-requirements.mjs *) Bash(node *harness/render-sf-autoresolve.mjs *) Bash(node *harness/sf-autoresolve.mjs *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/render-scope-summary.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) Bash(node *harness/package-readiness.mjs *) Bash(node *harness/detect-agentforce.mjs *) AskUserQuestion
 ---
 
 # Scope Submission
@@ -124,7 +124,7 @@ ones get denied mid-run and read to the operator as a broken toolkit.
    an ANSWER gate — the selected option adjusts the detected-element set; it is NOT
    piped to record-consent.
 
-   **Agentforce detection self-check — a miss silently drops 12 requirements.**
+   **Agentforce detection self-check — a miss silently drops 11 requirements.**
    The `agentforce-*` baseline requirements (incl. the three BLOCKER auto-fails:
    VerifiedCustomerId scoping, user-controlled record refs, third-party-LLM)
    now gate **solely** on the `agentforce` element, not on `managed-package`. So

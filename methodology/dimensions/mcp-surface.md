@@ -54,7 +54,7 @@ The sub-classes, in the order they burn review cycles:
    undisclosed tool reads as concealment (baseline:
    `artifact-exposed-tools-list`).
 5. **Transport nonconformance and hygiene.** The Agentforce client speaks
-   Streamable HTTP only, on three protocol versions, with two auth modes
+   Streamable HTTP only, on three protocol versions, with three auth modes (none carrying per-end-user identity)
    (baseline: `mcp-transport-streamable-http-only`,
    `mcp-protocol-versions-supported`, `mcp-auth-no-auth-or-client-credentials`)
    — a deviation is a listing blocker before it is a vulnerability. Plus:

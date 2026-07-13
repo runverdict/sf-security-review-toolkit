@@ -1,7 +1,7 @@
 ---
 name: audit-deployed-package
 description: The opt-in deep audit of the INSTALLED package, run against the throwaway org it was installed into — the thin dynamic pass that previews what the Salesforce reviewer actually does (install your package, then test it). Verifies the subscriber-effective permission grants (including the install-time UEC grant drop), the post-install handler's real granted scope, Code Analyzer Graph Engine CRUD/FLS data-flow on the installed source, that Named/External-Credential callouts resolve with org-entered secrets, and install + uninstall integrity. Use only after sf is authed and /sf-security-review-toolkit:install-and-verify-package has stood the package up in a clean org. Augments — never replaces — the source audit-codebase pass.
-allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/record-consent.mjs *) Read Write Grep AskUserQuestion
+allowed-tools: Bash(sf *) Bash(export SF_AUTOUPDATE_DISABLE=true SF_DISABLE_AUTOUPDATE=true) Bash(node *harness/record-consent.mjs *) Bash(node *harness/agent-trace-probe.mjs *) Read Write Grep AskUserQuestion
 ---
 
 # Audit Deployed Package

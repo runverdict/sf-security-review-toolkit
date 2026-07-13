@@ -396,7 +396,8 @@ bounce.
 
 **Automated:** manifest/baseline reading and conflict surfacing, org expiry
 and settings queries via the CLI where credentials allow, utterance-list
-generation from the live tools/list, validation-CSV generation, the
+generation from the live tools/list, test-spec YAML authoring and
+JSON-result-to-evidence normalization (`harness/normalize-agent-test.mjs`), the
 two-user probe script and expected-results matrix, direct API-layer probe
 execution where credentials are env-supplied, seeding-approach and runbook
 drafting, evidence-file verification, run-log entries.

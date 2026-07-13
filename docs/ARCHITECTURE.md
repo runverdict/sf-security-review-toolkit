@@ -34,11 +34,12 @@ A finding that skips verification is **never reported** ([`audit-methodology.md`
 > `unverified — re-run`, not to the report and not to the ledger as confirmed.
 
 The verifier never sees the finder's reasoning — independence is what earns the precision
-(`harness/workflow-template.mjs` :316-343):
+(`harness/workflow-template.mjs` :442-444):
 
 ```js
-// Stage 2: adversarially verify each finding. Each verifier is a fresh context: it gets
-// the finding, never the finder's reasoning — independence is what earns the precision.
+// Stage 2: adversarially verify each finding from this dimension. Each
+// verifier is a fresh context: it gets the finding, never the finder's
+// reasoning — independence is what earns the precision.
 ```
 
 ---
@@ -60,7 +61,7 @@ if (openAuthz.length) { /* suppress = ['authn-authz-flow'] */ }
 ```
 
 ### The same withhold, enforced at the tool layer even if the skill is bypassed
-**Engine** `hooks/authz-gate-hook.mjs` :37-76 · **Test** `acceptance/test-authz-gate-hook.mjs`
+**Engine** `hooks/authz-gate-hook.mjs` :37-84 · **Test** `acceptance/test-authz-gate-hook.mjs`
 A `PreToolUse` hook that is a **no-op** unless (a) the write targets the toolkit's own
 `docs/security-review/authn-authz-flow.md` **and** (b) you armed it (`.security-review/hook-armed`). Armed, it
 reuses `computeGate` and **denies** the write while an auth hole is open. Fails closed if the ledger is
@@ -87,7 +88,7 @@ const blocked = openBlockerFindings.length > 0 || openBlockerReqs.length > 0
 ```
 
 ### Credit is decided from where the evidence lives, not from what the input claims
-**Engine** `harness/build-evidence-index.mjs` :70-121 · **Test** `acceptance/test-build-evidence-index.mjs`
+**Engine** `harness/build-evidence-index.mjs` :138-141,181-190 · **Test** `acceptance/test-build-evidence-index.mjs`
 The credit rule reads the evidence **location on disk**: a real scanner report under `.security-review/evidence/`
 → `satisfied` + `reviewer_reproducible`; an audit-report clear → `statically-cleared`. The engine **ignores any
 `disposition`/`reviewer_reproducible` the input asserts** — so a hand-authored or over-crediting index
@@ -117,7 +118,7 @@ const affirmative = decision !== null ? decision === 'affirm' : isAffirmative(an
 ```
 
 ### The fan-out is physically un-assemblable without both consents
-**Engine** `harness/build-audit-engine.mjs` :90-101 · **Test** `acceptance/test-record-consent.mjs` (C6)
+**Engine** `harness/build-audit-engine.mjs` :92-110 · **Test** `acceptance/test-record-consent.mjs` (C6)
 `build-audit-engine` is the only place the Workflow runtime (which has no filesystem access) can verify consent.
 It checks both required gates **before** any extraction, injection, or write; if either is missing it
 `exit(3)` and writes **nothing** — so a skipped consent ask cannot launch an audit.
@@ -129,7 +130,7 @@ if (missingConsent.length) { console.error('…REFUSING to assemble…'); proces
 ```
 
 ### The auto-fail dimensions are engine-forced, not driver-remembered
-**Engine** `harness/build-audit-engine.mjs` :62-81 · **Test** `acceptance/test-build-audit-engine.mjs` (A1–A3)
+**Engine** `harness/build-audit-engine.mjs` :63-90 · **Test** `acceptance/test-build-audit-engine.mjs` (A1–A3)
 Three always-on dimensions (`sessionid-egress`, `secrets-credentials`, `error-handling-disclosure`) are forced
 into **every** audit by code; if a driver marks one N/A it is moved back to applicable with a `WARN`. A driver
 that forgets an auto-fail class cannot silently under-cover.
@@ -138,12 +139,12 @@ that forgets an auto-fail class cannot silently under-cover.
 const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-disclosure']
 for (const key of ALWAYS_ON) {
   if (NA.some((n) => n && n.key === key)) { NA = NA.filter(...); console.error(`WARN: …cannot be N/A…`) }
-  if (!present.has(key)) APPLICABLE.push({ key, targets: '', stackNotes: 'always-on (auto-injected)' })
+  if (!present.has(key)) APPLICABLE.push({ key, targets: FULL_TREE_TARGET, stackNotes: 'always-on dimension (auto-injected): full source tree' })
 }
 ```
 
 ### Finder prompts are extracted, not improvised — and a malformed dimension fails loud
-**Engine** `harness/build-audit-engine.mjs` :111-161 · **Test** `acceptance/test-build-audit-engine.mjs` (E1–E4)
+**Engine** `harness/build-audit-engine.mjs` :116-143,193,205-208 · **Test** `acceptance/test-build-audit-engine.mjs` (E1–E4)
 The §4 finder prompt and §5/§6 verifier notes are extracted by anchor from each dimension file; missing
 headings or a suspiciously short prompt **throw** (a weak model handed an empty prompt audits nothing). The
 run-args are injected at an exact marker and stamped `consentVerified: true` only after the gate passed; the
@@ -165,7 +166,7 @@ non-object, or `repoRoot`-missing payload.
 ## C. Findings are tracked mechanically — never re-authored by a model
 
 ### The ledger merge is engine code, never an LLM
-**Engine** `harness/merge-ledger.mjs` :1-86 · **Test** `acceptance/test-merge-ledger.mjs` (M1–M14)
+**Engine** `harness/merge-ledger.mjs` :1-90 · **Test** `acceptance/test-merge-ledger.mjs` (M1–M14)
 > "Engine code, never an LLM": a synthesis agent paraphrasing entries corrupts the dedup keys, so this step
 > must be deterministic.
 
@@ -210,8 +211,8 @@ const confidence =
 auto-flips) findings whose files changed since they were audited.
 
 ### A crashed finder is surfaced as a coverage failure, never silently dropped
-**Engine** `harness/workflow-template.mjs` `computeCoverage` · `harness/render-recap.mjs` ·
-**Test** `acceptance/test-coverage-accounting.mjs`
+**Engines** `harness/workflow-template.mjs` `computeCoverage` · `harness/render-recap.mjs` · `harness/merge-ledger.mjs` :266-269 ·
+**Tests** `acceptance/test-coverage-accounting.mjs`, `acceptance/test-merge-ledger.mjs` (M16)
 A finder that exhausts the StructuredOutput retry cap returns `null` (it does not throw), and a thrown
 stage drops the whole dimension to `null`. `computeCoverage` reconciles the raw per-dimension output by
 index — a null entry or a `{coverageFailed:true}` marker becomes a **coverage failure**, kept out of
@@ -237,7 +238,7 @@ match** the emitted counts. (This is the structural defense against the usual LL
 plausible-but-wrong number.)
 
 ### Applicability is an exact set intersection — no inference
-**Engine** `harness/applicable-requirements.mjs` :56-61 · **Test** `acceptance/test-applicable-requirements.mjs`
+**Engine** `harness/applicable-requirements.mjs` :93-107 · **Test** `acceptance/test-applicable-requirements.mjs`
 A requirement applies **iff** its `applies_to` contains `all` or intersects the detected element types — pure
 set membership, no fuzzy matching. A plain managed package is never told to satisfy Agentforce requirements it
 has no surface for.
@@ -264,7 +265,7 @@ LLM's judgment.
 ## E. The toolkit's own live-operation safety
 
 ### The one network path fails closed, and verifies a sha256 before it ever executes a binary
-**Engine** `harness/install-scanners.mjs` :162-367 · **Test** `acceptance/test-install-scanners.mjs`
+**Engine** `harness/install-scanners.mjs` :241,499-501,616-620 · **Test** `acceptance/test-install-scanners.mjs`
 `installScanners` throws unless `consent === true` is explicitly passed (re-verified at the engine boundary,
 not a driver flag). Each raw binary is sha256-verified **before** it is made executable — a mismatch deletes
 the file and never execs it. A `assertSafeTmpRoot` guard refuses `/`, an unsafe path, or a shared grouping dir
@@ -295,8 +296,8 @@ return { action: 'deny', reason: denyReason(gate, cmd) }
 ```
 
 ### The throwaway DAST only ever hits a loopback mirror, and tears down by name
-**Engines** `harness/standup-stack.mjs` · `harness/run-dast.mjs` :49,100-106 · `harness/teardown-stack.mjs` :31-35 ·
-**Tests** `acceptance/test-{standup,run-dast,teardown}-stack.mjs`
+**Engines** `harness/standup-stack.mjs` · `harness/run-dast.mjs` :56,100-108 · `harness/teardown-stack.mjs` :31-44 ·
+**Tests** `acceptance/test-standup-stack.mjs`, `acceptance/test-run-dast.mjs`, `acceptance/test-teardown-stack.mjs`
 The active scan refuses any non-loopback target before ZAP is invoked; secrets are synthesized at runtime and
 passed by env-file (never in argv or the manifest, which carries names not values); teardown refuses any docker
 resource whose name doesn't match the toolkit's `sf-srt-*` pattern.
@@ -306,7 +307,7 @@ if (!LOOPBACK.has(host) && !/^127\./.test(host)) throw new Error(`run-dast: refu
 ```
 
 ### The toolkit's own CI is least-privilege, and locked
-**Test** `acceptance/test-ci-hygiene.mjs` :35-52
+**Test** `acceptance/test-ci-hygiene.mjs` :45-63
 The standing suite asserts `.github/workflows/test.yml` declares a top-level `permissions: contents: read` and
 **no** write scope anywhere — so a future edit that widens the CI token fails the build.
 

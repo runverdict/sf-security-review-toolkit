@@ -7,8 +7,8 @@ criteria + PMD AppExchange ruleset, and the partner-hosted-backend surface) **au
 16 dimensions + 8 scanner families against the external vuln-class universe** — to find the
 classes the security literature names that we *don't* cover, before a real review does.
 
-> **CLOSED 2026-06-20 (commits 9b602da → 371a682, all test-backed + deterministic, no cold
-> run needed).** All P1 and P2 items below are now encoded. The toolkit went 16 → **19
+> **CLOSED 2026-06-20 (the untagged post-0.7.2 arc — recorded in the CHANGELOG; all test-backed
+> + deterministic, no cold run needed).** All P1 and P2 items below are now encoded. The toolkit went 16 → **19
 > dimensions** (the 3 new ones) plus 5 dimension extensions, and the baseline grew by 10
 > entries to 165 (the 2 PMD rules `verified_primary` against the official reference; the new
 > classes `web_research_unverified`, OWASP/CWE-sourced). Standing tests added:
@@ -93,8 +93,8 @@ shadowing / memory-poisoning / cascading-chains / agent-phishing — OWASP ASI06
 
 ## What shipped (CLOSED 2026-06-20)
 
-Each P1/P2 item below maps to what now encodes it (commits 9b602da → 371a682; all
-deterministic + test-backed; the per-instance fixture validation folds into the **middle-band
+Each P1/P2 item below maps to what now encodes it (the untagged post-0.7.2 arc, recorded in
+the CHANGELOG; all deterministic + test-backed; the per-instance fixture validation folds into the **middle-band
 judgment fixture**, the natural home for the contestable severity calls these classes introduce).
 
 | # | item | closed by |

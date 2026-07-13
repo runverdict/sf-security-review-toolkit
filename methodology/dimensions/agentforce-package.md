@@ -26,7 +26,8 @@ server-side tool-poisoning / token-passthrough / SSRF defect in
 the surface that is the root cause. Plain packaged-Apex CRUD/FLS dataflow stays
 Code Analyzer's Graph Engine pass
 (`${CLAUDE_PLUGIN_ROOT}/methodology/dimensions` carries no Apex CRUD/FLS
-dimension — see `audit-methodology.md` §1.2); this dimension owns only the
+*dataflow* dimension — that stays SFGE's; the exposed-entry-point authorization
+surface is `apex-exposed-surface.md` — see `audit-methodology.md` §1.2); this dimension owns only the
 **agent-specific** authorization questions SFGE cannot reason about: which Apex
 classes are *reachable as agent actions*, whether a private service-agent action
 *scopes by VerifiedCustomerId*, and whether an action self-authorizes. The
@@ -118,9 +119,9 @@ should fear them:
    reasoning-path entry point: the agent decides to call it, so the method must
    self-authorize — enforce CRUD/FLS, respect its sharing declaration, and (for a
    service agent) scope by the verified identity rather than trusting any Id the
-   planner passed. This is the packaged analogue of the MCP-tool self-
-   authorization concern (`mcp-threat-model` §1.7), sourced from invocable Apex
-   instead of MCP tools.
+   planner passed. This is the packaged analogue of the MCP
+   per-tool authorization concern (`mcp-surface` §1, item 2), sourced from
+   invocable Apex instead of MCP tools.
 
 7. **Prompt-injection hardening — the design four-pack.** Every prompt must be
    hardened with four design elements (baseline:

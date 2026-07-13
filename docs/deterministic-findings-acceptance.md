@@ -247,7 +247,8 @@ three originally-wobbled CRUD-FLS / sharing / ViewAll classes.
 - Engines: `harness/ingest-scanner-findings.mjs` (Slice 1/2 + the 0.8.40 `--all` content-recognizer ingest),
   `harness/reconcile-provenance.mjs` (Slice 2).
 - Wiring: `skills/audit-codebase/SKILL.md` (Step 4 — now ONE `--all` call — plus the reconcile at the end of
-  Step 6), `skills/security-review-journey/SKILL.md` (Audit step), `skills/run-scans/SKILL.md` (Family 1 feeds
+  Step 6's merge phase — Step 6 then runs `seed-auto-dispositions.mjs` + `apply-dispositions.mjs`
+  on the reconciled band before Step 7 re-renders the recap), `skills/security-review-journey/SKILL.md` (Audit step), `skills/run-scans/SKILL.md` (Family 1 feeds
   the ingest, AND step 9b now runs `--all` + reconcile at the scan tail so a single cold run seeds the band).
 - Standing guards: `acceptance/test-deterministic-integration.mjs` (this slice),
   `acceptance/test-ingest-scanner-findings.mjs`, `acceptance/test-reconcile-provenance.mjs`,

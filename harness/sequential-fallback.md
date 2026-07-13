@@ -39,7 +39,7 @@ method does not.
   uses; point `--result` at the synthesized result file DIRECTLY — the engine
   accepts BOTH shapes (a raw `{result:{ledger_updates:[...]}}` envelope and a
   pre-extracted `{ledger_updates:[...]}`, unwrapping `.result` at
-  `merge-ledger.mjs:59`), so do NOT hand-extract `.result` or re-parse it.
+  `merge-ledger.mjs:63`), so do NOT hand-extract `.result` or re-parse it.
 - **The recorded consent gate (`audit-tier` + `audit-targetmap`).** The fallback
   asks Step 2/3 via `AskUserQuestion`, records each affirmative via
   `record-consent.mjs`, and `verifyConsent`'s both — FAILING CLOSED (no finder Task)

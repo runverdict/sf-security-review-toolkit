@@ -200,6 +200,9 @@ end-to-end). Remaining: only the slice-5b authenticated-DAST depth — slice 7 (
   build-from-source (`stack-detect` records `buildsFromSource:false`) → rung 3 build serialized
   outside the audit fan-out → rung 4 honest-degrade. DAST fires in the common case without the
   heavy build. Slice-5b (authenticated AF-plan depth) remains the only open DAST item.
+  **Superseded 0.8.119 (MIRROR-SAFETY):** rung 1 (the already-running `--base-url` path) was
+  RETIRED — `run-dast`/`capture-openapi` now refuse an explicit `--base-url` outright; the ladder
+  is mirror-only (prebuilt-image → build-from-source → honest-degrade).
 - **ZAP acquisition** (Docker-digest vs TOFU-zip vs owner-run) is subsumed here: if the
   throwaway is containerized, Docker-digest ZAP is the natural, strongest-integrity fit.
 - **Fidelity labelling vocabulary** — how the evidence states "DB synthetic, payment API

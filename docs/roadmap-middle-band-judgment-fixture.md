@@ -8,8 +8,10 @@ exposed FOUR unintended fixture defects (execution-identity / prompt-injection /
 denial-of-wallet / a deploy-blocking field gap) that landed Solano BLOCKED, so the
 middle-band JUDGMENT never actually ran. **PHASE A rebuilt the fixture** to be genuinely
 mostly-compliant in CODE — a re-audit now surfaces ONLY the six contestable issues (C1-C6),
-zero open critical/high — and did the namespace honest-fix (`needs-build`, C5 reframed as a
-source-permset finding).
+zero open critical/high **as adjudicated at Phase-A time — C5 has since been reconciled to a
+HIGH floor (see `acceptance/solano-adjudication-key.md` §C5); the deterministic band fixture
+deliberately keeps its seed at `medium`** — and did the namespace honest-fix (`needs-build`,
+C5 reframed as a source-permset finding).
 
 > **THESIS SUPERSEDED (2026-06-23) — read this first.** The run-to-run *stability* of the
 > middle-band judgment — the "differentiating value" in this doc's title — was **refuted** by the
@@ -137,16 +139,23 @@ run — just not a coverage proof.
    `expected-findings.md` / `~/coldstart-full-grading-key.md` pattern).
 2. **[DONE 2026-06-20]** Sanity-check the band **deterministically** first: the standing
    `acceptance/test-solano-band.mjs` hand-authors the representative ledger/manifest/evidence,
-   runs the REAL `compute-sci.mjs`, and asserts it lands at **exactly 71%** (in the 65–75%
-   band) / `MATERIALS COMPLETE` / no open critical-high / all 22 blockers satisfied / currency
-   floor silent — with a live-baseline corroboration layer so the design can't silently drift.
-3. **[PENDING — Phase 2, its own session]** **Cold-run it** (fresh session, 0 context, the
-   cold-start discipline) → grade off disk vs the sealed adjudications: severity calls, the
-   subtle-FP refutation, the near-control precision, the SCI band, the path-to-green shape.
-   (For stricter isolation, relocate the adjudication key out of the repo first — see the
-   key's *Cold-run isolation* note.)
-4. **[PENDING — Phase 2]** Every miscalibration → sharpen the dimension's severity heuristics /
-   the verifier's refute rules (the fixture, like the others, drives engine hardening) → re-run.
+   runs the REAL `compute-sci.mjs`, and asserts the honest post-Phase-A state — LOW
+   completeness / `BLOCKED` on owner materials / empty `blocker_findings` / 0 open
+   critical-high (originally shipped asserting the hand-authored 71% `MATERIALS COMPLETE`
+   band; re-grounded per the Phase-B note above) — with a live-baseline corroboration layer
+   so the design can't silently drift.
+3. **[EXECUTED 2026-06-23 — as the cold-at-exhaustive campaign (N=3), see `ceiling-test.md`]**
+   **Cold-run it** (fresh session, 0 context, the cold-start discipline) → graded off disk vs a
+   pre-committed bar derived from the sealed adjudication key (held out of the repo per the
+   isolation note); result: the stability thesis was REFUTED. **[PENDING — Phase-B-gated]** the
+   parts the campaign did not grade: the SCI-band landing and the path-to-green shape (both
+   blocked on Phase B re-grounding the 65–75% band).
+4. **[SUPERSEDED 2026-06-23]** ~~Every miscalibration → sharpen the dimension's severity heuristics /
+   the verifier's refute rules (the fixture, like the others, drives engine hardening) → re-run.~~
+   The prescribed sharpen-and-re-run loop did not run; the shipped response to the miscalibrations
+   was the recurrence-confidence engine (`harness/recurrence-confidence.mjs`,
+   `docs/recurrence-confidence.md`), which makes run-to-run variance a visible output instead of
+   re-running toward a certified-stable claim.
 
 ## Adjacent open items (separately tracked)
 - **Scale story** (a fair external question): the audit fan-out scales with surface

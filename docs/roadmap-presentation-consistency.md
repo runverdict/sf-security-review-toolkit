@@ -81,11 +81,12 @@ Two flavors, both render-verbatim:
 
 - **Render harnesses** for surfaces backed by deterministic JSON — extend
   emitters with a fixed-block mode the way `compute-sci.mjs` already does
-  (`finding-clusters.mjs --headline`, `recurrence-confidence.mjs --render`,
-  `applicable-requirements.mjs --render`, `ledger-staleness.mjs` non-json) +
-  new `render-*.mjs` siblings (`render-target-map`, `render-preflight`,
-  `render-scan-status`, `render-scope`, `render-stability`, `render-summary`,
-  `render-findings`).
+  (`finding-clusters.mjs --headline`, `applicable-requirements.mjs --render`,
+  `ledger-staleness.mjs` non-json; the recurrence JSON is rendered by
+  `render-stability.mjs`, not a `--render` mode) +
+  new `render-*.mjs` siblings *(as planned — shipped names differ: see WI-03…06;
+  e.g. `render-scope-summary`, `render-recap`; no `render-summary`/`render-findings`
+  engines shipped)*.
 - **`{{SLOT}}` templates** under a new `templates/operator/` dir, modeled on
   `zap-plan-template.yaml` + the `{{ARGS_OBJECT}}` marker:
   `readiness-verdict.md.tmpl`, `audit-report.md.tmpl`, `path-to-green.md.tmpl`,
@@ -163,8 +164,8 @@ tier is collected once.
 `templates/operator/readiness-verdict.md.tmpl` (mirror
 `readiness-tracker.md.tmpl`) with fixed `##` headers in fixed order: SCI block
 slot (paste compute-sci stdout byte-for-byte), Ledger Freshness, Finding
-Stability (`render-stability` output), Per-category, Blockers (`render-findings`
-canonical lines), NOT-verified, Open conflicting baseline, Standing caveat
+Stability (`render-stability` output), Per-category, Blockers (one canonical
+line per blocker row — the `RENDER:blockers` sentinel slot; no dedicated engine shipped), NOT-verified, Open conflicting baseline, Standing caveat
 (canonical constant string). Add `harness/render-stability.mjs` (two-branch
 fixed block over `recurrence-confidence` JSON). Rewrite compile-submission
 Step 8 to fill slots + print verbatim. **Test** render twice on a frozen
@@ -271,7 +272,7 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 |-----|---------|------|--------|------|----|
 | 01 | audit-tier/depth gate (cross-skill, re-asked) | gate | ✓ | H | 01,02 ✅0.8.22 |
 | 02 | scanner-install network-fetch gate | gate | ✓ | H | 01 ✅0.8.22 |
-| 03 | throwaway-DAST consent gate | gate | ◐ | H | 06* |
+| 03 | throwaway-DAST consent gate | gate | ✓ | H | 06* ✅0.8.95 (pinned in the frozen gate catalog) |
 | 04 | sf-package-promote permanence consent | gate | ◐ | H | 08 |
 | 05 | scope partner-program preflight gates (6) | gate | ✓ | H | 06 ✅0.8.27 |
 | 06 | final scope-manifest summary + confirm | verdict | ✓ | H | 06 ✅0.8.27 |
@@ -295,7 +296,7 @@ each follows the same render-harness-or-template + standing-test pattern.)*
 | 24 | two-user authorization probe transcript | output | ◐ | H | 09 |
 | 25 | test-environment runbook | report | ✗ | H | 09 |
 | 26 | run-mode gate | gate | ✓ | M | 01 ✅0.8.22 |
-| 27 | deployed-org deep-audit consent (3 variants) | gate | ◐ | M | 06* |
+| 27 | deployed-org deep-audit consent (3 variants) | gate | ◐ | M | 06* (core `sf-deep-audit-ops` gate pinned ✅0.8.95; the 3 per-variant option texts remain unpinned) |
 | 28 | sf-deep-audit-ops gate family (4 skills) | gate | ◐ | M | 08 |
 | 29 | sf-cli-setup consent gate | gate | ◐ | M | 08 |
 | 30 | live-endpoint read-only probe gate | gate | ✓ | M | 06 ✅0.8.27 |

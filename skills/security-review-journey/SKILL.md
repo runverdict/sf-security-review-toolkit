@@ -1,7 +1,7 @@
 ---
 name: security-review-journey
 description: Autonomous driver for AppExchange/AgentExchange security-review SUBMISSION readiness. Runs a seconds-long preflight (greps + architecture detection + sf CLI auto-resolve when authed), emits one 3-tier preflight report, then drives the whole journey end to end — scope, static scans, audit, artifacts, live scans, package — pausing only for audit-blocking gaps and live-probe/scan-org consent. Auto-activates on "run the security review", "run/continue the audit", "audit my codebase for AppExchange", "am I ready for AppExchange/AgentExchange", "prep my app for the Salesforce review", "where are we on the review". Use to start, resume, or run the full submission-prep journey. NOT a general "is my app secure?" tool — it is scoped to the Salesforce ISV review.
-allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/emit-permission-set.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/detect-agentforce.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) Bash(node *harness/standup-org.mjs *) Bash(node *harness/teardown-org.mjs *) AskUserQuestion Skill
+allowed-tools: Read Grep Glob Bash(ls *) Bash(cat *) Bash(find *) Bash(git ls-files*) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(sf org list*) Bash(sf config get*) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/emit-permission-set.mjs *) Bash(node *harness/render-preflight.mjs *) Bash(node *harness/render-router-status.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/detect-agentforce.mjs *) Bash(node *harness/enumerate-app-roots.mjs *) AskUserQuestion Skill
 ---
 
 # Security Review Journey
@@ -168,7 +168,7 @@ whether this gate was already answered (`askedBefore`). Branch on it:
      misses: an `agent/*.agentscript.yaml` agent and the (heuristic, weaker-signal)
      ESR-registered agent-action. A match on ANY shape is the **`agentforce`**
      element — the AgentExchange-listing signal that gates the agentforce-*
-     requirements; a miss silently drops 12 of them, so never infer it from
+     requirements; a miss silently drops 11 of them, so never infer it from
      `managed-package` alone and never hand-detect it: a live cold run's
      packaged-metadata-only grep reported "no Agentforce" for a subscriber-built
      agent, and the scope phase had to correct it downstream every run. Fold a
@@ -192,7 +192,7 @@ whether this gate was already answered (`askedBefore`). Branch on it:
    |---|---|---|
    | `<target>/.security-review/scope-manifest.json` | Phase 0 done | reuse it unless it drifted (step 3) |
    | `<target>/.security-review/sf-autoresolve.json` | DevHub auto-resolve ran | reuse the resolved endpoint/permission/coverage facts |
-   | `<target>/.security-review/audit-ledger.json` | Phase 1 ran | read `confirmed`/`fixed`/`accepted` — open criticals/highs gate artifacts (Step in AUTONOMOUS RUN) |
+   | `<target>/.security-review/audit-ledger.json` | Phase 1 ran | read `confirmed`/`fixed`/`accepted` — open criticals/highs gate artifacts (Step 4 in AUTONOMOUS RUN) |
    | `<target>/docs/security-review/*.md` artifacts | Phase 2 partial/full | list which required artifacts exist; regenerate only the stale/missing |
    | `<target>/.security-review/evidence/` (scan reports, SSL Labs JSON, screenshots) | scans ran — with NO audit ledger, the static-scan substrate; with a ledger, Phase 3 partial | no audit ledger → the static substrate ran and the AUDIT is the resume point (its ingest seeds the deterministic band from this evidence on the first pass); with a ledger → match each evidence file to its baseline scan requirement; a plan with no report is NOT done |
    | `<target>/docs/security-review/submission/` + `submission-checklist.md` | Phase 5 compiled | the package exists; offer a refresh, don't rebuild blindly |

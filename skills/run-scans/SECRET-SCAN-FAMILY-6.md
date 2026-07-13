@@ -1,24 +1,24 @@
 # Family 6 — Secret scan (working tree + full git history)
 
-Drop-in specification for a sixth scan family in
-`/sf-security-review-toolkit:run-scans`, written in the style of the five
-families in `SKILL.md` ("The five families"). Fold the table row into that
-table, the prose block into Steps (after Family 5), and the recap/wiring notes
-into the surrounding sections.
+The full-mechanics reference for scan Family 6 as integrated in
+`/sf-security-review-toolkit:run-scans` (`SKILL.md`, "The eight families").
+Originally authored as the drop-in spec that added the family; SKILL.md's
+Family 6 step is the operational surface, this doc the detailed mechanics.
 
 The failure class this family exists to kill: the toolkit's own
 `submission-checklist.md.tmpl` (Row 5 guidance) and `readiness-tracker.md.tmpl`
 ("Secret scanning" row) **assert a secret-scan evidence file as a required,
 fail-closed artifact**, and `artifact-credential-storage-attestation` (baseline,
 **blocker**) requires the no-hardcoded-secrets confirmation "backed by a scan" —
-yet nothing in `run-scans` produces that file. Git-history hunting exists only
-as an LLM spot-check inside the `secrets-credentials` dimension
-(`git log --diff-filter=D --name-only` as prose), and the external-server source
-tree (Python/Node/Java) and IaC paths have **no mechanical secret backstop at
-all**. This family turns the dimension's history heuristic into a real tool
-invocation and gives every HAVE row a file on disk.
+a gap this family closed: before it, nothing in `run-scans` produced that file,
+git-history hunting existed only as an LLM spot-check inside the
+`secrets-credentials` dimension (`git log --diff-filter=D --name-only` as
+prose), and the external-server source tree (Python/Node/Java) and IaC paths
+had **no mechanical secret backstop at all**. This family turned the dimension's
+history heuristic into a real tool invocation and gives every HAVE row a file on
+disk.
 
-## Table row (fold into "The five families")
+## Table row (as integrated in "The eight families")
 
 | Family | Applies when (manifest) | Scan runner | Evidence file(s) under `.security-review/evidence/` | Gate |
 |---|---|---|---|---|

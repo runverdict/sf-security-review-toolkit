@@ -31,8 +31,9 @@ a caller cannot pass *another* user's or tenant's record Id and act on it
 intent and the caller's entitlement, not just tracing a taint to a sink. The
 engine performs exactly this should-this-be-exposed / per-record-authz reasoning
 for every *non-Apex* surface (REST routes, MCP tools, admin endpoints) and the
-carve-out at `audit-methodology.md` §1.2 ("packaged Apex is deliberately not a
-dimension") dropped it for the one surface a reviewer enumerates first. The
+original methodology carve-out (packaged Apex CRUD/FLS dataflow stays Code
+Analyzer's — see `audit-methodology.md` §1.2) dropped it for the one surface a
+reviewer enumerates first; this dimension is the fix. The
 report must say so: where this dimension reports an FLS/CRUD *dataflow* gap that
 SFGE also catches, defer to SFGE and do not double-report; where it reports
 over-exposure, a missing per-record check, or guest reachability, that is the

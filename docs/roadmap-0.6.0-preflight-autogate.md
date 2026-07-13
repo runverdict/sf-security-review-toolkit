@@ -88,7 +88,7 @@ scanner-evidence files → cleanup kept the evidence). This was an **owner-pitch
   full-auto + install-yes → real Semgrep/OSV/etc. evidence on disk → cleanup removes the
   binaries, evidence remains. This is the run the owner wants to see.
 
-## Build order (next session)
+## Build order (as built — retained record)
 
 1. `harness/install-scanners.mjs` (consented, tmp-scoped, manifest, checksum-verify) + test.
 2. `harness/cleanup-scanners.mjs` (manifest-driven, asymmetric: remove tools, keep evidence) + test.

@@ -1,7 +1,7 @@
 ---
 name: audit-codebase
 description: Phase 1 of security review prep. Runs the autonomous multi-agent white-box audit of the partner's own codebase across the applicable threat dimensions — find, adversarially verify, synthesize — maintaining a findings ledger that makes every re-run incremental. Use after scope-submission, after fixing findings, or after a failed review to sweep for a vulnerability class.
-allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Bash(node *harness/inject-report-headline.mjs *) Task AskUserQuestion
+allowed-tools: Read Grep Glob Write(**/.security-review/scope-input.json) Write(**/.security-review/target-map.json) Write(**/.security-review/audit-ledger.json) Write(**/.security-review/run-log.md) Write(**/.security-review/pass-*/**) Write(**/.security-review/runs/**) Write(**/.security-review/recurrence-confidence.json) Write(**/.security-review/deterministic-dispositions.json) Write(**/docs/security-review/**) Bash(ls *) Bash(find *) Bash(git log *) Bash(git status*) Bash(git diff*) Bash(cat *) Bash(sha256sum *) Bash(shasum *) Bash(node *harness/gate-spec.mjs *) Bash(node *harness/record-consent.mjs *) Bash(node *harness/recurrence-confidence.mjs *) Bash(node *harness/render-target-map.mjs *) Bash(node *harness/finding-clusters.mjs *) Bash(node *harness/merge-ledger.mjs *) Bash(node *harness/render-recap.mjs *) Bash(node *harness/ingest-scanner-findings.mjs *) Bash(node *harness/reconcile-provenance.mjs *) Bash(node *harness/seed-auto-dispositions.mjs *) Bash(node *harness/apply-dispositions.mjs *) Bash(node *harness/rerender-runlog.mjs *) Bash(node *harness/verify-report-headline.mjs *) Bash(node *harness/inject-report-headline.mjs *) Bash(node *harness/build-audit-engine.mjs *) Bash(node *harness/injection-check.mjs *) Task AskUserQuestion
 ---
 
 # Audit Codebase
@@ -58,7 +58,7 @@ regardless of anything this engine produces.
 
    | Tier | What runs | Approx. agents | Honest cost note |
    |---|---|---|---|
-   | `quick` | Top-failure dimensions, one pass | ~8–10 | Triage only. Catches the auto-fail classes; says nothing about the rest — never present its output as review readiness |
+   | `quick` | Top-failure dimensions, one pass | ~9–11 | Triage only. Catches the auto-fail classes; says nothing about the rest — never present its output as review readiness |
    | `standard` | All applicable dimensions, one pass | ~20–30 | The default. Each finder reads tens of files; expect millions of tokens and an hour-plus of wall clock on a real codebase |
    | `exhaustive` | Multi-pass per audit-methodology §6 until two consecutive dry passes | ~50–80 across passes | Several times `standard`; spread across work sessions — the ledger makes resumption incremental |
 
@@ -102,7 +102,7 @@ regardless of anything this engine produces.
      `node ${CLAUDE_PLUGIN_ROOT}/harness/record-consent.mjs --gate audit-tier --decision affirm --question "<the launch confirm question>" --answer "<the Authorize option>" --target <target>`.
      On **Cancel**, the same call with `--decision deny`, then STOP. Only **Change tier**
      re-opens the full menu — re-run `gate-spec --gate audit-tier` without `--target` (or with
-     `--facts` `{"reelect":true}`) and record the newly chosen tier.
+     `--facts <file>` where the file contains `{"reelect":true}`) and record the newly chosen tier.
    - **Standalone (no prior token)** → gate-spec emits the full first-pass menu (`standard`
      default, `exhaustive` offered but **never pre-selected**, `quick` triage — identical
      every run). The operator's SELECTION IS the consent — record it with the controlled
@@ -358,7 +358,7 @@ regardless of anything this engine produces.
    corrupts the dedup keys). The Workflow tool already writes its run to a TASK-OUTPUT
    FILE as an envelope (`{summary, result, workflowProgress}`); use the exact path the
    tool returned. Point `merge-ledger --result` DIRECTLY at that task-output file — the
-   engine unwraps `.result` automatically (`merge-ledger.mjs:59`). Do NOT probe the file,
+   engine unwraps `.result` automatically (`merge-ledger.mjs:63`). Do NOT probe the file,
    hand-extract `.result` into a separate file, or re-parse the envelope. Exact form:
    `node ${CLAUDE_PLUGIN_ROOT}/harness/merge-ledger.mjs --repo <target> --result <workflow-task-output-file> --date <date> --pass <N> --report <report-path> --tier <tier>`.
    It computes the dedup ids (16 hex of SHA-256 over normalized file path + `\n` +
