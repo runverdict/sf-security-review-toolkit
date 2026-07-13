@@ -23,10 +23,11 @@
  *   • sf-package-promote — `sf package version promote` ONLY. Its own gate because it
  *       PERMANENTLY releases a managed 2GP version that can never be deleted,
  *       un-promoted, or hidden. The deny reason emphasizes that permanence.
- *   • sf-deep-audit-ops  — package version create / install / uninstall, org create
- *       scratch|sandbox, org delete, data delete, project deploy (and the sfdx legacy
- *       force:* equivalents).
- *   • sf-cli-setup       — `sf org login *` (writes credentials), `npm install -g`.
+ *   • sf-deep-audit-ops  — package version create/delete, package install/uninstall/
+ *       delete, org create scratch|sandbox, org delete, sandbox create/delete, data
+ *       delete, project deploy (and the sfdx legacy force:* equivalents).
+ *   • sf-cli-setup       — `sf org login *` / legacy `force:auth` (writes credentials),
+ *       `npm install -g` / `npm uninstall -g`.
  *
  * NORMALIZATION (the adversarial surface; hardened 0.8.12). Before classifying, a
  * WHOLE `sh -c "…"` / `eval "…"` wrapper is unwrapped and its inner command classified

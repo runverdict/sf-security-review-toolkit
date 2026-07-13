@@ -12,7 +12,7 @@
  * that is the same root cause enumerate-app-roots.mjs closed for app surfaces
  * (CONVENTIONS "Scope / element DETECTION lives in a deterministic engine, not SKILL
  * prose"): prose-strength hand detection is exactly how an element gets missed. A missed
- * `agentforce` element silently drops the 12 agentforce-* baseline requirements (incl.
+ * `agentforce` element silently drops the 11 agentforce-* baseline requirements (incl.
  * the three BLOCKER auto-fails) — the most expensive miss in the journey.
  *
  * THE SHAPES (a match on ANY is an `agentforce` signal — the scope doctrine):
@@ -65,7 +65,7 @@ import { fileURLToPath } from 'node:url'
 export const EXCLUDED_DIRS = Object.freeze(['node_modules', 'dist', 'build', 'venv', 'out', 'coverage', '__pycache__'])
 
 /** Bounded-depth walk: how many levels below the target root are scanned. */
-export const MAX_DEPTH = 10
+const MAX_DEPTH = 10
 
 /** Per-file read cap — a bigger file is skipped, never loaded (fail toward cheap). */
 const MAX_READ_BYTES = 5 * 1024 * 1024

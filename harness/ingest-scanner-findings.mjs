@@ -197,6 +197,11 @@
  *                       org-wide DATA-access perms ViewAllData/ModifyAllData;
  *                       this one covers the admin/privilege perms — the two
  *                       Sets are disjoint, no double-report).
+ *                     Adapter #19 (0.8.118): `pip-audit` (Python dependency-CVE
+ *                       JSON; engine:'pip-audit') — the lockfile-less Python SCA
+ *                       leg: resolves pyproject/requirements version RANGES and
+ *                       audits the resolved set (what OSV-Scanner cannot);
+ *                       dep-CVE class-severity, same band rules as osv/npm-audit.
  *
  * The core `ingest(raw, adapter, {repoRoot, pass})` is PURE (no Date / Math.random /
  * network; byte-deterministic given `raw`) — `collect()` is the only I/O seam, so the
@@ -233,6 +238,7 @@
  *   node ingest-scanner-findings.mjs --scanner detect-secrets  --input detect-secrets.json --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner osv             --input osv.json            --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner npm-audit       --input npm-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
+ *   node ingest-scanner-findings.mjs --scanner pip-audit       --input pip-audit.json      --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner trivy           --input trivy.json          --target <repo> [--json] [--dry-run] [--pass N]
  *   node ingest-scanner-findings.mjs --scanner regexploit      --input redos.txt           --target <repo> [--json] [--dry-run] [--pass N]
  *     (regexploit evidence is VERBATIM text, not JSON — the --all mode below does not auto-recognize

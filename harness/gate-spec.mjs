@@ -40,6 +40,7 @@
  *
  * USAGE
  *   node gate-spec.mjs --gate <id> [--facts facts.json] [--target <repo>] [--scanners "n:m,…"]
+ *                    [--sub-gate <name>] [--no-package] [--url <url>] [--element <name>]
  *     prints the exact AskUserQuestion payload (+ per-option decision tokens) as JSON:
  *       { gate, consent, header, question, options:[{label, description, decision}] }
  *   --facts    a JSON file of detected facts the selector keys variants off.

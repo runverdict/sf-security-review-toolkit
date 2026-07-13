@@ -41,7 +41,9 @@
  *   - `*.provenance.json` sidecars (capture-openapi / capture-org-mcp metadata riding another
  *     artifact, never independent scan evidence);
  *   - subdirectories (`evidence/dast/` holds owner-run plans indexed as pending rows, not
- *     top-level scan reports) — top-level files only, no recursion.
+ *     top-level scan reports) — top-level files only, no recursion;
+ *   - `ca-scan-log-*.txt` — the Code Analyzer scan-log internal diagnostic; its signal
+ *     surfaces as the ingest scan-error coverage note, never a requirement-satisfying artifact.
  *
  * evidence-input.json (every section optional; see acceptance/test-build-evidence-index.mjs):
  *   {

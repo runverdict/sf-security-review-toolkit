@@ -71,7 +71,7 @@ import { verifyConsent } from './record-consent.mjs'
 import { sfEnv, parseSfJson } from './sf-env.mjs'
 
 export const ORG_MCP_SCHEMA = 'sf-srt-org-mcp/1'
-export const ORG_MCP_TMP_PREFIX = 'sf-srt-org-mcp'
+const ORG_MCP_TMP_PREFIX = 'sf-srt-org-mcp'
 const DATE_OK = /^\d{4}-\d{2}-\d{2}$/
 // A target-org alias OR username: a bare token, no whitespace / newline / shell
 // metachar (a username carries `@` and `.`). Fails closed on an injection-shaped

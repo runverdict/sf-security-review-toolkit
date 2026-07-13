@@ -218,7 +218,7 @@ export const JDK_PINS = {
 
 const HEX64 = /^[0-9a-f]{64}$/
 const RUN_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/ // a non-trivial run-id token (never '', '.', '..', or a path)
-export const GROUP_DIR = 'sf-srt-scanners'        // the per-run grouping container under the temp base
+const GROUP_DIR = 'sf-srt-scanners'        // the per-run grouping container under the temp base
 
 const realOr = (p) => { try { return realpathSync(p) } catch { return resolve(p) } }
 // The only roots a tmp dir may live under (cleanup rm -rf's it — keep it boxed). Snapshotted

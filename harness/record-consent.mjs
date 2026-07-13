@@ -14,7 +14,7 @@
  *
  * It records an affirmative answer for a named gate to
  *   <target>/.security-review/consent/<gate>.json   { gate, seq, question, answer, affirmative }
- * Exports recordConsent(gate, answer, {target, question}), verifyConsent(gate, {target})
+ * Exports recordConsent(gate, answer, {target, question, decision}), verifyConsent(gate, {target})
  * → boolean, and isAffirmative(answer). PURE: no network, no deps. The `seq` is a
  * CLOCK-FREE monotonic ordinal (max(existing seq)+1) — Date.now() is unavailable in
  * the Workflow runtime and would break determinism, so consent is ordered, not timed.

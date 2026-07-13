@@ -23,7 +23,7 @@
  *   S11 CLI cold-run shape (self-contained compose + scripts/*.py reading
  *       ADMIN_DATABASE_URL): compose-scoped gathering clears it → runnable;
  *       an env_file: directive falls back to union gathering → needs-secrets
- *   S12 CLI env-read follows the recipe: a rung-2-preferred *.prod.yml is what env/
+ *   S12 CLI env-read follows the recipe: a rung-1-preferred *.prod.yml is what env/
  *       satisfiability classify off, never the dev compose that is NOT stood up
  *   S13 composeEnvFiles + CLI: a referenced env_file ABSENT on disk → needs-secrets
  *       NAMING the file (docker compose config would hard-fail on it); PRESENT → runnable
@@ -283,7 +283,7 @@ check('S12 CLI: env/satisfiability classify off the compose ACTUALLY stood up (r
     '    environment:',
     '      DEV_ONLY_API_TOKEN: ${DEV_ONLY_API_TOKEN:-dev}', '',
   ].join('\n'))
-  // the prebuilt prod compose (the rung-2 preference pick): a DISTINCT var only IT declares
+  // the prebuilt prod compose (the rung-1 preference pick): a DISTINCT var only IT declares
   w(r, 'docker-compose.prod.yml', [
     'services:', '  api:', '    image: api:1.0',
     '    ports:', '      - "8000:8000"',
@@ -340,12 +340,14 @@ check('S13 composeEnvFiles + CLI: a referenced env_file ABSENT on disk → needs
 check('S14 classifyStack: external-managed DB + NO in-compose datastore → the honest no-DB note; datastore/non-compose → absent', () => {
   const base = { serverRoots: ['api'], recipe: { kind: 'compose', file: 'docker-compose.yml' }, webTier: { port: 8000 }, envNames: ['DATABASE_URL'] }
   // an external DATABASE_URL and no datastore service: the isolated throwaway has no DB —
-  // the reason must say so and steer to rung 1, never leave a doomed stand-up implied fine
+  // the reason must say so and steer to the honest degrade (PENDING-OWNER-RUN),
+  // never to a pre-existing running instance and never leave a doomed stand-up implied fine
   const noDb = classifyStack({ ...base, composeServices: ['api', 'web'] })
   assert.equal(noDb.status, 'needs-secrets')
   // MUTATION: dropping the external-DB note branch → the fragment disappears (red)
   assert.ok(/throwaway has no DB/.test(noDb.reason), noDb.reason)
-  assert.ok(/--base-url/.test(noDb.reason), 'the note must steer to rung 1 (an already-running --base-url): ' + noDb.reason)
+  assert.ok(/PENDING-OWNER-RUN/.test(noDb.reason), 'the note must steer to the honest degrade (PENDING-OWNER-RUN): ' + noDb.reason)
+  assert.ok(!/--base-url/.test(noDb.reason), 'the note must NOT steer to a retired --base-url scan: ' + noDb.reason)
   // two-sided: an in-compose datastore (the self-contained shape) → note ABSENT
   const withDb = classifyStack({ ...base, composeServices: ['api', 'postgres'] })
   assert.ok(!/throwaway has no DB/.test(withDb.reason), withDb.reason)
@@ -589,7 +591,7 @@ check('E2 CLI: compose-less FastAPI (module-scope ctor, no __main__) → recipe.
   assert.equal(out.recipe.run.var, 'app')
 })
 
-// ── Fires-path ladder rung 2 (0.8.109): a prebuilt-image *.prod.yml is PREFERRED over a
+// ── Fires-path ladder rung 1 (0.8.109): a prebuilt-image *.prod.yml is PREFERRED over a
 //    build-from-source dev compose, so the throwaway stands up with no heavy image build. ──
 
 // A build-from-source dev compose (self-contained env so it classifies runnable on its own).
@@ -641,7 +643,7 @@ const PROD_IMAGE_COMPOSE = [
 ].join('\n')
 
 // A tier declaring BOTH image: AND build: — Compose builds from source and applies the
-// image: string as the TAG, so on a clean box the tag is not cached and rung 2's
+// image: string as the TAG, so on a clean box the tag is not cached and rung 1's
 // "zero build" assumption is false. Never "prebuilt".
 const IMAGE_AND_BUILD_COMPOSE = [
   'services:',

@@ -161,7 +161,7 @@ export function seedAutoDispositions(findings, repo = {}) {
   // one entry per (heuristic, engine, ruleId) — a single disposition can carry many loci in
   // scope.files, but engine+ruleId is a single pair per entry (apply matches exactly on it).
   const entries = new Map()
-  const key = (h, e, r) => `${h} ${e} ${r}`
+  const key = (h, e, r) => `${h}\x00${e}\x00${r}`
   const entryFor = (heuristic, f) => {
     const k = key(heuristic, String(f.engine), String(f.ruleId))
     let e = entries.get(k)
@@ -345,8 +345,8 @@ function main() {
   // ADDITIVE, NON-CLOBBERING merge: keep every existing entry; add a heuristic entry ONLY
   // when no existing entry already covers its engine+ruleId (a hand-written adjudication
   // wins; a re-run adds nothing). Nothing new to add → write NOTHING (byte-identical file).
-  const existingKeys = new Set(existing.dispositions.map((d) => `${String(d && d.engine)} ${String(d && d.ruleId)}`))
-  const added = dispositions.filter((d) => !existingKeys.has(`${d.engine} ${d.ruleId}`))
+  const existingKeys = new Set(existing.dispositions.map((d) => `${String(d && d.engine)}\x00${String(d && d.ruleId)}`))
+  const added = dispositions.filter((d) => !existingKeys.has(`${d.engine}\x00${d.ruleId}`))
   const merged = { ...existing, dispositions: [...existing.dispositions, ...added] }
   const willWrite = added.length > 0
 

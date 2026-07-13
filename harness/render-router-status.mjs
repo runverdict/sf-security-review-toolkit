@@ -102,7 +102,8 @@ function detectFacts(target) {
   const has = (...parts) => existsSync(join(sr, ...parts))
   const hasArtifacts = (() => {
     try {
-      // any *.md under docs/security-review (other than the submission dir) = artifacts generated
+      // the docs/security-review dir exists = artifacts generated (coarse presence check;
+      // the driver passes richer facts via --facts)
       const docs = join(target, 'docs', 'security-review')
       return existsSync(docs)
     } catch { return false }

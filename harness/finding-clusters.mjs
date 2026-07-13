@@ -42,7 +42,7 @@
  *
  * PURE: no LLM, no deps, no network. IDEMPOTENT: collapse(collapse(x)) === collapse(x).
  *
- * USAGE: node finding-clusters.mjs --target <repo> [--json]
+ * USAGE: node finding-clusters.mjs --target <repo> [--json] [--headline | --format md]
  */
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'

@@ -556,7 +556,7 @@ function renderPendingOwnerRun({ DATE, evEntries, baseline, applicableSet }) {
     .map((e) => ({ ref: String(e.ref_id || ''), loc: String(e.location || ''), note: String(e.note || '') }))
   const seen = new Set()
   const rows = pending
-    .filter((r) => { const k = `${r.ref} ${r.loc} ${r.note}`; if (seen.has(k)) return false; seen.add(k); return true })
+    .filter((r) => { const k = `${r.ref}\x00${r.loc}\x00${r.note}`; if (seen.has(k)) return false; seen.add(k); return true })
     .sort((a, b) => a.ref.localeCompare(b.ref) || a.loc.localeCompare(b.loc))
   if (rows.length) {
     L.push('| Requirement | Prepared plan / location | Note |')

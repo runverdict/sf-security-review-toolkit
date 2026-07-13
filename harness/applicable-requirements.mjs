@@ -40,7 +40,7 @@
  * step 7. The same compute-sci-style ENGINE-owns-skeleton / driver-pastes-verbatim contract.
  *
  * USAGE
- *   node applicable-requirements.mjs --elements managed-package,apex,lwc [--json|--render]
+ *   node applicable-requirements.mjs --elements managed-package,apex,lwc [--plugin <dir>] [--json|--render]
  *   node applicable-requirements.mjs --target <repo>            # reads manifest elements
  */
 import { readFileSync, realpathSync } from 'node:fs'

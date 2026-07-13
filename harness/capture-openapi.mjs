@@ -35,7 +35,7 @@
  * The live GETs are operator-cold-validated (they need a running mirror), like run-dast's
  * ZAP run; the standing tests pin the pure planner/validator/provenance + the skill wiring.
  *
- * USAGE: node capture-openapi.mjs --from-standup --target <repo> --consent [--run-id <id>] [--date YYYY-MM-DD] [--json]
+ * USAGE: node capture-openapi.mjs --from-standup --target <repo> --consent [--run-id <id>] [--date YYYY-MM-DD] [--root-path </prefix>] [--json]
  */
 import { mkdirSync, writeFileSync, existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'

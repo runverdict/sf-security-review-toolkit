@@ -54,11 +54,11 @@ if (!APPLICABLE.length) { console.error('build-audit-engine: scope-input.applica
 // that forgets one silently under-covers an auto-fail class (a cold run DROPPED
 // secrets-credentials, then re-added it by luck). Deterministic, fixed set, no LLM.
 // Citations (methodology/audit-methodology.md applicability table):
-//   sessionid-egress          — :77 ("always on when Salesforce-adjacent code exists";
+//   sessionid-egress          — :76 ("always on when Salesforce-adjacent code exists";
 //                               this is a Salesforce-review tool, so unconditional here)
-//   secrets-credentials       — :78 ("always")
-//   error-handling-disclosure — :91 ("always — every architecture has error/exception paths")
-// (injection-xss :81 is CONDITIONAL — "always for the injection half" — and is LEFT to the
+//   secrets-credentials       — :77 ("always")
+//   error-handling-disclosure — :90 ("always — every architecture has error/exception paths")
+// (injection-xss :80 is CONDITIONAL — "always for the injection half" — and is LEFT to the
 // driver; it is deliberately NOT forced here.)
 const ALWAYS_ON = ['sessionid-egress', 'secrets-credentials', 'error-handling-disclosure']
 // FULL_TREE_TARGET — the sentinel scope for an auto-injected always-on dimension: the WHOLE

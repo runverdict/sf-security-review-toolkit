@@ -14,7 +14,7 @@
  *
  * PURE: dependency-free line parse; no LLM, no deps, no network.
  *
- * USAGE: node baseline-counts.mjs [--plugin <dir>] [--json]
+ * USAGE: node baseline-counts.mjs [--plugin <dir>] [--baseline <yaml>] [--json|--currency]
  */
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'

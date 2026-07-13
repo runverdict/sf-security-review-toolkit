@@ -18,7 +18,7 @@
  *
  * COUNT + FORMAT PARITY. The count is merge-ledger's exact filter
  * (`status === 'confirmed'`) and the severity breakdown reproduces
- * merge-ledger.mjs:268-272 exactly — same severity ordering, same
+ * merge-ledger.mjs:295-298 exactly — same severity ordering, same
  * `${n} ${sev}` join, same `|| '(none above info)'` fallback — so only the
  * numbers move, never the line's shape. acceptance/test-rerender-runlog.mjs
  * RL5 locks the parity with a live run of merge-ledger itself.
@@ -38,11 +38,11 @@ import { readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// merge-ledger.mjs:270 severity print order — reproduced, never re-derived elsewhere.
+// merge-ledger.mjs:298 severity print order — reproduced, never re-derived elsewhere.
 const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
 
 /**
- * Pure: the ledger's findings → the exact run-log line merge-ledger.mjs:278 writes,
+ * Pure: the ledger's findings → the exact run-log line merge-ledger.mjs:306 writes,
  * recomputed over the CURRENT (post-disposition) state. Same filter
  * (`status === 'confirmed'`), same ordering, same formatting, same
  * `|| '(none above info)'` fallback — only the numbers differ.

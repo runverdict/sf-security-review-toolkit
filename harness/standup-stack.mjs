@@ -21,14 +21,14 @@
  * is a live op). PURE planner `planStandup` (deterministic spec) + impure executor
  * `standupStack` (docker).
  *
- * FIRES-PATH LADDER rung 3 — SERIALIZE, don't overlap (0.8.109): `standupStack` is a
+ * FIRES-PATH LADDER rung 2 — SERIALIZE, don't overlap (0.8.109): `standupStack` is a
  * single-shot executor and deliberately knows NOTHING about the audit fan-out, so it does
- * NOT self-serialize. The rung-3 rule ("build the throwaway BEFORE or AFTER the audit
+ * NOT self-serialize. The rung-2 rule ("build the throwaway BEFORE or AFTER the audit
  * fan-out, never DURING it") is a SEQUENCING obligation on the driver (run-scans SKILL.md
  * Family 3), not this executor: a real cold run's DAST failed because the heavy api image
  * build lost the last cores to a concurrent fan-out (the same build succeeds fine
- * standalone). Prefer rung 1 (an already-running `--base-url`) or rung 2 (a prebuilt-image
- * compose, `stack-detect` `buildsFromSource:false`) to avoid the source build entirely. Supported recipes: `node` + `python` (copy-in — toolkit base
+ * standalone). Prefer rung 1 (a prebuilt-image compose, `stack-detect`
+ * `buildsFromSource:false`) to avoid the source build entirely. Supported recipes: `node` + `python` (copy-in — toolkit base
  * image, source copied in), `dockerfile` (build-then-run — the partner's own
  * Dockerfile brings the source + base image; the built image carries the toolkit
  * run-name so teardown removes it), and `compose` (multi-container — docker's OWN
@@ -63,7 +63,7 @@
  * fix). A defect with NO honest fix is logged as a diagnosis and the stand-up
  * degrades with its real failure status — never a silent build-into-failure.
  *
- * USAGE: node standup-stack.mjs --target <repo> --consent [--run-id <id>] [--port N] [--json]
+ * USAGE: node standup-stack.mjs --target <repo> --consent [--run-id <id>] [--port N] [--env-file <path>] [--tmp-root <dir>] [--json]
  */
 import {
   mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync,
@@ -89,8 +89,9 @@ const NODE_BASE = 'node:18-alpine'
 export const PYTHON_BASE = 'python:3.12-slim' // pinned minor tag, never :latest (same discipline as NODE_BASE)
 
 // Health vocabulary (Slice B1): the terminal state of a stand-up, written into
-// stack-standup.json.status. run-dast / capture-openapi / the base-url resolver import
-// this — no hard-coded status strings anywhere downstream.
+// stack-standup.json.status. run-dast's resolveBaseUrl SCANNABLE gate (and capture-openapi
+// via the shared resolver) consumes these values as string literals — keep the two
+// vocabularies in lockstep.
 export const HEALTH_STATES = Object.freeze({ UP: 'up', UNHEALTHY: 'unhealthy', FAILED: 'failed', UNKNOWN: 'unknown', REDIRECT_ONLY: 'redirect-only' })
 // Statuses that ABORT the run (exitCode 1). unhealthy / redirect-only DEGRADE — the scan
 // still runs, with a loud caveat — rather than abort: the honesty floor is a degraded
@@ -200,10 +201,11 @@ export function checkEnvFileRunId(envFile, runId) {
 }
 
 /**
- * PURE (Slice D). Port-collision decision: a pre-existing dev service already on the loopback
- * port would be read as `up` and scanned, misattributing findings to the partner. `freeBefore`
- * = was the port free before we published; `ownedAfter` = does OUR container own the socket.
- * The impure probe is operator-cold-run-only; this predicate is the retunable decision.
+ * PURE (Slice D). Port-collision decision — RETAINED-BUT-SUPERSEDED seam: the fixed-port
+ * collision it guarded was eliminated by the ephemeral `127.0.0.1:0` publish (0.8.95), so no
+ * live path calls it today; it stays as the tested decision seam should a fixed-port mode
+ * return. `freeBefore` = was the port free before we published; `ownedAfter` = does OUR
+ * container own the socket.
  */
 export function classifyPortOwnership({ freeBefore, ownedAfter } = {}) {
   if (!freeBefore && !ownedAfter) return { ok: false, reason: 'a pre-existing service already held the loopback port before stand-up and our container does not own it — refusing to scan (findings would be misattributed to the partner); free the port or pass --port' }

@@ -574,7 +574,7 @@ export function composeWebTier(text) {
 
 /**
  * PURE. Does the compose's picked web/api tier resolve an `image:` (a PREBUILT image) rather
- * than build from source? The signal the fires-path ladder's rung 2 keys off (0.8.109): a
+ * than build from source? The signal the fires-path ladder's rung 1 keys off (0.8.109): a
  * `*.prod.yml` whose web tier ships `image: <name>:latest` can be stood up with ZERO image
  * build — no heavy `docker build` competing with the audit fan-out. Reuses composeWebTier's
  * scored web-tier pick, then reads that service's `image:` via svcImage. Returns
@@ -587,7 +587,7 @@ export function composeWebTierImage(text) {
   const block = composeServiceBlocks(text).find((b) => b.name === wt.service)
   const image = block ? svcImage(block.lines) : null
   // `image:` + `build:` together = a build-from-source tier whose built image gets that
-  // tag — on a clean box the tag is not cached, so rung 2's "zero build" claim would be
+  // tag — on a clean box the tag is not cached, so rung 1's "zero build" claim would be
   // false; only an image WITHOUT a build directive is genuinely prebuilt.
   const builds = block ? svcBuild(block.lines) : false
   return { prebuilt: Boolean(image) && !builds, service: wt.service, image: image || null }
@@ -711,14 +711,15 @@ export function classifyStack(facts = {}) {
   }
   // External-managed-DB honesty note: a compose recipe with a DB-shaped EXTERNAL env var and
   // NO in-compose datastore service means the isolated throwaway has no database at all —
-  // never a silent degrade; steer to rung 1 instead of a doomed stand-up. Reads
+  // never a silent degrade; degrade honestly (PENDING-OWNER-RUN) instead of a doomed stand-up
+  // (the toolkit never scans a pre-existing/running instance). Reads
   // facts.composeServices directly (the `services` local below is only built on the
   // runnable path, after the needs-secrets returns).
   const composeSvcs = Array.isArray(facts.composeServices) ? facts.composeServices.filter(Boolean) : []
   const externalDbNote = (recipe.kind === 'compose'
     && env.external.some((n) => EXTERNAL_DB_ENV.test(n))
     && !composeSvcs.some((n) => INFRA_NAME.test(n)))
-    ? '; NOTE: a DB-shaped env var is EXTERNAL-managed and the compose defines no in-compose database service — the isolated throwaway has no DB, so the api tier may not come up even with a filled env-file; prefer rung 1 (an already-running --base-url)'
+    ? '; NOTE: a DB-shaped env var is EXTERNAL-managed and the compose defines no in-compose database service — the isolated throwaway has no DB, so the api tier may not come up even with a filled env-file; the throwaway DAST degrades honestly to PENDING-OWNER-RUN for this stack (the toolkit never scans a pre-existing/running instance) unless the compose gains an in-compose datastore for the mirror'
     : ''
   // LIVE COLLISION (informational, additive): a live stack on this host whose running
   // container names match the compose's FIXED container_names. Gathered impurely
@@ -752,7 +753,7 @@ export function classifyStack(facts = {}) {
 // ── CLI fact-gathering (dependency-free; best-effort regex/file scans) ──────────
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'force-app', '.security-review', 'docs', '.claude', 'venv', '.venv', '__pycache__', 'dist', 'build'])
 const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']
-// Prebuilt-image compose names (0.8.109) — a DEDICATED set for the fires-path ladder's rung-2
+// Prebuilt-image compose names (0.8.109) — a DEDICATED set for the fires-path ladder's rung-1
 // preference pass in gatherRecipe. Kept OUT of COMPOSE_FILES on purpose: that set is consumed by
 // `firstExisting` at three env/satisfiability call-sites, and adding prod variants there would
 // over-broaden them (they must keep reading the app's canonical env surface). The prod compose
@@ -771,7 +772,7 @@ function recipeComposeFile(target, recipe) {
 
 /** The compose text env-gathering, satisfiability, services, and the env_file checks
  *  classify off: the recipe's OWN file when the recipe IS a compose — the file actually
- *  stood up. A rung-2-preferred `*.prod.yml` can declare `env_file:`/env the dev compose
+ *  stood up. A rung-1-preferred `*.prod.yml` can declare `env_file:`/env the dev compose
  *  lacks; classifying off the dev file while standing up the prod file left `docker
  *  compose config` to hard-fail on an env surface the detector never read (the cold-run
  *  mystery). Non-compose / no-recipe behavior is unchanged: the first canonical compose. */
@@ -854,7 +855,7 @@ function gatherEnvNames(target, roots, recipe = null) {
 
 /** Resolve a run recipe + web tier (kind, command, port). */
 function gatherRecipe(target, roots) {
-  // FIRES-PATH LADDER rung 2 (0.8.109): PREFER a prebuilt-image compose over a build-from-source
+  // FIRES-PATH LADDER rung 1 (0.8.109): PREFER a prebuilt-image compose over a build-from-source
   // dev compose. When a `*.prod.yml` exists whose picked web/api tier resolves an `image:` (not a
   // `build:`), stand up THAT — no heavy image build competes with the audit fan-out (the run-time
   // DAST failure was resource contention, not a broken build). Records buildsFromSource:false.

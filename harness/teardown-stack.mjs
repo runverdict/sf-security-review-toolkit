@@ -19,7 +19,7 @@
  *
  * Pure `planTeardown` (validate + classify, no I/O) + `teardownStack` (the removals).
  *
- * USAGE: node teardown-stack.mjs [--target <repo>] [--manifest <file>] [--run-id <id>] [--json]
+ * USAGE: node teardown-stack.mjs [--target <repo>] [--manifest <file>] [--run-id <id>] [--sweep] [--json]
  */
 import { readFileSync, writeFileSync, existsSync, rmSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -97,7 +97,7 @@ const exists = (kind, name) => { try { execFileSync('docker', kind === 'image' ?
 /** Resolve the manifest from --target pointer / --manifest / --run-id. */
 function resolveManifest({ target, manifestPath, runId }) {
   if (manifestPath) { const m = readJson(manifestPath); return m ? { manifest: m, pointerDir: m.target ? join(m.target, '.security-review') : null } : { error: `--manifest ${manifestPath} unreadable` } }
-  if (runId) { const p = join('/tmp', 'sf-srt-stack', runId, 'stack-manifest.json'); const m = readJson(p); return m ? { manifest: m, pointerDir: m.target ? join(m.target, '.security-review') : null } : { error: `no manifest at ${p}` } }
+  if (runId) { const p = join(tmpdir(), 'sf-srt-stack', runId, 'stack-manifest.json'); const m = readJson(p); return m ? { manifest: m, pointerDir: m.target ? join(m.target, '.security-review') : null } : { error: `no manifest at ${p}` } }
   if (target) {
     const ptr = readJson(join(target, POINTER_REL))
     if (!ptr || !ptr.manifestPath) return { none: true }
@@ -174,7 +174,7 @@ function teardownCompose(plan, src) {
  * SWEEP: remove EVERY toolkit throwaway container + tmp tree (orphan cleanup from a crashed
  * run where the same-run teardown never fired). Name-scoped — only ever touches
  * `sf-srt-stack-*` containers/images/networks/volumes (compose projects included) and
- * `/tmp/sf-srt-{stack,dast}/*` trees, never anything else; evidence (in the repo) is
+ * `<tmpdir>/sf-srt-{stack,dast}/*` trees, never anything else; evidence (in the repo) is
  * untouched. This is the engine-backed backstop for the "always tear down" guarantee an
  * LLM-orchestrated multi-process run can't make on its own.
  */

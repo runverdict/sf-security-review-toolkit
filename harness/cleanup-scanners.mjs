@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync, existsSync, rmSync, lstatSync } from 'node
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { realpathSync } from 'node:fs'
-import { assertSafeTmpRoot, MANIFEST_SCHEMA } from './install-scanners.mjs'
+import { assertSafeTmpRoot } from './install-scanners.mjs'
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return null } }
 const POINTER_REL = join('.security-review', 'scanner-install.json')

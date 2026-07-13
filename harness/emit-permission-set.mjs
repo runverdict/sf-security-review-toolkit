@@ -337,7 +337,7 @@ export function assertOnlyAllowGrew(original, next) {
 }
 
 /** The partner-facing artifact body (deterministic — no clock, per the repo convention). */
-export function renderArtifact({ added, alreadyPresent }) {
+function renderArtifact({ added, alreadyPresent }) {
   const lines = []
   lines.push('# Autorun permissions — what the toolkit wrote, and how to undo it')
   lines.push('')
