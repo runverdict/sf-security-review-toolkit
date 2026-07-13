@@ -5629,7 +5629,7 @@ the original detail, kept intact.)
   a false 'impossible'**. No namespace-corruption risk (a build *uses* a registered
   namespace, never registers/hijacks one; it operates on the package's own declared ns).
   Pure `classifyNamespace` + impure `namespaceStatus`. Validated live: Atlas (`atlas`,
-  unregistered) → not-confirmed + the prereq; a `verdict`-namespace repo → buildable.
+  unregistered) → not-confirmed + the prereq; a `beacon`-namespace repo → buildable.
   `plugin.json` → 0.7.2.
 - **`harness/docker-check.mjs`** (+ `test-docker-check.mjs`, 2 checks) — the 0.7.1
   throwaway-DAST environment prerequisite. The containerized throwaway (standup-stack +

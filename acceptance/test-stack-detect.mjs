@@ -29,7 +29,7 @@
  *       NAMING the file (docker compose config would hard-fail on it); PRESENT → runnable
  *   S14 classifyStack: external-managed DB + no in-compose datastore → the honest
  *       no-DB-in-the-throwaway note; in-compose datastore / non-compose → note absent
- *   A1  composeWebTier via CLI on the Verdict shape → api:8000, not web:3000/db:5432
+ *   A1  composeWebTier via CLI on a real multi-service shape → api:8000, not web:3000/db:5432
  *   A2  db-publishes-first not mis-picked (datastore hard-excluded)
  *   A3  port forms parsed: interpolated / long-form target-published / bind-IP
  *   A4  top-score tie → ambiguous + candidates (infer file-order-first, hint --port)
@@ -164,7 +164,7 @@ const SELF_CONTAINED_COMPOSE = [
   '    ports:',
   '      - "8000:8000"',
   '    environment:',
-  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      DATABASE_URL: postgresql://acme:${POSTGRES_PASSWORD:-acme}@postgres:5432/acme',
   '      REDIS_URL: redis://redis:6379/0',
   '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
   '    depends_on:',
@@ -173,7 +173,7 @@ const SELF_CONTAINED_COMPOSE = [
   '  postgres:',
   '    image: postgres:16',
   '    environment:',
-  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acme}',
   '  redis:',
   '    image: redis:7',
   'volumes:',
@@ -358,17 +358,17 @@ check('S14 classifyStack: external-managed DB + NO in-compose datastore → the 
 //    the frontend, not the API. composeWebTier scores services, hard-excludes datastores
 //    by name AND image, and degrades the label on frontend-only / expose-only shapes. ──
 
-// The grounded Verdict shape: postgres/redis/api publish `${VAR:-N}:N` (the naive regex
+// The grounded real-world multi-service shape: postgres/redis/api publish `${VAR:-N}:N` (the naive regex
 // skips them — `}` breaks the digit run), only web publishes a bare `"3000:3000"`, and the
 // api carries `command: uvicorn` + map-form depends_on. The old picker landed on web:3000.
-const VERDICT_SHAPE_COMPOSE = [
+const ACME_SHAPE_COMPOSE = [
   'services:',
   '  postgres:',
   '    image: postgres:16',
   '    ports:',
   '      - "${POSTGRES_PORT:-5432}:5432"',
   '    environment:',
-  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acme}',
   '  redis:',
   '    image: redis:7',
   '    ports:',
@@ -379,7 +379,7 @@ const VERDICT_SHAPE_COMPOSE = [
   '    ports:',
   '      - "${API_PORT:-8000}:8000"',
   '    environment:',
-  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      DATABASE_URL: postgresql://acme:${POSTGRES_PASSWORD:-acme}@postgres:5432/acme',
   '      REDIS_URL: redis://redis:6379/0',
   '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
   '    depends_on:',
@@ -398,9 +398,9 @@ const VERDICT_SHAPE_COMPOSE = [
   '',
 ].join('\n')
 
-check('A1 CLI on the Verdict-shape compose → web tier is api:8000, NOT web:3000 or db:5432', () => {
+check('A1 CLI on the real-shape compose → web tier is api:8000, NOT web:3000 or db:5432', () => {
   const r = mkrepo()
-  w(r, 'docker-compose.yml', VERDICT_SHAPE_COMPOSE)
+  w(r, 'docker-compose.yml', ACME_SHAPE_COMPOSE)
   w(r, 'api/requirements.txt', 'fastapi\nuvicorn\n')
   w(r, 'api/main.py', 'app = 1\n')
   const out = cli(r)
@@ -600,14 +600,14 @@ const DEV_BUILD_COMPOSE = [
   '    ports:',
   '      - "8000:8000"',
   '    environment:',
-  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      DATABASE_URL: postgresql://acme:${POSTGRES_PASSWORD:-acme}@postgres:5432/acme',
   '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
   '    depends_on:',
   '      - postgres',
   '  postgres:',
   '    image: postgres:16',
   '    environment:',
-  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acme}',
   'volumes:',
   '  postgres_data:',
   '',
@@ -621,12 +621,12 @@ const PROD_IMAGE_COMPOSE = [
   '    ports:',
   '      - "8000:8000"',
   '    environment:',
-  '      DATABASE_URL: postgresql://verdict:${POSTGRES_PASSWORD:-verdict}@postgres:5432/verdict',
+  '      DATABASE_URL: postgresql://acme:${POSTGRES_PASSWORD:-acme}@postgres:5432/acme',
   '      SECRET_KEY: ${SECRET_KEY:-dev-secret}',
   '    depends_on:',
   '      - postgres',
   '  web:',
-  '    image: verdict-web:latest',
+  '    image: acme-web:latest',
   '    ports:',
   '      - "3000:3000"',
   '    depends_on:',
@@ -634,7 +634,7 @@ const PROD_IMAGE_COMPOSE = [
   '  postgres:',
   '    image: postgres:16',
   '    environment:',
-  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}',
+  '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acme}',
   'volumes:',
   '  postgres_data:',
   '',
