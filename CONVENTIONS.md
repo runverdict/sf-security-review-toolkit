@@ -452,7 +452,7 @@ Skills write into the PARTNER's repo, never into the plugin:
 
 ```
 sf-security-review-toolkit/
-├── .claude-plugin/{plugin.json, marketplace.json}
+├── .claude-plugin/plugin.json      # the marketplace catalog lives in runverdict/plugins
 ├── .gitignore  LICENSE  README.md  CONVENTIONS.md  CHANGELOG.md
 ├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  CREDITS.md  SECURITY.md
 ├── .github/workflows/test.yml       # CI: the standing suite, least-privilege token (contents: read)
