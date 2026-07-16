@@ -129,9 +129,12 @@ This is a **Claude Code plugin** — it runs inside [Claude Code](https://claude
 Inside Claude Code, add and install the plugin (these are Claude Code slash commands, not terminal commands):
 
 ```
-/plugin marketplace add runverdict/sf-security-review-toolkit
-/plugin install sf-security-review-toolkit
+/plugin marketplace add runverdict/plugins
+/plugin install sf-security-review-toolkit@runverdict-plugins
 ```
+
+[`runverdict/plugins`](https://github.com/runverdict/plugins) is the catalog for every Verdict
+toolkit — one marketplace, so installing a second one never disturbs this one.
 
 Then just say **"run the security review."** You never run the `harness/*.mjs` files yourself — they're internal engines the skills invoke. (To run the standing test suite: `for t in acceptance/test-*.mjs; do node "$t" || exit 1; done`.)
 
