@@ -6,6 +6,24 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- README restructured as a hub: the hands-off permissions guide (with both enforcement
+  hooks), the full skill catalog, the scan mechanics, and the trust-guardrail detail moved
+  verbatim to `docs/permissions.md`, `docs/skills.md`, `docs/scans.md`, and `docs/trust.md`;
+  the front page keeps the journey, install/usage, the currency model, the sample verdict,
+  the supply-chain claim, and short linked summaries. `acceptance/test-emit-permission-set.mjs`
+  now parses the documented allowlist from `docs/permissions.md` (same drift guard, new home).
+
+### Added
+
+- The repo now governs its own front matter with the committed `repo-standard-toolkit` lint
+  (`acceptance/test-repo-standard.mjs` + `.repo-standard.json`): standard-readme structure,
+  reflexivity against CONVENTIONS §11, license agreement, placeholder/shadow sweeps, and a
+  machine-bound standing-test file count. The Keep a Changelog category check is disabled with
+  a stated reason — released history uses this repo's extended category vocabulary
+  (documented in CONVENTIONS §11) and is not rewritten.
+
 _Nothing yet._
 
 ## [0.9.0] — 2026-07-13
@@ -5194,7 +5212,9 @@ cold campaign, not claimed here. Suite **34 files / 338 checks** (was 32 / 313).
   *guided* prerequisite, never tmp-installed — it is a privileged daemon). Full detail under
   **Detailed record** below.
 
-## [0.7.0] — 2026-06-19 — last published tag (cold-validated)
+## [0.7.0] — 2026-06-19
+
+*The last published tag under the cold-validated claim.*
 
 - **The autonomous throwaway-DAST harness.** The server-tier analogue of the deployed-org deep
   audit: `stack-detect` classifies whether the external backend can stand up; `standup-stack`

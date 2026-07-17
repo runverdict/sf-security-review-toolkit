@@ -1,0 +1,21 @@
+{
+  "//": "Scope config for acceptance/test-repo-standard.mjs — installed by repo-standard-toolkit.",
+  "version": 1,
+
+  "//checks": "The changelog category check is OFF with a stated reason: 146 released sections predate adoption and use this repo's extended category vocabulary (Tests/Hardened/Validated/Decided…, documented in CONVENTIONS §11). Released history is not rewritten. [Unreleased] discipline and RS-lockstep still run.",
+  "checks": {
+    "changelog": { "enabled": false, "why": "released history uses the extended category vocabulary documented in CONVENTIONS §11; history is not rewritten — new [Unreleased] entries use the six canonical categories" },
+    "placeholders": { "enabled": false, "why": "this repo SHIPS its own {{SLOT}}/{{URL}} render-template grammar and its docs name that grammar literally, fenced excerpts included; render-readiness-verdict.mjs fails closed on unfilled slots itself" }
+  },
+
+  "conventions": { "minSections": 11 },
+
+  "//counts": "The README's standing-test file count is bound to the real acceptance/ glob so it can never go stale. The checks total alongside it is a measured number, re-measured when the suite changes.",
+  "counts": {
+    "standing-test-files": {
+      "pattern": "checks across (\\d[\\d,]*) files",
+      "glob": "acceptance/test-*.mjs",
+      "docs": ["README.md"]
+    }
+  }
+}

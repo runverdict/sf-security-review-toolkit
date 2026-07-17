@@ -622,3 +622,28 @@ acronyms on first use. American spelling.
 - **Honesty extends to docs (§2):** if a doc's thesis is later refuted by a published result,
   it MUST link the refutation. A doc may not present, unqualified, a claim the repo has
   falsified.
+
+## 11. Project-meta docs standard (README / CHANGELOG / CONVENTIONS)
+
+The front matter is governed by the committed `acceptance/test-repo-standard.mjs` (installed
+by [`repo-standard-toolkit`](https://github.com/runverdict/repo-standard-toolkit); scope in
+`.repo-standard.json`), grounded in the published specs:
+
+- **CHANGELOG → [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).** New entries under
+  `[Unreleased]` use the six canonical categories — **Added · Changed · Deprecated · Removed ·
+  Fixed · Security**. Honest disclosure: the released history predates this adoption and uses
+  an extended vocabulary (`Tests`, `Hardened`, `Validated`, `Decided`, qualified headings);
+  it is history and is not rewritten, so the lint's changelog check is disabled with that
+  reason, printed on every run. `[Unreleased]` discipline and the CHANGELOG ⟺ plugin.json
+  version lockstep still hold.
+- **README → [standard-readme](https://github.com/RichardLitt/standard-readme).** Exactly one
+  H1; a short description immediately after it; **Install**, **Usage**, and **Contributing**
+  sections; the **License** section LAST. House additions on top of the spec: the description
+  is a **bold tagline**, and a **Caveats** surface is required (this repo's lives in the
+  Maturity & caveats section and the beta notice).
+- **Counts are machine-verified where declared.** The standing-test file count in the README
+  is bound to the real `acceptance/test-*.mjs` glob; the baseline verification counts are
+  bound by `acceptance/test-baseline-counts.mjs`.
+- **Stable meta files** — SECURITY, CONTRIBUTING, CODE_OF_CONDUCT exist and open with an H1;
+  no `TODO(scaffold)` markers or unfilled template placeholders survive in governed docs; no
+  governed doc is duplicated across `.github/`, root, and `docs/`.

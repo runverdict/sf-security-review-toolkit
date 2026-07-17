@@ -7,7 +7,7 @@
  * settings key would change.
  *
  * P1  REQUIRED_ALLOW curation — scoped shapes only (Bash colon-prefix / per-skill
- *     plugin-prefixed Skill), frozen, covers the README allowlist (parsed from README.md,
+ *     plugin-prefixed Skill), frozen, covers the docs/permissions.md allowlist (parsed from docs/permissions.md,
  *     so the two can't drift), every node entry names a real harness file (a typo'd
  *     engine name turns this RED), and the SKILL DRIFT GUARD: the `Skill(...)` entries
  *     ⟺ the `skills/` directory in BOTH directions (a skill added to the repo without a
@@ -136,12 +136,12 @@ check('P1 SKILL DRIFT GUARD: Skill(...) entries ⟺ skills/ directories, both di
   assert.deepEqual(named, skillDirs, 'the Skill surface is EXACTLY the skills/ directory (no dupes, no gaps)')
 })
 
-check('P1 the README hands-off allowlist is a subset (parsed from README.md — no drift)', () => {
-  const readme = readFileSync(join(PLUGIN, 'README.md'), 'utf8')
+check('P1 the hands-off allowlist is a subset (parsed from docs/permissions.md — no drift)', () => {
+  const readme = readFileSync(join(PLUGIN, 'docs', 'permissions.md'), 'utf8')
   const documented = [...readme.matchAll(/"(Bash\([^"]+:\*\))"/g)].map((m) => m[1])
   assert.ok(documented.length >= 20, `found the README allowlist entries (got ${documented.length})`)
   for (const e of documented) {
-    assert.ok(REQUIRED_ALLOW.includes(e), `README-documented entry ${e} must be in REQUIRED_ALLOW`)
+    assert.ok(REQUIRED_ALLOW.includes(e), `permissions.md-documented entry ${e} must be in REQUIRED_ALLOW`)
   }
   // the gap entries the README misses are covered too
   for (const e of ['Bash(find:*)', 'Bash(sf config get:*)']) {
